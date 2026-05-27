@@ -44,6 +44,8 @@ import {
 } from '@candypoets/nipworker/react-native';
 import {
   asConnectionStatus,
+  asKind1,
+  asKind10002,
   asKind3,
   asParsedEvent,
   fbArray,
@@ -71,6 +73,7 @@ import {
 } from 'lucide-react-native';
 import { nip19 } from 'nostr-tools';
 import {
+  ALL_FEED_KINDS,
   useAuthStore,
   useFeedBuilderStore,
   useNostrStore,
@@ -209,6 +212,13 @@ function normalizeRelayUrl(url: string) {
 
 function sameStringArray(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function relayHash(relays: string[]) {
+  return relays
+    .map(relay => relay.replace(/[^a-zA-Z0-9]/g, ''))
+    .join('')
+    .slice(0, 20);
 }
 
 function decodePrivateKey(input: string) {
@@ -986,13 +996,77 @@ function PublicProfileSub({
   const [posts, setPosts] = useState<ParsedEvent[]>([]);
   const [feedPosts, setFeedPosts] = useState<ParsedEvent[]>([]);
   const [profileContacts, setProfileContacts] = useState<string[]>([]);
+  const [writeRelays, setWriteRelays] = useState<string[]>([]);
+  const [readRelays, setReadRelays] = useState<string[]>([]);
   const [mode, setMode] = useState<'profile' | 'feed'>('profile');
+  const [loading, setLoading] = useState(false);
+  const [hasMoreProfile, setHasMoreProfile] = useState(true);
+  const [hasMoreFeed, setHasMoreFeed] = useState(true);
+  const profilePaginationUnsubRef = useRef<(() => void) | null>(null);
+  const feedPaginationUnsubRef = useRef<(() => void) | null>(null);
+  const profileCountRef = useRef(0);
+  const feedCountRef = useRef(0);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
-  const relays = useMemo(
+  const setSubRelays = useRelayStore(state => state.setSubRelays);
+  const fallbackRelays = useMemo(
     () => DEFAULT_FEED_RELAYS.map(normalizeRelayUrl),
     [],
   );
+  const activeRelays = useMemo(
+    () =>
+      mode === 'profile'
+        ? writeRelays.length
+          ? writeRelays
+          : fallbackRelays
+        : readRelays.length
+        ? readRelays
+        : fallbackRelays,
+    [fallbackRelays, mode, readRelays, writeRelays],
+  );
+  const addProfilePost = useCallback((event: ParsedEvent) => {
+    const kind1 = asKind1(event);
+    if (kind1) {
+      const reply = kind1.reply()?.id();
+      const root = kind1.root()?.id();
+      if (reply && !root) return;
+      if (reply && root && reply !== root) return;
+    }
+
+    setPosts(current => {
+      const id = event.id();
+      if (!id || current.some(item => item.id() === id)) return current;
+      return [...current, event].sort(
+        (left, right) => right.createdAt() - left.createdAt(),
+      );
+    });
+  }, []);
+
+  const addFeedPost = useCallback((event: ParsedEvent) => {
+    const kind1 = asKind1(event);
+    if (kind1) {
+      const reply = kind1.reply()?.id();
+      const root = kind1.root()?.id();
+      if (reply && !root) return;
+      if (reply && root && reply !== root) return;
+    }
+
+    setFeedPosts(current => {
+      const id = event.id();
+      if (!id || current.some(item => item.id() === id)) return current;
+      return [...current, event].sort(
+        (left, right) => right.createdAt() - left.createdAt(),
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    profileCountRef.current = posts.length;
+  }, [posts.length]);
+
+  useEffect(() => {
+    feedCountRef.current = feedPosts.length;
+  }, [feedPosts.length]);
 
   useEffect(() => {
     if (!pubkey) return;
@@ -1000,23 +1074,41 @@ function PublicProfileSub({
     setPosts([]);
     setFeedPosts([]);
     setProfileContacts([]);
-    relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
+    setWriteRelays([]);
+    setReadRelays([]);
+    setHasMoreProfile(true);
+    setHasMoreFeed(true);
+    fallbackRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
 
     const unsubscribe = subscribeToNostr(
-      `nprofile_${pubkey}_${relays.join('|')}`,
+      `u_${pubkey}`,
       [
         {
-          kinds: [0, 3],
+          kinds: [0],
           authors: [pubkey],
           limit: 1,
           cacheFirst: true,
-          relays,
+          relays: fallbackRelays,
+        },
+        {
+          kinds: [10002],
+          authors: [pubkey],
+          limit: 1,
+          cacheFirst: true,
+          relays: fallbackRelays,
+        },
+        {
+          kinds: [3],
+          authors: [pubkey],
+          limit: 1,
+          cacheFirst: true,
+          relays: fallbackRelays,
         },
         {
           kinds: [1],
           authors: [pubkey],
           limit: 30,
-          relays,
+          relays: fallbackRelays,
         },
       ],
       message => {
@@ -1027,6 +1119,7 @@ function PublicProfileSub({
           if (relayUrl && relayStatus) {
             setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
           }
+          if (relayStatus === 'EOSE') setLoading(false);
           return;
         }
 
@@ -1037,6 +1130,37 @@ function PublicProfileSub({
         }
 
         const event = asParsedEvent(message);
+        const kind10002 = event ? asKind10002(event) : null;
+        if (event && kind10002 && event.pubkey() === pubkey) {
+          const discoveredWriteRelays = Array.from(
+            {length: kind10002.relaysLength()},
+            (_, index) => kind10002.relays(index),
+          )
+            .filter(relay => relay?.write())
+            .map(relay => relay?.url())
+            .filter((relay): relay is string => !!relay)
+            .map(normalizeRelayUrl);
+          const discoveredReadRelays = Array.from(
+            {length: kind10002.relaysLength()},
+            (_, index) => kind10002.relays(index),
+          )
+            .filter(relay => relay?.read())
+            .map(relay => relay?.url())
+            .filter((relay): relay is string => !!relay)
+            .map(normalizeRelayUrl);
+          setWriteRelays(current =>
+            sameStringArray(current, discoveredWriteRelays)
+              ? current
+              : discoveredWriteRelays,
+          );
+          setReadRelays(current =>
+            sameStringArray(current, discoveredReadRelays)
+              ? current
+              : discoveredReadRelays,
+          );
+          return;
+        }
+
         const kind3 = event ? asKind3(event) : null;
         if (event && kind3 && event.pubkey() === pubkey) {
           const contacts = fbArray(kind3, 'contacts')
@@ -1049,31 +1173,36 @@ function PublicProfileSub({
         }
 
         if (!event || event.kind() !== 1 || event.pubkey() !== pubkey) return;
-        setPosts(current => {
-          const id = event.id();
-          if (!id || current.some(item => item.id() === id)) return current;
-          return [...current, event].sort(
-            (left, right) => right.createdAt() - left.createdAt(),
-          );
-        });
+        addProfilePost(event);
       },
       {closeOnEose: false},
     );
 
-    return unsubscribe;
-  }, [pubkey, relays, setRelayStatus]);
+    return () => {
+      unsubscribe();
+      profilePaginationUnsubRef.current?.();
+      profilePaginationUnsubRef.current = null;
+      feedPaginationUnsubRef.current?.();
+      feedPaginationUnsubRef.current = null;
+    };
+  }, [addProfilePost, fallbackRelays, pubkey, setRelayStatus]);
 
   useEffect(() => {
-    if (!pubkey || mode !== 'feed' || !profileContacts.length) return;
+    if (!pubkey) return;
+    const relays = writeRelays.length ? writeRelays : fallbackRelays;
+    const subId = `kind0P_${pubkey}_${relayHash(relays)}`;
+    relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
+    setSubRelays(`kind0P_${pubkey}`, relays);
+    setLoading(true);
 
-    const authors = profileContacts.slice(0, 250);
     const unsubscribe = subscribeToNostr(
-      `nprofile_feed_${pubkey}_${authors.join(',')}_${relays.join('|')}`,
+      subId,
       [
         {
-          kinds: [1],
-          authors,
-          limit: 80,
+          kinds: ALL_FEED_KINDS,
+          authors: [pubkey],
+          limit: 50,
+          noContext: true,
           relays,
         },
       ],
@@ -1085,24 +1214,86 @@ function PublicProfileSub({
           if (relayUrl && relayStatus) {
             setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
           }
+          if (relayStatus === 'EOSE') setLoading(false);
           return;
         }
 
         const event = asParsedEvent(message);
-        if (!event || event.kind() !== 1) return;
-        setFeedPosts(current => {
-          const id = event.id();
-          if (!id || current.some(item => item.id() === id)) return current;
-          return [...current, event].sort(
-            (left, right) => right.createdAt() - left.createdAt(),
-          );
-        });
+        if (!event || event.pubkey() !== pubkey) return;
+        addProfilePost(event);
+        setLoading(false);
       },
       {closeOnEose: false},
     );
 
-    return unsubscribe;
-  }, [mode, profileContacts, pubkey, relays, setRelayStatus]);
+    return () => {
+      unsubscribe();
+      setLoading(false);
+    };
+  }, [
+    addProfilePost,
+    fallbackRelays,
+    pubkey,
+    setRelayStatus,
+    setSubRelays,
+    writeRelays,
+  ]);
+
+  useEffect(() => {
+    if (!pubkey || mode !== 'feed' || !profileContacts.length) return;
+
+    const relays = readRelays.length ? readRelays : fallbackRelays;
+    const authors = profileContacts.slice(0, 250);
+    const subId = `kind0F_${pubkey}_${relayHash(relays)}`;
+    relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
+    setSubRelays(`kind0F_${pubkey}`, relays);
+    setLoading(true);
+
+    const unsubscribe = subscribeToNostr(
+      subId,
+      [
+        {
+          kinds: ALL_FEED_KINDS,
+          authors,
+          limit: 50,
+          noContext: true,
+          relays,
+        },
+      ],
+      message => {
+        const status = asConnectionStatus(message);
+        if (status) {
+          const relayUrl = status.relayUrl();
+          const relayStatus = status.status()?.toString();
+          if (relayUrl && relayStatus) {
+            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+          }
+          if (relayStatus === 'EOSE') setLoading(false);
+          return;
+        }
+
+        const event = asParsedEvent(message);
+        if (!event) return;
+        addFeedPost(event);
+        setLoading(false);
+      },
+      {closeOnEose: false},
+    );
+
+    return () => {
+      unsubscribe();
+      setLoading(false);
+    };
+  }, [
+    addFeedPost,
+    fallbackRelays,
+    mode,
+    profileContacts,
+    pubkey,
+    readRelays,
+    setRelayStatus,
+    setSubRelays,
+  ]);
 
   const name =
     profile?.name?.()?.trim() ||
@@ -1114,6 +1305,107 @@ function PublicProfileSub({
   const nip05 = profile?.nip05?.()?.trim() || '';
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
   const items = mode === 'profile' ? posts : feedPosts;
+
+  const handleNearBottom = useCallback(() => {
+    if (loading || !items.length) return;
+    const currentRelays = activeRelays;
+    const lastItem = items[items.length - 1];
+    const until = lastItem?.createdAt() ? lastItem.createdAt() - 1 : undefined;
+    if (!until) return;
+
+    if (mode === 'profile') {
+      if (!hasMoreProfile) return;
+      profilePaginationUnsubRef.current?.();
+      setLoading(true);
+      const itemCountBefore = profileCountRef.current;
+      profilePaginationUnsubRef.current = subscribeToNostr(
+        `kind0P_${pubkey}_${relayHash(currentRelays)}_page_${until}`,
+        [
+          {
+            kinds: ALL_FEED_KINDS,
+            authors: [pubkey],
+            limit: 50,
+            until,
+            noContext: true,
+            relays: currentRelays,
+          },
+        ],
+        message => {
+          const status = asConnectionStatus(message);
+          if (status) {
+            const relayUrl = status.relayUrl();
+            const relayStatus = status.status()?.toString();
+            if (relayUrl && relayStatus) {
+              setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+            }
+            if (relayStatus === 'EOSE') {
+              setLoading(false);
+              setTimeout(() => {
+                setHasMoreProfile(profileCountRef.current > itemCountBefore);
+              }, 500);
+            }
+            return;
+          }
+
+          const event = asParsedEvent(message);
+          if (event && event.pubkey() === pubkey) addProfilePost(event);
+        },
+        {closeOnEose: false},
+      );
+      return;
+    }
+
+    if (!hasMoreFeed || !profileContacts.length) return;
+    feedPaginationUnsubRef.current?.();
+    setLoading(true);
+    const itemCountBefore = feedCountRef.current;
+    feedPaginationUnsubRef.current = subscribeToNostr(
+      `kind0F_${pubkey}_${relayHash(currentRelays)}_page_${until}`,
+      [
+        {
+          kinds: ALL_FEED_KINDS,
+          authors: profileContacts.slice(0, 250),
+          limit: 50,
+          until,
+          noContext: true,
+          relays: currentRelays,
+        },
+      ],
+      message => {
+        const status = asConnectionStatus(message);
+        if (status) {
+          const relayUrl = status.relayUrl();
+          const relayStatus = status.status()?.toString();
+          if (relayUrl && relayStatus) {
+            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+          }
+          if (relayStatus === 'EOSE') {
+            setLoading(false);
+            setTimeout(() => {
+              setHasMoreFeed(feedCountRef.current > itemCountBefore);
+            }, 500);
+          }
+          return;
+        }
+
+        const event = asParsedEvent(message);
+        if (event) addFeedPost(event);
+      },
+      {closeOnEose: false},
+    );
+  }, [
+    activeRelays,
+    addFeedPost,
+    addProfilePost,
+    hasMoreFeed,
+    hasMoreProfile,
+    items,
+    loading,
+    mode,
+    profileContacts,
+    pubkey,
+    setRelayStatus,
+  ]);
 
   const stickyHeader = () => (
     <View className="h-24 flex-row items-center justify-between bg-white/95 px-4 pt-10">
@@ -1182,7 +1474,7 @@ function PublicProfileSub({
           <Text className="mt-4 text-[15px] leading-5 text-slate-700">{about}</Text>
         ) : null}
         <View className="mt-4 items-start">
-          <HeaderRelaysList relays={relays} statuses={relayStatuses} />
+          <HeaderRelaysList relays={activeRelays} statuses={relayStatuses} />
         </View>
       </View>
 
@@ -1197,11 +1489,21 @@ function PublicProfileSub({
             Posts
           </Text>
         </Pressable>
-        <Pressable className="flex-1 items-center py-3" onPress={() => setMode('feed')}>
+        <Pressable
+          className="flex-1 items-center py-3"
+          disabled={!profileContacts.length}
+          onPress={() => {
+            if (profileContacts.length) setMode('feed');
+          }}
+        >
           <Text
             className={[
               'text-sm font-semibold',
-              mode === 'feed' ? 'text-slate-950' : 'text-slate-500',
+              mode === 'feed'
+                ? 'text-slate-950'
+                : profileContacts.length
+                ? 'text-slate-500'
+                : 'text-slate-300',
             ].join(' ')}
           >
             Feed
@@ -1225,6 +1527,8 @@ function PublicProfileSub({
       header={header}
       stickyHeader={stickyHeader}
       visible={visible}
+      loading={loading}
+      onNearBottom={handleNearBottom}
       empty={
         <View className="px-6 py-12">
           <Text className="text-center text-sm text-slate-500">

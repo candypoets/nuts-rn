@@ -13,6 +13,10 @@ module.exports = {
   Extrapolation: {
     CLAMP: 'clamp',
   },
+  ReanimatedLogLevel: {
+    warn: 'warn',
+  },
+  configureReanimatedLogger() {},
   interpolate(value, input, output) {
     if (value <= input[0]) return output[0];
     if (value >= input[input.length - 1]) return output[output.length - 1];

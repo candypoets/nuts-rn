@@ -77,6 +77,7 @@ export function ExploreFeed({
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paginationCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
@@ -160,6 +161,10 @@ export function ExploreFeed({
       clearTimeout(paginationCheckTimeoutRef.current);
       paginationCheckTimeoutRef.current = null;
     }
+    if (commitFrameRef.current) {
+      cancelAnimationFrame(commitFrameRef.current);
+      commitFrameRef.current = null;
+    }
   }, []);
 
   const requestList = useCallback(
@@ -219,6 +224,7 @@ export function ExploreFeed({
   }, [clearTimers]);
 
   const commitPendingItems = useCallback(() => {
+    commitFrameRef.current = null;
     const pending = pendingItemsRef.current;
     if (!pending.length) return;
     pendingItemsRef.current = [];
@@ -240,6 +246,11 @@ export function ExploreFeed({
     }
     setTick(t => t + 1);
   }, []);
+
+  const scheduleCommitPendingItems = useCallback(() => {
+    if (commitFrameRef.current) return;
+    commitFrameRef.current = requestAnimationFrame(commitPendingItems);
+  }, [commitPendingItems]);
 
   const completeResolvingSubscription = useCallback(() => {
     if (!subscriptionResolvingRef.current) return;
@@ -270,11 +281,11 @@ export function ExploreFeed({
     const id = parsedEvent.id();
     if (!id || seenIdsRef.current.has(id)) return;
     seenIdsRef.current.add(id);
-    pendingItemsRef.current = [...pendingItemsRef.current, parsedEvent];
+    pendingItemsRef.current.push(parsedEvent);
     if (!subscriptionResolvingRef.current) {
-      commitPendingItems();
+      scheduleCommitPendingItems();
     }
-  }, [commitPendingItems]);
+  }, [scheduleCommitPendingItems]);
 
   const handleEvents = useCallback(
     (message: WorkerMessage) => {

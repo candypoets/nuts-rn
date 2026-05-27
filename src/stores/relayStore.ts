@@ -20,6 +20,13 @@ export type RelayStore = {
   setSubRelays(subId: string, relays: string[]): void;
 };
 
+function sameStringArray(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 export const useRelayStore = create<RelayStore>()(set => ({
   relayInfos: {},
   relayStatuses: {},
@@ -27,7 +34,15 @@ export const useRelayStore = create<RelayStore>()(set => ({
   setRelayInfo: (url, info) =>
     set(state => ({ relayInfos: { ...state.relayInfos, [url]: info } })),
   setRelayStatus: (url, status) =>
-    set(state => ({ relayStatuses: { ...state.relayStatuses, [url]: status } })),
+    set(state =>
+      state.relayStatuses[url] === status
+        ? state
+        : {relayStatuses: {...state.relayStatuses, [url]: status}},
+    ),
   setSubRelays: (subId, relays) =>
-    set(state => ({ relaySubs: { ...state.relaySubs, [subId]: relays } })),
+    set(state =>
+      sameStringArray(state.relaySubs[subId] ?? [], relays)
+        ? state
+        : {relaySubs: {...state.relaySubs, [subId]: relays}},
+    ),
 }));

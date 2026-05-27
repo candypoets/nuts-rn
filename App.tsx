@@ -11,7 +11,6 @@ import {
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
 } from 'react-native-reanimated';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import type {NostrManagerLike} from '@candypoets/nipworker';
@@ -38,6 +37,7 @@ import {
 import {Kind0Sub, Kind4Sub} from './src/subs';
 import {useAuthStore} from './src/stores';
 import {CarouselAnimator} from './src/components/CarouselAnimator';
+import {PagerAnimator, type PagerPresentation} from './src/components/PagerAnimator';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -161,10 +161,6 @@ function MainTabs({
         : 'flat';
 
   useEffect(() => {
-    stackDepth.value = withTiming(stack.length, {duration: 220});
-  }, [stack.length, stackDepth]);
-
-  useEffect(() => {
     setActivatedRoutes(current =>
       current[activeRoute.id]
         ? current
@@ -189,6 +185,10 @@ function MainTabs({
     });
   };
   const closeTop = () => setStack(items => items.slice(0, -1));
+  const stackPresentationForItem = (item: StackItem): PagerPresentation =>
+    item.type === 'publicProfile' || item.type === 'chatThread'
+      ? 'sub'
+      : 'modal';
   const openProfileTarget = (item: ProfileModalTarget) => {
     if (item.type === 'profileStub' && item.path === 'nprofile' && auth.pubkey) {
       push({type: 'publicProfile', pubkey: auth.pubkey});
@@ -241,30 +241,35 @@ function MainTabs({
           </FeedPage>
         )}
       />
-      {top ? (
-        <View style={top.type === 'publicProfile' || top.type === 'chatThread' ? styles.subLayer : styles.modalLayer}>
-          {top.type === 'profile' ? (
-            <ProfileModal auth={auth} onClose={closeTop} onNavigate={openProfileTarget} />
-          ) : top.type === 'login' ? (
-            <PrivateKeyLogin manager={manager} auth={auth} onDone={closeTop} />
-          ) : top.type === 'logout' ? (
-            <LogoutModal manager={manager} onDone={closeTop} />
-          ) : top.type === 'feedBuilder' ? (
-            <FeedBuilderModal onClose={closeTop} />
-          ) : top.type === 'profileStub' ? (
-            <ProfileStubModal path={top.path} auth={auth} onClose={closeTop} />
-          ) : top.type === 'publicProfile' ? (
+      <PagerAnimator
+        dismissProgress={dismissProgress}
+        getPresentation={stackPresentationForItem}
+        onCloseTop={closeTop}
+        stack={stack}
+        stackDepth={stackDepth}
+        renderItem={({close, isTop, item}) =>
+          item.type === 'profile' ? (
+            <ProfileModal auth={auth} onClose={close} onNavigate={openProfileTarget} />
+          ) : item.type === 'login' ? (
+            <PrivateKeyLogin manager={manager} auth={auth} onDone={close} />
+          ) : item.type === 'logout' ? (
+            <LogoutModal manager={manager} onDone={close} />
+          ) : item.type === 'feedBuilder' ? (
+            <FeedBuilderModal onClose={close} />
+          ) : item.type === 'profileStub' ? (
+            <ProfileStubModal path={item.path} auth={auth} onClose={close} />
+          ) : item.type === 'publicProfile' ? (
             <Kind0Sub
-              pubkey={top.pubkey}
-              visible
-              onClose={closeTop}
+              pubkey={item.pubkey}
+              visible={isTop}
+              onClose={close}
               onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
             />
           ) : (
-            <Kind4Sub peerPubkey={top.peerPubkey} visible onClose={closeTop} />
-          )}
-        </View>
-      ) : null}
+            <Kind4Sub peerPubkey={item.peerPubkey} visible={isTop} onClose={close} />
+          )
+        }
+      />
     </View>
   );
 }
@@ -306,16 +311,6 @@ const styles = StyleSheet.create({
   page: {
     ...StyleSheet.absoluteFill,
     backgroundColor: '#f5f7f8',
-  },
-  modalLayer: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(15, 23, 42, 0.24)',
-    zIndex: 40,
-  },
-  subLayer: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: '#f5f7f8',
-    zIndex: 40,
   },
 });
 

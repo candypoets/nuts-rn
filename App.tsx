@@ -2,7 +2,7 @@ import './global.css';
 import './textEncodingPolyfill';
 
 import React, {useEffect, useMemo, useState} from 'react';
-import {NativeModules, Pressable, StatusBar, StyleSheet, Text, useColorScheme, View} from 'react-native';
+import {NativeModules, StatusBar, StyleSheet, useColorScheme, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {
   default as Animated,
@@ -241,7 +241,6 @@ function MainTabs({
           </FeedPage>
         )}
       />
-      <BottomTabs activeRouteId={activeRoute.id} onRoutePress={setActiveRouteId} />
       {top ? (
         <View style={top.type === 'publicProfile' || top.type === 'chatThread' ? styles.subLayer : styles.modalLayer}>
           {top.type === 'profile' ? (
@@ -295,40 +294,6 @@ function FeedPage({
   );
 }
 
-function BottomTabs({
-  activeRouteId,
-  onRoutePress,
-}: {
-  activeRouteId: RouteId;
-  onRoutePress: (routeId: RouteId) => void;
-}) {
-  return (
-    <View style={styles.bottomTabs}>
-      {ROUTES.map(route => {
-        const active = route.id === activeRouteId;
-        return (
-          <Pressable
-            key={route.id}
-            accessibilityRole="button"
-            accessibilityState={{selected: active}}
-            style={[styles.bottomTab, active ? styles.bottomTabActive : null]}
-            onPress={() => onRoutePress(route.id)}
-          >
-            <Text
-              style={[
-                styles.bottomTabText,
-                active ? styles.bottomTabTextActive : null,
-              ]}
-            >
-              {route.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -351,40 +316,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: '#f5f7f8',
     zIndex: 40,
-  },
-  bottomTabs: {
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: '#dce3e8',
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    bottom: 12,
-    flexDirection: 'row',
-    gap: 4,
-    left: 12,
-    padding: 4,
-    position: 'absolute',
-    right: 12,
-    zIndex: 30,
-  },
-  bottomTab: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 42,
-    paddingHorizontal: 8,
-  },
-  bottomTabActive: {
-    backgroundColor: '#17212b',
-  },
-  bottomTabText: {
-    color: '#52616f',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  bottomTabTextActive: {
-    color: '#ffffff',
   },
 });
 

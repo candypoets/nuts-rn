@@ -36,10 +36,6 @@ type PagerCardProps<T> = {
   renderItem: PagerAnimatorProps<T>['renderItem'];
 };
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
 export function PagerAnimator<T>({
   dismissProgress,
   getPresentation,
@@ -120,13 +116,13 @@ function PagerCard<T>({
       if (presentation === 'sub') {
         const nextX = Math.max(0, event.translationX);
         dismissX.value = nextX;
-        dismissProgress.value = clamp(nextX / width, 0, 1);
+        dismissProgress.value = Math.max(0, Math.min(nextX / width, 1));
         return;
       }
 
       const nextY = Math.max(0, event.translationY);
       dismissY.value = nextY;
-      dismissProgress.value = clamp(nextY / height, 0, 1);
+      dismissProgress.value = Math.max(0, Math.min(nextY / height, 1));
     })
     .onEnd(event => {
       const shouldClose =

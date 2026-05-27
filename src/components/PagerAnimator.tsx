@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {StyleSheet, useWindowDimensions} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
@@ -44,9 +44,20 @@ export function PagerAnimator<T>({
   stack,
   stackDepth,
 }: PagerAnimatorProps<T>) {
+  const previousStackLengthRef = useRef(stack.length);
+
   useEffect(() => {
+    const previousStackLength = previousStackLengthRef.current;
+    previousStackLengthRef.current = stack.length;
+
+    if (stack.length < previousStackLength) {
+      stackDepth.value = stack.length;
+      dismissProgress.value = 0;
+      return;
+    }
+
     stackDepth.value = withTiming(stack.length, {duration: 220});
-  }, [stack.length, stackDepth]);
+  }, [dismissProgress, stack.length, stackDepth]);
 
   if (!stack.length) return null;
 
@@ -103,7 +114,6 @@ function PagerCard<T>({
       dismissY.value = withTiming(height, {duration: 180});
     }
     enter.value = withTiming(0, {duration: 180}, () => {
-      dismissProgress.value = 0;
       runOnJS(onCloseTop)();
     });
   };
@@ -138,7 +148,6 @@ function PagerCard<T>({
         }
         dismissProgress.value = withTiming(1, {duration: 180});
         enter.value = withTiming(0, {duration: 180}, () => {
-          dismissProgress.value = 0;
           runOnJS(onCloseTop)();
         });
         return;

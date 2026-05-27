@@ -1,4 +1,32 @@
 {
-  "name": "NutsRn",
-  "displayName": "NutsRn"
+  "expo": {
+    "name": "NutsRn",
+    "slug": "nuts-rn",
+    "scheme": "nutsrn",
+    "ios": {
+      "bundleIdentifier": "com.nutsrn"
+    },
+    "android": {
+      "package": "com.nutsrn"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent",
+          "ios": {
+            "defaultLaunchURL": "http://192.168.178.132:8081/?platform=ios&dev=true&minify=false",
+            "skipOnboarding": true
+          },
+          "android": {
+            "defaultLaunchURL": "http://192.168.178.132:8081/?platform=android&dev=true&minify=false",
+            "skipOnboarding": true
+          }
+        }
+      ]
+    ]
+  }
 }

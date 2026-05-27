@@ -2,18 +2,37 @@
   "name": "NutsRn",
   "version": "0.0.1",
   "private": true,
+  "main": "index.js",
   "scripts": {
-    "android": "react-native run-android",
-    "ios": "react-native run-ios",
+    "android": "expo run:android",
+    "android:expo": "expo run:android",
+    "android:rn": "react-native run-android",
+    "ios": "expo run:ios",
+    "ios:expo": "expo run:ios",
+    "ios:rn": "react-native run-ios",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "expo start --dev-client",
+    "start:expo": "expo start --dev-client",
+    "start:rn": "react-native start",
     "test": "jest"
   },
   "dependencies": {
+    "@candypoets/nipworker": "file:../nipworker",
+    "@react-native-async-storage/async-storage": "^3.1.0",
+    "@react-native/new-app-screen": "0.85.3",
+    "@shopify/flash-list": "^2.3.1",
+    "expo": "^56.0.4",
+    "expo-dev-client": "~56.0.15",
+    "lucide-react-native": "^1.16.0",
+    "nativewind": "^4.2.4",
+    "nostr-tools": "^2.23.5",
     "react": "19.2.3",
     "react-native": "0.85.3",
-    "@react-native/new-app-screen": "0.85.3",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-reanimated": "^4.3.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "^15.15.5",
+    "react-native-worklets": "^0.8.3",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -30,11 +49,16 @@
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
+    "babel-preset-expo": "^56.0.12",
+    "bplist-creator": "^0.1.1",
+    "bplist-parser": "^0.3.2",
     "eslint": "^8.19.0",
+    "install-expo-modules": "^0.15.0",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
-    "typescript": "^5.8.3"
+    "tailwindcss": "^3.4.19",
+    "typescript": "~6.0.3"
   },
   "engines": {
     "node": ">= 22.11.0"

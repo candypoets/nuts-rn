@@ -1,4 +1,6 @@
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const path = require('path');
+const { getDefaultConfig } = require('expo/metro-config');
+const { withNativeWind } = require('nativewind/metro');
 
 /**
  * Metro configuration
@@ -6,6 +8,16 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
-const config = {};
+const nipworkerRoot = path.resolve(__dirname, '../nipworker');
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+const config = getDefaultConfig(__dirname);
+
+config.watchFolders = [...(config.watchFolders ?? []), nipworkerRoot];
+config.resolver.extraNodeModules = {
+	...(config.resolver.extraNodeModules ?? {}),
+	'@babel/runtime': path.resolve(__dirname, 'node_modules/@babel/runtime'),
+	react: path.resolve(__dirname, 'node_modules/react'),
+	'react-native': path.resolve(__dirname, 'node_modules/react-native')
+};
+
+module.exports = withNativeWind(config, { input: './global.css' });

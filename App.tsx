@@ -34,7 +34,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import type { Kind0Parsed, NostrManagerLike } from '@candypoets/nipworker';
+import type { Kind0Parsed, NostrManagerLike, ParsedEvent } from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   ReactNativeBackend,
@@ -42,10 +42,12 @@ import {
   hasReactNativeModule,
   setManager,
 } from '@candypoets/nipworker/react-native';
-import {isKind0} from '@candypoets/nipworker/utils';
+import {asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
 import {
   Bell,
   ChevronRight,
+  ChevronLeft,
+  CircleSlash,
   Infinity,
   KeyRound,
   LogOut,
@@ -54,10 +56,12 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  UserPlus,
   User,
   Users,
   Wallet,
   X,
+  Zap,
 } from 'lucide-react-native';
 import { nip19 } from 'nostr-tools';
 import {
@@ -71,6 +75,7 @@ import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions
 import { useRelayTracking } from './src/hooks/useRelayTracking';
 import {ChatFeed, ExploreFeed, HomeFeed, Kind4Thread} from './src/feeds';
 import { Feed } from './src/components/Feed';
+import {Avatar, Note} from './src/components/notes';
 import {HeaderProfileButton} from './src/components/HeaderProfileButton';
 import {RelaysList as HeaderRelaysList} from './src/components/RelaysList';
 import {FeedBuilderModal} from './src/modals/FeedBuilderModal';
@@ -344,7 +349,6 @@ function SwapNavigator({
     topStackType === 'modal' ||
     topStackType === 'feedBuilder' ||
     topStackType === 'profile' ||
-    topStackType === 'publicProfile' ||
     topStackType === 'login' ||
     topStackType === 'logout' ||
     topStackType === 'profileStub';
@@ -477,7 +481,10 @@ function SwapNavigator({
   const mainStyle = useAnimatedStyle(() => {
     const effectiveDepth = Math.max(0, stackDepth.value - dismissProgress.value);
     const isModal = topStackIsModal;
-    const isSub = topStackType === 'notifications' || topStackType === 'chatThread';
+    const isSub =
+      topStackType === 'notifications' ||
+      topStackType === 'chatThread' ||
+      topStackType === 'publicProfile';
     return {
       transform: [
         {
@@ -950,21 +957,26 @@ function ProgressBar({
   return <Animated.View style={[styles.progress, style]} />;
 }
 
-function PublicProfileModal({
+function PublicProfileSub({
   pubkey,
+  visible,
   onClose,
 }: {
   pubkey: string;
+  visible: boolean;
   onClose: () => void;
 }) {
   const [profile, setProfile] = useState<Kind0Parsed | null>(null);
+  const [posts, setPosts] = useState<ParsedEvent[]>([]);
+  const [mode, setMode] = useState<'profile' | 'feed'>('profile');
 
   useEffect(() => {
     if (!pubkey) return;
     setProfile(null);
+    setPosts([]);
 
     const unsubscribe = subscribeToNostr(
-      `u_${pubkey}_${DEFAULT_FEED_RELAYS.join('|')}`,
+      `nprofile_${pubkey}_${DEFAULT_FEED_RELAYS.join('|')}`,
       [
         {
           kinds: [0],
@@ -973,11 +985,29 @@ function PublicProfileModal({
           cacheFirst: true,
           relays: DEFAULT_FEED_RELAYS,
         },
+        {
+          kinds: [1],
+          authors: [pubkey],
+          limit: 30,
+          relays: DEFAULT_FEED_RELAYS,
+        },
       ],
       message => {
         const kind0 = isKind0(message);
-        if (!kind0 || kind0.pubkey?.() !== pubkey) return;
-        setProfile(kind0);
+        if (kind0 && kind0.pubkey?.() === pubkey) {
+          setProfile(kind0);
+          return;
+        }
+
+        const event = asParsedEvent(message);
+        if (!event || event.kind() !== 1 || event.pubkey() !== pubkey) return;
+        setPosts(current => {
+          const id = event.id();
+          if (!id || current.some(item => item.id() === id)) return current;
+          return [...current, event].sort(
+            (left, right) => right.createdAt() - left.createdAt(),
+          );
+        });
       },
       {closeOnEose: false},
     );
@@ -988,47 +1018,137 @@ function PublicProfileModal({
   const name =
     profile?.name?.()?.trim() ||
     profile?.displayName?.()?.trim() ||
-    `${pubkey.slice(0, 16)}...`;
+    'Unnamed';
   const picture = profile?.picture?.() || null;
+  const banner = profile?.banner?.() || null;
   const about = profile?.about?.()?.trim() || '';
   const nip05 = profile?.nip05?.()?.trim() || '';
+  const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
+  const relays = DEFAULT_FEED_RELAYS.map(relay => relay.replace(/^wss:\/\//, ''));
+  const items = mode === 'profile' ? posts : [];
 
-  return (
-    <View style={styles.profileSheet}>
-      <View style={styles.modalHeader}>
-        <Text style={styles.stackTitle}>Profile</Text>
-        <Pressable hitSlop={12} onPress={onClose}>
-          <X size={22} color="#17212b" />
+  const stickyHeader = () => (
+    <View className="h-24 flex-row items-center justify-between bg-white/95 px-4 pt-10">
+      <Pressable
+        className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
+        hitSlop={12}
+        onPress={onClose}
+      >
+        <ChevronLeft size={22} color="#17212b" />
+      </Pressable>
+      <Avatar pubkey={pubkey} size="lg" />
+      <View className="h-9 w-9" />
+    </View>
+  );
+
+  const header = () => (
+    <View className="overflow-hidden rounded-lg bg-slate-100">
+      <View className="h-52 bg-slate-200">
+        {banner ? (
+          <Image source={{uri: banner}} className="h-full w-full" resizeMode="cover" />
+        ) : null}
+        <View className="absolute left-0 right-0 top-0 h-20 flex-row items-center justify-between px-4 pt-10">
+          <Pressable
+            className="h-9 w-9 items-center justify-center rounded-full bg-white/85"
+            hitSlop={12}
+            onPress={onClose}
+          >
+            <ChevronLeft size={22} color="#17212b" />
+          </Pressable>
+          <View className="h-9 w-9" />
+        </View>
+      </View>
+
+      <View className="px-4 pb-4">
+        <View className="-mt-16 mb-4 flex-row items-end gap-3">
+          <View className="h-32 w-32 overflow-hidden rounded-full border border-white bg-slate-200">
+            <Image
+              source={picture ? {uri: picture} : require('./assets/miss-profile.png')}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+          </View>
+          <View className="mb-2 flex-row gap-2">
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+              <UserPlus size={19} color="#17212b" />
+            </Pressable>
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+              <Zap size={19} color="#17212b" />
+            </Pressable>
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+              <CircleSlash size={19} color="#17212b" />
+            </Pressable>
+          </View>
+        </View>
+
+        <Text className="text-xl font-bold text-slate-950">{name}</Text>
+        <Text className="mt-1 text-sm font-medium text-emerald-700">
+          {nip05 || pubkey.slice(0, 8)}
+        </Text>
+        {lnaddress ? (
+          <Text className="mt-1 text-sm font-medium text-emerald-700">
+            {lnaddress}
+          </Text>
+        ) : null}
+        {about ? (
+          <Text className="mt-4 text-[15px] leading-5 text-slate-700">{about}</Text>
+        ) : null}
+        <View className="mt-4 flex-row flex-wrap gap-2">
+          {relays.map(relay => (
+            <Text
+              key={relay}
+              className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500"
+            >
+              {relay}
+            </Text>
+          ))}
+        </View>
+      </View>
+
+      <View className="flex-row border-t border-slate-200 bg-white">
+        <Pressable className="flex-1 items-center py-3" onPress={() => setMode('profile')}>
+          <Text
+            className={[
+              'text-sm font-semibold',
+              mode === 'profile' ? 'text-slate-950' : 'text-slate-500',
+            ].join(' ')}
+          >
+            Posts
+          </Text>
+        </Pressable>
+        <Pressable className="flex-1 items-center py-3" onPress={() => setMode('feed')}>
+          <Text
+            className={[
+              'text-sm font-semibold',
+              mode === 'feed' ? 'text-slate-950' : 'text-slate-500',
+            ].join(' ')}
+          >
+            Feed
+          </Text>
         </Pressable>
       </View>
-      <View className="items-center px-6 py-8">
-        <View className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-200">
-          <Image
-            source={picture ? {uri: picture} : require('./assets/miss-profile.png')}
-            className="h-full w-full"
-            resizeMode="cover"
-          />
-        </View>
-        <Text className="mt-4 text-center text-xl font-semibold text-slate-900">
-          {name}
-        </Text>
-        {nip05 ? (
-          <Text className="mt-1 text-center text-sm text-emerald-700">{nip05}</Text>
-        ) : null}
-        <Text className="mt-2 text-center text-xs text-slate-500">
-          {pubkey.slice(0, 18)}...{pubkey.slice(-8)}
-        </Text>
-        {about ? (
-          <Text className="mt-5 text-center text-[15px] leading-5 text-slate-700">
-            {about}
-          </Text>
-        ) : (
-          <Text className="mt-5 text-center text-sm text-slate-500">
-            Loading kind 0 profile...
-          </Text>
-        )}
-      </View>
     </View>
+  );
+
+  return (
+    <Feed
+      items={items}
+      getItemId={item => item.id() || item.createdAt()}
+      renderItem={({item, visible: itemVisible}) => (
+        <Note note={item} visible={visible && itemVisible} onProfileOpen={() => {}} />
+      )}
+      header={header}
+      stickyHeader={stickyHeader}
+      visible={visible}
+      empty={
+        <View className="px-6 py-12">
+          <Text className="text-center text-sm text-slate-500">
+            {mode === 'profile' ? 'Loading posts...' : 'Feed is not loaded yet.'}
+          </Text>
+        </View>
+      }
+      contentContainerClassName="pb-28 px-2"
+    />
   );
 }
 
@@ -1260,7 +1380,6 @@ function StackCard({
     item.type === 'modal' ||
     item.type === 'feedBuilder' ||
     item.type === 'profile' ||
-    item.type === 'publicProfile' ||
     item.type === 'login' ||
     item.type === 'logout' ||
     item.type === 'profileStub';
@@ -1296,7 +1415,9 @@ function StackCard({
           );
         },
         onMoveShouldSetPanResponder: (_, gesture) =>
-          item.type === 'notifications' || item.type === 'chatThread'
+          item.type === 'notifications' ||
+          item.type === 'chatThread' ||
+          item.type === 'publicProfile'
             ? gesture.dx > 8 &&
               Math.abs(gesture.dx) > Math.abs(gesture.dy)
             : gesture.dy > 8 &&
@@ -1306,7 +1427,11 @@ function StackCard({
           const nextY = Math.max(0, gesture.dy);
           dismissX.value = nextX;
           dismissY.value = nextY;
-          if (item.type === 'notifications' || item.type === 'chatThread') {
+          if (
+            item.type === 'notifications' ||
+            item.type === 'chatThread' ||
+            item.type === 'publicProfile'
+          ) {
             onDismissProgress(clamp(nextX / windowWidth, 0, 1));
           } else if (isModalItem) {
             onDismissProgress(clamp(nextY / windowHeight, 0, 1));
@@ -1327,7 +1452,12 @@ function StackCard({
           }
           dismissX.value = withSpring(0, SWIPE_SPRING);
           dismissY.value = withSpring(0, SWIPE_SPRING);
-          if (item.type === 'notifications' || item.type === 'chatThread' || isModalItem) {
+          if (
+            item.type === 'notifications' ||
+            item.type === 'chatThread' ||
+            item.type === 'publicProfile' ||
+            isModalItem
+          ) {
             onDismissCancel();
           }
         },
@@ -1347,7 +1477,10 @@ function StackCard({
   );
 
   const style = useAnimatedStyle(() => {
-    const isSub = item.type === 'notifications' || item.type === 'chatThread';
+    const isSub =
+      item.type === 'notifications' ||
+      item.type === 'chatThread' ||
+      item.type === 'publicProfile';
     const isModal = isModalItem;
     const effectiveDepth = Math.max(0, animatedDepth.value - dismissProgress.value);
     const scale = isSub ? 1 : 1 - effectiveDepth * 0.04;
@@ -1378,7 +1511,9 @@ function StackCard({
   return (
     <Animated.View
       style={[
-        item.type === 'notifications'
+        item.type === 'publicProfile'
+          ? styles.stackProfilePage
+          : item.type === 'notifications'
           ? styles.stackSubPage
           : item.type === 'chatThread'
             ? styles.stackThreadPage
@@ -1396,7 +1531,11 @@ function StackCard({
           onNavigate={onPush}
         />
       ) : item.type === 'publicProfile' ? (
-        <PublicProfileModal pubkey={item.pubkey} onClose={close} />
+        <PublicProfileSub
+          pubkey={item.pubkey}
+          visible={depthFromTop === 0}
+          onClose={close}
+        />
       ) : item.type === 'login' ? (
         <PrivateKeyLogin manager={manager} auth={auth} onDone={close} />
       ) : item.type === 'logout' ? (
@@ -1702,6 +1841,15 @@ const styles = StyleSheet.create({
     top: 0,
   },
   stackThreadPage: {
+    backgroundColor: '#ffffff',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 30,
+  },
+  stackProfilePage: {
     backgroundColor: '#ffffff',
     bottom: 0,
     left: 0,

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef} from 'react';
 import {StyleSheet, useWindowDimensions} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
@@ -6,10 +6,8 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import {SWIPE_SPRING} from './CarouselAnimator';
 
 export type PagerPresentation = 'modal' | 'sub';
 
@@ -20,7 +18,6 @@ type PagerAnimatorProps<T> = {
   onCloseTop: () => void;
   renderItem: (params: {
     close: () => void;
-    contentReady: boolean;
     isTop: boolean;
     item: T;
   }) => React.ReactNode;
@@ -29,14 +26,31 @@ type PagerAnimatorProps<T> = {
 };
 
 type PagerCardProps<T> = {
-  depthFromTop: number;
-  dismissProgress: SharedValue<number>;
+  animatedStackLength: SharedValue<number>;
+  gestureX: SharedValue<number>;
+  gestureY: SharedValue<number>;
+  index: number;
   isTop: boolean;
   item: T;
-  onCloseTop: () => void;
+  onRequestClose: () => void;
   presentation: PagerPresentation;
+  presentations: PagerPresentation[];
   renderItem: PagerAnimatorProps<T>['renderItem'];
+  stackLength: number;
 };
+
+const ENTER_DURATION = 220;
+const EXIT_DURATION = 180;
+
+function timing(value: number, duration = ENTER_DURATION) {
+  'worklet';
+  return withTiming(value, {duration});
+}
+
+function clamp(value: number, min: number, max: number) {
+  'worklet';
+  return Math.max(min, Math.min(max, value));
+}
 
 export function PagerAnimator<T>({
   dismissProgress,
@@ -47,188 +61,259 @@ export function PagerAnimator<T>({
   stack,
   stackDepth,
 }: PagerAnimatorProps<T>) {
+  const {height, width} = useWindowDimensions();
   const previousStackLengthRef = useRef(stack.length);
+  const animatedStackLength = useSharedValue(stack.length);
+  const gestureX = useSharedValue(0);
+  const gestureY = useSharedValue(0);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closingRef = useRef(false);
+
+  const finishClose = useCallback(() => {
+    closeTimerRef.current = null;
+    closingRef.current = false;
+    onCloseTop();
+  }, [onCloseTop]);
+
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const previousStackLength = previousStackLengthRef.current;
     previousStackLengthRef.current = stack.length;
+    closingRef.current = false;
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
 
-    if (stack.length < previousStackLength) {
-      stackDepth.value = stack.length;
-      dismissProgress.value = 0;
+    gestureX.value = 0;
+    gestureY.value = 0;
+    dismissProgress.value = 0;
+
+    if (stack.length > previousStackLength) {
+      animatedStackLength.value = previousStackLength;
+      animatedStackLength.value = timing(stack.length);
+      stackDepth.value = timing(stack.length);
       return;
     }
 
-    stackDepth.value = withTiming(stack.length, {duration: 220});
-  }, [dismissProgress, stack.length, stackDepth]);
+    animatedStackLength.value = stack.length;
+    stackDepth.value = stack.length;
+  }, [
+    animatedStackLength,
+    dismissProgress,
+    gestureX,
+    gestureY,
+    stack.length,
+    stackDepth,
+  ]);
+
+  const topPresentation =
+    stack.length > 0 ? getPresentation(stack[stack.length - 1]) : 'sub';
+  const presentations = useMemo(
+    () => stack.map(item => getPresentation(item)),
+    [getPresentation, stack],
+  );
+
+  const closeTop = useCallback(() => {
+    if (closingRef.current || stack.length === 0) return;
+    closingRef.current = true;
+    const currentTopPresentation = topPresentation;
+    if (currentTopPresentation === 'sub') {
+      gestureX.value = timing(width, EXIT_DURATION);
+      dismissProgress.value = timing(1, EXIT_DURATION);
+    } else {
+      gestureY.value = timing(height, EXIT_DURATION);
+      dismissProgress.value = timing(1, EXIT_DURATION);
+    }
+    animatedStackLength.value = timing(Math.max(0, stack.length - 1), EXIT_DURATION);
+    stackDepth.value = timing(Math.max(0, stack.length - 1), EXIT_DURATION);
+    closeTimerRef.current = setTimeout(finishClose, EXIT_DURATION);
+  }, [
+    animatedStackLength,
+    dismissProgress,
+    finishClose,
+    gestureX,
+    gestureY,
+    height,
+    stack.length,
+    stackDepth,
+    topPresentation,
+    width,
+  ]);
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(stack.length > 0)
+        .activeOffsetX(topPresentation === 'sub' ? [-9999, 8] : [-9999, 9999])
+        .activeOffsetY(topPresentation === 'modal' ? [-9999, 8] : [-9999, 9999])
+        .failOffsetY(topPresentation === 'sub' ? [-16, 16] : [-9999, 9999])
+        .failOffsetX(topPresentation === 'modal' ? [-16, 16] : [-9999, 9999])
+        .onUpdate(event => {
+          if (topPresentation === 'sub') {
+            const nextX = Math.max(0, event.translationX);
+            gestureX.value = nextX;
+            dismissProgress.value = Math.max(0, Math.min(nextX / width, 1));
+            return;
+          }
+
+          const nextY = Math.max(0, event.translationY);
+          gestureY.value = nextY;
+          dismissProgress.value = Math.max(0, Math.min(nextY / height, 1));
+        })
+        .onEnd(event => {
+          const shouldClose =
+            topPresentation === 'sub'
+              ? event.translationX > 96 || event.velocityX > 600
+              : event.translationY > 140 || event.velocityY > 650;
+
+          if (shouldClose) {
+            if (topPresentation === 'sub') {
+              gestureX.value = timing(width, EXIT_DURATION);
+            } else {
+              gestureY.value = timing(height, EXIT_DURATION);
+            }
+            dismissProgress.value = timing(1, EXIT_DURATION);
+            animatedStackLength.value = withTiming(
+              Math.max(0, stack.length - 1),
+              {duration: EXIT_DURATION},
+              finished => {
+                if (finished) {
+                  runOnJS(onCloseTop)();
+                }
+              },
+            );
+            stackDepth.value = timing(Math.max(0, stack.length - 1), EXIT_DURATION);
+            return;
+          }
+
+          gestureX.value = timing(0);
+          gestureY.value = timing(0);
+          dismissProgress.value = timing(0);
+        }),
+    [
+      animatedStackLength,
+      dismissProgress,
+      gestureX,
+      gestureY,
+      height,
+      onCloseTop,
+      stack.length,
+      stackDepth,
+      topPresentation,
+      width,
+    ],
+  );
 
   if (!stack.length) return null;
 
   return (
-    <>
-      {stack.map((item, index) => (
-        <PagerCard
-          key={getKey(item, index)}
-          depthFromTop={stack.length - 1 - index}
-          dismissProgress={dismissProgress}
-          isTop={index === stack.length - 1}
-          item={item}
-          onCloseTop={onCloseTop}
-          presentation={getPresentation(item)}
-          renderItem={renderItem}
-        />
-      ))}
-    </>
-  );
-}
-
-function PagerCard<T>({
-  depthFromTop,
-  dismissProgress,
-  isTop,
-  item,
-  onCloseTop,
-  presentation,
-  renderItem,
-}: PagerCardProps<T>) {
-  const {height, width} = useWindowDimensions();
-  const enter = useSharedValue(0);
-  const animatedDepth = useSharedValue(depthFromTop);
-  const dismissX = useSharedValue(0);
-  const dismissY = useSharedValue(0);
-  const hasEnteredRef = useRef(false);
-  const [contentReady, setContentReady] = useState(false);
-
-  useEffect(() => {
-    enter.value = 0;
-    enter.value = withTiming(1, {duration: 220}, finished => {
-      if (finished) {
-        runOnJS(setContentReady)(true);
-      }
-    });
-  }, [enter]);
-
-  useEffect(() => {
-    if (depthFromTop < animatedDepth.value && dismissProgress.value > 0) {
-      animatedDepth.value = depthFromTop;
-      return;
-    }
-    animatedDepth.value = withTiming(depthFromTop, {duration: 220});
-  }, [animatedDepth, depthFromTop, dismissProgress]);
-
-  useEffect(() => {
-    if (!isTop) return;
-    dismissX.value = withSpring(0, SWIPE_SPRING);
-    dismissY.value = withSpring(0, SWIPE_SPRING);
-    dismissProgress.value = withSpring(0, SWIPE_SPRING);
-    if (!hasEnteredRef.current) {
-      hasEnteredRef.current = true;
-      return;
-    }
-    enter.value = withTiming(1, {duration: 120});
-  }, [dismissProgress, dismissX, dismissY, enter, isTop]);
-
-  const close = () => {
-    dismissProgress.value = withTiming(1, {duration: 180});
-    if (presentation === 'sub') {
-      dismissX.value = withTiming(width, {duration: 180});
-    } else {
-      dismissY.value = withTiming(height, {duration: 180});
-    }
-    enter.value = withTiming(0, {duration: 180}, () => {
-      runOnJS(onCloseTop)();
-    });
-  };
-
-  const panGesture = Gesture.Pan()
-    .enabled(isTop)
-    .activeOffsetX(presentation === 'sub' ? [-9999, 8] : [-9999, 9999])
-    .activeOffsetY(presentation === 'modal' ? [-9999, 8] : [-9999, 9999])
-    .onUpdate(event => {
-      if (presentation === 'sub') {
-        const nextX = Math.max(0, event.translationX);
-        dismissX.value = nextX;
-        dismissProgress.value = Math.max(0, Math.min(nextX / width, 1));
-        return;
-      }
-
-      const nextY = Math.max(0, event.translationY);
-      dismissY.value = nextY;
-      dismissProgress.value = Math.max(0, Math.min(nextY / height, 1));
-    })
-    .onEnd(event => {
-      const shouldClose =
-        presentation === 'sub'
-          ? event.translationX > 96 || event.velocityX > 600
-          : event.translationY > 140 || event.velocityY > 650;
-
-      if (shouldClose) {
-        if (presentation === 'sub') {
-          dismissX.value = withTiming(width, {duration: 180});
-        } else {
-          dismissY.value = withTiming(height, {duration: 180});
-        }
-        dismissProgress.value = withTiming(1, {duration: 180});
-        enter.value = withTiming(0, {duration: 180}, () => {
-          runOnJS(onCloseTop)();
-        });
-        return;
-      }
-
-      dismissX.value = withSpring(0, SWIPE_SPRING);
-      dismissY.value = withSpring(0, SWIPE_SPRING);
-      dismissProgress.value = withSpring(0, SWIPE_SPRING);
-    });
-
-  const style = useAnimatedStyle(() => {
-    const effectiveDepth = Math.max(
-      0,
-      animatedDepth.value - dismissProgress.value,
-    );
-    const isSub = presentation === 'sub';
-
-    return {
-      opacity: enter.value * Math.max(0.45, 1 - effectiveDepth * 0.25),
-      transform: [
-        {
-          translateX: isSub
-            ? (1 - enter.value) * width - effectiveDepth * 30 + dismissX.value
-            : dismissX.value,
-        },
-        {
-          translateY: isSub
-            ? dismissY.value
-            : (1 - enter.value) * height + effectiveDepth * 30 + dismissY.value,
-        },
-        {scale: isSub ? 1 : 1 - effectiveDepth * 0.04},
-      ],
-    };
-  });
-
-  return (
     <GestureDetector gesture={panGesture}>
-      <Animated.View
-        pointerEvents={isTop ? 'auto' : 'none'}
-        style={[
-          presentation === 'sub' ? styles.subLayer : styles.modalLayer,
-          style,
-        ]}
-      >
-        {renderItem({close, contentReady, isTop, item})}
+      <Animated.View style={styles.container} pointerEvents="box-none">
+        {stack.map((item, index) => (
+          <PagerCard
+            key={getKey(item, index)}
+            animatedStackLength={animatedStackLength}
+            gestureX={gestureX}
+            gestureY={gestureY}
+            index={index}
+            isTop={index === stack.length - 1}
+            item={item}
+            onRequestClose={closeTop}
+            presentation={getPresentation(item)}
+            presentations={presentations}
+            renderItem={renderItem}
+            stackLength={stack.length}
+          />
+        ))}
       </Animated.View>
     </GestureDetector>
   );
 }
 
+function PagerCard<T>({
+  animatedStackLength,
+  gestureX,
+  gestureY,
+  index,
+  isTop,
+  item,
+  onRequestClose,
+  presentation,
+  presentations,
+  renderItem,
+  stackLength,
+}: PagerCardProps<T>) {
+  const {height, width} = useWindowDimensions();
+
+  const style = useAnimatedStyle(() => {
+    const isSub = presentation === 'sub';
+    const isTopCard = index === stackLength - 1;
+    const enterOffset = clamp(index + 1 - animatedStackLength.value, 0, 1);
+    let subDepth = 0;
+    let modalDepth = 0;
+
+    for (let stackIndex = index + 1; stackIndex < stackLength; stackIndex += 1) {
+      const progress = clamp(animatedStackLength.value - stackIndex, 0, 1);
+      if (presentations[stackIndex] === 'sub') {
+        subDepth += progress;
+      } else {
+        modalDepth += progress;
+      }
+    }
+
+    const xGesture = isTopCard ? gestureX.value : 0;
+    const yGesture = isTopCard ? gestureY.value : 0;
+
+    const translateX = isSub
+      ? enterOffset * width - subDepth * 30 + xGesture
+      : xGesture;
+    const translateY = isSub
+      ? yGesture
+      : enterOffset * height - modalDepth * 30 + yGesture;
+    const scale =
+      Math.max(0.85, 1 - subDepth * 0.05) *
+      Math.max(0.85, 1 - modalDepth * 0.05);
+    const opacity = Math.max(0.3, 1 - subDepth * 0.3);
+
+    return {
+      opacity,
+      transform: [{translateX}, {translateY}, {scale}],
+    };
+  });
+
+  return (
+    <Animated.View
+      pointerEvents={isTop ? 'auto' : 'none'}
+      style={[
+        presentation === 'sub' ? styles.subLayer : styles.modalLayer,
+        style,
+      ]}
+    >
+      {renderItem({close: onRequestClose, isTop, item})}
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 40,
+  },
   modalLayer: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.24)',
-    zIndex: 40,
   },
   subLayer: {
     ...StyleSheet.absoluteFill,
     backgroundColor: '#f5f7f8',
-    zIndex: 40,
   },
 });

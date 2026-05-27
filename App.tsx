@@ -256,7 +256,7 @@ function MainTabs({
         onCloseTop={closeTop}
         stack={stack}
         stackDepth={stackDepth}
-        renderItem={({close, contentReady, isTop, item}) =>
+        renderItem={({close, isTop, item}) =>
           item.type === 'profile' ? (
             <ProfileModal auth={auth} onClose={close} onNavigate={openProfileTarget} />
           ) : item.type === 'login' ? (
@@ -268,14 +268,12 @@ function MainTabs({
           ) : item.type === 'profileStub' ? (
             <ProfileStubModal path={item.path} auth={auth} onClose={close} />
           ) : item.type === 'publicProfile' ? (
-            contentReady ? (
-              <Kind0Sub
-                pubkey={item.pubkey}
-                visible={isTop}
-                onClose={close}
-                onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
-              />
-            ) : null
+            <Kind0Sub
+              pubkey={item.pubkey}
+              visible={isTop}
+              onClose={close}
+              onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
+            />
           ) : (
             <Kind4Sub peerPubkey={item.peerPubkey} visible={isTop} onClose={close} />
           )

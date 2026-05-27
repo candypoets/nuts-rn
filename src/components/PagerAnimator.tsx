@@ -27,6 +27,7 @@ type PagerAnimatorProps<T> = {
 
 type PagerCardProps<T> = {
   animatedStackLength: SharedValue<number>;
+  dismissProgress: SharedValue<number>;
   gestureX: SharedValue<number>;
   gestureY: SharedValue<number>;
   index: number;
@@ -149,6 +150,12 @@ export function PagerAnimator<T>({
     width,
   ]);
 
+  const closeTopFromGesture = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    finishClose();
+  }, [finishClose]);
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -187,7 +194,7 @@ export function PagerAnimator<T>({
               {duration: EXIT_DURATION},
               finished => {
                 if (finished) {
-                  runOnJS(onCloseTop)();
+                  runOnJS(closeTopFromGesture)();
                 }
               },
             );
@@ -205,7 +212,7 @@ export function PagerAnimator<T>({
       gestureX,
       gestureY,
       height,
-      onCloseTop,
+      closeTopFromGesture,
       stack.length,
       stackDepth,
       topPresentation,
@@ -222,6 +229,7 @@ export function PagerAnimator<T>({
           <PagerCard
             key={getKey(item, index)}
             animatedStackLength={animatedStackLength}
+            dismissProgress={dismissProgress}
             gestureX={gestureX}
             gestureY={gestureY}
             index={index}
@@ -241,6 +249,7 @@ export function PagerAnimator<T>({
 
 function PagerCard<T>({
   animatedStackLength,
+  dismissProgress,
   gestureX,
   gestureY,
   index,
@@ -270,14 +279,22 @@ function PagerCard<T>({
       }
     }
 
+    const topPresentation = presentations[stackLength - 1] ?? 'sub';
+    if (!isTopCard && topPresentation === 'sub') {
+      subDepth = Math.max(0, subDepth - dismissProgress.value);
+    }
+    if (!isTopCard && topPresentation === 'modal') {
+      modalDepth = Math.max(0, modalDepth - dismissProgress.value);
+    }
+
     const xGesture = isTopCard ? gestureX.value : 0;
     const yGesture = isTopCard ? gestureY.value : 0;
 
     const translateX = isSub
       ? enterOffset * width - subDepth * 30 + xGesture
-      : xGesture;
+      : -subDepth * 30 + xGesture;
     const translateY = isSub
-      ? yGesture
+      ? -modalDepth * 30 + yGesture
       : enterOffset * height - modalDepth * 30 + yGesture;
     const scale =
       Math.max(0.85, 1 - subDepth * 0.05) *

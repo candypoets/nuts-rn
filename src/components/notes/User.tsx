@@ -4,7 +4,6 @@ import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {isKind0} from '@candypoets/nipworker/utils';
 import {DEFAULT_FEED_RELAYS} from '../../nostr/relays';
-import {movedTooFar} from './press';
 import {shortPubkey} from './time';
 
 type UserProps = {
@@ -32,7 +31,6 @@ export function User({
   onProfileOpen,
 }: UserProps) {
   const profileRef = useRef<Kind0Parsed | null>(null);
-  const pressStartRef = useRef<{x: number; y: number} | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -61,30 +59,7 @@ export function User({
   return (
     <Text
       className={className}
-      onPressIn={
-        link
-          ? event => {
-              pressStartRef.current = {
-                x: event.nativeEvent.pageX,
-                y: event.nativeEvent.pageY,
-              };
-            }
-          : undefined
-      }
-      onPressOut={
-        link
-          ? event => {
-              const end = {
-                x: event.nativeEvent.pageX,
-                y: event.nativeEvent.pageY,
-              };
-              if (!movedTooFar(pressStartRef.current, end)) {
-                onProfileOpen?.(pubkey);
-              }
-              pressStartRef.current = null;
-            }
-          : undefined
-      }>
+      onPress={link ? () => onProfileOpen?.(pubkey) : undefined}>
       {displayName(profileRef.current, pubkey)}
     </Text>
   );

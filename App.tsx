@@ -42,7 +42,7 @@ import {
   hasReactNativeModule,
   setManager,
 } from '@candypoets/nipworker/react-native';
-import {asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
+import {asConnectionStatus, asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
 import {
   Bell,
   ChevronRight,
@@ -195,6 +195,10 @@ function hexToBytes(hex: string) {
     bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
   }
   return bytes;
+}
+
+function normalizeRelayUrl(url: string) {
+  return url.trim().replace(/\/$/, '');
 }
 
 function decodePrivateKey(input: string) {
@@ -969,30 +973,47 @@ function PublicProfileSub({
   const [profile, setProfile] = useState<Kind0Parsed | null>(null);
   const [posts, setPosts] = useState<ParsedEvent[]>([]);
   const [mode, setMode] = useState<'profile' | 'feed'>('profile');
+  const relayStatuses = useRelayStore(state => state.relayStatuses);
+  const setRelayStatus = useRelayStore(state => state.setRelayStatus);
+  const relays = useMemo(
+    () => DEFAULT_FEED_RELAYS.map(normalizeRelayUrl),
+    [],
+  );
 
   useEffect(() => {
     if (!pubkey) return;
     setProfile(null);
     setPosts([]);
+    relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
 
     const unsubscribe = subscribeToNostr(
-      `nprofile_${pubkey}_${DEFAULT_FEED_RELAYS.join('|')}`,
+      `nprofile_${pubkey}_${relays.join('|')}`,
       [
         {
           kinds: [0],
           authors: [pubkey],
           limit: 1,
           cacheFirst: true,
-          relays: DEFAULT_FEED_RELAYS,
+          relays,
         },
         {
           kinds: [1],
           authors: [pubkey],
           limit: 30,
-          relays: DEFAULT_FEED_RELAYS,
+          relays,
         },
       ],
       message => {
+        const status = asConnectionStatus(message);
+        if (status) {
+          const relayUrl = status.relayUrl();
+          const relayStatus = status.status()?.toString();
+          if (relayUrl && relayStatus) {
+            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+          }
+          return;
+        }
+
         const kind0 = isKind0(message);
         if (kind0 && kind0.pubkey?.() === pubkey) {
           setProfile(kind0);
@@ -1013,7 +1034,7 @@ function PublicProfileSub({
     );
 
     return unsubscribe;
-  }, [pubkey]);
+  }, [pubkey, relays, setRelayStatus]);
 
   const name =
     profile?.name?.()?.trim() ||
@@ -1024,7 +1045,6 @@ function PublicProfileSub({
   const about = profile?.about?.()?.trim() || '';
   const nip05 = profile?.nip05?.()?.trim() || '';
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
-  const relays = DEFAULT_FEED_RELAYS.map(relay => relay.replace(/^wss:\/\//, ''));
   const items = mode === 'profile' ? posts : [];
 
   const stickyHeader = () => (
@@ -1093,15 +1113,8 @@ function PublicProfileSub({
         {about ? (
           <Text className="mt-4 text-[15px] leading-5 text-slate-700">{about}</Text>
         ) : null}
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          {relays.map(relay => (
-            <Text
-              key={relay}
-              className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500"
-            >
-              {relay}
-            </Text>
-          ))}
+        <View className="mt-4 items-start">
+          <HeaderRelaysList relays={relays} statuses={relayStatuses} />
         </View>
       </View>
 

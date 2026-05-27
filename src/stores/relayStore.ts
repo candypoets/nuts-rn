@@ -31,4 +31,3 @@ export const useRelayStore = create<RelayStore>()(set => ({
   setSubRelays: (subId, relays) =>
     set(state => ({ relaySubs: { ...state.relaySubs, [subId]: relays } })),
 }));
-

@@ -1,9 +1,12 @@
 import { create } from 'zustand';
 
 export const BOOTSTRAP_RELAYS = [
+  'wss://relay.thibautduchene.fr',
   'wss://relay.damus.io',
-  'wss://relay.nostr.band',
+  'wss://nos.lol',
   'wss://purplepag.es',
+  'wss://user.kindpag.es',
+  'wss://relay.nuts.cash',
 ];
 
 export const SEARCH_RELAYS = ['wss://relay.nostr.band', 'wss://purplepag.es'];
@@ -41,6 +44,7 @@ export type NostrStore = {
   blossomServers: string[];
   nip96Servers: string[];
   trustedMints: string[];
+  walletReadRelays: string[];
   profile: ProfileSnapshot | null;
   setKindTimestamp(kind: number, createdAt: number): void;
   setProfile(profile: ProfileSnapshot): void;
@@ -49,6 +53,7 @@ export type NostrStore = {
   setMutes(mutes: Partial<Pick<NostrStore, 'mutedPubkeys' | 'mutedHashtags' | 'mutedWords' | 'mutedEventIds'>>): void;
   setUploadServers(servers: Partial<Pick<NostrStore, 'blossomServers' | 'nip96Servers'>>): void;
   setTrustedMints(mints: string[]): void;
+  setWalletReadRelays(relays: string[]): void;
   resetNostrState(): void;
 };
 
@@ -71,6 +76,7 @@ const initialState = {
   blossomServers: [],
   nip96Servers: [],
   trustedMints: [],
+  walletReadRelays: [],
   profile: null,
 };
 
@@ -161,6 +167,12 @@ export const useNostrStore = create<NostrStore>()(set => ({
       sameStringArray(current.trustedMints, trustedMints)
         ? current
         : {trustedMints},
+    ),
+  setWalletReadRelays: walletReadRelays =>
+    set(current =>
+      sameStringArray(current.walletReadRelays, walletReadRelays)
+        ? current
+        : {walletReadRelays},
     ),
   resetNostrState: () => set(initialState),
 }));

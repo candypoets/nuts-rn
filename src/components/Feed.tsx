@@ -47,6 +47,8 @@ export type FeedProps<T> = {
   refreshing?: boolean;
   visible?: boolean;
   pullToRefresh?: boolean;
+  bottom?: boolean;
+  bottomAutoScroll?: boolean | 'initial';
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   onRefresh?: () => void | Promise<void>;
@@ -83,6 +85,8 @@ export function Feed<T>({
   refreshing = false,
   visible = true,
   pullToRefresh = false,
+  bottom = false,
+  bottomAutoScroll = true,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   onRefresh,
@@ -97,6 +101,7 @@ export function Feed<T>({
   const lastOffsetRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
   const lastItemsLengthRef = useRef(items.length);
+  const didInitialBottomScrollRef = useRef(false);
   const headerVisible = useSharedValue(0);
   const footerVisible = useSharedValue(1);
 
@@ -106,11 +111,29 @@ export function Feed<T>({
   );
 
   useEffect(() => {
-    if (start === 0 || items.length > lastItemsLengthRef.current) {
+    if (start === 0 || items.length < lastItemsLengthRef.current) {
       nearBottomTriggeredRef.current = false;
     }
     lastItemsLengthRef.current = items.length;
   }, [items.length, start]);
+
+  useEffect(() => {
+    const shouldInitialScroll =
+      bottomAutoScroll === 'initial' && !didInitialBottomScrollRef.current;
+    const shouldContinuousScroll = bottomAutoScroll === true;
+    if (
+      !bottom ||
+      items.length === 0 ||
+      start > 1 ||
+      (!shouldInitialScroll && !shouldContinuousScroll)
+    ) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({offset: 0, animated: false});
+      didInitialBottomScrollRef.current = true;
+    });
+  }, [bottom, bottomAutoScroll, items.length, start]);
 
   useEffect(() => {
     onViewportChange?.({start, end, down});
@@ -121,10 +144,10 @@ export function Feed<T>({
       duration: 220,
     });
     footerVisible.value = withTiming(
-      stickyFooterVisible || !down || start < 1 ? 1 : 0,
+      bottom || stickyFooterVisible || !down || start < 1 ? 1 : 0,
       {duration: 220},
     );
-  }, [down, footerVisible, headerVisible, start, stickyFooterVisible]);
+  }, [bottom, down, footerVisible, headerVisible, start, stickyFooterVisible]);
 
   const stickyHeaderStyle = useAnimatedStyle(() => ({
     opacity: headerVisible.value,
@@ -147,9 +170,13 @@ export function Feed<T>({
       const nextEnd = (indexes[indexes.length - 1] ?? nextStart) + 1;
       setStart(nextStart);
       setEnd(nextEnd);
+      const distance = Math.max(0, items.length - nextEnd);
+      if (nextStart === 0 || distance > nearBottomThreshold) {
+        nearBottomTriggeredRef.current = false;
+      }
 
     },
-    [],
+    [items.length, nearBottomThreshold],
   );
 
   const handleScroll = useCallback((event: {nativeEvent: {contentOffset: {y: number}}}) => {
@@ -205,7 +232,7 @@ export function Feed<T>({
       {fixedHeader ? (
         <View
           pointerEvents="box-none"
-          className="absolute left-0 right-0 top-0 z-20"
+          className="absolute bottom-0 left-0 right-0 top-0 z-20"
         >
           {fixedHeader(chromeProps)}
         </View>
@@ -232,6 +259,17 @@ export function Feed<T>({
         ListEmptyComponent={listEmpty}
         className="flex-1"
         contentContainerClassName={contentContainerClassName}
+        inverted={bottom}
+        initialScrollIndex={bottom && items.length ? 0 : undefined}
+        maintainVisibleContentPosition={
+          bottom && bottomAutoScroll === true
+            ? {
+                startRenderingFromBottom: true,
+                autoscrollToBottomThreshold: 0.2,
+                animateAutoScrollToBottom: true,
+              }
+            : undefined
+        }
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.35}
         onScroll={handleScroll}

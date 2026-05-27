@@ -32,6 +32,7 @@ type ExploreFeedProps = {
   header: () => React.ReactNode;
   stickyHeader: () => React.ReactNode;
   stickyFooter: () => React.ReactNode;
+  onProfileOpen?: (pubkey: string) => void;
 };
 
 export function ExploreFeed({
@@ -40,13 +41,16 @@ export function ExploreFeed({
   header,
   stickyHeader,
   stickyFooter,
+  onProfileOpen,
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
-  const pendingRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const isInitializingRef = useRef(false);
   const hasInitializedRef = useRef(false);
   const isInitialBatchReadyRef = useRef(false);
+  const startRef = useRef(0);
+  const lastSeenTopItemRef = useRef<number | null>(null);
+  const lastFeedKeyRef = useRef<string | null>(null);
   const rootSubIdRef = useRef<string | null>(null);
   const prevPaginationSubIdRef = useRef<string | null>(null);
   const paginationCounterRef = useRef(0);
@@ -63,6 +67,7 @@ export function ExploreFeed({
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [newPostsCount, setNewPostsCount] = useState(0);
   const loadingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
@@ -82,7 +87,6 @@ export function ExploreFeed({
     [feedRelays, requestKinds, selectedAuthors],
   );
   const [, setTick] = useState(0);
-  const pendingCount = pendingRef.current.length;
 
   const clearTimers = useCallback(() => {
     if (timeoutRef.current) {
@@ -136,11 +140,12 @@ export function ExploreFeed({
 
   const resetFeed = useCallback(() => {
     itemsRef.current = [];
-    pendingRef.current = [];
     seenIdsRef.current.clear();
     isInitialBatchReadyRef.current = false;
     hasInitializedRef.current = false;
     isInitializingRef.current = false;
+    startRef.current = 0;
+    lastSeenTopItemRef.current = null;
     untilRef.current = undefined;
     paginationCounterRef.current = 0;
     setHasMore(true);
@@ -149,6 +154,7 @@ export function ExploreFeed({
     rootSubIdRef.current = null;
     setLoading(false);
     setRefreshing(false);
+    setNewPostsCount(0);
     setTick(t => t + 1);
 
     unsubscribeRef.current?.();
@@ -158,21 +164,27 @@ export function ExploreFeed({
     clearTimers();
   }, [clearTimers]);
 
-  const addItem = useCallback((parsedEvent: ParsedEvent, target: 'items' | 'pending') => {
+  const addItem = useCallback((parsedEvent: ParsedEvent) => {
     const id = parsedEvent.id();
     if (!id || seenIdsRef.current.has(id)) return;
     seenIdsRef.current.add(id);
 
-    if (target === 'pending') {
-      pendingRef.current = [...pendingRef.current, parsedEvent].sort(
-        (left, right) => right.createdAt() - left.createdAt(),
-      );
-    } else {
-      itemsRef.current = [...itemsRef.current, parsedEvent].sort(
-        (left, right) => right.createdAt() - left.createdAt(),
-      );
+    const headCreatedAt = itemsRef.current[0]?.createdAt() ?? 0;
+    if (
+      startRef.current > 0 &&
+      lastSeenTopItemRef.current !== null &&
+      parsedEvent.createdAt() > headCreatedAt
+    ) {
+      setNewPostsCount(count => count + 1);
     }
 
+    itemsRef.current = [...itemsRef.current, parsedEvent].sort(
+      (left, right) => right.createdAt() - left.createdAt(),
+    );
+    if (startRef.current === 0) {
+      lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
+      setNewPostsCount(0);
+    }
     setTick(t => t + 1);
   }, []);
 
@@ -241,7 +253,7 @@ export function ExploreFeed({
       if (!id) return;
       if (seenIdsRef.current.has(id)) return;
 
-      addItem(parsed, isInitialBatchReadyRef.current ? 'pending' : 'items');
+      addItem(parsed);
     },
     [addItem, setRelayStatus, shouldIncludeKind],
   );
@@ -365,39 +377,68 @@ export function ExploreFeed({
   }, [loading]);
 
   useEffect(() => {
-    if (!enabled || !visible) return;
-
+    if (!enabled) return;
+    if (lastFeedKeyRef.current === feedKey) return;
+    lastFeedKeyRef.current = feedKey;
     resetFeed();
+  }, [enabled, feedKey, resetFeed]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!visible) {
+      hasInitializedRef.current = false;
+      isInitializingRef.current = false;
+      setLoading(false);
+      setRefreshing(false);
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
+      unsubscribePaginationRef.current?.();
+      unsubscribePaginationRef.current = null;
+      clearTimers();
+      return;
+    }
+
     initFeed();
 
     return () => {
       unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    unsubscribePaginationRef.current?.();
-    unsubscribePaginationRef.current = null;
+      unsubscribeRef.current = null;
+      unsubscribePaginationRef.current?.();
+      unsubscribePaginationRef.current = null;
       clearTimers();
     };
-  }, [clearTimers, enabled, initFeed, resetFeed, visible]);
+  }, [clearTimers, enabled, initFeed, visible]);
 
-  const showPending = useCallback(() => {
-    if (!pendingRef.current.length) return;
-    itemsRef.current = [...pendingRef.current, ...itemsRef.current].sort(
-      (left, right) => right.createdAt() - left.createdAt(),
-    );
-    pendingRef.current = [];
-    setTick(tick => tick + 1);
+  const mergePendingItems = useCallback(() => {
+    setNewPostsCount(0);
+    lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
   }, []);
 
   const renderNewNotesBanner = useCallback(
-    () => <NewNotesBanner count={pendingCount} onPress={showPending} />,
-    [pendingCount, showPending],
+    () => <NewNotesBanner count={newPostsCount} onPress={mergePendingItems} />,
+    [mergePendingItems, newPostsCount],
+  );
+
+  const handleViewportChange = useCallback(
+    ({start}: {start: number; end: number; down: boolean}) => {
+      startRef.current = start;
+      if (start === 0) {
+        lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
+        setNewPostsCount(0);
+      }
+    },
+    [],
   );
 
   const renderItem = useCallback(
     ({item, visible: itemVisible}: {item: ParsedEvent; visible: boolean}) => (
-      <Note note={item} visible={visible && itemVisible} />
+      <Note
+        note={item}
+        visible={visible && itemVisible}
+        onProfileOpen={onProfileOpen}
+      />
     ),
-    [visible],
+    [onProfileOpen, visible],
   );
 
   const empty = (
@@ -426,6 +467,7 @@ export function ExploreFeed({
       refreshing={refreshing}
       onRefresh={handleRefresh}
       onNearBottom={handleNearBottom}
+      onViewportChange={handleViewportChange}
       empty={empty}
       contentContainerClassName="pb-28 px-2"
     />

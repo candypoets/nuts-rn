@@ -1,5 +1,6 @@
 export const DEFAULT_FEED_RELAYS = [
+  'wss://relay.thibautduchene.fr',
   'wss://relay.damus.io',
   'wss://nos.lol',
-  'wss://relay.primal.net',
+  'wss://relay.nuts.cash',
 ];

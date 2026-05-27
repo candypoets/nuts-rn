@@ -10,8 +10,10 @@ import React, {
 } from 'react';
 import {
   Dimensions,
+  Image,
   PanResponder,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -32,23 +34,42 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import type { NostrManagerLike } from '@candypoets/nipworker';
+import type { Kind0Parsed, NostrManagerLike } from '@candypoets/nipworker';
+import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   ReactNativeBackend,
   createNostrManager,
   hasReactNativeModule,
   setManager,
 } from '@candypoets/nipworker/react-native';
-import {Bell, Infinity, PenLine, RefreshCw} from 'lucide-react-native';
+import {isKind0} from '@candypoets/nipworker/utils';
+import {
+  Bell,
+  ChevronRight,
+  Infinity,
+  KeyRound,
+  LogOut,
+  Palette,
+  PenLine,
+  Plus,
+  Radio,
+  RefreshCw,
+  User,
+  Users,
+  Wallet,
+  X,
+} from 'lucide-react-native';
 import { nip19 } from 'nostr-tools';
 import {
   useAuthStore,
+  useFeedBuilderStore,
   useNostrStore,
   useRelayStore,
+  useWalletStore,
 } from './src/stores';
 import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions';
 import { useRelayTracking } from './src/hooks/useRelayTracking';
-import { ExploreFeed } from './src/feeds';
+import {ChatFeed, ExploreFeed, HomeFeed, Kind4Thread} from './src/feeds';
 import { Feed } from './src/components/Feed';
 import {HeaderProfileButton} from './src/components/HeaderProfileButton';
 import {RelaysList as HeaderRelaysList} from './src/components/RelaysList';
@@ -99,7 +120,25 @@ type AppStackItem =
       route: FeedRoute;
     }
   | {
+      type: 'profile';
+    }
+  | {
+      type: 'publicProfile';
+      pubkey: string;
+    }
+  | {
       type: 'login';
+    }
+  | {
+      type: 'logout';
+    }
+  | {
+      type: 'profileStub';
+      path: 'relays' | 'wallet' | 'theme' | 'nprofile';
+    }
+  | {
+      type: 'chatThread';
+      peerPubkey: string;
     };
 
 type FeedPageItem =
@@ -128,6 +167,8 @@ const FEED_ROUTES: FeedRoute[] = [
     description: 'Conversation surface for direct notes and group threads.',
   },
 ];
+
+const followListImage = require('./assets/followlist.png');
 
 const SWIPE_SPRING = {
   damping: 28,
@@ -239,9 +280,24 @@ function App() {
 
 function RootServices({manager}: {manager: NostrManagerLike | null}) {
   const setAuth = useAuthStore(state => state.setAuth);
+  const follows = useNostrStore(state => state.follows);
+  const setFollowListPack = useFeedBuilderStore(state => state.setFollowListPack);
 
   useRootNostrSubscriptions(Boolean(manager));
   useRelayTracking(Boolean(manager));
+
+  useEffect(() => {
+    setFollowListPack({
+      id: 'followlist',
+      kind: 39089,
+      title: 'Follow List',
+      description: 'People you follow',
+      image: null,
+      localImage: 'followlist',
+      people: follows,
+      dTag: 'followlist',
+    });
+  }, [follows, setFollowListPack]);
 
   useEffect(() => {
     if (!manager) return;
@@ -285,7 +341,13 @@ function SwapNavigator({
   const [stack, setStack] = useState<AppStackItem[]>([]);
   const topStackType = stack.at(-1)?.type ?? null;
   const topStackIsModal =
-    topStackType === 'modal' || topStackType === 'feedBuilder';
+    topStackType === 'modal' ||
+    topStackType === 'feedBuilder' ||
+    topStackType === 'profile' ||
+    topStackType === 'publicProfile' ||
+    topStackType === 'login' ||
+    topStackType === 'logout' ||
+    topStackType === 'profileStub';
   const virtualX = useSharedValue(0);
   const dragX = useSharedValue(0);
   const stackDepth = useSharedValue(0);
@@ -297,7 +359,7 @@ function SwapNavigator({
   }, [activeIndex]);
 
   useEffect(() => {
-    stackDepth.value = withTiming(stack.length, { duration: 220 });
+    stackDepth.value = withTiming(stack.length, {duration: 220});
   }, [stack.length, stackDepth]);
 
   const pushNotifications = useCallback((route: FeedRoute) => {
@@ -333,12 +395,35 @@ function SwapNavigator({
     ]);
   }, [dismissProgress]);
 
+  const pushChatThread = useCallback((peerPubkey: string) => {
+    dismissProgress.value = 0;
+    setStack(items => [...items, {type: 'chatThread', peerPubkey}]);
+  }, [dismissProgress]);
+
+  const pushProfile = useCallback(() => {
+    dismissProgress.value = 0;
+    setStack(items => [...items, {type: 'profile'}]);
+  }, [dismissProgress]);
+
+  const pushPublicProfile = useCallback((pubkey: string) => {
+    dismissProgress.value = 0;
+    setStack(items => {
+      const top = items.at(-1);
+      if (top?.type === 'publicProfile' && top.pubkey === pubkey) return items;
+      return [...items, {type: 'publicProfile', pubkey}];
+    });
+  }, [dismissProgress]);
+
   const closeTopStack = useCallback(() => {
-    setStack(items => items.slice(0, -1));
+    setStack(items => {
+      const next = items.slice(0, -1);
+      stackDepth.value = next.length;
+      return next;
+    });
     setTimeout(() => {
       dismissProgress.value = 0;
     }, 240);
-  }, [dismissProgress]);
+  }, [dismissProgress, stackDepth]);
 
   const navigateTo = (index: number) => {
     const next = clamp(index, 0, FEED_ROUTES.length - 1);
@@ -392,7 +477,7 @@ function SwapNavigator({
   const mainStyle = useAnimatedStyle(() => {
     const effectiveDepth = Math.max(0, stackDepth.value - dismissProgress.value);
     const isModal = topStackIsModal;
-    const isSub = topStackType === 'notifications';
+    const isSub = topStackType === 'notifications' || topStackType === 'chatThread';
     return {
       transform: [
         {
@@ -442,9 +527,12 @@ function SwapNavigator({
             onLoginOpen={() =>
               setStack(items => [...items, { type: 'login' }])
             }
+            onProfileOpen={pushProfile}
+            onPublicProfileOpen={pushPublicProfile}
             onNotificationsOpen={() => pushNotifications(route)}
             onPostOpen={() => pushPostModal(route)}
             onFeedBuilderOpen={() => pushFeedBuilder(route)}
+            onChatOpen={pushChatThread}
             status={status}
             subscriptionStatus={subscriptionStatus}
             firstEvent={firstEvent}
@@ -482,6 +570,11 @@ function SwapNavigator({
           onDismissCancel={() => {
             dismissProgress.value = withSpring(0, SWIPE_SPRING);
           }}
+          dismissProgress={dismissProgress}
+          onPush={nextItem => {
+            dismissProgress.value = 0;
+            setStack(items => [...items, nextItem]);
+          }}
           manager={manager}
           auth={auth}
         />
@@ -497,9 +590,12 @@ function FeedPage({
   virtualX,
   isActive,
   onLoginOpen,
+  onProfileOpen,
+  onPublicProfileOpen,
   onNotificationsOpen,
   onPostOpen,
   onFeedBuilderOpen,
+  onChatOpen,
   status,
   subscriptionStatus,
   firstEvent,
@@ -512,9 +608,12 @@ function FeedPage({
   virtualX: SharedValue<number>;
   isActive: boolean;
   onLoginOpen: () => void;
+  onProfileOpen: () => void;
+  onPublicProfileOpen: (pubkey: string) => void;
   onNotificationsOpen: () => void;
   onPostOpen: () => void;
   onFeedBuilderOpen: () => void;
+  onChatOpen: (peerPubkey: string) => void;
   status: { hasModule: boolean; backendStatus: string };
   subscriptionStatus: string;
   firstEvent: ReceivedEvent | null;
@@ -523,13 +622,11 @@ function FeedPage({
 }) {
   const readRelays = useNostrStore(state => state.readRelays);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
+  const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
   const displayRelays =
     auth.pubkey && readRelays.length ? readRelays : DEFAULT_FEED_RELAYS;
   const feedItems = useMemo<FeedPageItem[]>(
-    () =>
-      route.id === 'home'
-        ? [{type: 'smoke'}]
-        : [],
+    () => (route.id === 'home' ? [{type: 'smoke'}] : []),
     [route.id],
   );
   const renderHeader = useCallback(
@@ -539,13 +636,11 @@ function FeedPage({
           <View className="h-14 flex-row items-center justify-between">
             <View className="flex-row items-center gap-2">
               {route.id === 'explore' ? (
-                <Pressable
-                  className="h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50"
-                  hitSlop={12}
+                <FeedPackHeaderButtons
+                  packs={selectedPacks}
+                  surfaceClassName="bg-slate-50"
                   onPress={onFeedBuilderOpen}
-                >
-                  <Infinity size={21} color="#17212b" strokeWidth={2.2} />
-                </Pressable>
+                />
               ) : (
                 <View className="h-9 w-9" />
               )}
@@ -563,7 +658,7 @@ function FeedPage({
               </Pressable>
               <HeaderProfileButton
                 pubkey={auth.pubkey}
-                onPress={auth.pubkey ? undefined : onLoginOpen}
+                onPress={onProfileOpen}
               />
             </View>
           </View>
@@ -575,10 +670,11 @@ function FeedPage({
       auth.pubkey,
       displayRelays,
       onFeedBuilderOpen,
-      onLoginOpen,
+      onProfileOpen,
       onNotificationsOpen,
       relayStatuses,
       route.id,
+      selectedPacks,
     ],
   );
   const renderStickyHeader = useCallback(
@@ -587,13 +683,11 @@ function FeedPage({
         <View className="h-12 flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
             {route.id === 'explore' ? (
-              <Pressable
-                className="h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white"
-                hitSlop={12}
+              <FeedPackHeaderButtons
+                packs={selectedPacks}
+                surfaceClassName="bg-white"
                 onPress={onFeedBuilderOpen}
-              >
-                <Infinity size={21} color="#17212b" strokeWidth={2.2} />
-              </Pressable>
+              />
             ) : (
               <View className="h-9 w-9" />
             )}
@@ -609,7 +703,7 @@ function FeedPage({
             <HeaderProfileButton
               pubkey={auth.pubkey}
               className="h-9 w-9 border-slate-200 bg-white"
-              onPress={auth.pubkey ? undefined : onLoginOpen}
+              onPress={onProfileOpen}
             />
           </View>
         </View>
@@ -624,10 +718,11 @@ function FeedPage({
       auth.pubkey,
       displayRelays,
       onFeedBuilderOpen,
-      onLoginOpen,
+      onProfileOpen,
       onNotificationsOpen,
       relayStatuses,
       route.id,
+      selectedPacks,
     ],
   );
   const renderStickyFooter = useCallback(
@@ -690,13 +785,27 @@ function FeedPage({
           header={renderHeader}
           stickyHeader={renderStickyHeader}
           stickyFooter={renderStickyFooter}
+          onProfileOpen={onPublicProfileOpen}
+        />
+      ) : route.id === 'chat' ? (
+        <ChatFeed
+          enabled={nostrEnabled}
+          visible={isActive}
+          onChatOpen={onChatOpen}
+        />
+      ) : route.id === 'home' ? (
+        <HomeFeed
+          enabled={nostrEnabled}
+          visible={isActive}
+          onLoginOpen={onLoginOpen}
+          onProfileOpen={onProfileOpen}
+          onNotificationsOpen={onNotificationsOpen}
         />
       ) : (
         <Feed
           items={feedItems}
           getItemId={item => item.type}
           pullToRefresh
-          stickyFooterVisible={route.id === 'home'}
           header={renderHeader}
           stickyHeader={renderStickyHeader}
           stickyFooter={renderStickyFooter}
@@ -774,6 +883,53 @@ function SmokeStatus({
   );
 }
 
+function FeedPackHeaderButtons({
+  packs,
+  surfaceClassName,
+  onPress,
+}: {
+  packs: Array<{id: string; title: string; image: string | null; localImage?: 'followlist'}>;
+  surfaceClassName: string;
+  onPress: () => void;
+}) {
+  if (!packs.length) {
+    return (
+      <Pressable
+        className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+        hitSlop={12}
+        onPress={onPress}
+      >
+        <Infinity size={21} color="#17212b" strokeWidth={2.2} />
+      </Pressable>
+    );
+  }
+
+  return (
+    <View className="flex-row items-center gap-1">
+      {packs.slice(0, 4).map(pack => (
+        <Pressable
+          key={pack.id}
+          accessibilityRole="button"
+          accessibilityLabel={pack.title}
+          className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-slate-200 ${surfaceClassName}`}
+          hitSlop={12}
+          onPress={onPress}
+        >
+          {pack.localImage === 'followlist' || pack.image ? (
+            <Image
+              source={pack.localImage === 'followlist' ? followListImage : {uri: pack.image ?? ''}}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+          ) : (
+            <Users size={18} color="#17212b" strokeWidth={2.1} />
+          )}
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function ProgressBar({
   index,
   virtualX,
@@ -794,6 +950,282 @@ function ProgressBar({
   return <Animated.View style={[styles.progress, style]} />;
 }
 
+function PublicProfileModal({
+  pubkey,
+  onClose,
+}: {
+  pubkey: string;
+  onClose: () => void;
+}) {
+  const [profile, setProfile] = useState<Kind0Parsed | null>(null);
+
+  useEffect(() => {
+    if (!pubkey) return;
+    setProfile(null);
+
+    const unsubscribe = subscribeToNostr(
+      `u_${pubkey}_${DEFAULT_FEED_RELAYS.join('|')}`,
+      [
+        {
+          kinds: [0],
+          authors: [pubkey],
+          limit: 1,
+          cacheFirst: true,
+          relays: DEFAULT_FEED_RELAYS,
+        },
+      ],
+      message => {
+        const kind0 = isKind0(message);
+        if (!kind0 || kind0.pubkey?.() !== pubkey) return;
+        setProfile(kind0);
+      },
+      {closeOnEose: false},
+    );
+
+    return unsubscribe;
+  }, [pubkey]);
+
+  const name =
+    profile?.name?.()?.trim() ||
+    profile?.displayName?.()?.trim() ||
+    `${pubkey.slice(0, 16)}...`;
+  const picture = profile?.picture?.() || null;
+  const about = profile?.about?.()?.trim() || '';
+  const nip05 = profile?.nip05?.()?.trim() || '';
+
+  return (
+    <View style={styles.profileSheet}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.stackTitle}>Profile</Text>
+        <Pressable hitSlop={12} onPress={onClose}>
+          <X size={22} color="#17212b" />
+        </Pressable>
+      </View>
+      <View className="items-center px-6 py-8">
+        <View className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-200">
+          <Image
+            source={picture ? {uri: picture} : require('./assets/miss-profile.png')}
+            className="h-full w-full"
+            resizeMode="cover"
+          />
+        </View>
+        <Text className="mt-4 text-center text-xl font-semibold text-slate-900">
+          {name}
+        </Text>
+        {nip05 ? (
+          <Text className="mt-1 text-center text-sm text-emerald-700">{nip05}</Text>
+        ) : null}
+        <Text className="mt-2 text-center text-xs text-slate-500">
+          {pubkey.slice(0, 18)}...{pubkey.slice(-8)}
+        </Text>
+        {about ? (
+          <Text className="mt-5 text-center text-[15px] leading-5 text-slate-700">
+            {about}
+          </Text>
+        ) : (
+          <Text className="mt-5 text-center text-sm text-slate-500">
+            Loading kind 0 profile...
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function ProfileModal({
+  auth,
+  onClose,
+  onNavigate,
+}: {
+  auth: AuthState;
+  onClose: () => void;
+  onNavigate: (item: AppStackItem) => void;
+}) {
+  return (
+    <View style={styles.modalBody}>
+      <View style={styles.profileSheet}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.stackTitle}>Profile</Text>
+          <Pressable hitSlop={12} onPress={onClose}>
+            <X size={22} color="#52616f" strokeWidth={2.2} />
+          </Pressable>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.accountButtons}>
+            {auth.pubkey ? (
+              <HeaderProfileButton
+                pubkey={auth.pubkey}
+                className="h-14 w-14 border-emerald-600 bg-white"
+              />
+            ) : null}
+            <Pressable style={styles.addAccountButton} onPress={() => onNavigate({type: 'login'})}>
+              <Plus size={22} color="#17212b" strokeWidth={2.4} />
+            </Pressable>
+          </View>
+
+          <View style={styles.menuGroup}>
+            {auth.pubkey ? (
+              <ProfileMenuRow
+                icon={<LogOut size={21} color="#17212b" strokeWidth={2.1} />}
+                label="Log out"
+                onPress={() => onNavigate({type: 'logout'})}
+              />
+            ) : (
+              <ProfileMenuRow
+                icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
+                label="Sign in"
+                onPress={() => onNavigate({type: 'login'})}
+              />
+            )}
+          </View>
+
+          <Text style={styles.sectionTitle}>Profile</Text>
+          <View style={styles.menuGroup}>
+            <ProfileMenuRow
+              icon={<User size={21} color="#17212b" strokeWidth={2.1} />}
+              label="My Profile"
+              onPress={() => onNavigate({type: 'profileStub', path: 'nprofile'})}
+            />
+            <ProfileMenuRow
+              icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
+              label="Keys"
+              onPress={() => onNavigate({type: 'login'})}
+            />
+            <ProfileMenuRow
+              icon={<Radio size={21} color="#17212b" strokeWidth={2.1} />}
+              label="Relays"
+              detail="Your relay preferences"
+              onPress={() => onNavigate({type: 'profileStub', path: 'relays'})}
+            />
+            <ProfileMenuRow
+              icon={<Wallet size={21} color="#17212b" strokeWidth={2.1} />}
+              label="Wallet"
+              detail="Wallet preferences"
+              onPress={() => onNavigate({type: 'profileStub', path: 'wallet'})}
+            />
+            <ProfileMenuRow
+              icon={<Palette size={21} color="#17212b" strokeWidth={2.1} />}
+              label="Theme"
+              detail="Appearance settings"
+              onPress={() => onNavigate({type: 'profileStub', path: 'theme'})}
+              last
+            />
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function ProfileMenuRow({
+  icon,
+  label,
+  detail,
+  onPress,
+  last = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  detail?: string;
+  onPress: () => void;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      style={[styles.menuRow, last ? styles.menuRowLast : null]}
+      onPress={onPress}
+    >
+      <View style={styles.menuIcon}>{icon}</View>
+      <View style={styles.menuText}>
+        <Text style={styles.menuLabel}>{label}</Text>
+        {detail ? <Text style={styles.meta}>{detail}</Text> : null}
+      </View>
+      <ChevronRight size={21} color="#8794a0" strokeWidth={2.1} />
+    </Pressable>
+  );
+}
+
+function LogoutModal({
+  manager,
+  onDone,
+}: {
+  manager: NostrManagerLike | null;
+  onDone: () => void;
+}) {
+  const clearAuth = useAuthStore(state => state.clearAuth);
+  const setWalletMnemonic = useWalletStore(state => state.setWalletMnemonic);
+  const setWalletPassphrase = useWalletStore(state => state.setWalletPassphrase);
+
+  const logout = () => {
+    clearAuth();
+    setWalletMnemonic('');
+    setWalletPassphrase('');
+    manager?.removeAccount();
+    manager?.logout();
+    onDone();
+  };
+
+  return (
+    <View style={styles.modalBody}>
+      <View style={styles.modalSheet}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.stackTitle}>Log out</Text>
+          <Pressable hitSlop={12} onPress={onDone}>
+            <X size={22} color="#52616f" strokeWidth={2.2} />
+          </Pressable>
+        </View>
+        <View style={styles.warningBox}>
+          <Text style={styles.warningText}>
+            Make sure you saved your private key before logging out.
+          </Text>
+        </View>
+        <Pressable style={[styles.action, styles.loginAction]} onPress={logout}>
+          <Text style={styles.actionText}>Log out</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function ProfileStubModal({
+  path,
+  auth,
+  onClose,
+}: {
+  path: 'relays' | 'wallet' | 'theme' | 'nprofile';
+  auth: AuthState;
+  onClose: () => void;
+}) {
+  const titles = {
+    relays: 'Relays',
+    wallet: 'Wallet',
+    theme: 'Theme',
+    nprofile: 'My Profile',
+  };
+
+  return (
+    <View style={styles.modalBody}>
+      <View style={styles.modalSheet}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.stackTitle}>{titles[path]}</Text>
+          <Pressable hitSlop={12} onPress={onClose}>
+            <X size={22} color="#52616f" strokeWidth={2.2} />
+          </Pressable>
+        </View>
+        <Text style={styles.stackBody}>
+          {titles[path]} is wired as a profile modal path and stubbed for now.
+        </Text>
+        {path === 'nprofile' && auth.pubkey ? (
+          <Text style={styles.meta}>{auth.pubkey}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function StackCard({
   item,
   depthFromTop,
@@ -801,6 +1233,8 @@ function StackCard({
   onDismissProgress,
   onDismissComplete,
   onDismissCancel,
+  dismissProgress,
+  onPush,
   manager,
   auth,
 }: {
@@ -811,15 +1245,25 @@ function StackCard({
   onDismissProgress: (progress: number) => void;
   onDismissComplete: () => void;
   onDismissCancel: () => void;
+  dismissProgress: SharedValue<number>;
+  onPush: (item: AppStackItem) => void;
   manager: NostrManagerLike | null;
   auth: AuthState;
 }) {
   const enter = useSharedValue(0);
+  const animatedDepth = useSharedValue(depthFromTop);
   const dismissX = useSharedValue(0);
   const dismissY = useSharedValue(0);
   const windowWidth = Dimensions.get('window').width;
   const windowHeight = Dimensions.get('window').height;
-  const isModalItem = item.type === 'modal' || item.type === 'feedBuilder';
+  const isModalItem =
+    item.type === 'modal' ||
+    item.type === 'feedBuilder' ||
+    item.type === 'profile' ||
+    item.type === 'publicProfile' ||
+    item.type === 'login' ||
+    item.type === 'logout' ||
+    item.type === 'profileStub';
   const modalGestureStartLimit =
     item.type === 'feedBuilder' ? 104 : Math.min(220, windowHeight * 0.22);
 
@@ -827,9 +1271,18 @@ function StackCard({
     enter.value = withTiming(1, { duration: 220 });
   }, [enter]);
 
+  useEffect(() => {
+    if (depthFromTop < animatedDepth.value && dismissProgress.value > 0) {
+      animatedDepth.value = depthFromTop;
+      return;
+    }
+    animatedDepth.value = withTiming(depthFromTop, {duration: 220});
+  }, [animatedDepth, depthFromTop, dismissProgress]);
+
   const close = useCallback(() => {
+    onDismissComplete();
     enter.value = withTiming(0, { duration: 180 }, () => runOnJS(onClose)());
-  }, [enter, onClose]);
+  }, [enter, onClose, onDismissComplete]);
 
   const panResponder = useMemo(
     () =>
@@ -843,7 +1296,7 @@ function StackCard({
           );
         },
         onMoveShouldSetPanResponder: (_, gesture) =>
-          item.type === 'notifications'
+          item.type === 'notifications' || item.type === 'chatThread'
             ? gesture.dx > 8 &&
               Math.abs(gesture.dx) > Math.abs(gesture.dy)
             : gesture.dy > 8 &&
@@ -853,7 +1306,7 @@ function StackCard({
           const nextY = Math.max(0, gesture.dy);
           dismissX.value = nextX;
           dismissY.value = nextY;
-          if (item.type === 'notifications') {
+          if (item.type === 'notifications' || item.type === 'chatThread') {
             onDismissProgress(clamp(nextX / windowWidth, 0, 1));
           } else if (isModalItem) {
             onDismissProgress(clamp(nextY / windowHeight, 0, 1));
@@ -864,9 +1317,6 @@ function StackCard({
             ? gesture.dy > 140 || gesture.vy > 0.65
             : gesture.dx > 96 || gesture.vx > 0.6;
           if (shouldClose) {
-            if (item.type === 'notifications' || isModalItem) {
-              onDismissComplete();
-            }
             if (isModalItem) {
               dismissY.value = withTiming(windowHeight, {duration: 180});
             } else {
@@ -877,7 +1327,7 @@ function StackCard({
           }
           dismissX.value = withSpring(0, SWIPE_SPRING);
           dismissY.value = withSpring(0, SWIPE_SPRING);
-          if (item.type === 'notifications' || isModalItem) {
+          if (item.type === 'notifications' || item.type === 'chatThread' || isModalItem) {
             onDismissCancel();
           }
         },
@@ -890,7 +1340,6 @@ function StackCard({
       item.type,
       modalGestureStartLimit,
       onDismissCancel,
-      onDismissComplete,
       onDismissProgress,
       windowWidth,
       windowHeight,
@@ -898,25 +1347,28 @@ function StackCard({
   );
 
   const style = useAnimatedStyle(() => {
-    const isSub = item.type === 'notifications';
+    const isSub = item.type === 'notifications' || item.type === 'chatThread';
     const isModal = isModalItem;
-    const scale = isSub || isModal ? 1 : 1 - depthFromTop * 0.04;
+    const effectiveDepth = Math.max(0, animatedDepth.value - dismissProgress.value);
+    const scale = isSub ? 1 : 1 - effectiveDepth * 0.04;
     return {
-      opacity: enter.value * Math.max(0.45, 1 - depthFromTop * 0.25),
+      opacity: enter.value * Math.max(0.45, 1 - effectiveDepth * 0.25),
       transform: [
         {
           translateX: isSub
             ? (1 - enter.value) * windowWidth -
-              depthFromTop * 30 +
+              effectiveDepth * 30 +
               dismissX.value
-            : (1 - enter.value) * 80 - depthFromTop * 24 + dismissX.value,
+            : isModal
+              ? 0
+              : (1 - enter.value) * 80 - effectiveDepth * 24 + dismissX.value,
         },
         {
           translateY: isModal
-            ? (1 - enter.value) * windowHeight -
-              depthFromTop * 30 +
+            ? (1 - enter.value) * windowHeight +
+              effectiveDepth * 30 +
               dismissY.value
-            : (1 - enter.value) * 24 - depthFromTop * 18 + dismissY.value,
+            : (1 - enter.value) * 24 - effectiveDepth * 18 + dismissY.value,
         },
         { scale },
       ],
@@ -928,6 +1380,8 @@ function StackCard({
       style={[
         item.type === 'notifications'
           ? styles.stackSubPage
+          : item.type === 'chatThread'
+            ? styles.stackThreadPage
           : isModalItem
             ? styles.stackModalLayer
             : styles.stackCard,
@@ -935,10 +1389,28 @@ function StackCard({
       ]}
       {...panResponder.panHandlers}
     >
-      {item.type === 'login' ? (
+      {item.type === 'profile' ? (
+        <ProfileModal
+          auth={auth}
+          onClose={close}
+          onNavigate={onPush}
+        />
+      ) : item.type === 'publicProfile' ? (
+        <PublicProfileModal pubkey={item.pubkey} onClose={close} />
+      ) : item.type === 'login' ? (
         <PrivateKeyLogin manager={manager} auth={auth} onDone={close} />
+      ) : item.type === 'logout' ? (
+        <LogoutModal manager={manager} onDone={close} />
+      ) : item.type === 'profileStub' ? (
+        <ProfileStubModal path={item.path} auth={auth} onClose={close} />
       ) : item.type === 'notifications' ? (
         <DummyNotificationsSub item={item} onClose={close} />
+      ) : item.type === 'chatThread' ? (
+        <Kind4Thread
+          peerPubkey={item.peerPubkey}
+          visible={depthFromTop === 0}
+          onClose={close}
+        />
       ) : item.type === 'modal' ? (
         <DummyPostModal item={item} onClose={close} />
       ) : item.type === 'feedBuilder' ? (
@@ -1050,7 +1522,15 @@ function PrivateKeyLogin({
   };
 
   return (
-    <View>
+    <View style={styles.modalBody}>
+      <View style={styles.modalSheet}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.stackTitle}>Authenticate</Text>
+          <Pressable hitSlop={12} onPress={onDone}>
+            <X size={22} color="#52616f" strokeWidth={2.2} />
+          </Pressable>
+        </View>
       <Text style={styles.stackBody}>
         Paste an nsec or 64-character hex private key. The native nipworker
         backend derives the public key and reports login through its auth event.
@@ -1083,6 +1563,7 @@ function PrivateKeyLogin({
       <Pressable style={styles.secondaryAction} onPress={onDone}>
         <Text style={styles.secondaryActionText}>Close</Text>
       </Pressable>
+      </View>
     </View>
   );
 }
@@ -1220,6 +1701,15 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
   },
+  stackThreadPage: {
+    backgroundColor: '#ffffff',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 30,
+  },
   stackModalLayer: {
     bottom: 0,
     left: 0,
@@ -1242,6 +1732,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingTop: 12,
   },
+  profileSheet: {
+    backgroundColor: '#ffffff',
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+  },
   modalHandle: {
     alignSelf: 'center',
     backgroundColor: '#c7d0d8',
@@ -1249,6 +1745,12 @@ const styles = StyleSheet.create({
     height: 4,
     marginBottom: 18,
     width: 42,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
   stackTitle: {
     color: '#17212b',
@@ -1261,6 +1763,79 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginBottom: 18,
     marginTop: 8,
+  },
+  accountButtons: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 18,
+    minHeight: 56,
+  },
+  addAccountButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3e8',
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 56,
+    justifyContent: 'center',
+    width: 56,
+  },
+  sectionTitle: {
+    color: '#17212b',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  menuGroup: {
+    borderColor: '#dce3e8',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 18,
+    overflow: 'hidden',
+  },
+  menuRow: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#dce3e8',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 62,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  menuRowLast: {
+    borderBottomWidth: 0,
+  },
+  menuIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 42,
+  },
+  menuText: {
+    flex: 1,
+  },
+  menuLabel: {
+    color: '#17212b',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  warningBox: {
+    alignItems: 'center',
+    backgroundColor: '#fff7db',
+    borderColor: '#ead28f',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 18,
+    padding: 14,
+  },
+  warningText: {
+    color: '#745b10',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+    textAlign: 'center',
   },
 });
 

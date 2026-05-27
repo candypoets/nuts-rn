@@ -1,19 +1,22 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {Image, View} from 'react-native';
-import type {Kind0Parsed} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
-import {isKind0} from '@candypoets/nipworker/utils';
-import {DEFAULT_FEED_RELAYS} from '../../nostr/relays';
+import React, { useEffect, useRef, useState } from 'react';
+import { Image, Pressable, View } from 'react-native';
+import type { Kind0Parsed } from '@candypoets/nipworker';
+import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
+import { isKind0 } from '@candypoets/nipworker/utils';
+import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
 
-type AvatarSize = 'sm' | 'md' | 'lg';
+type AvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 
 type AvatarProps = {
   pubkey: string;
   size?: AvatarSize;
   query?: boolean;
+  link?: boolean;
+  onProfileOpen?: (pubkey: string) => void;
 };
 
 const sizeClass: Record<AvatarSize, string> = {
+  xs: 'h-4 w-4',
   sm: 'h-6 w-6',
   md: 'h-8 w-8',
   lg: 'h-10 w-10',
@@ -21,7 +24,13 @@ const sizeClass: Record<AvatarSize, string> = {
 
 const fallbackProfileImage = require('../../../assets/miss-profile.png');
 
-export function Avatar({pubkey, size = 'md', query = true}: AvatarProps) {
+export function Avatar({
+  pubkey,
+  size = 'md',
+  query = true,
+  link = false,
+  onProfileOpen,
+}: AvatarProps) {
   const profileRef = useRef<Kind0Parsed | null>(null);
   const [, setTick] = useState(0);
 
@@ -32,14 +41,21 @@ export function Avatar({pubkey, size = 'md', query = true}: AvatarProps) {
 
     const unsubscribe = subscribeToNostr(
       `u_${pubkey}`,
-      [{kinds: [0], authors: [pubkey], limit: 1, relays: DEFAULT_FEED_RELAYS}],
+      [
+        {
+          kinds: [0],
+          authors: [pubkey],
+          limit: 1,
+          relays: DEFAULT_FEED_RELAYS,
+        },
+      ],
       message => {
         const profile = isKind0(message);
         if (!profile || profile.pubkey?.() !== pubkey) return;
         profileRef.current = profile;
         setTick(tick => tick + 1);
       },
-      {closeOnEose: false, bytesPerEvent: 8 * 1024},
+      { closeOnEose: false },
     );
 
     return () => {
@@ -50,12 +66,14 @@ export function Avatar({pubkey, size = 'md', query = true}: AvatarProps) {
 
   const picture = profileRef.current?.picture?.() || null;
 
-  return (
-    <View
-      className={`${sizeClass[size]} overflow-hidden rounded-full border border-slate-200 bg-slate-200`}
-    >
+  const content = (
+    <View className={`${sizeClass[size]} overflow-hidden rounded-full border border-slate-200 bg-slate-200`}>
       {picture ? (
-        <Image source={{uri: picture}} className="h-full w-full" resizeMode="cover" />
+        <Image
+          source={{ uri: picture }}
+          className="h-full w-full"
+          resizeMode="cover"
+        />
       ) : (
         <Image
           source={fallbackProfileImage}
@@ -64,5 +82,13 @@ export function Avatar({pubkey, size = 'md', query = true}: AvatarProps) {
         />
       )}
     </View>
+  );
+
+  if (!link) return content;
+
+  return (
+    <Pressable hitSlop={8} onPress={() => onProfileOpen?.(pubkey)}>
+      {content}
+    </Pressable>
   );
 }

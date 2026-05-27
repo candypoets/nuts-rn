@@ -27,6 +27,7 @@ export type FeedPackSelection = {
   title: string;
   description: string | null;
   image: string | null;
+  localImage?: 'followlist';
   people: string[];
   dTag: string | null;
 };
@@ -36,6 +37,7 @@ type FeedBuilderStore = {
   selectedPacks: FeedPackSelection[];
   selectedAuthors: string[];
   setSelectedKinds(kinds: FeedKind[]): void;
+  setFollowListPack(pack: FeedPackSelection): void;
   toggleKind(kind: FeedKind): void;
   togglePack(pack: FeedPackSelection): void;
   removePack(id: string): void;
@@ -57,6 +59,25 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(set => ({
   setSelectedKinds: kinds =>
     set({
       selectedKinds: normalizeKinds(kinds),
+    }),
+  setFollowListPack: pack =>
+    set(state => {
+      const existingIndex = state.selectedPacks.findIndex(
+        current => current.id === pack.id,
+      );
+      const selectedPacks =
+        existingIndex === -1
+          ? state.selectedPacks.length === 0
+            ? [pack]
+            : state.selectedPacks
+          : [
+              pack,
+              ...state.selectedPacks.filter(current => current.id !== pack.id),
+            ];
+      return {
+        selectedPacks,
+        selectedAuthors: uniqueAuthors(selectedPacks),
+      };
     }),
   toggleKind: kind =>
     set(state => {

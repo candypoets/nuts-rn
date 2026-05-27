@@ -965,10 +965,12 @@ function PublicProfileSub({
   pubkey,
   visible,
   onClose,
+  onProfileOpen,
 }: {
   pubkey: string;
   visible: boolean;
   onClose: () => void;
+  onProfileOpen: (pubkey: string) => void;
 }) {
   const [profile, setProfile] = useState<Kind0Parsed | null>(null);
   const [posts, setPosts] = useState<ParsedEvent[]>([]);
@@ -1148,7 +1150,11 @@ function PublicProfileSub({
       items={items}
       getItemId={item => item.id() || item.createdAt()}
       renderItem={({item, visible: itemVisible}) => (
-        <Note note={item} visible={visible && itemVisible} onProfileOpen={() => {}} />
+        <Note
+          note={item}
+          visible={visible && itemVisible}
+          onProfileOpen={onProfileOpen}
+        />
       )}
       header={header}
       stickyHeader={stickyHeader}
@@ -1548,6 +1554,9 @@ function StackCard({
           pubkey={item.pubkey}
           visible={depthFromTop === 0}
           onClose={close}
+          onProfileOpen={nextPubkey =>
+            onPush({type: 'publicProfile', pubkey: nextPubkey})
+          }
         />
       ) : item.type === 'login' ? (
         <PrivateKeyLogin manager={manager} auth={auth} onDone={close} />

@@ -35,7 +35,7 @@ function relayHash(relays: string[]) {
 
 function shouldShowProfilePost(event: ParsedEvent) {
   const kind1 = asKind1(event);
-  if (!kind1) return true;
+  if (!kind1) return false;
   const reply = kind1.reply()?.id();
   const root = kind1.root()?.id();
   if (reply && !root) return false;
@@ -55,7 +55,7 @@ export function Kind0Sub({
   onProfileOpen: (pubkey: string) => void;
 }) {
   const [profile, setProfile] = useState<Kind0Parsed | null>(null);
-  const [posts, setPosts] = useState<ParsedEvent[]>([]);
+  const [profilePosts, setProfilePosts] = useState<ParsedEvent[]>([]);
   const [feedPosts, setFeedPosts] = useState<ParsedEvent[]>([]);
   const [profileContacts, setProfileContacts] = useState<string[]>([]);
   const [writeRelays, setWriteRelays] = useState<string[]>([]);
@@ -64,6 +64,12 @@ export function Kind0Sub({
   const [loading, setLoading] = useState(false);
   const [hasMoreProfile, setHasMoreProfile] = useState(true);
   const [hasMoreFeed, setHasMoreFeed] = useState(true);
+  const profilePostsRef = useRef<ParsedEvent[]>([]);
+  const feedPostsRef = useRef<ParsedEvent[]>([]);
+  const profileSeenIdsRef = useRef(new Set<string>());
+  const feedSeenIdsRef = useRef(new Set<string>());
+  const profileFlushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const feedFlushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const profilePaginationUnsubRef = useRef<(() => void) | null>(null);
   const feedPaginationUnsubRef = useRef<(() => void) | null>(null);
   const profileCountRef = useRef(0);
@@ -86,34 +92,48 @@ export function Kind0Sub({
 
   const addProfilePost = useCallback((event: ParsedEvent) => {
     if (!shouldShowProfilePost(event)) return;
-    setPosts(current => {
-      const id = event.id();
-      if (!id || current.some(item => item.id() === id)) return current;
-      return [...current, event].sort((left, right) => right.createdAt() - left.createdAt());
+    const id = event.id();
+    if (!id || profileSeenIdsRef.current.has(id)) return;
+    profileSeenIdsRef.current.add(id);
+    profilePostsRef.current.push(event);
+    if (profileFlushRef.current) return;
+    profileFlushRef.current = requestAnimationFrame(() => {
+      profileFlushRef.current = null;
+      profilePostsRef.current.sort((left, right) => right.createdAt() - left.createdAt());
+      setProfilePosts([...profilePostsRef.current]);
     });
   }, []);
 
   const addFeedPost = useCallback((event: ParsedEvent) => {
     if (!shouldShowProfilePost(event)) return;
-    setFeedPosts(current => {
-      const id = event.id();
-      if (!id || current.some(item => item.id() === id)) return current;
-      return [...current, event].sort((left, right) => right.createdAt() - left.createdAt());
+    const id = event.id();
+    if (!id || feedSeenIdsRef.current.has(id)) return;
+    feedSeenIdsRef.current.add(id);
+    feedPostsRef.current.push(event);
+    if (feedFlushRef.current) return;
+    feedFlushRef.current = requestAnimationFrame(() => {
+      feedFlushRef.current = null;
+      feedPostsRef.current.sort((left, right) => right.createdAt() - left.createdAt());
+      setFeedPosts([...feedPostsRef.current]);
     });
   }, []);
 
   useEffect(() => {
-    profileCountRef.current = posts.length;
-  }, [posts.length]);
+    profileCountRef.current = profilePostsRef.current.length;
+  }, [profilePosts.length]);
 
   useEffect(() => {
-    feedCountRef.current = feedPosts.length;
+    feedCountRef.current = feedPostsRef.current.length;
   }, [feedPosts.length]);
 
   useEffect(() => {
     if (!pubkey) return;
     setProfile(null);
-    setPosts([]);
+    profilePostsRef.current = [];
+    feedPostsRef.current = [];
+    profileSeenIdsRef.current.clear();
+    feedSeenIdsRef.current.clear();
+    setProfilePosts([]);
     setFeedPosts([]);
     setProfileContacts([]);
     setWriteRelays([]);
@@ -173,6 +193,14 @@ export function Kind0Sub({
     );
 
     return () => {
+      if (profileFlushRef.current) {
+        cancelAnimationFrame(profileFlushRef.current);
+        profileFlushRef.current = null;
+      }
+      if (feedFlushRef.current) {
+        cancelAnimationFrame(feedFlushRef.current);
+        feedFlushRef.current = null;
+      }
       unsubscribe();
       profilePaginationUnsubRef.current?.();
       profilePaginationUnsubRef.current = null;
@@ -257,7 +285,7 @@ export function Kind0Sub({
   const about = profile?.about?.()?.trim() || '';
   const nip05 = profile?.nip05?.()?.trim() || '';
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
-  const items = mode === 'profile' ? posts : feedPosts;
+  const items = mode === 'profile' ? profilePosts : feedPosts;
 
   const handleNearBottom = useCallback(() => {
     if (loading || !items.length) return;

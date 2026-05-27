@@ -1,13 +1,15 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Pressable, Text, View} from 'react-native';
+import {Image, Pressable, Text, View} from 'react-native';
 import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
+  asEoce,
   asKind1,
   asKind20,
   asKind6,
   asParsedEvent,
+  ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
 import Animated, {
@@ -19,21 +21,33 @@ import {Feed} from '../components/Feed';
 import {Note} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {
+  Bell,
+  Infinity,
+  RefreshCw,
+  Users,
+} from 'lucide-react-native';
+import {
   ALL_FEED_KINDS,
+  type FeedPackSelection,
   useAuthStore,
   useFeedBuilderStore,
   useRelayStore,
   useNostrStore,
 } from '../stores';
+import {HeaderProfileButton} from '../components/HeaderProfileButton';
+import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
+import {FeedBuilderModal} from '../modals/FeedBuilderModal';
 
 type ExploreFeedProps = {
   enabled: boolean;
   visible: boolean;
-  header: () => React.ReactNode;
-  stickyHeader: () => React.ReactNode;
-  stickyFooter: () => React.ReactNode;
+  header?: () => React.ReactNode;
+  stickyHeader?: () => React.ReactNode;
+  stickyFooter?: () => React.ReactNode;
   onProfileOpen?: (pubkey: string) => void;
 };
+
+const followListImage = require('../../assets/followlist.png');
 
 export function ExploreFeed({
   enabled,
@@ -64,6 +78,9 @@ export function ExploreFeed({
   const paginationCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
+  const pendingItemsRef = useRef<ParsedEvent[]>([]);
+  const connectionTrackerRef = useRef(new ConnectionTracker());
+  const subscriptionResolvingRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -71,10 +88,13 @@ export function ExploreFeed({
   const loadingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
+  const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
   const authPubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
+  const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
+  const [feedBuilderOpen, setFeedBuilderOpen] = useState(false);
   const requestKinds = useMemo(
     () => (selectedKinds.length ? selectedKinds : ALL_FEED_KINDS),
     [selectedKinds],
@@ -87,6 +107,37 @@ export function ExploreFeed({
     [feedRelays, requestKinds, selectedAuthors],
   );
   const [, setTick] = useState(0);
+
+  const defaultHeader = useCallback(
+    () => (
+      <ExploreHeader
+        pubkey={authPubkey}
+        relays={feedRelays}
+        relayStatuses={relayStatuses}
+        selectedPacks={selectedPacks}
+        surfaceClassName="bg-slate-50"
+        onFeedBuilderOpen={() => setFeedBuilderOpen(true)}
+      />
+    ),
+    [authPubkey, feedRelays, relayStatuses, selectedPacks],
+  );
+
+  const defaultStickyHeader = useCallback(
+    () => (
+      <ExploreHeader
+        pubkey={authPubkey}
+        relays={feedRelays}
+        relayStatuses={relayStatuses}
+        selectedPacks={selectedPacks}
+        mini
+        surfaceClassName="bg-white"
+        onFeedBuilderOpen={() => setFeedBuilderOpen(true)}
+      />
+    ),
+    [authPubkey, feedRelays, relayStatuses, selectedPacks],
+  );
+
+  const tabsSpacer = useCallback(() => <View className="h-[72px]" />, []);
 
   const clearTimers = useCallback(() => {
     if (timeoutRef.current) {
@@ -155,6 +206,9 @@ export function ExploreFeed({
     setLoading(false);
     setRefreshing(false);
     setNewPostsCount(0);
+    pendingItemsRef.current = [];
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = false;
     setTick(t => t + 1);
 
     unsubscribeRef.current?.();
@@ -164,32 +218,71 @@ export function ExploreFeed({
     clearTimers();
   }, [clearTimers]);
 
-  const addItem = useCallback((parsedEvent: ParsedEvent) => {
-    const id = parsedEvent.id();
-    if (!id || seenIdsRef.current.has(id)) return;
-    seenIdsRef.current.add(id);
+  const commitPendingItems = useCallback(() => {
+    const pending = pendingItemsRef.current;
+    if (!pending.length) return;
+    pendingItemsRef.current = [];
 
     const headCreatedAt = itemsRef.current[0]?.createdAt() ?? 0;
-    if (
-      startRef.current > 0 &&
-      lastSeenTopItemRef.current !== null &&
-      parsedEvent.createdAt() > headCreatedAt
-    ) {
-      setNewPostsCount(count => count + 1);
-    }
+    const newAboveViewport =
+      startRef.current > 0 && lastSeenTopItemRef.current !== null
+        ? pending.filter(event => event.createdAt() > headCreatedAt).length
+        : 0;
 
-    itemsRef.current = [...itemsRef.current, parsedEvent].sort(
+    itemsRef.current = [...itemsRef.current, ...pending].sort(
       (left, right) => right.createdAt() - left.createdAt(),
     );
     if (startRef.current === 0) {
       lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
       setNewPostsCount(0);
+    } else if (newAboveViewport) {
+      setNewPostsCount(count => count + newAboveViewport);
     }
     setTick(t => t + 1);
   }, []);
 
+  const completeResolvingSubscription = useCallback(() => {
+    if (!subscriptionResolvingRef.current) return;
+    subscriptionResolvingRef.current = false;
+    isInitialBatchReadyRef.current = true;
+    commitPendingItems();
+    setLoading(false);
+    setRefreshing(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
+    }
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
+    }
+    if (paginationTimeoutRef.current) {
+      clearTimeout(paginationTimeoutRef.current);
+      paginationTimeoutRef.current = null;
+    }
+  }, [commitPendingItems]);
+
+  const addItem = useCallback((parsedEvent: ParsedEvent) => {
+    const id = parsedEvent.id();
+    if (!id || seenIdsRef.current.has(id)) return;
+    seenIdsRef.current.add(id);
+    pendingItemsRef.current = [...pendingItemsRef.current, parsedEvent];
+    if (!subscriptionResolvingRef.current) {
+      commitPendingItems();
+    }
+  }, [commitPendingItems]);
+
   const handleEvents = useCallback(
     (message: WorkerMessage) => {
+      if (asEoce(message)) {
+        commitPendingItems();
+        return;
+      }
+
       const status = asConnectionStatus(message);
       if (status) {
         const relayUrl = status.relayUrl();
@@ -198,24 +291,9 @@ export function ExploreFeed({
           setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
         }
 
-        if (status.status()?.toString() === 'EOSE') {
-          if (!isInitialBatchReadyRef.current) {
-            isInitialBatchReadyRef.current = true;
-          }
-          setLoading(false);
-          setRefreshing(false);
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-          }
-          if (initTimeoutRef.current) {
-            clearTimeout(initTimeoutRef.current);
-            initTimeoutRef.current = null;
-          }
-          if (refreshTimeoutRef.current) {
-            clearTimeout(refreshTimeoutRef.current);
-            refreshTimeoutRef.current = null;
-          }
+        connectionTrackerRef.current.handleMessage(message);
+        if (connectionTrackerRef.current.resolutionRate > 0.5) {
+          completeResolvingSubscription();
         }
         return;
       }
@@ -255,7 +333,13 @@ export function ExploreFeed({
 
       addItem(parsed);
     },
-    [addItem, setRelayStatus, shouldIncludeKind],
+    [
+      addItem,
+      commitPendingItems,
+      completeResolvingSubscription,
+      setRelayStatus,
+      shouldIncludeKind,
+    ],
   );
 
   const initFeed = useCallback(() => {
@@ -276,6 +360,9 @@ export function ExploreFeed({
 
     unsubscribeRef.current?.();
     rootSubIdRef.current = `feed_explore_${hashKey(`${feedKey}:${requestCacheRef.current}`)}`;
+    pendingItemsRef.current = [];
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = true;
     setSubRelays(rootSubIdRef.current, feedRelays.map(normalizeRelayUrl));
     feedRelays.forEach(relay => {
       setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED');
@@ -293,13 +380,13 @@ export function ExploreFeed({
 
     initTimeoutRef.current = setTimeout(() => {
       if (loadingRef.current) {
-        setLoading(false);
+        completeResolvingSubscription();
         if (itemsRef.current.length === 0) {
           hasInitializedRef.current = false;
         }
       }
     }, 1500);
-  }, [enabled, feedKey, feedRelays, handleEvents, requestList, setRelayStatus, setSubRelays, visible]);
+  }, [completeResolvingSubscription, enabled, feedKey, feedRelays, handleEvents, requestList, setRelayStatus, setSubRelays, visible]);
 
   const handleRefresh = useCallback(() => {
     if (refreshing) return;
@@ -310,13 +397,15 @@ export function ExploreFeed({
     setHasMore(true);
     untilRef.current = undefined;
     prevPaginationSubIdRef.current = null;
+    pendingItemsRef.current = [];
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = true;
     clearTimers();
     refreshTimeoutRef.current = setTimeout(() => {
-      setRefreshing(false);
-      setLoading(false);
+      completeResolvingSubscription();
     }, 10000);
     initFeed();
-  }, [clearTimers, initFeed, refreshing]);
+  }, [clearTimers, completeResolvingSubscription, initFeed, refreshing]);
 
   const handleNearBottom = useCallback(() => {
     if (loading || !hasMore || itemsRef.current.length === 0) return;
@@ -324,6 +413,9 @@ export function ExploreFeed({
     setLoading(true);
     itemsBeforePaginationRef.current = itemsRef.current.length;
     paginationCounterRef.current += 1;
+    pendingItemsRef.current = [];
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = true;
     const lastItem = itemsRef.current[itemsRef.current.length - 1];
     if (lastItem) untilRef.current = lastItem.createdAt() - 1;
     const requests = requestList(true);
@@ -342,14 +434,14 @@ export function ExploreFeed({
       );
       prevPaginationSubIdRef.current = pageSubId;
       paginationTimeoutRef.current = setTimeout(() => {
-        setLoading(false);
+        completeResolvingSubscription();
       }, 10000);
     } else {
       setLoading(false);
       setHasMore(false);
     }
     },
-    [feedKey, handleEvents, hasMore, loading, requestList],
+    [completeResolvingSubscription, feedKey, handleEvents, hasMore, loading, requestList],
   );
 
   useEffect(() => {
@@ -453,24 +545,129 @@ export function ExploreFeed({
   );
 
   return (
-    <Feed
-      items={itemsRef.current}
-      getItemId={item => item.id() || ''}
-      pullToRefresh
-      stickyFooterVisible
-      header={header}
-      stickyHeader={stickyHeader}
-      fixedHeader={renderNewNotesBanner}
-      stickyFooter={stickyFooter}
-      renderItem={renderItem}
-      loading={loading || refreshing}
-      refreshing={refreshing}
-      onRefresh={handleRefresh}
-      onNearBottom={handleNearBottom}
-      onViewportChange={handleViewportChange}
-      empty={empty}
-      contentContainerClassName="pb-28 px-2"
-    />
+    <View className="flex-1">
+      {(header ?? defaultHeader)()}
+      <Feed
+        items={itemsRef.current}
+        getItemId={item => item.id() || ''}
+        pullToRefresh
+        stickyFooterVisible
+        stickyHeader={stickyHeader ?? defaultStickyHeader}
+        fixedHeader={renderNewNotesBanner}
+        stickyFooter={stickyFooter ?? tabsSpacer}
+        renderItem={renderItem}
+        loading={loading || refreshing}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onNearBottom={handleNearBottom}
+        onViewportChange={handleViewportChange}
+        empty={empty}
+        contentContainerClassName="pb-28 px-2"
+      />
+      {feedBuilderOpen ? (
+        <View className="absolute inset-0 z-50 bg-white">
+          <FeedBuilderModal onClose={() => setFeedBuilderOpen(false)} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ExploreHeader({
+  mini = false,
+  pubkey,
+  relayStatuses,
+  relays,
+  selectedPacks,
+  surfaceClassName,
+  onFeedBuilderOpen,
+}: {
+  mini?: boolean;
+  pubkey: string | null;
+  relayStatuses: Record<string, string>;
+  relays: string[];
+  selectedPacks: FeedPackSelection[];
+  surfaceClassName: string;
+  onFeedBuilderOpen: () => void;
+}) {
+  return (
+    <View
+      className={
+        mini
+          ? 'border-b border-slate-200 bg-slate-50/95 px-4 py-2'
+          : 'bg-slate-50 px-1 pt-2'
+      }
+    >
+      <View className={mini ? 'h-12 flex-row items-center justify-between' : 'mx-1 rounded-lg bg-white/90 px-3 py-3 shadow-sm'}>
+        <View className={mini ? 'flex-row items-center justify-between' : 'h-14 flex-row items-center justify-between'}>
+          <FeedPackHeaderButtons
+            packs={selectedPacks}
+            surfaceClassName={surfaceClassName}
+            onPress={onFeedBuilderOpen}
+          />
+          <View className="flex-row items-center gap-2">
+            <Pressable className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}>
+              <RefreshCw size={18} color="#52616f" strokeWidth={2.2} />
+            </Pressable>
+            <Pressable className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}>
+              <Bell size={19} color="#17212b" strokeWidth={2.2} />
+            </Pressable>
+            <HeaderProfileButton
+              pubkey={pubkey}
+              className={`h-9 w-9 border-slate-200 ${surfaceClassName}`}
+            />
+          </View>
+        </View>
+        <HeaderRelaysList relays={relays} statuses={relayStatuses} mini={mini} />
+      </View>
+    </View>
+  );
+}
+
+function FeedPackHeaderButtons({
+  packs,
+  surfaceClassName,
+  onPress,
+}: {
+  packs: FeedPackSelection[];
+  surfaceClassName: string;
+  onPress: () => void;
+}) {
+  if (!packs.length) {
+    return (
+      <Pressable
+        className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+        hitSlop={12}
+        onPress={onPress}
+      >
+        <Infinity size={21} color="#17212b" strokeWidth={2.2} />
+      </Pressable>
+    );
+  }
+
+  return (
+    <View className="flex-row items-center gap-1">
+      {packs.slice(0, 4).map(pack => (
+        <Pressable
+          key={pack.id}
+          accessibilityRole="button"
+          accessibilityLabel={pack.title}
+          className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-slate-200 ${surfaceClassName}`}
+          hitSlop={12}
+          onPress={onPress}
+        >
+          {pack.localImage === 'followlist' || pack.image ? (
+            <Image
+              source={pack.localImage === 'followlist' ? followListImage : {uri: pack.image ?? ''}}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+          ) : (
+            <Users size={18} color="#17212b" strokeWidth={2.1} />
+          )}
+        </Pressable>
+      ))}
+    </View>
   );
 }
 

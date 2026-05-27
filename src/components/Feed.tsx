@@ -56,6 +56,7 @@ export type FeedProps<T> = {
   onViewportChange?: (state: {start: number; end: number; down: boolean}) => void;
   contentContainerClassName?: string;
   estimatedItemSize?: number;
+  removeClippedSubviews?: boolean;
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
@@ -93,6 +94,7 @@ export function Feed<T>({
   onNearBottom,
   onViewportChange,
   contentContainerClassName = 'pb-28',
+  removeClippedSubviews = true,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
@@ -279,7 +281,7 @@ export function Feed<T>({
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           ) : undefined
         }
-        removeClippedSubviews
+        removeClippedSubviews={removeClippedSubviews}
         scrollEventThrottle={16}
         viewabilityConfig={{
           itemVisiblePercentThreshold: 1,

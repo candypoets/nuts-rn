@@ -1,17 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, InteractionManager, Pressable, Text, View } from 'react-native';
 import {
   CounterPipeConfigT,
   MuteFilterPipeConfigT,
   PipeConfig,
   PipeT,
-  SaveToDbPipeConfigT,
   type ParsedEvent,
   type RequestObject,
   type WorkerMessage,
 } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
-import { asCountResponse } from '@candypoets/nipworker/utils';
+import {
+  asConnectionStatus,
+  asCountResponse,
+  asEoce,
+  ConnectionTracker,
+} from '@candypoets/nipworker/utils';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -51,6 +55,18 @@ const emptyCounts: Counts = {
   reactions: 0,
 };
 
+type ActiveState = {
+  replied: boolean;
+  reposted: boolean;
+  reacted: boolean;
+};
+
+const emptyActive: ActiveState = {
+  replied: false,
+  reposted: false,
+  reacted: false,
+};
+
 function countLabel(count: number) {
   return count > 0 ? String(count) : undefined;
 }
@@ -74,7 +90,6 @@ function createCounterOptions(
           mutedEventIds,
         ),
       ),
-      new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
       new PipeT(
         PipeConfig.CounterPipeConfig,
         new CounterPipeConfigT(kinds, pubkey),
@@ -266,11 +281,11 @@ export function Footer({ note, visible }: FooterProps) {
   const mutedWords = useNostrStore(state => state.mutedWords);
   const mutedEventIds = useNostrStore(state => state.mutedEventIds);
   const [counts, setCounts] = useState<Counts>(emptyCounts);
-  const [active, setActive] = useState({
-    replied: false,
-    reposted: false,
-    reacted: false,
-  });
+  const [active, setActive] = useState<ActiveState>(emptyActive);
+  const countsRef = useRef<Counts>(emptyCounts);
+  const activeRef = useRef<ActiveState>(emptyActive);
+  const pendingCountsRef = useRef<Counts>(emptyCounts);
+  const pendingActiveRef = useRef<ActiveState>(emptyActive);
   const noteId = note.id() || '';
   const relays = useMemo(
     () => (readRelays.length ? readRelays : DEFAULT_FEED_RELAYS),
@@ -337,87 +352,195 @@ export function Footer({ note, visible }: FooterProps) {
   );
 
   useEffect(() => {
+    countsRef.current = emptyCounts;
+    activeRef.current = emptyActive;
+    pendingCountsRef.current = emptyCounts;
+    pendingActiveRef.current = emptyActive;
     setCounts(emptyCounts);
-    setActive({ replied: false, reposted: false, reacted: false });
+    setActive(emptyActive);
   }, [noteId]);
 
+  const commitPendingState = useCallback(() => {
+    const pendingCounts = pendingCountsRef.current;
+    const pendingActive = pendingActiveRef.current;
+
+    setCounts(current => {
+      if (
+        current.replies === pendingCounts.replies &&
+        current.reposts === pendingCounts.reposts &&
+        current.quotes === pendingCounts.quotes &&
+        current.reactions === pendingCounts.reactions
+      ) {
+        return current;
+      }
+      countsRef.current = pendingCounts;
+      return pendingCounts;
+    });
+
+    setActive(current => {
+      if (
+        current.replied === pendingActive.replied &&
+        current.reposted === pendingActive.reposted &&
+        current.reacted === pendingActive.reacted
+      ) {
+        return current;
+      }
+      activeRef.current = pendingActive;
+      return pendingActive;
+    });
+  }, []);
+
+  const updatePendingMainCount = useCallback((message: WorkerMessage) => {
+    const count = asCountResponse(message);
+    if (!count) return;
+
+    const nextCounts = {...pendingCountsRef.current};
+    const nextActive = {...pendingActiveRef.current};
+
+    switch (count.kind()) {
+      case 1:
+        nextCounts.replies = count.count();
+        if (count.you()) nextActive.replied = true;
+        break;
+      case 6:
+        nextCounts.reposts = count.count();
+        if (count.you()) nextActive.reposted = true;
+        break;
+      case 7:
+        nextCounts.reactions = count.count();
+        if (count.you()) nextActive.reacted = true;
+        break;
+    }
+
+    pendingCountsRef.current = nextCounts;
+    pendingActiveRef.current = nextActive;
+  }, []);
+
+  const updatePendingQuoteCount = useCallback((message: WorkerMessage) => {
+    const count = asCountResponse(message);
+    if (!count || count.kind() !== 1) return;
+
+    pendingCountsRef.current = {
+      ...pendingCountsRef.current,
+      quotes: count.count(),
+    };
+    if (count.you()) {
+      pendingActiveRef.current = {
+        ...pendingActiveRef.current,
+        reposted: true,
+      };
+    }
+  }, []);
+
   useEffect(() => {
     if (!visible || !noteId) return;
 
-    return subscribeToNostr(
-      `f_${noteId}_${relayKey}`,
-      mainRequest,
-      (message: WorkerMessage) => {
-        const count = asCountResponse(message);
-        if (!count) return;
+    let unsubscribe: (() => void) | null = null;
+    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const tracker = new ConnectionTracker();
+      let resolving = true;
+      fallbackTimeout = setTimeout(() => {
+        resolving = false;
+        commitPendingState();
+      }, 1500);
+      unsubscribe = subscribeToNostr(
+        `f_${noteId}_${relayKey}`,
+        mainRequest,
+        (message: WorkerMessage) => {
+          if (asEoce(message)) {
+            commitPendingState();
+            return;
+          }
+          const status = asConnectionStatus(message);
+          if (status) {
+            tracker.handleMessage(message);
+            if (tracker.resolutionRate > 0.5) {
+              resolving = false;
+              if (fallbackTimeout) {
+                clearTimeout(fallbackTimeout);
+                fallbackTimeout = null;
+              }
+              commitPendingState();
+            }
+            return;
+          }
+          updatePendingMainCount(message);
+          if (!resolving) commitPendingState();
+        },
+        mainOptions,
+      );
+    });
 
-        switch (count.kind()) {
-          case 1:
-            setCounts(current =>
-              current.replies === count.count()
-                ? current
-                : { ...current, replies: count.count() },
-            );
-            if (count.you()) {
-              setActive(current =>
-                current.replied ? current : { ...current, replied: true },
-              );
-            }
-            break;
-          case 6:
-            setCounts(current =>
-              current.reposts === count.count()
-                ? current
-                : { ...current, reposts: count.count() },
-            );
-            if (count.you()) {
-              setActive(current =>
-                current.reposted ? current : { ...current, reposted: true },
-              );
-            }
-            break;
-          case 7:
-            setCounts(current =>
-              current.reactions === count.count()
-                ? current
-                : { ...current, reactions: count.count() },
-            );
-            if (count.you()) {
-              setActive(current =>
-                current.reacted ? current : { ...current, reacted: true },
-              );
-            }
-            break;
-        }
-      },
-      mainOptions,
-    );
-  }, [mainOptions, mainRequest, noteId, relayKey, visible]);
+    return () => {
+      interaction.cancel();
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      unsubscribe?.();
+    };
+  }, [
+    commitPendingState,
+    mainOptions,
+    mainRequest,
+    noteId,
+    relayKey,
+    updatePendingMainCount,
+    visible,
+  ]);
 
   useEffect(() => {
     if (!visible || !noteId) return;
 
-    return subscribeToNostr(
-      `fq_${noteId}_${relayKey}`,
-      quoteRequest,
-      (message: WorkerMessage) => {
-        const count = asCountResponse(message);
-        if (!count || count.kind() !== 1) return;
+    let unsubscribe: (() => void) | null = null;
+    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const tracker = new ConnectionTracker();
+      let resolving = true;
+      fallbackTimeout = setTimeout(() => {
+        resolving = false;
+        commitPendingState();
+      }, 1500);
+      unsubscribe = subscribeToNostr(
+        `fq_${noteId}_${relayKey}`,
+        quoteRequest,
+        (message: WorkerMessage) => {
+          if (asEoce(message)) {
+            commitPendingState();
+            return;
+          }
+          const status = asConnectionStatus(message);
+          if (status) {
+            tracker.handleMessage(message);
+            if (tracker.resolutionRate > 0.5) {
+              resolving = false;
+              if (fallbackTimeout) {
+                clearTimeout(fallbackTimeout);
+                fallbackTimeout = null;
+              }
+              commitPendingState();
+            }
+            return;
+          }
+          updatePendingQuoteCount(message);
+          if (!resolving) commitPendingState();
+        },
+        quoteOptions,
+      );
+    });
 
-        setCounts(current =>
-          current.quotes === count.count()
-            ? current
-            : { ...current, quotes: count.count() },
-        );
-        if (count.you()) {
-          setActive(current =>
-            current.reposted ? current : { ...current, reposted: true },
-          );
-        }
-      },
-      quoteOptions,
-    );
-  }, [noteId, quoteOptions, quoteRequest, relayKey, visible]);
+    return () => {
+      interaction.cancel();
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      unsubscribe?.();
+    };
+  }, [
+    commitPendingState,
+    noteId,
+    quoteOptions,
+    quoteRequest,
+    relayKey,
+    updatePendingQuoteCount,
+    visible,
+  ]);
 
   return (
     <View

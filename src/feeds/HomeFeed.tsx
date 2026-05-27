@@ -8,6 +8,8 @@ import {
   asKind9321,
   asKind9735,
   asParsedEvent,
+  asEoce,
+  ConnectionTracker,
 } from '@candypoets/nipworker/utils';
 import {
   Bell,
@@ -68,6 +70,10 @@ export function HomeFeed({
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribeWalletRef = useRef<(() => void) | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingItemsRef = useRef<ParsedEvent[]>([]);
+  const connectionTrackerRef = useRef(new ConnectionTracker());
+  const subscriptionResolvingRef = useRef(false);
+  const eoceReceivedRef = useRef(false);
   const requestCacheRef = useRef(0);
   const lastHomeKeyRef = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,19 +145,45 @@ export function HomeFeed({
     }
   }, []);
 
-  const addEvent = useCallback((parsed: ParsedEvent) => {
-    if (parsed.kind() !== 9321 && parsed.kind() !== 9735) return;
-    const id = parsed.id();
-    if (!id || seenIdsRef.current.has(id)) return;
-    seenIdsRef.current.add(id);
-    itemsRef.current = [...itemsRef.current, parsed].sort(
+  const commitPendingItems = useCallback(() => {
+    const pending = pendingItemsRef.current;
+    if (!pending.length) return;
+    pendingItemsRef.current = [];
+    itemsRef.current = [...itemsRef.current, ...pending].sort(
       (left, right) => right.createdAt() - left.createdAt(),
     );
     setTick(tick => tick + 1);
   }, []);
 
+  const completeResolvingSubscription = useCallback(() => {
+    if (!subscriptionResolvingRef.current) return;
+    subscriptionResolvingRef.current = false;
+    commitPendingItems();
+    setLoading(false);
+    setRefreshing(false);
+    clearRefreshTimeout();
+  }, [clearRefreshTimeout, commitPendingItems]);
+
+  const addEvent = useCallback(
+    (parsed: ParsedEvent) => {
+      if (parsed.kind() !== 9321 && parsed.kind() !== 9735) return;
+      const id = parsed.id();
+      if (!id || seenIdsRef.current.has(id)) return;
+      seenIdsRef.current.add(id);
+      pendingItemsRef.current = [...pendingItemsRef.current, parsed];
+      if (!subscriptionResolvingRef.current) commitPendingItems();
+    },
+    [commitPendingItems],
+  );
+
   const handleMessage = useCallback(
     (message: WorkerMessage) => {
+      if (asEoce(message)) {
+        eoceReceivedRef.current = true;
+        commitPendingItems();
+        return;
+      }
+
       const status = asConnectionStatus(message);
       if (status) {
         const relayUrl = status.relayUrl();
@@ -159,10 +191,9 @@ export function HomeFeed({
         if (relayUrl && relayStatus) {
           setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
         }
-        if (relayStatus === 'EOSE') {
-          setLoading(false);
-          setRefreshing(false);
-          clearRefreshTimeout();
+        connectionTrackerRef.current.handleMessage(message);
+        if (connectionTrackerRef.current.resolutionRate > 0.5) {
+          completeResolvingSubscription();
         }
         return;
       }
@@ -170,7 +201,7 @@ export function HomeFeed({
       const parsed = asParsedEvent(message);
       if (parsed) addEvent(parsed);
     },
-    [addEvent, clearRefreshTimeout, setRelayStatus],
+    [addEvent, commitPendingItems, completeResolvingSubscription, setRelayStatus],
   );
 
   const initFeed = useCallback(() => {
@@ -179,6 +210,10 @@ export function HomeFeed({
     const requests = requestList();
     if (!requests.length) return;
     unsubscribeRef.current?.();
+    pendingItemsRef.current = [];
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = true;
+    eoceReceivedRef.current = false;
     homeRelays.forEach(relay =>
       setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED'),
     );
@@ -189,10 +224,9 @@ export function HomeFeed({
       handleMessage,
     );
     refreshTimeoutRef.current = setTimeout(() => {
-      setLoading(false);
-      setRefreshing(false);
+      completeResolvingSubscription();
     }, 10000);
-  }, [authPubkey, enabled, handleMessage, homeRelays, requestList, setRelayStatus, visible]);
+  }, [authPubkey, completeResolvingSubscription, enabled, handleMessage, homeRelays, requestList, setRelayStatus, visible]);
 
   const handleWalletMessage = useCallback(
     (message: WorkerMessage) => {
@@ -208,17 +242,7 @@ export function HomeFeed({
 
       const parsed = asParsedEvent(message);
       if (!parsed || parsed.kind() !== 17375) return;
-      console.log('[home-wallet] event', {
-        id: parsed.id()?.slice(0, 12),
-        kind: parsed.kind(),
-        pubkey: parsed.pubkey()?.slice(0, 12),
-        createdAt: parsed.createdAt(),
-      });
       const wallet = asKind17375(parsed);
-      console.log('[home-wallet] kind17375 parse', {
-        ok: !!wallet,
-        mints: wallet?.mintsLength?.() ?? 0,
-      });
       if (!wallet) return;
 
       const mintUrls = Array.from(
@@ -237,19 +261,9 @@ export function HomeFeed({
   );
 
   const initWallet = useCallback(() => {
-    console.log('[home-wallet] init check', {
-      enabled,
-      visible,
-      hasPubkey: !!authPubkey,
-      relays: homeRelays,
-    });
     if (!enabled || !visible || !authPubkey) return;
     if (!homeRelays.length) return;
     const subId = `active_wallet_${authPubkey}_${requestCacheRef.current}_${hashKey(homeRelays.join(','))}`;
-    console.log('[home-wallet] subscribe', {
-      subId,
-      relays: homeRelays,
-    });
     unsubscribeWalletRef.current?.();
     unsubscribeWalletRef.current = subscribeToNostr(
       subId,
@@ -271,6 +285,10 @@ export function HomeFeed({
     if (lastHomeKeyRef.current === homeKey) return;
     lastHomeKeyRef.current = homeKey;
     itemsRef.current = [];
+    pendingItemsRef.current = [];
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = false;
+    eoceReceivedRef.current = false;
     seenIdsRef.current.clear();
     setTick(tick => tick + 1);
   }, [homeKey]);
@@ -294,6 +312,10 @@ export function HomeFeed({
       unsubscribeRef.current = null;
       unsubscribeWalletRef.current?.();
       unsubscribeWalletRef.current = null;
+      pendingItemsRef.current = [];
+      connectionTrackerRef.current.reset();
+      subscriptionResolvingRef.current = false;
+      eoceReceivedRef.current = false;
       clearRefreshTimeout();
     };
   }, [authPubkey, clearRefreshTimeout, enabled, initFeed, initWallet, visible]);

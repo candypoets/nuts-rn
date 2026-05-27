@@ -47,6 +47,13 @@ function isUserEntity(entity?: string | null) {
   return !!entity?.match(/n(profile|pub)/);
 }
 
+function sameStringArray(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 type NoteProps = {
   note?: ParsedEvent;
   noteId?: string;
@@ -139,7 +146,6 @@ export function Note({
         if (!parsed || parsed.id() !== noteId) return;
         fetchedRef.current = parsed;
         addContextEvent(parsed);
-        setContextVersion(version => version + 1);
       },
       { closeOnEose: false },
     );
@@ -150,7 +156,10 @@ export function Note({
     };
   }, [addContextEvent, contextNote, lookupRelays, note, noteId, visible]);
 
-  const kind1 = effectiveNote ? asKind1(effectiveNote) : null;
+  const kind1 = useMemo(
+    () => (effectiveNote ? asKind1(effectiveNote) : null),
+    [effectiveNote],
+  );
   const replyId = kind1?.reply()?.id();
   const allMentionIds = useMemo(() => {
     if (!kind1 || typeof kind1.mentionsLength !== 'function') {
@@ -303,10 +312,14 @@ export function Note({
         const author = asParsedEvent(message)?.pubkey();
         if (!author) return;
         const writeRelays = kind10002WriteRelays(kind10002);
-        setQuoteAuthorRelays(current => ({
-          ...current,
-          [author]: writeRelays,
-        }));
+        setQuoteAuthorRelays(current =>
+          sameStringArray(current[author] ?? [], writeRelays)
+            ? current
+            : {
+                ...current,
+                [author]: writeRelays,
+              },
+        );
       },
       { closeOnEose: false },
     );
@@ -385,7 +398,7 @@ export function Note({
         onProfileOpen={onProfileOpen}
       />
     ),
-    [effectiveRelays, quoteAuthorRelays, visible],
+    [effectiveRelays, onProfileOpen, quoteAuthorRelays, visible],
   );
 
   if (depth > 3) {

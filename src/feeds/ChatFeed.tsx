@@ -4,8 +4,10 @@ import type {Kind4Parsed, ParsedEvent, RequestObject, WorkerMessage} from '@cand
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
+  asEoce,
   asKind4,
   asParsedEvent,
+  ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
 import {Info, MessageCirclePlus} from 'lucide-react-native';
@@ -120,10 +122,13 @@ function groupConversations(
 
 export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
   const eventsRef = useRef<ParsedEvent[]>([]);
+  const pendingEventsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChatKeyRef = useRef<string | null>(null);
+  const connectionTrackerRef = useRef(new ConnectionTracker());
+  const subscriptionResolvingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<ChatListTab>('messages');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -163,12 +168,39 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
 
   const resetEvents = useCallback(() => {
     eventsRef.current = [];
+    pendingEventsRef.current = [];
     seenIdsRef.current.clear();
+    connectionTrackerRef.current.reset();
+    subscriptionResolvingRef.current = false;
     setEventsVersion(version => version + 1);
   }, []);
 
+  const commitPendingEvents = useCallback(() => {
+    const pending = pendingEventsRef.current;
+    if (!pending.length) return;
+    pendingEventsRef.current = [];
+    eventsRef.current = [...eventsRef.current, ...pending].sort(
+      (left, right) => right.createdAt() - left.createdAt(),
+    );
+    setEventsVersion(version => version + 1);
+  }, []);
+
+  const completeResolvingSubscription = useCallback(() => {
+    if (!subscriptionResolvingRef.current) return;
+    subscriptionResolvingRef.current = false;
+    commitPendingEvents();
+    setLoading(false);
+    setRefreshing(false);
+    clearTimer();
+  }, [clearTimer, commitPendingEvents]);
+
   const handleEvents = useCallback(
     (message: WorkerMessage) => {
+      if (asEoce(message)) {
+        commitPendingEvents();
+        return;
+      }
+
       const status = asConnectionStatus(message);
       if (status) {
         const relayUrl = status.relayUrl();
@@ -176,10 +208,9 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
         if (relayUrl && relayStatus) {
           setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
         }
-        if (relayStatus === 'EOSE') {
-          setLoading(false);
-          setRefreshing(false);
-          clearTimer();
+        connectionTrackerRef.current.handleMessage(message);
+        if (connectionTrackerRef.current.resolutionRate > 0.5) {
+          completeResolvingSubscription();
         }
         return;
       }
@@ -193,10 +224,10 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
       if (!id || seenIdsRef.current.has(id)) return;
 
       seenIdsRef.current.add(id);
-      eventsRef.current = [...eventsRef.current, parsed];
-      setEventsVersion(version => version + 1);
+      pendingEventsRef.current = [...pendingEventsRef.current, parsed];
+      if (!subscriptionResolvingRef.current) commitPendingEvents();
     },
-    [clearTimer, setRelayStatus],
+    [commitPendingEvents, completeResolvingSubscription, setRelayStatus],
   );
 
   const startSubscription = useCallback(
@@ -209,16 +240,19 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
       setSubRelays(subId, relays);
       relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
       unsubscribeRef.current?.();
+      pendingEventsRef.current = [];
+      connectionTrackerRef.current.reset();
+      subscriptionResolvingRef.current = true;
       unsubscribeRef.current = subscribeToNostr(subId, requests, handleEvents);
       setLoading(eventsRef.current.length === 0);
       clearTimer();
       timeoutRef.current = setTimeout(() => {
-        setLoading(false);
-        setRefreshing(false);
+        completeResolvingSubscription();
       }, 5000);
     },
     [
       clearTimer,
+      completeResolvingSubscription,
       enabled,
       handleEvents,
       hasSigner,
@@ -251,6 +285,9 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
     return () => {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
+      pendingEventsRef.current = [];
+      connectionTrackerRef.current.reset();
+      subscriptionResolvingRef.current = false;
       clearTimer();
     };
   }, [clearTimer, enabled, startSubscription, visible]);

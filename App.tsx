@@ -229,6 +229,7 @@ function MainTabs({
               <ExploreFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.explore}
+                onFeedBuilderOpen={() => push({type: 'feedBuilder'})}
                 onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
               />
             ) : (

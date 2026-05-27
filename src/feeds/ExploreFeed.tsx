@@ -36,7 +36,6 @@ import {
 } from '../stores';
 import {HeaderProfileButton} from '../components/HeaderProfileButton';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
-import {FeedBuilderModal} from '../modals/FeedBuilderModal';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -44,6 +43,7 @@ type ExploreFeedProps = {
   header?: () => React.ReactNode;
   stickyHeader?: () => React.ReactNode;
   stickyFooter?: () => React.ReactNode;
+  onFeedBuilderOpen?: () => void;
   onProfileOpen?: (pubkey: string) => void;
 };
 
@@ -55,6 +55,7 @@ export function ExploreFeed({
   header,
   stickyHeader,
   stickyFooter,
+  onFeedBuilderOpen,
   onProfileOpen,
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
@@ -94,7 +95,6 @@ export function ExploreFeed({
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
-  const [feedBuilderOpen, setFeedBuilderOpen] = useState(false);
   const requestKinds = useMemo(
     () => (selectedKinds.length ? selectedKinds : ALL_FEED_KINDS),
     [selectedKinds],
@@ -116,10 +116,10 @@ export function ExploreFeed({
         relayStatuses={relayStatuses}
         selectedPacks={selectedPacks}
         surfaceClassName="bg-slate-50"
-        onFeedBuilderOpen={() => setFeedBuilderOpen(true)}
+        onFeedBuilderOpen={onFeedBuilderOpen}
       />
     ),
-    [authPubkey, feedRelays, relayStatuses, selectedPacks],
+    [authPubkey, feedRelays, onFeedBuilderOpen, relayStatuses, selectedPacks],
   );
 
   const defaultStickyHeader = useCallback(
@@ -131,10 +131,10 @@ export function ExploreFeed({
         selectedPacks={selectedPacks}
         mini
         surfaceClassName="bg-white"
-        onFeedBuilderOpen={() => setFeedBuilderOpen(true)}
+        onFeedBuilderOpen={onFeedBuilderOpen}
       />
     ),
-    [authPubkey, feedRelays, relayStatuses, selectedPacks],
+    [authPubkey, feedRelays, onFeedBuilderOpen, relayStatuses, selectedPacks],
   );
 
   const tabsSpacer = useCallback(() => <View className="h-[72px]" />, []);
@@ -564,11 +564,6 @@ export function ExploreFeed({
         empty={empty}
         contentContainerClassName="pb-28 px-2"
       />
-      {feedBuilderOpen ? (
-        <View className="absolute inset-0 z-50 bg-white">
-          <FeedBuilderModal onClose={() => setFeedBuilderOpen(false)} />
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -588,7 +583,7 @@ function ExploreHeader({
   relays: string[];
   selectedPacks: FeedPackSelection[];
   surfaceClassName: string;
-  onFeedBuilderOpen: () => void;
+  onFeedBuilderOpen?: () => void;
 }) {
   return (
     <View
@@ -631,7 +626,7 @@ function FeedPackHeaderButtons({
 }: {
   packs: FeedPackSelection[];
   surfaceClassName: string;
-  onPress: () => void;
+  onPress?: () => void;
 }) {
   if (!packs.length) {
     return (

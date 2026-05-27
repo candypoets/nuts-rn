@@ -1555,7 +1555,9 @@ function StackCard({
           visible={depthFromTop === 0}
           onClose={close}
           onProfileOpen={nextPubkey =>
-            onPush({type: 'publicProfile', pubkey: nextPubkey})
+            nextPubkey !== item.pubkey
+              ? onPush({type: 'publicProfile', pubkey: nextPubkey})
+              : undefined
           }
         />
       ) : item.type === 'login' ? (

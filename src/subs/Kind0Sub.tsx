@@ -64,6 +64,7 @@ export function Kind0Sub({
   const [loading, setLoading] = useState(false);
   const [hasMoreProfile, setHasMoreProfile] = useState(true);
   const [hasMoreFeed, setHasMoreFeed] = useState(true);
+  const [feedReady, setFeedReady] = useState(false);
   const profilePostsRef = useRef<ParsedEvent[]>([]);
   const feedPostsRef = useRef<ParsedEvent[]>([]);
   const profileSeenIdsRef = useRef(new Set<string>());
@@ -72,6 +73,8 @@ export function Kind0Sub({
   const feedFlushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const profilePaginationUnsubRef = useRef<(() => void) | null>(null);
   const feedPaginationUnsubRef = useRef<(() => void) | null>(null);
+  const discoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileCountRef = useRef(0);
   const feedCountRef = useRef(0);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
@@ -141,58 +144,85 @@ export function Kind0Sub({
     setMode('profile');
     setHasMoreProfile(true);
     setHasMoreFeed(true);
-    fallbackRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
+    setFeedReady(false);
 
-    const unsubscribe = subscribeToNostr(
-      `kind0_meta_${pubkey}_${relayHash(fallbackRelays)}`,
+    const unsubscribeProfile = subscribeToNostr(
+      `u_${pubkey}`,
       [
-        {kinds: [0], authors: [pubkey], limit: 1, cacheFirst: true, relays: fallbackRelays},
-        {kinds: [10002], authors: [pubkey], limit: 1, cacheFirst: true, relays: fallbackRelays},
-        {kinds: [3], authors: [pubkey], limit: 1, cacheFirst: true, relays: fallbackRelays},
+        {
+          kinds: [0],
+          authors: [pubkey],
+          limit: 1,
+          cacheFirst: true,
+          closeOnEOSE: true,
+          relays: fallbackRelays,
+        },
       ],
       message => {
-        const status = asConnectionStatus(message);
-        if (status) {
-          const relayUrl = status.relayUrl();
-          const relayStatus = status.status()?.toString();
-          if (relayUrl && relayStatus) setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-          return;
-        }
-
         const kind0 = isKind0(message);
         if (kind0 && kind0.pubkey?.() === pubkey) {
           setProfile(kind0);
-          return;
-        }
-
-        const event = asParsedEvent(message);
-        const kind10002 = event ? asKind10002(event) : null;
-        if (event && kind10002 && event.pubkey() === pubkey) {
-          const discoveredWriteRelays = fbArray(kind10002, 'relays')
-            .filter(relay => relay.write())
-            .map(relay => relay.url() ?? '')
-            .filter(Boolean)
-            .map(normalizeRelayUrl);
-          const discoveredReadRelays = fbArray(kind10002, 'relays')
-            .filter(relay => relay.read())
-            .map(relay => relay.url() ?? '')
-            .filter(Boolean)
-            .map(normalizeRelayUrl);
-          setWriteRelays(current => (sameStringArray(current, discoveredWriteRelays) ? current : discoveredWriteRelays));
-          setReadRelays(current => (sameStringArray(current, discoveredReadRelays) ? current : discoveredReadRelays));
-          return;
-        }
-
-        const kind3 = event ? asKind3(event) : null;
-        if (event && kind3 && event.pubkey() === pubkey) {
-          const contacts = fbArray(kind3, 'contacts').map(contact => contact.pubkey() ?? '').filter(Boolean);
-          setProfileContacts(current => (sameStringArray(current, contacts) ? current : contacts));
         }
       },
-      {closeOnEose: false},
+      {closeOnEose: true},
     );
 
+    let unsubscribeDiscovery: (() => void) | null = null;
+    discoveryTimeoutRef.current = setTimeout(() => {
+      fallbackRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
+      unsubscribeDiscovery = subscribeToNostr(
+        `kind0_meta_${pubkey}_${relayHash(fallbackRelays)}`,
+        [
+          {kinds: [10002], authors: [pubkey], limit: 1, cacheFirst: true, closeOnEOSE: true, relays: fallbackRelays},
+          {kinds: [3], authors: [pubkey], limit: 1, cacheFirst: true, closeOnEOSE: true, relays: fallbackRelays},
+        ],
+        message => {
+          const status = asConnectionStatus(message);
+          if (status) {
+            const relayUrl = status.relayUrl();
+            const relayStatus = status.status()?.toString();
+            if (relayUrl && relayStatus) setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+            return;
+          }
+
+          const event = asParsedEvent(message);
+          const kind10002 = event ? asKind10002(event) : null;
+          if (event && kind10002 && event.pubkey() === pubkey) {
+            const discoveredWriteRelays = fbArray(kind10002, 'relays')
+              .filter(relay => relay.write())
+              .map(relay => relay.url() ?? '')
+              .filter(Boolean)
+              .map(normalizeRelayUrl);
+            const discoveredReadRelays = fbArray(kind10002, 'relays')
+              .filter(relay => relay.read())
+              .map(relay => relay.url() ?? '')
+              .filter(Boolean)
+              .map(normalizeRelayUrl);
+            setWriteRelays(current => (sameStringArray(current, discoveredWriteRelays) ? current : discoveredWriteRelays));
+            setReadRelays(current => (sameStringArray(current, discoveredReadRelays) ? current : discoveredReadRelays));
+            return;
+          }
+
+          const kind3 = event ? asKind3(event) : null;
+          if (event && kind3 && event.pubkey() === pubkey) {
+            const contacts = fbArray(kind3, 'contacts').map(contact => contact.pubkey() ?? '').filter(Boolean);
+            setProfileContacts(current => (sameStringArray(current, contacts) ? current : contacts));
+          }
+        },
+        {closeOnEose: true},
+      );
+    }, 240);
+    feedReadyTimeoutRef.current = setTimeout(() => setFeedReady(true), 320);
+
     return () => {
+      if (discoveryTimeoutRef.current) {
+        clearTimeout(discoveryTimeoutRef.current);
+        discoveryTimeoutRef.current = null;
+      }
+      if (feedReadyTimeoutRef.current) {
+        clearTimeout(feedReadyTimeoutRef.current);
+        feedReadyTimeoutRef.current = null;
+      }
       if (profileFlushRef.current) {
         cancelAnimationFrame(profileFlushRef.current);
         profileFlushRef.current = null;
@@ -201,7 +231,8 @@ export function Kind0Sub({
         cancelAnimationFrame(feedFlushRef.current);
         feedFlushRef.current = null;
       }
-      unsubscribe();
+      unsubscribeProfile();
+      unsubscribeDiscovery?.();
       profilePaginationUnsubRef.current?.();
       profilePaginationUnsubRef.current = null;
       feedPaginationUnsubRef.current?.();
@@ -210,7 +241,7 @@ export function Kind0Sub({
   }, [fallbackRelays, pubkey, setRelayStatus]);
 
   useEffect(() => {
-    if (!pubkey) return;
+    if (!pubkey || !feedReady) return;
     const relays = writeRelays.length ? writeRelays : fallbackRelays;
     const subId = `kind0P_${pubkey}_${relayHash(relays)}`;
     relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
@@ -242,7 +273,7 @@ export function Kind0Sub({
       unsubscribe();
       setLoading(false);
     };
-  }, [addProfilePost, fallbackRelays, pubkey, setRelayStatus, setSubRelays, writeRelays]);
+  }, [addProfilePost, fallbackRelays, feedReady, pubkey, setRelayStatus, setSubRelays, writeRelays]);
 
   useEffect(() => {
     if (!pubkey || mode !== 'feed' || !profileContacts.length) return;

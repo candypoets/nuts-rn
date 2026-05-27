@@ -64,6 +64,7 @@ export function PagerAnimator<T>({
 }: PagerAnimatorProps<T>) {
   const {height, width} = useWindowDimensions();
   const previousStackLengthRef = useRef(stack.length);
+  const previousStackKeyRef = useRef('');
   const animatedStackLength = useSharedValue(stack.length);
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -86,8 +87,17 @@ export function PagerAnimator<T>({
   );
 
   useEffect(() => {
+    const stackKey = stack.map((item, index) => getKey(item, index)).join('|');
+    if (
+      stack.length === previousStackLengthRef.current &&
+      stackKey === previousStackKeyRef.current
+    ) {
+      return;
+    }
+
     const previousStackLength = previousStackLengthRef.current;
     previousStackLengthRef.current = stack.length;
+    previousStackKeyRef.current = stackKey;
     closingRef.current = false;
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
@@ -110,8 +120,10 @@ export function PagerAnimator<T>({
   }, [
     animatedStackLength,
     dismissProgress,
+    getKey,
     gestureX,
     gestureY,
+    stack,
     stack.length,
     stackDepth,
   ]);

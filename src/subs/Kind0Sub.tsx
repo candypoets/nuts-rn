@@ -477,6 +477,7 @@ export function Kind0Sub({
       visible={visible}
       loading={loading}
       onNearBottom={handleNearBottom}
+      removeClippedSubviews={false}
       empty={
         <View className="px-6 py-12">
           <Text className="text-center text-sm text-slate-500">

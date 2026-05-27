@@ -173,13 +173,14 @@ function MainTabs({
 
   const push = (item: StackItem) => {
     setStack(items => {
-      const current = items.at(-1);
-      if (
-        current?.type === 'publicProfile' &&
-        item.type === 'publicProfile' &&
-        current.pubkey === item.pubkey
-      ) {
-        return items;
+      if (item.type === 'publicProfile') {
+        const existingIndex = items.findIndex(
+          current =>
+            current.type === 'publicProfile' && current.pubkey === item.pubkey,
+        );
+        if (existingIndex >= 0) {
+          return items.slice(0, existingIndex + 1);
+        }
       }
       return [...items, item];
     });
@@ -189,6 +190,12 @@ function MainTabs({
     item.type === 'publicProfile' || item.type === 'chatThread'
       ? 'sub'
       : 'modal';
+  const stackKeyForItem = (item: StackItem, index: number) => {
+    if (item.type === 'publicProfile') return `publicProfile:${item.pubkey}`;
+    if (item.type === 'chatThread') return `chatThread:${item.peerPubkey}`;
+    if (item.type === 'profileStub') return `profileStub:${item.path}`;
+    return `${item.type}:${index}`;
+  };
   const openProfileTarget = (item: ProfileModalTarget) => {
     if (item.type === 'profileStub' && item.path === 'nprofile' && auth.pubkey) {
       push({type: 'publicProfile', pubkey: auth.pubkey});
@@ -244,6 +251,7 @@ function MainTabs({
       />
       <PagerAnimator
         dismissProgress={dismissProgress}
+        getKey={stackKeyForItem}
         getPresentation={stackPresentationForItem}
         onCloseTop={closeTop}
         stack={stack}

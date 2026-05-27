@@ -15,6 +15,7 @@ export type PagerPresentation = 'modal' | 'sub';
 
 type PagerAnimatorProps<T> = {
   dismissProgress: SharedValue<number>;
+  getKey: (item: T, index: number) => string;
   getPresentation: (item: T) => PagerPresentation;
   onCloseTop: () => void;
   renderItem: (params: {
@@ -38,6 +39,7 @@ type PagerCardProps<T> = {
 
 export function PagerAnimator<T>({
   dismissProgress,
+  getKey,
   getPresentation,
   onCloseTop,
   renderItem,
@@ -65,7 +67,7 @@ export function PagerAnimator<T>({
     <>
       {stack.map((item, index) => (
         <PagerCard
-          key={index}
+          key={getKey(item, index)}
           depthFromTop={stack.length - 1 - index}
           dismissProgress={dismissProgress}
           isTop={index === stack.length - 1}

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {StyleSheet, useWindowDimensions} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
@@ -20,7 +20,6 @@ type PagerAnimatorProps<T> = {
   onCloseTop: () => void;
   renderItem: (params: {
     close: () => void;
-    contentReady: boolean;
     isTop: boolean;
     item: T;
   }) => React.ReactNode;
@@ -97,15 +96,10 @@ function PagerCard<T>({
   const dismissX = useSharedValue(0);
   const dismissY = useSharedValue(0);
   const hasEnteredRef = useRef(false);
-  const [contentReady, setContentReady] = useState(false);
 
   useEffect(() => {
     enter.value = 0;
-    enter.value = withTiming(1, {duration: 220}, finished => {
-      if (finished) {
-        runOnJS(setContentReady)(true);
-      }
-    });
+    enter.value = withTiming(1, {duration: 220});
   }, [enter]);
 
   useEffect(() => {
@@ -144,6 +138,8 @@ function PagerCard<T>({
     .enabled(isTop)
     .activeOffsetX(presentation === 'sub' ? [-9999, 8] : [-9999, 9999])
     .activeOffsetY(presentation === 'modal' ? [-9999, 8] : [-9999, 9999])
+    .failOffsetY(presentation === 'sub' ? [-16, 16] : [-9999, 9999])
+    .failOffsetX(presentation === 'modal' ? [-16, 16] : [-9999, 9999])
     .onUpdate(event => {
       if (presentation === 'sub') {
         const nextX = Math.max(0, event.translationX);
@@ -214,7 +210,7 @@ function PagerCard<T>({
           style,
         ]}
       >
-        {renderItem({close, contentReady, isTop, item})}
+        {renderItem({close, isTop, item})}
       </Animated.View>
     </GestureDetector>
   );

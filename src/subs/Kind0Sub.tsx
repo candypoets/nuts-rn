@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Image, Pressable, Text, View} from 'react-native';
+import {Image, InteractionManager, Pressable, Text, View} from 'react-native';
 import type {Kind0Parsed, ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -62,6 +62,7 @@ export function Kind0Sub({
   const [readRelays, setReadRelays] = useState<string[]>([]);
   const [mode, setMode] = useState<'profile' | 'feed'>('profile');
   const [loading, setLoading] = useState(false);
+  const [feedReady, setFeedReady] = useState(false);
   const [hasMoreProfile, setHasMoreProfile] = useState(true);
   const [hasMoreFeed, setHasMoreFeed] = useState(true);
   const profilePaginationUnsubRef = useRef<(() => void) | null>(null);
@@ -83,6 +84,14 @@ export function Kind0Sub({
         : fallbackRelays,
     [fallbackRelays, mode, readRelays, writeRelays],
   );
+
+  useEffect(() => {
+    setFeedReady(false);
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      setFeedReady(true);
+    });
+    return () => interaction.cancel();
+  }, [pubkey]);
 
   const addProfilePost = useCallback((event: ParsedEvent) => {
     if (!shouldShowProfilePost(event)) return;
@@ -182,7 +191,7 @@ export function Kind0Sub({
   }, [fallbackRelays, pubkey, setRelayStatus]);
 
   useEffect(() => {
-    if (!pubkey) return;
+    if (!feedReady || !pubkey) return;
     const relays = writeRelays.length ? writeRelays : fallbackRelays;
     const subId = `kind0P_${pubkey}_${relayHash(relays)}`;
     relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
@@ -214,10 +223,10 @@ export function Kind0Sub({
       unsubscribe();
       setLoading(false);
     };
-  }, [addProfilePost, fallbackRelays, pubkey, setRelayStatus, setSubRelays, writeRelays]);
+  }, [addProfilePost, fallbackRelays, feedReady, pubkey, setRelayStatus, setSubRelays, writeRelays]);
 
   useEffect(() => {
-    if (!pubkey || mode !== 'feed' || !profileContacts.length) return;
+    if (!feedReady || !pubkey || mode !== 'feed' || !profileContacts.length) return;
     const relays = readRelays.length ? readRelays : fallbackRelays;
     const authors = profileContacts.slice(0, 250);
     const subId = `kind0F_${pubkey}_${relayHash(relays)}`;
@@ -249,7 +258,7 @@ export function Kind0Sub({
       unsubscribe();
       setLoading(false);
     };
-  }, [addFeedPost, fallbackRelays, mode, profileContacts, pubkey, readRelays, setRelayStatus, setSubRelays]);
+  }, [addFeedPost, fallbackRelays, feedReady, mode, profileContacts, pubkey, readRelays, setRelayStatus, setSubRelays]);
 
   const name = profile?.name?.()?.trim() || profile?.displayName?.()?.trim() || 'Unnamed';
   const picture = profile?.picture?.() || null;
@@ -405,6 +414,14 @@ export function Kind0Sub({
       </View>
     </View>
   );
+
+  if (!feedReady) {
+    return (
+      <View className="flex-1 bg-slate-50 px-2">
+        {header()}
+      </View>
+    );
+  }
 
   return (
     <Feed

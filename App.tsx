@@ -42,7 +42,13 @@ import {
   hasReactNativeModule,
   setManager,
 } from '@candypoets/nipworker/react-native';
-import {asConnectionStatus, asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
+import {
+  asConnectionStatus,
+  asKind3,
+  asParsedEvent,
+  fbArray,
+  isKind0,
+} from '@candypoets/nipworker/utils';
 import {
   Bell,
   ChevronRight,
@@ -199,6 +205,10 @@ function hexToBytes(hex: string) {
 
 function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
+}
+
+function sameStringArray(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function decodePrivateKey(input: string) {
@@ -974,6 +984,8 @@ function PublicProfileSub({
 }) {
   const [profile, setProfile] = useState<Kind0Parsed | null>(null);
   const [posts, setPosts] = useState<ParsedEvent[]>([]);
+  const [feedPosts, setFeedPosts] = useState<ParsedEvent[]>([]);
+  const [profileContacts, setProfileContacts] = useState<string[]>([]);
   const [mode, setMode] = useState<'profile' | 'feed'>('profile');
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
@@ -986,13 +998,15 @@ function PublicProfileSub({
     if (!pubkey) return;
     setProfile(null);
     setPosts([]);
+    setFeedPosts([]);
+    setProfileContacts([]);
     relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
 
     const unsubscribe = subscribeToNostr(
       `nprofile_${pubkey}_${relays.join('|')}`,
       [
         {
-          kinds: [0],
+          kinds: [0, 3],
           authors: [pubkey],
           limit: 1,
           cacheFirst: true,
@@ -1023,6 +1037,17 @@ function PublicProfileSub({
         }
 
         const event = asParsedEvent(message);
+        const kind3 = event ? asKind3(event) : null;
+        if (event && kind3 && event.pubkey() === pubkey) {
+          const contacts = fbArray(kind3, 'contacts')
+            .map(contact => contact.pubkey() ?? '')
+            .filter(Boolean);
+          setProfileContacts(current =>
+            sameStringArray(current, contacts) ? current : contacts,
+          );
+          return;
+        }
+
         if (!event || event.kind() !== 1 || event.pubkey() !== pubkey) return;
         setPosts(current => {
           const id = event.id();
@@ -1038,6 +1063,47 @@ function PublicProfileSub({
     return unsubscribe;
   }, [pubkey, relays, setRelayStatus]);
 
+  useEffect(() => {
+    if (!pubkey || mode !== 'feed' || !profileContacts.length) return;
+
+    const authors = profileContacts.slice(0, 250);
+    const unsubscribe = subscribeToNostr(
+      `nprofile_feed_${pubkey}_${authors.join(',')}_${relays.join('|')}`,
+      [
+        {
+          kinds: [1],
+          authors,
+          limit: 80,
+          relays,
+        },
+      ],
+      message => {
+        const status = asConnectionStatus(message);
+        if (status) {
+          const relayUrl = status.relayUrl();
+          const relayStatus = status.status()?.toString();
+          if (relayUrl && relayStatus) {
+            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+          }
+          return;
+        }
+
+        const event = asParsedEvent(message);
+        if (!event || event.kind() !== 1) return;
+        setFeedPosts(current => {
+          const id = event.id();
+          if (!id || current.some(item => item.id() === id)) return current;
+          return [...current, event].sort(
+            (left, right) => right.createdAt() - left.createdAt(),
+          );
+        });
+      },
+      {closeOnEose: false},
+    );
+
+    return unsubscribe;
+  }, [mode, profileContacts, pubkey, relays, setRelayStatus]);
+
   const name =
     profile?.name?.()?.trim() ||
     profile?.displayName?.()?.trim() ||
@@ -1047,7 +1113,7 @@ function PublicProfileSub({
   const about = profile?.about?.()?.trim() || '';
   const nip05 = profile?.nip05?.()?.trim() || '';
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
-  const items = mode === 'profile' ? posts : [];
+  const items = mode === 'profile' ? posts : feedPosts;
 
   const stickyHeader = () => (
     <View className="h-24 flex-row items-center justify-between bg-white/95 px-4 pt-10">
@@ -1162,7 +1228,11 @@ function PublicProfileSub({
       empty={
         <View className="px-6 py-12">
           <Text className="text-center text-sm text-slate-500">
-            {mode === 'profile' ? 'Loading posts...' : 'Feed is not loaded yet.'}
+            {mode === 'profile'
+              ? 'Loading posts...'
+              : profileContacts.length
+              ? 'Loading feed...'
+              : 'No follows found for this profile.'}
           </Text>
         </View>
       }

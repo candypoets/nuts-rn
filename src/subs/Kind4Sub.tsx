@@ -347,6 +347,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         stickyFooter={stickyFooter}
         stickyFooterVisible
         onNearBottom={handleNearBottom}
+        removeClippedSubviews={false}
         renderItem={({item, index}) => (
           <MessageBubble
             message={item}

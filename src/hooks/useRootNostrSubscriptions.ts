@@ -18,7 +18,7 @@ import {
   type RelayMarker,
 } from '../stores';
 
-const ROOT_DEBUG = true;
+const ROOT_DEBUG = false;
 
 function rootDebug(label: string, data?: Record<string, unknown>) {
   if (!ROOT_DEBUG) return;

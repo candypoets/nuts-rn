@@ -133,6 +133,11 @@ function MainTabs({
   nostrEnabled: boolean;
 }) {
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('home');
+  const [activatedRoutes, setActivatedRoutes] = useState<Record<RouteId, boolean>>({
+    home: true,
+    explore: false,
+    chat: false,
+  });
   const [stack, setStack] = useState<StackItem[]>([]);
   const stackDepth = useSharedValue(0);
   const dismissProgress = useSharedValue(0);
@@ -158,6 +163,17 @@ function MainTabs({
   useEffect(() => {
     stackDepth.value = withTiming(stack.length, {duration: 220});
   }, [stack.length, stackDepth]);
+
+  useEffect(() => {
+    setActivatedRoutes(current =>
+      current[activeRoute.id]
+        ? current
+        : {
+            ...current,
+            [activeRoute.id]: true,
+          },
+    );
+  }, [activeRoute.id]);
 
   const push = (item: StackItem) => {
     setStack(items => {
@@ -194,7 +210,7 @@ function MainTabs({
         onIndexChange={index => {
           setActiveRouteId(ROUTES[index]?.id ?? 'home');
         }}
-        renderPage={({index, width, virtualX, isActive}) => (
+        renderPage={({index, width, virtualX}) => (
           <FeedPage
             key={ROUTES[index].id}
             index={index}
@@ -204,7 +220,7 @@ function MainTabs({
             {ROUTES[index].id === 'home' ? (
               <HomeFeed
                 enabled={nostrEnabled}
-                visible={isActive}
+                visible={activatedRoutes.home}
                 onLoginOpen={() => push({type: 'login'})}
                 onProfileOpen={() => push({type: 'profile'})}
                 onNotificationsOpen={() => undefined}
@@ -212,13 +228,13 @@ function MainTabs({
             ) : ROUTES[index].id === 'explore' ? (
               <ExploreFeed
                 enabled={nostrEnabled}
-                visible={isActive}
+                visible={activatedRoutes.explore}
                 onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
               />
             ) : (
               <ChatFeed
                 enabled={nostrEnabled}
-                visible={isActive}
+                visible={activatedRoutes.chat}
                 onChatOpen={peerPubkey => push({type: 'chatThread', peerPubkey})}
               />
             )}

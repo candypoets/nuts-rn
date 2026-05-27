@@ -1,4 +1,4 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {StyleSheet, useWindowDimensions} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
@@ -20,6 +20,7 @@ type PagerAnimatorProps<T> = {
   onCloseTop: () => void;
   renderItem: (params: {
     close: () => void;
+    contentReady: boolean;
     isTop: boolean;
     item: T;
   }) => React.ReactNode;
@@ -95,9 +96,16 @@ function PagerCard<T>({
   const animatedDepth = useSharedValue(depthFromTop);
   const dismissX = useSharedValue(0);
   const dismissY = useSharedValue(0);
+  const hasEnteredRef = useRef(false);
+  const [contentReady, setContentReady] = useState(false);
 
   useEffect(() => {
-    enter.value = withTiming(1, {duration: 220});
+    enter.value = 0;
+    enter.value = withTiming(1, {duration: 220}, finished => {
+      if (finished) {
+        runOnJS(setContentReady)(true);
+      }
+    });
   }, [enter]);
 
   useEffect(() => {
@@ -113,6 +121,10 @@ function PagerCard<T>({
     dismissX.value = withSpring(0, SWIPE_SPRING);
     dismissY.value = withSpring(0, SWIPE_SPRING);
     dismissProgress.value = withSpring(0, SWIPE_SPRING);
+    if (!hasEnteredRef.current) {
+      hasEnteredRef.current = true;
+      return;
+    }
     enter.value = withTiming(1, {duration: 120});
   }, [dismissProgress, dismissX, dismissY, enter, isTop]);
 
@@ -202,7 +214,7 @@ function PagerCard<T>({
           style,
         ]}
       >
-        {renderItem({close, isTop, item})}
+        {renderItem({close, contentReady, isTop, item})}
       </Animated.View>
     </GestureDetector>
   );

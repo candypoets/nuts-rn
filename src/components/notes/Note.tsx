@@ -134,9 +134,7 @@ export function Note({
   }, []);
 
   useEffect(() => {
-    if (note || contextNote || !noteId || !visible) return;
-    fetchedRef.current = null;
-    setContextVersion(version => version + 1);
+    if (note || contextNote || fetchedRef.current || !noteId || !visible) return;
 
     const unsubscribe = subscribeToNostr(
       `note_${noteId}`,
@@ -151,7 +149,6 @@ export function Note({
     );
 
     return () => {
-      fetchedRef.current = null;
       unsubscribe();
     };
   }, [addContextEvent, contextNote, lookupRelays, note, noteId, visible]);

@@ -349,7 +349,7 @@ export function ExploreFeed({
     if (isInitializingRef.current) return;
 
     isInitializingRef.current = true;
-    setLoading(true);
+    setLoading(itemsRef.current.length === 0);
     const requests = requestList();
     if (!requests.length) {
       setLoading(false);

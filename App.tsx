@@ -3,9 +3,15 @@ import './textEncodingPolyfill';
 
 import React, {useEffect, useMemo, useState} from 'react';
 import {NativeModules, Pressable, StatusBar, StyleSheet, Text, useColorScheme, View} from 'react-native';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {
+  default as Animated,
   ReanimatedLogLevel,
   configureReanimatedLogger,
+  type SharedValue,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import type {NostrManagerLike} from '@candypoets/nipworker';
@@ -31,6 +37,7 @@ import {
 } from './src/modals';
 import {Kind0Sub, Kind4Sub} from './src/subs';
 import {useAuthStore} from './src/stores';
+import {CarouselAnimator} from './src/components/CarouselAnimator';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -75,13 +82,15 @@ function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <RootServices manager={manager} />
-      <SafeAreaView style={styles.root}>
-        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-        <MainTabs manager={manager} nostrEnabled={Boolean(manager)} />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <RootServices manager={manager} />
+        <SafeAreaView style={styles.root}>
+          <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+          <MainTabs manager={manager} nostrEnabled={Boolean(manager)} />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -125,17 +134,30 @@ function MainTabs({
 }) {
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('home');
   const [stack, setStack] = useState<StackItem[]>([]);
+  const stackDepth = useSharedValue(0);
+  const dismissProgress = useSharedValue(0);
   const authPubkey = useAuthStore(state => state.pubkey);
   const authHasSigner = useAuthStore(state => state.hasSigner);
-  const activeRoute = useMemo(
-    () => ROUTES.find(route => route.id === activeRouteId) ?? ROUTES[0],
+  const activeRouteIndex = useMemo(
+    () => Math.max(0, ROUTES.findIndex(route => route.id === activeRouteId)),
     [activeRouteId],
   );
+  const activeRoute = ROUTES[activeRouteIndex] ?? ROUTES[0];
   const auth = useMemo(
     () => ({pubkey: authPubkey, hasSigner: authHasSigner}),
     [authHasSigner, authPubkey],
   );
   const top = stack.at(-1) ?? null;
+  const stackPresentation =
+    top?.type === 'publicProfile' || top?.type === 'chatThread'
+      ? 'sub'
+      : top
+        ? 'modal'
+        : 'flat';
+
+  useEffect(() => {
+    stackDepth.value = withTiming(stack.length, {duration: 220});
+  }, [stack.length, stackDepth]);
 
   const push = (item: StackItem) => {
     setStack(items => {
@@ -161,29 +183,48 @@ function MainTabs({
 
   return (
     <View style={styles.navigator}>
-      <View style={styles.page}>
-        {activeRoute.id === 'home' ? (
-          <HomeFeed
-            enabled={nostrEnabled}
-            visible
-            onLoginOpen={() => push({type: 'login'})}
-            onProfileOpen={() => push({type: 'profile'})}
-            onNotificationsOpen={() => undefined}
-          />
-        ) : activeRoute.id === 'explore' ? (
-          <ExploreFeed
-            enabled={nostrEnabled}
-            visible
-            onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
-          />
-        ) : (
-          <ChatFeed
-            enabled={nostrEnabled}
-            visible
-            onChatOpen={peerPubkey => push({type: 'chatThread', peerPubkey})}
-          />
+      <CarouselAnimator
+        activeIndex={activeRouteIndex}
+        pageCount={ROUTES.length}
+        labels={ROUTES.map(route => route.label)}
+        enabled={!top}
+        stackDepth={stackDepth}
+        dismissProgress={dismissProgress}
+        stackPresentation={stackPresentation}
+        onIndexChange={index => {
+          setActiveRouteId(ROUTES[index]?.id ?? 'home');
+        }}
+        renderPage={({index, width, virtualX, isActive}) => (
+          <FeedPage
+            key={ROUTES[index].id}
+            index={index}
+            width={width}
+            virtualX={virtualX}
+          >
+            {ROUTES[index].id === 'home' ? (
+              <HomeFeed
+                enabled={nostrEnabled}
+                visible={isActive}
+                onLoginOpen={() => push({type: 'login'})}
+                onProfileOpen={() => push({type: 'profile'})}
+                onNotificationsOpen={() => undefined}
+              />
+            ) : ROUTES[index].id === 'explore' ? (
+              <ExploreFeed
+                enabled={nostrEnabled}
+                visible={isActive}
+                onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
+              />
+            ) : (
+              <ChatFeed
+                enabled={nostrEnabled}
+                visible={isActive}
+                onChatOpen={peerPubkey => push({type: 'chatThread', peerPubkey})}
+              />
+            )}
+          </FeedPage>
         )}
-      </View>
+      />
       <BottomTabs activeRouteId={activeRoute.id} onRoutePress={setActiveRouteId} />
       {top ? (
         <View style={top.type === 'publicProfile' || top.type === 'chatThread' ? styles.subLayer : styles.modalLayer}>
@@ -210,6 +251,31 @@ function MainTabs({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function FeedPage({
+  children,
+  index,
+  virtualX,
+  width,
+}: {
+  children: React.ReactNode;
+  index: number;
+  virtualX: SharedValue<number>;
+  width: number;
+}) {
+  const pageStyle = useAnimatedStyle(() => ({
+    transform: [{translateX: index * width - virtualX.value}],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="box-none"
+      style={[styles.page, {width}, pageStyle]}
+    >
+      {children}
+    </Animated.View>
   );
 }
 

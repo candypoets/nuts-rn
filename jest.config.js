@@ -6,6 +6,8 @@ module.exports = {
       '<rootDir>/__mocks__/async-storage.js',
     '^nostr-tools$': '<rootDir>/__mocks__/nostr-tools.js',
     '^@shopify/flash-list$': '<rootDir>/__mocks__/flash-list.js',
+    '^react-native-gesture-handler$':
+      '<rootDir>/__mocks__/react-native-gesture-handler.js',
     '^react-native-reanimated$':
       '<rootDir>/__mocks__/react-native-reanimated.js',
   },

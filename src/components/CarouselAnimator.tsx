@@ -1,9 +1,11 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {Dimensions, PanResponder, Pressable, StyleSheet, View} from 'react-native';
+import React, {useEffect} from 'react';
+import {Pressable, StyleSheet, useWindowDimensions, View} from 'react-native';
+import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
   type SharedValue,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -20,12 +22,14 @@ function clamp(value: number, min: number, max: number) {
 }
 
 type CarouselAnimatorProps = {
+  activeIndex: number;
   pageCount: number;
   labels: string[];
   enabled?: boolean;
   stackDepth: SharedValue<number>;
   dismissProgress: SharedValue<number>;
   stackPresentation: 'flat' | 'modal' | 'sub';
+  onIndexChange: (index: number) => void;
   renderPage: (params: {
     index: number;
     width: number;
@@ -35,81 +39,79 @@ type CarouselAnimatorProps = {
 };
 
 export function CarouselAnimator({
+  activeIndex,
   pageCount,
   labels,
   enabled = true,
   stackDepth,
   dismissProgress,
   stackPresentation,
+  onIndexChange,
   renderPage,
 }: CarouselAnimatorProps) {
-  const width = Dimensions.get('window').width;
-  const [activeIndex, setActiveIndex] = useState(0);
+  const {width} = useWindowDimensions();
   const virtualX = useSharedValue(0);
   const activeIndexValue = useSharedValue(activeIndex);
-  const activeIndexRef = useRef(activeIndex);
-  const enabledRef = useRef(enabled);
+  const gestureStartX = useSharedValue(0);
+  const enabledValue = useSharedValue(enabled);
 
   useEffect(() => {
-    activeIndexRef.current = activeIndex;
     activeIndexValue.value = activeIndex;
-  }, [activeIndex, activeIndexValue]);
+    virtualX.value = withSpring(activeIndex * width, SWIPE_SPRING);
+  }, [activeIndex, activeIndexValue, virtualX, width]);
 
   useEffect(() => {
-    enabledRef.current = enabled;
-  }, [enabled]);
+    enabledValue.value = enabled;
+  }, [enabled, enabledValue]);
 
   const navigateTo = (index: number) => {
     const next = clamp(index, 0, pageCount - 1);
-    setActiveIndex(next);
-    activeIndexRef.current = next;
     activeIndexValue.value = next;
     virtualX.value = withSpring(next * width, SWIPE_SPRING);
+    onIndexChange(next);
   };
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          enabledRef.current &&
-          Math.abs(gesture.dx) > 8 &&
-          Math.abs(gesture.dx) > Math.abs(gesture.dy),
-        onPanResponderMove: (_, gesture) => {
-          if (!enabledRef.current) return;
-          const current = activeIndexRef.current;
-          const maxDelta = current * width;
-          const minDelta = -(pageCount - 1 - current) * width;
-          let constrained = gesture.dx;
-          if (gesture.dx > maxDelta)
-            constrained = maxDelta + (gesture.dx - maxDelta) * 0.3;
-          if (gesture.dx < minDelta)
-            constrained = minDelta + (gesture.dx - minDelta) * 0.3;
-          virtualX.value = current * width - constrained;
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (!enabledRef.current) return;
-          const current = activeIndexRef.current;
-          const threshold = width / 3;
-          const velocityThreshold = 0.5;
-          const maxIndex = pageCount - 1;
-          let target = current;
-          if (
-            Math.abs(gesture.dx) > threshold ||
-            Math.abs(gesture.vx) > velocityThreshold
-          ) {
-            if (gesture.dx > 0) target = current - 1;
-            if (gesture.dx < 0) target = current + 1;
-          }
-          target = Math.max(0, Math.min(maxIndex, target));
-          activeIndexRef.current = target;
-          activeIndexValue.value = target;
-          setActiveIndex(target);
-          virtualX.value = withSpring(target * width, SWIPE_SPRING);
-        },
-      }),
-    [activeIndexValue, pageCount, virtualX, width],
-  );
+  const panGesture = Gesture.Pan()
+    .enabled(enabled)
+    .activeOffsetX([-8, 8])
+    .failOffsetY([-8, 8])
+    .onBegin(() => {
+      gestureStartX.value = activeIndexValue.value * width;
+    })
+    .onUpdate(event => {
+      if (!enabledValue.value) return;
+      const current = activeIndexValue.value;
+      const maxDelta = current * width;
+      const minDelta = -(pageCount - 1 - current) * width;
+      let constrained = event.translationX;
+      if (event.translationX > maxDelta) {
+        constrained = maxDelta + (event.translationX - maxDelta) * 0.3;
+      }
+      if (event.translationX < minDelta) {
+        constrained = minDelta + (event.translationX - minDelta) * 0.3;
+      }
+      virtualX.value = gestureStartX.value - constrained;
+    })
+    .onEnd(event => {
+      if (!enabledValue.value) return;
+      const current = activeIndexValue.value;
+      const threshold = width / 3;
+      const velocityThreshold = 500;
+      let target = current;
+
+      if (
+        Math.abs(event.translationX) > threshold ||
+        Math.abs(event.velocityX) > velocityThreshold
+      ) {
+        if (event.translationX > 0) target = current - 1;
+        if (event.translationX < 0) target = current + 1;
+      }
+
+      target = Math.max(0, Math.min(pageCount - 1, target));
+      activeIndexValue.value = target;
+      virtualX.value = withSpring(target * width, SWIPE_SPRING);
+      runOnJS(onIndexChange)(target);
+    });
 
   const mainStyle = useAnimatedStyle(() => {
     const effectiveDepth = Math.max(0, stackDepth.value - dismissProgress.value);
@@ -150,16 +152,18 @@ export function CarouselAnimator({
 
   return (
     <>
-      <Animated.View style={[styles.mainPager, mainStyle]} {...panResponder.panHandlers}>
-        {Array.from({length: pageCount}, (_, index) =>
-          renderPage({
-            index,
-            width,
-            virtualX,
-            isActive: index === activeIndex,
-          }),
-        )}
-      </Animated.View>
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.mainPager, mainStyle]}>
+          {Array.from({length: pageCount}, (_, index) =>
+            renderPage({
+              index,
+              width,
+              virtualX,
+              isActive: index === activeIndex,
+            }),
+          )}
+        </Animated.View>
+      </GestureDetector>
       <View style={styles.carouselProgress}>
         {labels.map((label, index) => (
           <Pressable
@@ -200,6 +204,7 @@ function ProgressBar({
 const styles = StyleSheet.create({
   mainPager: {
     flex: 1,
+    overflow: 'hidden',
   },
   carouselProgress: {
     alignSelf: 'center',

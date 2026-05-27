@@ -273,6 +273,7 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
 
   useEffect(() => {
     if (!enabled) return;
+    const connectionTracker = connectionTrackerRef.current;
     if (!visible) {
       setLoading(false);
       setRefreshing(false);
@@ -286,7 +287,7 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
       pendingEventsRef.current = [];
-      connectionTrackerRef.current.reset();
+      connectionTracker.reset();
       subscriptionResolvingRef.current = false;
       clearTimer();
     };

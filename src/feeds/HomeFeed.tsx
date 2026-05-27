@@ -294,6 +294,7 @@ export function HomeFeed({
   }, [homeKey]);
 
   useEffect(() => {
+    const connectionTracker = connectionTrackerRef.current;
     clearRefreshTimeout();
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
@@ -313,7 +314,7 @@ export function HomeFeed({
       unsubscribeWalletRef.current?.();
       unsubscribeWalletRef.current = null;
       pendingItemsRef.current = [];
-      connectionTrackerRef.current.reset();
+      connectionTracker.reset();
       subscriptionResolvingRef.current = false;
       eoceReceivedRef.current = false;
       clearRefreshTimeout();

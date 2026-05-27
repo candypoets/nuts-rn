@@ -108,6 +108,14 @@ function PagerCard<T>({
     animatedDepth.value = withTiming(depthFromTop, {duration: 220});
   }, [animatedDepth, depthFromTop, dismissProgress]);
 
+  useEffect(() => {
+    if (!isTop) return;
+    dismissX.value = withSpring(0, SWIPE_SPRING);
+    dismissY.value = withSpring(0, SWIPE_SPRING);
+    dismissProgress.value = withSpring(0, SWIPE_SPRING);
+    enter.value = withTiming(1, {duration: 120});
+  }, [dismissProgress, dismissX, dismissY, enter, isTop]);
+
   const close = () => {
     dismissProgress.value = withTiming(1, {duration: 180});
     if (presentation === 'sub') {

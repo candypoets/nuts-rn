@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef} from 'react';
-import {StyleSheet, useWindowDimensions} from 'react-native';
+import {StyleSheet, View, useWindowDimensions} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import {scheduleOnRN} from 'react-native-worklets';
 import Animated, {
@@ -321,13 +321,18 @@ function PagerCard<T>({
 
   return (
     <Animated.View
+      needsOffscreenAlphaCompositing
       pointerEvents={isTop ? 'auto' : 'none'}
-      style={[
-        presentation === 'sub' ? styles.subLayer : styles.modalLayer,
-        style,
-      ]}
+      renderToHardwareTextureAndroid
+      style={[styles.cardShell, style]}
     >
-      {renderItem({close: onRequestClose, isTop, item})}
+      <View
+        collapsable={false}
+        pointerEvents="box-none"
+        style={presentation === 'sub' ? styles.subContent : styles.modalContent}
+      >
+        {renderItem({close: onRequestClose, isTop, item})}
+      </View>
     </Animated.View>
   );
 }
@@ -337,11 +342,14 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: 40,
   },
-  modalLayer: {
+  cardShell: {
+    ...StyleSheet.absoluteFill,
+  },
+  modalContent: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.24)',
   },
-  subLayer: {
+  subContent: {
     ...StyleSheet.absoluteFill,
     backgroundColor: '#f5f7f8',
   },

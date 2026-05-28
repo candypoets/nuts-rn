@@ -1,12 +1,13 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {Pressable, StyleSheet, useWindowDimensions, View} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
+import {scheduleOnRN} from 'react-native-worklets';
 import Animated, {
   Extrapolation,
   type SharedValue,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
@@ -20,6 +21,16 @@ export const SWIPE_SPRING = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+const debugCarousel = typeof __DEV__ !== 'undefined' && __DEV__;
+
+function logCarousel(event: string, values: Record<string, unknown>) {
+  if (!debugCarousel) return;
+  console.log('[carousel-debug]', {
+    event,
+    ...values,
+  });
 }
 
 type CarouselAnimatorProps = {
@@ -55,6 +66,10 @@ export function CarouselAnimator({
   const activeIndexValue = useSharedValue(activeIndex);
   const gestureStartIndex = useSharedValue(activeIndex);
   const enabledValue = useSharedValue(enabled);
+  const lastRoundedVirtualIndex = useSharedValue(activeIndex);
+  const commitCountRef = useRef(0);
+  const previousWidthRef = useRef(width);
+  const previousActiveIndexRef = useRef(activeIndex);
 
   useRenderTrace('CarouselAnimator', {
     activeIndex,
@@ -65,20 +80,96 @@ export function CarouselAnimator({
   });
 
   useEffect(() => {
-    activeIndexValue.value = activeIndex;
-    virtualIndex.value = withSpring(activeIndex, SWIPE_SPRING);
-  }, [activeIndex, activeIndexValue, virtualIndex]);
+    if (!debugCarousel) return;
+    commitCountRef.current += 1;
+    logCarousel('commit', {
+      activeIndex,
+      commit: commitCountRef.current,
+      enabled,
+      pageCount,
+      stackPresentation,
+      width,
+    });
+  });
 
   useEffect(() => {
+    if (!debugCarousel) return;
+    logCarousel('mount', {
+      activeIndex,
+      enabled,
+      pageCount,
+      width,
+    });
+  }, [activeIndex, enabled, pageCount, width]);
+
+  useEffect(
+    () => () => {
+      logCarousel('unmount', {
+        activeIndex: previousActiveIndexRef.current,
+        commits: commitCountRef.current,
+        width: previousWidthRef.current,
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!debugCarousel) return;
+    if (previousWidthRef.current !== width) {
+      logCarousel('width-change', {
+        activeIndex,
+        from: previousWidthRef.current,
+        to: width,
+      });
+      previousWidthRef.current = width;
+    }
+  }, [activeIndex, width]);
+
+  useEffect(() => {
+    previousActiveIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  useEffect(() => {
+    logCarousel('sync-active-index', {
+      activeIndex,
+      width,
+    });
+    activeIndexValue.value = activeIndex;
+    virtualIndex.value = withSpring(activeIndex, SWIPE_SPRING);
+  }, [activeIndex, activeIndexValue, virtualIndex, width]);
+
+  useEffect(() => {
+    logCarousel('sync-enabled', {
+      enabled,
+    });
     enabledValue.value = enabled;
   }, [enabled, enabledValue]);
 
   const navigateTo = (index: number) => {
     const next = clamp(index, 0, pageCount - 1);
+    logCarousel('press-index', {
+      activeIndex,
+      from: activeIndexValue.value,
+      requested: index,
+      target: next,
+      width,
+    });
     activeIndexValue.value = next;
     virtualIndex.value = withSpring(next, SWIPE_SPRING);
     onIndexChange(next);
   };
+
+  useDerivedValue(() => {
+    const rounded = Math.round(virtualIndex.value * 100) / 100;
+    if (rounded === lastRoundedVirtualIndex.value) return;
+    if (Math.abs(rounded - lastRoundedVirtualIndex.value) < 0.25) return;
+    lastRoundedVirtualIndex.value = rounded;
+    scheduleOnRN(logCarousel, 'virtual-index-shift', {
+      activeIndexValue: activeIndexValue.value,
+      rounded,
+      width,
+    });
+  });
 
   const panGesture = Gesture.Pan()
     .enabled(enabled)
@@ -86,6 +177,11 @@ export function CarouselAnimator({
     .failOffsetY([-8, 8])
     .onBegin(() => {
       gestureStartIndex.value = activeIndexValue.value;
+      scheduleOnRN(logCarousel, 'gesture-begin', {
+        activeIndexValue: activeIndexValue.value,
+        virtualIndex: virtualIndex.value,
+        width,
+      });
     })
     .onUpdate(event => {
       if (!enabledValue.value || width <= 0) return;
@@ -117,9 +213,17 @@ export function CarouselAnimator({
       }
 
       target = Math.max(0, Math.min(pageCount - 1, target));
+      scheduleOnRN(logCarousel, 'gesture-end', {
+        activeIndexValue: current,
+        target,
+        translationX: Math.round(event.translationX),
+        velocityX: Math.round(event.velocityX),
+        virtualIndex: virtualIndex.value,
+        width,
+      });
       activeIndexValue.value = target;
       virtualIndex.value = withSpring(target, SWIPE_SPRING);
-      runOnJS(onIndexChange)(target);
+      scheduleOnRN(onIndexChange, target);
     });
 
   const mainStyle = useAnimatedStyle(() => {

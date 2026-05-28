@@ -15,7 +15,7 @@
     "start:expo": "expo start --dev-client",
     "start:rn": "react-native start",
     "test": "jest",
-    "devtools": "react-devtools"
+    "devtools": "node scripts/open-rn-devtools.mjs"
   },
   "dependencies": {
     "@candypoets/nipworker": "file:../nipworker",
@@ -63,7 +63,6 @@
     "install-expo-modules": "^0.15.0",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
-    "react-devtools": "^7.0.1",
     "react-test-renderer": "19.2.3",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"

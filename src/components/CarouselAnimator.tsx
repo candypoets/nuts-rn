@@ -50,12 +50,13 @@ export function CarouselAnimator({
   renderPage,
 }: CarouselAnimatorProps) {
   const {width} = useWindowDimensions();
-  const virtualX = useSharedValue(0);
+  const virtualX = useSharedValue(activeIndex * width);
   const activeIndexValue = useSharedValue(activeIndex);
   const gestureStartX = useSharedValue(0);
   const enabledValue = useSharedValue(enabled);
 
   useEffect(() => {
+    if (width <= 0) return;
     activeIndexValue.value = activeIndex;
     virtualX.value = withSpring(activeIndex * width, SWIPE_SPRING);
   }, [activeIndex, activeIndexValue, virtualX, width]);

@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Image, Platform, Pressable, ScrollView, Text, View} from 'react-native';
+import {FlatList, Image, Platform, Pressable, Text, View} from 'react-native';
 import type {Kind0Parsed, ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -469,29 +469,14 @@ export function Kind0Sub({
     return (
       <View className="flex-1 bg-slate-50">
         {stickyHeader()}
-        <ScrollView
+        <FlatList
+          data={items}
           className="flex-1"
           contentContainerClassName="px-2 pb-28"
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          onScroll={event => {
-            const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
-            const distance =
-              contentSize.height - (contentOffset.y + layoutMeasurement.height);
-            if (distance < 320) handleNearBottom();
-          }}
-        >
-          {header()}
-          {items.length ? (
-            items.map(item => (
-              <Note
-                key={String(item.id() || item.createdAt())}
-                note={item}
-                visible={visible}
-                onProfileOpen={onProfileOpen}
-              />
-            ))
-          ) : (
+          initialNumToRender={6}
+          keyExtractor={item => String(item.id() || item.createdAt())}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
             <View className="px-6 py-12">
               <Text className="text-center text-sm text-slate-500">
                 {loading
@@ -503,8 +488,23 @@ export function Kind0Sub({
                       : 'No follows found for this profile.'}
               </Text>
             </View>
+          }
+          maxToRenderPerBatch={4}
+          onEndReached={handleNearBottom}
+          onEndReachedThreshold={0.5}
+          removeClippedSubviews={false}
+          renderItem={({item, index}) => (
+            <Note
+              note={item}
+              visible={visible && index < 12}
+              onProfileOpen={onProfileOpen}
+            />
           )}
-        </ScrollView>
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          updateCellsBatchingPeriod={80}
+          windowSize={5}
+        />
       </View>
     );
   }

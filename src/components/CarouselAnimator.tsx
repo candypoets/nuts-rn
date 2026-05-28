@@ -10,6 +10,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import {useRenderTrace} from '../debug/renderTrace';
 
 export const SWIPE_SPRING = {
   damping: 28,
@@ -54,6 +55,14 @@ export function CarouselAnimator({
   const activeIndexValue = useSharedValue(activeIndex);
   const gestureStartX = useSharedValue(0);
   const enabledValue = useSharedValue(enabled);
+
+  useRenderTrace('CarouselAnimator', {
+    activeIndex,
+    enabled,
+    pageCount,
+    stackPresentation,
+    width,
+  });
 
   useEffect(() => {
     if (width <= 0) return;

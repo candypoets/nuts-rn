@@ -21,6 +21,7 @@ import { BOOTSTRAP_RELAYS } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
+import {useAggregateRenderTrace} from '../../debug/renderTrace';
 
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
@@ -83,6 +84,7 @@ export function Note({
   ancestorIds = [],
   onProfileOpen,
 }: NoteProps) {
+  useAggregateRenderTrace(depth > 0 ? 'Note:quote' : 'Note');
   const fetchedRef = useRef<ParsedEvent | null>(null);
   const contextRef = useRef<ParsedEvent[]>(context);
   const [contextVersion, setContextVersion] = useState(0);

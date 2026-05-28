@@ -4,6 +4,7 @@ import type { Kind0Parsed } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import { isKind0 } from '@candypoets/nipworker/utils';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import {useAggregateRenderTrace} from '../../debug/renderTrace';
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 
@@ -33,6 +34,7 @@ export function Avatar({
 }: AvatarProps) {
   const profileRef = useRef<Kind0Parsed | null>(null);
   const [, setTick] = useState(0);
+  useAggregateRenderTrace('Avatar');
 
   useEffect(() => {
     if (!query || !pubkey) return;

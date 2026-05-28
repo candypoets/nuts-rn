@@ -38,6 +38,7 @@ import {Kind0Sub, Kind4Sub} from './src/subs';
 import {useAuthStore} from './src/stores';
 import {CarouselAnimator} from './src/components/CarouselAnimator';
 import {PagerAnimator, type PagerPresentation} from './src/components/PagerAnimator';
+import {useRenderTrace} from './src/debug/renderTrace';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -203,6 +204,20 @@ function MainTabs({
     }
     push(item);
   };
+  const stackKey = stack.map(stackKeyForItem).join('|');
+
+  useRenderTrace('MainTabs', {
+    activeRouteId,
+    activeRouteIndex,
+    activatedRoutes: Object.entries(activatedRoutes)
+      .filter(([, active]) => active)
+      .map(([route]) => route)
+      .join(','),
+    stackKey,
+    stackLength: stack.length,
+    stackPresentation,
+    topType: top?.type ?? 'none',
+  });
 
   return (
     <View style={styles.navigator}>
@@ -294,6 +309,10 @@ function FeedPage({
   virtualX: SharedValue<number>;
   width: number;
 }) {
+  useRenderTrace(`FeedPage:${index}`, {
+    index,
+    width,
+  });
   const pageStyle = useAnimatedStyle(() => ({
     transform: [{translateX: index * width - virtualX.value}],
   }));

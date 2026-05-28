@@ -8,6 +8,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import {useRenderTrace} from '../debug/renderTrace';
 
 export type PagerPresentation = 'modal' | 'sub';
 
@@ -70,6 +71,10 @@ export function PagerAnimator<T>({
   const gestureY = useSharedValue(0);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closingRef = useRef(false);
+  const stackKey = useMemo(
+    () => stack.map((item, index) => getKey(item, index)).join('|'),
+    [getKey, stack],
+  );
 
   const finishClose = useCallback(() => {
     closeTimerRef.current = null;
@@ -87,7 +92,6 @@ export function PagerAnimator<T>({
   );
 
   useEffect(() => {
-    const stackKey = stack.map((item, index) => getKey(item, index)).join('|');
     if (
       stack.length === previousStackLengthRef.current &&
       stackKey === previousStackKeyRef.current
@@ -124,6 +128,7 @@ export function PagerAnimator<T>({
     gestureX,
     gestureY,
     stack,
+    stackKey,
     stack.length,
     stackDepth,
   ]);
@@ -134,6 +139,13 @@ export function PagerAnimator<T>({
     () => stack.map(item => getPresentation(item)),
     [getPresentation, stack],
   );
+
+  useRenderTrace('PagerAnimator', {
+    stackKey,
+    stackLength: stack.length,
+    topPresentation,
+    width,
+  });
 
   const closeTop = useCallback(() => {
     if (closingRef.current || stack.length === 0) return;
@@ -274,6 +286,14 @@ function PagerCard<T>({
   stackLength,
 }: PagerCardProps<T>) {
   const {height, width} = useWindowDimensions();
+
+  useRenderTrace(`PagerCard:${index}`, {
+    index,
+    isTop,
+    presentation,
+    stackLength,
+    width,
+  });
 
   const style = useAnimatedStyle(() => {
     const isSub = presentation === 'sub';

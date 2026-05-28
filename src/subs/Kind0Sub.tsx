@@ -18,6 +18,7 @@ import {Avatar, Note} from '../components/notes';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {ALL_FEED_KINDS, useRelayStore} from '../stores';
+import {useRenderTrace} from '../debug/renderTrace';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 
@@ -317,6 +318,19 @@ export function Kind0Sub({
   const nip05 = profile?.nip05?.()?.trim() || '';
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
   const items = mode === 'profile' ? profilePosts : feedPosts;
+
+  useRenderTrace('Kind0Sub', {
+    feedReady,
+    hasProfile: Boolean(profile),
+    itemsLength: items.length,
+    loading,
+    mode,
+    profileContactsLength: profileContacts.length,
+    pubkey: pubkey.slice(0, 8),
+    readRelaysLength: readRelays.length,
+    visible,
+    writeRelaysLength: writeRelays.length,
+  });
 
   const handleNearBottom = useCallback(() => {
     if (loading || !items.length) return;

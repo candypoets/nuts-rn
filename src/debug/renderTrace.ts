@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'react';
 
 const enabled = typeof __DEV__ !== 'undefined' && __DEV__;
 const aggregateCounts = new Map<string, {commits: number; mounts: number; unmounts: number}>();
+const changeCounts = new Map<string, Map<string, number>>();
 let aggregateTimer: ReturnType<typeof setTimeout> | null = null;
 
 function summarize(value: unknown) {
@@ -24,19 +25,39 @@ function flushAggregate() {
   aggregateTimer = null;
   if (!aggregateCounts.size) return;
 
-  const rows = Array.from(aggregateCounts.entries()).map(([label, counts]) => ({
-    label,
-    ...counts,
-  }));
+  const rows = Array.from(aggregateCounts.entries()).map(([label, counts]) => {
+    const changes = changeCounts.get(label);
+    return {
+      label,
+      ...counts,
+      changes: changes
+        ? Object.fromEntries(
+            Array.from(changes.entries()).sort((left, right) => right[1] - left[1]),
+          )
+        : undefined,
+    };
+  });
   aggregateCounts.clear();
+  changeCounts.clear();
   console.log('[render-trace:aggregate]', rows);
 }
 
-function recordAggregate(label: string, field: keyof {commits: number; mounts: number; unmounts: number}) {
+function recordAggregate(
+  label: string,
+  field: keyof {commits: number; mounts: number; unmounts: number},
+  changes: string[] = [],
+) {
   if (!enabled) return;
   const counts = aggregateCounts.get(label) ?? {commits: 0, mounts: 0, unmounts: 0};
   counts[field] += 1;
   aggregateCounts.set(label, counts);
+  if (changes.length) {
+    const currentChanges = changeCounts.get(label) ?? new Map<string, number>();
+    changes.forEach(change => {
+      currentChanges.set(change, (currentChanges.get(change) ?? 0) + 1);
+    });
+    changeCounts.set(label, currentChanges);
+  }
   if (!aggregateTimer) {
     aggregateTimer = setTimeout(flushAggregate, 1000);
   }
@@ -78,6 +99,25 @@ export function useRenderTrace(label: string, values: Record<string, unknown>) {
 export function useAggregateRenderTrace(label: string) {
   useEffect(() => {
     recordAggregate(label, 'commits');
+  });
+
+  useEffect(() => {
+    recordAggregate(label, 'mounts');
+    return () => recordAggregate(label, 'unmounts');
+  }, [label]);
+}
+
+export function useAggregateRenderWhy(
+  label: string,
+  values: Record<string, unknown>,
+) {
+  const previousValuesRef = useRef<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    const previous = previousValuesRef.current;
+    const changes = changedKeys(previous, values);
+    previousValuesRef.current = values;
+    recordAggregate(label, 'commits', changes);
   });
 
   useEffect(() => {

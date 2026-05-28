@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -21,7 +22,7 @@ import { BOOTSTRAP_RELAYS } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
-import {useAggregateRenderTrace} from '../../debug/renderTrace';
+import {useAggregateRenderWhy} from '../../debug/renderTrace';
 
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
@@ -70,7 +71,15 @@ type NoteProps = {
   onProfileOpen?: (pubkey: string) => void;
 };
 
-export function Note({
+function parsedEventId(event?: ParsedEvent) {
+  return event?.id?.() ?? null;
+}
+
+function parsedEventIds(events?: ParsedEvent[]) {
+  return events?.map(event => event?.id?.() ?? '').join(',') ?? '';
+}
+
+function NoteComponent({
   note,
   noteId,
   context = EMPTY_CONTEXT,
@@ -84,7 +93,20 @@ export function Note({
   ancestorIds = [],
   onProfileOpen,
 }: NoteProps) {
-  useAggregateRenderTrace(depth > 0 ? 'Note:quote' : 'Note');
+  useAggregateRenderWhy(depth > 0 ? 'Note:quote' : 'Note', {
+    ancestorIds: ancestorIds.join(','),
+    context: parsedEventIds(context),
+    depth,
+    footer,
+    leading,
+    note: parsedEventId(note),
+    noteId,
+    onProfileOpen,
+    relays: relays.join(','),
+    showQuote,
+    tailing,
+    visible,
+  });
   const fetchedRef = useRef<ParsedEvent | null>(null);
   const contextRef = useRef<ParsedEvent[]>(context);
   const [contextVersion, setContextVersion] = useState(0);
@@ -471,3 +493,24 @@ export function Note({
     </>
   );
 }
+
+function sameParsedEventArray(left?: ParsedEvent[], right?: ParsedEvent[]) {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((event, index) => parsedEventId(event) === parsedEventId(right[index]));
+}
+
+export const Note = memo(NoteComponent, (previous, next) => (
+  parsedEventId(previous.note) === parsedEventId(next.note) &&
+  previous.noteId === next.noteId &&
+  sameParsedEventArray(previous.context, next.context) &&
+  sameStringArray(previous.relays ?? EMPTY_RELAYS, next.relays ?? EMPTY_RELAYS) &&
+  (previous.visible ?? true) === (next.visible ?? true) &&
+  (previous.footer ?? true) === (next.footer ?? true) &&
+  (previous.showQuote ?? true) === (next.showQuote ?? true) &&
+  (previous.depth ?? 0) === (next.depth ?? 0) &&
+  (previous.leading ?? false) === (next.leading ?? false) &&
+  (previous.tailing ?? false) === (next.tailing ?? false) &&
+  sameStringArray(previous.ancestorIds ?? EMPTY_RELAYS, next.ancestorIds ?? EMPTY_RELAYS) &&
+  previous.onProfileOpen === next.onProfileOpen
+));

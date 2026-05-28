@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, {memo, useEffect, useRef, useState} from 'react';
 import { Image, Pressable, View } from 'react-native';
 import type { Kind0Parsed } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import { isKind0 } from '@candypoets/nipworker/utils';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
-import {useAggregateRenderTrace} from '../../debug/renderTrace';
+import {useAggregateRenderWhy} from '../../debug/renderTrace';
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 
@@ -25,7 +25,7 @@ const sizeClass: Record<AvatarSize, string> = {
 
 const fallbackProfileImage = require('../../../assets/miss-profile.png');
 
-export function Avatar({
+function AvatarComponent({
   pubkey,
   size = 'md',
   query = true,
@@ -34,7 +34,13 @@ export function Avatar({
 }: AvatarProps) {
   const profileRef = useRef<Kind0Parsed | null>(null);
   const [, setTick] = useState(0);
-  useAggregateRenderTrace('Avatar');
+  useAggregateRenderWhy('Avatar', {
+    link,
+    onProfileOpen,
+    pubkey,
+    query,
+    size,
+  });
 
   useEffect(() => {
     if (!query || !pubkey) return;
@@ -94,3 +100,11 @@ export function Avatar({
     </Pressable>
   );
 }
+
+export const Avatar = memo(AvatarComponent, (previous, next) => (
+  previous.pubkey === next.pubkey &&
+  (previous.size ?? 'md') === (next.size ?? 'md') &&
+  (previous.query ?? true) === (next.query ?? true) &&
+  (previous.link ?? false) === (next.link ?? false) &&
+  previous.onProfileOpen === next.onProfileOpen
+));

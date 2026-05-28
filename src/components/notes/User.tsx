@@ -1,10 +1,10 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {memo, useEffect, useRef, useState} from 'react';
 import {Text} from 'react-native';
 import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {isKind0} from '@candypoets/nipworker/utils';
 import {DEFAULT_FEED_RELAYS} from '../../nostr/relays';
-import {useAggregateRenderTrace} from '../../debug/renderTrace';
+import {useAggregateRenderWhy} from '../../debug/renderTrace';
 import {shortPubkey} from './time';
 
 type UserProps = {
@@ -24,7 +24,7 @@ function displayName(profile: Kind0Parsed | null, pubkey: string) {
   );
 }
 
-export function User({
+function UserComponent({
   pubkey,
   query = true,
   link = false,
@@ -33,7 +33,13 @@ export function User({
 }: UserProps) {
   const profileRef = useRef<Kind0Parsed | null>(null);
   const [, setTick] = useState(0);
-  useAggregateRenderTrace('User');
+  useAggregateRenderWhy('User', {
+    className,
+    link,
+    onProfileOpen,
+    pubkey,
+    query,
+  });
 
   useEffect(() => {
     if (!query || !pubkey) return;
@@ -66,3 +72,12 @@ export function User({
     </Text>
   );
 }
+
+export const User = memo(UserComponent, (previous, next) => (
+  previous.pubkey === next.pubkey &&
+  (previous.query ?? true) === (next.query ?? true) &&
+  (previous.link ?? false) === (next.link ?? false) &&
+  (previous.className ?? 'text-sm font-semibold text-slate-900') ===
+    (next.className ?? 'text-sm font-semibold text-slate-900') &&
+  previous.onProfileOpen === next.onProfileOpen
+));

@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Image, Pressable, Text, View} from 'react-native';
+import {Image, Platform, Pressable, ScrollView, Text, View} from 'react-native';
 import type {Kind0Parsed, ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -464,6 +464,50 @@ export function Kind0Sub({
       </View>
     </View>
   );
+
+  if (Platform.OS === 'ios') {
+    return (
+      <View className="flex-1 bg-slate-50">
+        {stickyHeader()}
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-2 pb-28"
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          onScroll={event => {
+            const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
+            const distance =
+              contentSize.height - (contentOffset.y + layoutMeasurement.height);
+            if (distance < 320) handleNearBottom();
+          }}
+        >
+          {header()}
+          {items.length ? (
+            items.map(item => (
+              <Note
+                key={String(item.id() || item.createdAt())}
+                note={item}
+                visible={visible}
+                onProfileOpen={onProfileOpen}
+              />
+            ))
+          ) : (
+            <View className="px-6 py-12">
+              <Text className="text-center text-sm text-slate-500">
+                {loading
+                  ? 'Loading...'
+                  : mode === 'profile'
+                    ? 'Loading posts...'
+                    : profileContacts.length
+                      ? 'Loading feed...'
+                      : 'No follows found for this profile.'}
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <Feed

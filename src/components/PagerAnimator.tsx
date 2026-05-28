@@ -311,10 +311,8 @@ function PagerCard<T>({
     const scale =
       Math.max(0.85, 1 - subDepth * 0.05) *
       Math.max(0.85, 1 - modalDepth * 0.05);
-    const opacity = Math.max(0.3, 1 - subDepth * 0.3);
 
     return {
-      opacity,
       transform: [{translateX}, {translateY}, {scale}],
     };
   });

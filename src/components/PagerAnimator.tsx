@@ -1,9 +1,9 @@
 import React, {useCallback, useEffect, useMemo, useRef} from 'react';
 import {StyleSheet, useWindowDimensions} from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
+import {scheduleOnRN} from 'react-native-worklets';
 import Animated, {
   type SharedValue,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -206,7 +206,7 @@ export function PagerAnimator<T>({
               {duration: EXIT_DURATION},
               finished => {
                 if (finished) {
-                  runOnJS(closeTopFromGesture)();
+                  scheduleOnRN(closeTopFromGesture);
                 }
               },
             );

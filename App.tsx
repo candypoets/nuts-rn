@@ -1,7 +1,7 @@
 import './global.css';
 import './textEncodingPolyfill';
 
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {NativeModules, StatusBar, StyleSheet, useColorScheme, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {
@@ -172,7 +172,7 @@ function MainTabs({
     );
   }, [activeRoute.id]);
 
-  const push = (item: StackItem) => {
+  const push = useCallback((item: StackItem) => {
     setStack(items => {
       if (item.type === 'publicProfile') {
         const existingIndex = items.findIndex(
@@ -185,25 +185,40 @@ function MainTabs({
       }
       return [...items, item];
     });
-  };
-  const closeTop = () => setStack(items => items.slice(0, -1));
-  const stackPresentationForItem = (item: StackItem): PagerPresentation =>
+  }, []);
+  const closeTop = useCallback(() => setStack(items => items.slice(0, -1)), []);
+  const stackPresentationForItem = useCallback((item: StackItem): PagerPresentation =>
     item.type === 'publicProfile' || item.type === 'chatThread'
       ? 'sub'
-      : 'modal';
-  const stackKeyForItem = (item: StackItem, index: number) => {
+      : 'modal', []);
+  const stackKeyForItem = useCallback((item: StackItem, index: number) => {
     if (item.type === 'publicProfile') return `publicProfile:${item.pubkey}`;
     if (item.type === 'chatThread') return `chatThread:${item.peerPubkey}`;
     if (item.type === 'profileStub') return `profileStub:${item.path}`;
     return `${item.type}:${index}`;
-  };
-  const openProfileTarget = (item: ProfileModalTarget) => {
+  }, []);
+  const openProfileTarget = useCallback((item: ProfileModalTarget) => {
     if (item.type === 'profileStub' && item.path === 'nprofile' && auth.pubkey) {
       push({type: 'publicProfile', pubkey: auth.pubkey});
       return;
     }
     push(item);
-  };
+  }, [auth.pubkey, push]);
+  const openLogin = useCallback(() => push({type: 'login'}), [push]);
+  const openProfile = useCallback(() => push({type: 'profile'}), [push]);
+  const openFeedBuilder = useCallback(() => push({type: 'feedBuilder'}), [push]);
+  const openPublicProfile = useCallback(
+    (pubkey: string) => push({type: 'publicProfile', pubkey}),
+    [push],
+  );
+  const openChatThread = useCallback(
+    (peerPubkey: string) => push({type: 'chatThread', peerPubkey}),
+    [push],
+  );
+  const changeRouteIndex = useCallback((index: number) => {
+    setActiveRouteId(ROUTES[index]?.id ?? 'home');
+  }, []);
+  const noop = useCallback(() => undefined, []);
   const stackKey = stack.map(stackKeyForItem).join('|');
 
   useRenderTrace('MainTabs', {
@@ -229,9 +244,7 @@ function MainTabs({
         stackDepth={stackDepth}
         dismissProgress={dismissProgress}
         stackPresentation={stackPresentation}
-        onIndexChange={index => {
-          setActiveRouteId(ROUTES[index]?.id ?? 'home');
-        }}
+        onIndexChange={changeRouteIndex}
         renderPage={({index, width, virtualIndex}) => (
           <FeedPage
             key={ROUTES[index].id}
@@ -243,22 +256,22 @@ function MainTabs({
               <HomeFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.home}
-                onLoginOpen={() => push({type: 'login'})}
-                onProfileOpen={() => push({type: 'profile'})}
-                onNotificationsOpen={() => undefined}
+                onLoginOpen={openLogin}
+                onProfileOpen={openProfile}
+                onNotificationsOpen={noop}
               />
             ) : ROUTES[index].id === 'explore' ? (
               <ExploreFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.explore}
-                onFeedBuilderOpen={() => push({type: 'feedBuilder'})}
-                onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
+                onFeedBuilderOpen={openFeedBuilder}
+                onProfileOpen={openPublicProfile}
               />
             ) : (
               <ChatFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.chat}
-                onChatOpen={peerPubkey => push({type: 'chatThread', peerPubkey})}
+                onChatOpen={openChatThread}
               />
             )}
           </FeedPage>
@@ -287,7 +300,7 @@ function MainTabs({
               pubkey={item.pubkey}
               visible={isTop}
               onClose={close}
-              onProfileOpen={pubkey => push({type: 'publicProfile', pubkey})}
+              onProfileOpen={openPublicProfile}
             />
           ) : (
             <Kind4Sub peerPubkey={item.peerPubkey} visible={isTop} onClose={close} />

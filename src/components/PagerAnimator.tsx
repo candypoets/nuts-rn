@@ -321,7 +321,6 @@ function PagerCard<T>({
 
   return (
     <Animated.View
-      needsOffscreenAlphaCompositing
       pointerEvents={isTop ? 'auto' : 'none'}
       renderToHardwareTextureAndroid
       style={[styles.cardShell, style]}

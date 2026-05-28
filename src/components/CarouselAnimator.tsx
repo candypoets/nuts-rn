@@ -34,7 +34,7 @@ type CarouselAnimatorProps = {
   renderPage: (params: {
     index: number;
     width: number;
-    virtualX: SharedValue<number>;
+    virtualIndex: SharedValue<number>;
     isActive: boolean;
   }) => React.ReactNode;
 };
@@ -51,9 +51,9 @@ export function CarouselAnimator({
   renderPage,
 }: CarouselAnimatorProps) {
   const {width} = useWindowDimensions();
-  const virtualX = useSharedValue(activeIndex * width);
+  const virtualIndex = useSharedValue(activeIndex);
   const activeIndexValue = useSharedValue(activeIndex);
-  const gestureStartX = useSharedValue(0);
+  const gestureStartIndex = useSharedValue(activeIndex);
   const enabledValue = useSharedValue(enabled);
 
   useRenderTrace('CarouselAnimator', {
@@ -65,10 +65,9 @@ export function CarouselAnimator({
   });
 
   useEffect(() => {
-    if (width <= 0) return;
     activeIndexValue.value = activeIndex;
-    virtualX.value = withSpring(activeIndex * width, SWIPE_SPRING);
-  }, [activeIndex, activeIndexValue, virtualX, width]);
+    virtualIndex.value = withSpring(activeIndex, SWIPE_SPRING);
+  }, [activeIndex, activeIndexValue, virtualIndex]);
 
   useEffect(() => {
     enabledValue.value = enabled;
@@ -77,7 +76,7 @@ export function CarouselAnimator({
   const navigateTo = (index: number) => {
     const next = clamp(index, 0, pageCount - 1);
     activeIndexValue.value = next;
-    virtualX.value = withSpring(next * width, SWIPE_SPRING);
+    virtualIndex.value = withSpring(next, SWIPE_SPRING);
     onIndexChange(next);
   };
 
@@ -86,10 +85,10 @@ export function CarouselAnimator({
     .activeOffsetX([-8, 8])
     .failOffsetY([-8, 8])
     .onBegin(() => {
-      gestureStartX.value = activeIndexValue.value * width;
+      gestureStartIndex.value = activeIndexValue.value;
     })
     .onUpdate(event => {
-      if (!enabledValue.value) return;
+      if (!enabledValue.value || width <= 0) return;
       const current = activeIndexValue.value;
       const maxDelta = current * width;
       const minDelta = -(pageCount - 1 - current) * width;
@@ -100,10 +99,10 @@ export function CarouselAnimator({
       if (event.translationX < minDelta) {
         constrained = minDelta + (event.translationX - minDelta) * 0.3;
       }
-      virtualX.value = gestureStartX.value - constrained;
+      virtualIndex.value = gestureStartIndex.value - constrained / width;
     })
     .onEnd(event => {
-      if (!enabledValue.value) return;
+      if (!enabledValue.value || width <= 0) return;
       const current = activeIndexValue.value;
       const threshold = width / 3;
       const velocityThreshold = 500;
@@ -119,7 +118,7 @@ export function CarouselAnimator({
 
       target = Math.max(0, Math.min(pageCount - 1, target));
       activeIndexValue.value = target;
-      virtualX.value = withSpring(target * width, SWIPE_SPRING);
+      virtualIndex.value = withSpring(target, SWIPE_SPRING);
       runOnJS(onIndexChange)(target);
     });
 
@@ -168,7 +167,7 @@ export function CarouselAnimator({
             renderPage({
               index,
               width,
-              virtualX,
+              virtualIndex,
               isActive: index === activeIndex,
             }),
           )}
@@ -183,7 +182,7 @@ export function CarouselAnimator({
             style={styles.progressButton}
             onPress={() => navigateTo(index)}
           >
-            <ProgressBar index={index} virtualX={virtualX} width={width} />
+            <ProgressBar index={index} virtualIndex={virtualIndex} />
           </Pressable>
         ))}
       </View>
@@ -193,15 +192,13 @@ export function CarouselAnimator({
 
 function ProgressBar({
   index,
-  virtualX,
-  width,
+  virtualIndex,
 }: {
   index: number;
-  virtualX: SharedValue<number>;
-  width: number;
+  virtualIndex: SharedValue<number>;
 }) {
   const style = useAnimatedStyle(() => {
-    const ratio = 1 / (Math.abs(virtualX.value - index * width) / width + 1);
+    const ratio = 1 / (Math.abs(virtualIndex.value - index) + 1);
     return {
       opacity: 0.3 + ratio * 0.7,
       transform: [{scaleX: 0.75 + ratio * 0.5}],

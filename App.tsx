@@ -232,12 +232,12 @@ function MainTabs({
         onIndexChange={index => {
           setActiveRouteId(ROUTES[index]?.id ?? 'home');
         }}
-        renderPage={({index, width, virtualX}) => (
+        renderPage={({index, width, virtualIndex}) => (
           <FeedPage
             key={ROUTES[index].id}
             index={index}
             width={width}
-            virtualX={virtualX}
+            virtualIndex={virtualIndex}
           >
             {ROUTES[index].id === 'home' ? (
               <HomeFeed
@@ -301,12 +301,12 @@ function MainTabs({
 function FeedPage({
   children,
   index,
-  virtualX,
+  virtualIndex,
   width,
 }: {
   children: React.ReactNode;
   index: number;
-  virtualX: SharedValue<number>;
+  virtualIndex: SharedValue<number>;
   width: number;
 }) {
   useRenderTrace(`FeedPage:${index}`, {
@@ -314,7 +314,7 @@ function FeedPage({
     width,
   });
   const pageStyle = useAnimatedStyle(() => ({
-    transform: [{translateX: index * width - virtualX.value}],
+    transform: [{translateX: (index - virtualIndex.value) * width}],
   }));
 
   return (

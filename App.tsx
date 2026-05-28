@@ -4,6 +4,13 @@ import './textEncodingPolyfill';
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {NativeModules, StatusBar, StyleSheet, useColorScheme, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {NavigationContainer, useIsFocused, useNavigation} from '@react-navigation/native';
+import {
+  createNativeStackNavigator,
+  type NativeStackNavigationProp,
+  type NativeStackScreenProps,
+} from '@react-navigation/native-stack';
+import {enableFreeze, enableScreens} from 'react-native-screens';
 import {
   default as Animated,
   ReanimatedLogLevel,
@@ -37,8 +44,10 @@ import {
 import {Kind0Sub, Kind4Sub} from './src/subs';
 import {useAuthStore} from './src/stores';
 import {CarouselAnimator} from './src/components/CarouselAnimator';
-import {PagerAnimator, type PagerPresentation} from './src/components/PagerAnimator';
 import {useRenderTrace} from './src/debug/renderTrace';
+
+enableScreens(true);
+enableFreeze(true);
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -46,20 +55,24 @@ configureReanimatedLogger({
 });
 
 type RouteId = 'home' | 'explore' | 'chat';
-type StackItem =
-  | {type: 'profile'}
-  | {type: 'login'}
-  | {type: 'logout'}
-  | {type: 'feedBuilder'}
-  | {type: 'profileStub'; path: 'relays' | 'wallet' | 'theme' | 'nprofile'}
-  | {type: 'publicProfile'; pubkey: string}
-  | {type: 'chatThread'; peerPubkey: string};
+type RootStackParamList = {
+  Main: undefined;
+  Profile: undefined;
+  Login: undefined;
+  Logout: undefined;
+  FeedBuilder: undefined;
+  ProfileStub: {path: 'relays' | 'wallet' | 'theme' | 'nprofile'};
+  PublicProfile: {pubkey: string};
+  ChatThread: {peerPubkey: string};
+};
 
 const ROUTES: Array<{id: RouteId; label: string}> = [
   {id: 'home', label: 'Home'},
   {id: 'explore', label: 'Explore'},
   {id: 'chat', label: 'Chat'},
 ];
+
+const NativeStack = createNativeStackNavigator<RootStackParamList>();
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -88,10 +101,70 @@ function App() {
         <RootServices manager={manager} />
         <SafeAreaView style={styles.root}>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-          <MainTabs manager={manager} nostrEnabled={Boolean(manager)} />
+          <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
         </SafeAreaView>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+function RootNavigator({
+  manager,
+  nostrEnabled,
+}: {
+  manager: NostrManagerLike | null;
+  nostrEnabled: boolean;
+}) {
+  return (
+    <NavigationContainer>
+      <NativeStack.Navigator
+        initialRouteName="Main"
+        screenOptions={{
+          contentStyle: styles.root,
+          freezeOnBlur: true,
+          headerShown: false,
+        }}
+      >
+        <NativeStack.Screen name="Main" options={{freezeOnBlur: false}}>
+          {() => <MainTabs nostrEnabled={nostrEnabled} />}
+        </NativeStack.Screen>
+        <NativeStack.Screen
+          name="PublicProfile"
+          component={PublicProfileScreen}
+          options={{animation: 'slide_from_right'}}
+        />
+        <NativeStack.Screen
+          name="ChatThread"
+          component={ChatThreadScreen}
+          options={{animation: 'slide_from_right'}}
+        />
+        <NativeStack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen name="Login" options={{presentation: 'modal'}}>
+          {({navigation}) => (
+            <LoginScreen manager={manager} onClose={navigation.goBack} />
+          )}
+        </NativeStack.Screen>
+        <NativeStack.Screen name="Logout" options={{presentation: 'modal'}}>
+          {({navigation}) => (
+            <LogoutScreen manager={manager} onClose={navigation.goBack} />
+          )}
+        </NativeStack.Screen>
+        <NativeStack.Screen
+          name="FeedBuilder"
+          component={FeedBuilderScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen
+          name="ProfileStub"
+          component={ProfileStubScreen}
+          options={{presentation: 'modal'}}
+        />
+      </NativeStack.Navigator>
+    </NavigationContainer>
   );
 }
 
@@ -126,40 +199,22 @@ function RootServices({manager}: {manager: NostrManagerLike | null}) {
   return null;
 }
 
-function MainTabs({
-  manager,
-  nostrEnabled,
-}: {
-  manager: NostrManagerLike | null;
-  nostrEnabled: boolean;
-}) {
+function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('home');
   const [activatedRoutes, setActivatedRoutes] = useState<Record<RouteId, boolean>>({
     home: true,
     explore: false,
     chat: false,
   });
-  const [stack, setStack] = useState<StackItem[]>([]);
   const stackDepth = useSharedValue(0);
   const dismissProgress = useSharedValue(0);
-  const authPubkey = useAuthStore(state => state.pubkey);
-  const authHasSigner = useAuthStore(state => state.hasSigner);
   const activeRouteIndex = useMemo(
     () => Math.max(0, ROUTES.findIndex(route => route.id === activeRouteId)),
     [activeRouteId],
   );
   const activeRoute = ROUTES[activeRouteIndex] ?? ROUTES[0];
-  const auth = useMemo(
-    () => ({pubkey: authPubkey, hasSigner: authHasSigner}),
-    [authHasSigner, authPubkey],
-  );
-  const top = stack.at(-1) ?? null;
-  const stackPresentation =
-    top?.type === 'publicProfile' || top?.type === 'chatThread'
-      ? 'sub'
-      : top
-        ? 'modal'
-        : 'flat';
 
   useEffect(() => {
     setActivatedRoutes(current =>
@@ -172,54 +227,24 @@ function MainTabs({
     );
   }, [activeRoute.id]);
 
-  const push = useCallback((item: StackItem) => {
-    setStack(items => {
-      if (item.type === 'publicProfile') {
-        const existingIndex = items.findIndex(
-          current =>
-            current.type === 'publicProfile' && current.pubkey === item.pubkey,
-        );
-        if (existingIndex >= 0) {
-          return items.slice(0, existingIndex + 1);
-        }
-      }
-      return [...items, item];
-    });
-  }, []);
-  const closeTop = useCallback(() => setStack(items => items.slice(0, -1)), []);
-  const stackPresentationForItem = useCallback((item: StackItem): PagerPresentation =>
-    item.type === 'publicProfile' || item.type === 'chatThread'
-      ? 'sub'
-      : 'modal', []);
-  const stackKeyForItem = useCallback((item: StackItem, index: number) => {
-    if (item.type === 'publicProfile') return `publicProfile:${item.pubkey}`;
-    if (item.type === 'chatThread') return `chatThread:${item.peerPubkey}`;
-    if (item.type === 'profileStub') return `profileStub:${item.path}`;
-    return `${item.type}:${index}`;
-  }, []);
-  const openProfileTarget = useCallback((item: ProfileModalTarget) => {
-    if (item.type === 'profileStub' && item.path === 'nprofile' && auth.pubkey) {
-      push({type: 'publicProfile', pubkey: auth.pubkey});
-      return;
-    }
-    push(item);
-  }, [auth.pubkey, push]);
-  const openLogin = useCallback(() => push({type: 'login'}), [push]);
-  const openProfile = useCallback(() => push({type: 'profile'}), [push]);
-  const openFeedBuilder = useCallback(() => push({type: 'feedBuilder'}), [push]);
+  const openLogin = useCallback(() => navigation.navigate('Login'), [navigation]);
+  const openProfile = useCallback(() => navigation.navigate('Profile'), [navigation]);
+  const openFeedBuilder = useCallback(
+    () => navigation.navigate('FeedBuilder'),
+    [navigation],
+  );
   const openPublicProfile = useCallback(
-    (pubkey: string) => push({type: 'publicProfile', pubkey}),
-    [push],
+    (pubkey: string) => navigation.push('PublicProfile', {pubkey}),
+    [navigation],
   );
   const openChatThread = useCallback(
-    (peerPubkey: string) => push({type: 'chatThread', peerPubkey}),
-    [push],
+    (peerPubkey: string) => navigation.push('ChatThread', {peerPubkey}),
+    [navigation],
   );
   const changeRouteIndex = useCallback((index: number) => {
     setActiveRouteId(ROUTES[index]?.id ?? 'home');
   }, []);
   const noop = useCallback(() => undefined, []);
-  const stackKey = stack.map(stackKeyForItem).join('|');
 
   useRenderTrace('MainTabs', {
     activeRouteId,
@@ -228,10 +253,6 @@ function MainTabs({
       .filter(([, active]) => active)
       .map(([route]) => route)
       .join(','),
-    stackKey,
-    stackLength: stack.length,
-    stackPresentation,
-    topType: top?.type ?? 'none',
   });
 
   return (
@@ -240,10 +261,10 @@ function MainTabs({
         activeIndex={activeRouteIndex}
         pageCount={ROUTES.length}
         labels={ROUTES.map(route => route.label)}
-        enabled={!top}
+        enabled
         stackDepth={stackDepth}
         dismissProgress={dismissProgress}
-        stackPresentation={stackPresentation}
+        stackPresentation="flat"
         onIndexChange={changeRouteIndex}
         renderPage={({index, width, virtualIndex}) => (
           <FeedPage
@@ -277,37 +298,112 @@ function MainTabs({
           </FeedPage>
         )}
       />
-      <PagerAnimator
-        dismissProgress={dismissProgress}
-        getKey={stackKeyForItem}
-        getPresentation={stackPresentationForItem}
-        onCloseTop={closeTop}
-        stack={stack}
-        stackDepth={stackDepth}
-        renderItem={({close, isTop, item}) =>
-          item.type === 'profile' ? (
-            <ProfileModal auth={auth} onClose={close} onNavigate={openProfileTarget} />
-          ) : item.type === 'login' ? (
-            <PrivateKeyLogin manager={manager} auth={auth} onDone={close} />
-          ) : item.type === 'logout' ? (
-            <LogoutModal manager={manager} onDone={close} />
-          ) : item.type === 'feedBuilder' ? (
-            <FeedBuilderModal onClose={close} />
-          ) : item.type === 'profileStub' ? (
-            <ProfileStubModal path={item.path} auth={auth} onClose={close} />
-          ) : item.type === 'publicProfile' ? (
-            <Kind0Sub
-              pubkey={item.pubkey}
-              visible={isTop}
-              onClose={close}
-              onProfileOpen={openPublicProfile}
-            />
-          ) : (
-            <Kind4Sub peerPubkey={item.peerPubkey} visible={isTop} onClose={close} />
-          )
-        }
-      />
     </View>
+  );
+}
+
+function useAuthValue() {
+  const pubkey = useAuthStore(state => state.pubkey);
+  const hasSigner = useAuthStore(state => state.hasSigner);
+  return useMemo(() => ({pubkey, hasSigner}), [hasSigner, pubkey]);
+}
+
+function ProfileScreen({navigation}: NativeStackScreenProps<RootStackParamList, 'Profile'>) {
+  const auth = useAuthValue();
+  const rootNavigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const openProfileTarget = useCallback(
+    (item: ProfileModalTarget) => {
+      if (item.type === 'profileStub' && item.path === 'nprofile' && auth.pubkey) {
+        rootNavigation.push('PublicProfile', {pubkey: auth.pubkey});
+        return;
+      }
+      if (item.type === 'profileStub') {
+        rootNavigation.navigate('ProfileStub', {path: item.path});
+      }
+    },
+    [auth.pubkey, rootNavigation],
+  );
+  return (
+    <ProfileModal
+      auth={auth}
+      onClose={navigation.goBack}
+      onNavigate={openProfileTarget}
+    />
+  );
+}
+
+function LoginScreen({
+  manager,
+  onClose,
+}: {
+  manager: NostrManagerLike | null;
+  onClose: () => void;
+}) {
+  const auth = useAuthValue();
+  return <PrivateKeyLogin manager={manager} auth={auth} onDone={onClose} />;
+}
+
+function LogoutScreen({
+  manager,
+  onClose,
+}: {
+  manager: NostrManagerLike | null;
+  onClose: () => void;
+}) {
+  return <LogoutModal manager={manager} onDone={onClose} />;
+}
+
+function FeedBuilderScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'FeedBuilder'>) {
+  return <FeedBuilderModal onClose={navigation.goBack} />;
+}
+
+function ProfileStubScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'ProfileStub'>) {
+  const auth = useAuthValue();
+  return (
+    <ProfileStubModal
+      path={route.params.path}
+      auth={auth}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function PublicProfileScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'PublicProfile'>) {
+  const isFocused = useIsFocused();
+  const openPublicProfile = useCallback(
+    (pubkey: string) => navigation.push('PublicProfile', {pubkey}),
+    [navigation],
+  );
+  return (
+    <Kind0Sub
+      pubkey={route.params.pubkey}
+      visible={isFocused}
+      onClose={navigation.goBack}
+      onProfileOpen={openPublicProfile}
+    />
+  );
+}
+
+function ChatThreadScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'ChatThread'>) {
+  const isFocused = useIsFocused();
+  return (
+    <Kind4Sub
+      peerPubkey={route.params.peerPubkey}
+      visible={isFocused}
+      onClose={navigation.goBack}
+    />
   );
 }
 

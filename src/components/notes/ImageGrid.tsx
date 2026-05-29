@@ -1,4 +1,5 @@
 import {VideoView} from 'expo-video';
+import {Maximize2} from 'lucide-react-native';
 import React, {useEffect, useMemo, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, useWindowDimensions, View} from 'react-native';
 import {useSharedVideoPlayer} from '../../media/videoPlayers';
@@ -137,6 +138,17 @@ const styles = StyleSheet.create({
     height: '100%',
     width: '100%',
   },
+  expandButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.68)',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 36,
+  },
 });
 
 export function ImageGrid({links}: {links: ImageGridLink[]}) {
@@ -173,6 +185,49 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
           const rounded = getRounded(index, displayLinks.length, columns);
           const imageUri = link.type === 'video' && link.blurhash ? link.blurhash : link.src;
           const autoplay = link.type === 'video' && (single || index === 0);
+          const openZoom = () => {
+            setImageZoom({
+              links: links.filter(item => item.src),
+              zoomed: index,
+              gridId: `${links[0]?.src || 'media'}-${links.length}`,
+              videoTime: 0,
+            });
+          };
+
+          if (link.type === 'video') {
+            return (
+              <View
+                key={`${link.src}-${index}`}
+                className={['relative overflow-hidden bg-slate-100', rounded].join(' ')}
+                style={{width: tileWidth, height}}
+              >
+                <VideoTile
+                  src={link.src}
+                  poster={link.blurhash || undefined}
+                  autoplay={autoplay}
+                  single={single}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open video"
+                  hitSlop={8}
+                  onPress={event => {
+                    event.stopPropagation();
+                    openZoom();
+                  }}
+                  style={styles.expandButton}
+                >
+                  <Maximize2 size={18} color="#fff" strokeWidth={2.4} />
+                </Pressable>
+                {remainingCount > 0 && index === displayLinks.length - 1 ? (
+                  <View className="absolute inset-0 items-center justify-center bg-black/60">
+                    <Text className="text-2xl font-bold text-white">+{remainingCount}</Text>
+                    <Text className="text-sm text-white">more</Text>
+                  </View>
+                ) : null}
+              </View>
+            );
+          }
 
           return (
             <Pressable
@@ -181,28 +236,14 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
               style={{width: tileWidth, height}}
               onPress={event => {
                 event.stopPropagation();
-                setImageZoom({
-                  links: links.filter(item => item.src),
-                  zoomed: index,
-                  gridId: `${links[0]?.src || 'media'}-${links.length}`,
-                  videoTime: 0,
-                });
+                openZoom();
               }}
             >
-              {link.type === 'video' ? (
-                <VideoTile
-                  src={link.src}
-                  poster={link.blurhash || undefined}
-                  autoplay={autoplay}
-                  single={single}
-                />
-              ) : (
-                <Image
-                  source={{uri: imageUri}}
-                  resizeMode={single ? 'contain' : 'cover'}
-                  className="h-full w-full"
-                />
-              )}
+              <Image
+                source={{uri: imageUri}}
+                resizeMode={single ? 'contain' : 'cover'}
+                className="h-full w-full"
+              />
               {remainingCount > 0 && index === displayLinks.length - 1 ? (
                 <View className="absolute inset-0 items-center justify-center bg-black/60">
                   <Text className="text-2xl font-bold text-white">+{remainingCount}</Text>

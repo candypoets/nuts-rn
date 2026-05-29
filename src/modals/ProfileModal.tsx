@@ -1,8 +1,15 @@
-import React, {useCallback, useState} from 'react';
-import {Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {NostrManagerLike} from '@candypoets/nipworker';
+import React, { useCallback, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { NostrManagerLike } from '@candypoets/nipworker';
 import {
   ChevronRight,
   KeyRound,
@@ -14,20 +21,20 @@ import {
   Wallet,
   X,
 } from 'lucide-react-native';
-import {nip19} from 'nostr-tools';
+import { nip19 } from 'nostr-tools';
 
-import {HeaderProfileButton} from '../components/HeaderProfileButton';
-import {pushDistinct} from '../navigation/pushDistinct';
-import type {RootStackParamList} from '../navigation/types';
-import {useAuthStore, useWalletStore, type AuthState} from '../stores';
+import { HeaderProfileButton } from '../components/HeaderProfileButton';
+import { pushDistinct } from '../navigation/pushDistinct';
+import type { RootStackParamList } from '../navigation/types';
+import { useAuthStore, useWalletStore, type AuthState } from '../stores';
 
 type ProfileModalTarget =
-  | {type: 'login'}
-  | {type: 'logout'}
-  | {type: 'profileStub'; path: 'relays' | 'wallet' | 'theme' | 'nprofile'};
+  | { type: 'login' }
+  | { type: 'logout' }
+  | { type: 'profileStub'; path: 'relays' | 'wallet' | 'theme' | 'nprofile' };
 
 type ProfileModalProps = {
-  auth: Pick<AuthState, 'pubkey' | 'hasSigner'>;
+  auth: Pick<AuthState, 'pubkey' | 'hasSigner' | 'nsec'>;
   onClose: () => void;
 };
 
@@ -49,7 +56,8 @@ function decodePrivateKey(input: string) {
 
   if (value.toLowerCase().startsWith('nsec')) {
     const decoded = nip19.decode(value);
-    if (decoded.type !== 'nsec') throw new Error('Expected an nsec private key.');
+    if (decoded.type !== 'nsec')
+      throw new Error('Expected an nsec private key.');
     return decoded.data;
   }
 
@@ -60,7 +68,7 @@ function decodePrivateKey(input: string) {
   return hexToBytes(hex);
 }
 
-export function ProfileModal({auth, onClose}: ProfileModalProps) {
+export function ProfileModal({ auth, onClose }: ProfileModalProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const navigate = useCallback(
@@ -74,10 +82,10 @@ export function ProfileModal({auth, onClose}: ProfileModalProps) {
         return;
       }
       if (item.path === 'nprofile' && auth.pubkey) {
-        pushDistinct(navigation, 'PublicProfile', {pubkey: auth.pubkey});
+        pushDistinct(navigation, 'PublicProfile', { pubkey: auth.pubkey });
         return;
       }
-      navigation.navigate('ProfileStub', {path: item.path});
+      navigation.navigate('ProfileStub', { path: item.path });
     },
     [auth.pubkey, navigation],
   );
@@ -100,7 +108,10 @@ export function ProfileModal({auth, onClose}: ProfileModalProps) {
                 className="h-14 w-14 border-emerald-600 bg-white"
               />
             ) : null}
-            <Pressable style={styles.addAccountButton} onPress={() => navigate({type: 'login'})}>
+            <Pressable
+              style={styles.addAccountButton}
+              onPress={() => navigate({ type: 'login' })}
+            >
               <Plus size={22} color="#17212b" strokeWidth={2.4} />
             </Pressable>
           </View>
@@ -110,46 +121,56 @@ export function ProfileModal({auth, onClose}: ProfileModalProps) {
               <ProfileMenuRow
                 icon={<LogOut size={21} color="#17212b" strokeWidth={2.1} />}
                 label="Log out"
-                onPress={() => navigate({type: 'logout'})}
+                onPress={() => navigate({ type: 'logout' })}
               />
             ) : (
               <ProfileMenuRow
                 icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
                 label="Sign in"
-                onPress={() => navigate({type: 'login'})}
+                onPress={() => navigate({ type: 'login' })}
               />
             )}
           </View>
+
+          {auth.pubkey && auth.nsec ? (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
+                Save your key. It is the only way to recover this account on another device.
+              </Text>
+            </View>
+          ) : null}
 
           <Text style={styles.sectionTitle}>Profile</Text>
           <View style={styles.menuGroup}>
             <ProfileMenuRow
               icon={<User size={21} color="#17212b" strokeWidth={2.1} />}
               label="My Profile"
-              onPress={() => navigate({type: 'profileStub', path: 'nprofile'})}
+              onPress={() =>
+                navigate({ type: 'profileStub', path: 'nprofile' })
+              }
             />
             <ProfileMenuRow
               icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
               label="Keys"
-              onPress={() => navigate({type: 'login'})}
+              onPress={() => navigate({ type: 'login' })}
             />
             <ProfileMenuRow
               icon={<Radio size={21} color="#17212b" strokeWidth={2.1} />}
               label="Relays"
               detail="Your relay preferences"
-              onPress={() => navigate({type: 'profileStub', path: 'relays'})}
+              onPress={() => navigate({ type: 'profileStub', path: 'relays' })}
             />
             <ProfileMenuRow
               icon={<Wallet size={21} color="#17212b" strokeWidth={2.1} />}
               label="Wallet"
               detail="Wallet preferences"
-              onPress={() => navigate({type: 'profileStub', path: 'wallet'})}
+              onPress={() => navigate({ type: 'profileStub', path: 'wallet' })}
             />
             <ProfileMenuRow
               icon={<Palette size={21} color="#17212b" strokeWidth={2.1} />}
               label="Theme"
               detail="Appearance settings"
-              onPress={() => navigate({type: 'profileStub', path: 'theme'})}
+              onPress={() => navigate({ type: 'profileStub', path: 'theme' })}
               last
             />
           </View>
@@ -173,7 +194,10 @@ function ProfileMenuRow({
   last?: boolean;
 }) {
   return (
-    <Pressable style={[styles.menuRow, last ? styles.menuRowLast : null]} onPress={onPress}>
+    <Pressable
+      style={[styles.menuRow, last ? styles.menuRowLast : null]}
+      onPress={onPress}
+    >
       <View style={styles.menuIcon}>{icon}</View>
       <View style={styles.menuText}>
         <Text style={styles.menuLabel}>{label}</Text>
@@ -188,10 +212,12 @@ export function PrivateKeyLogin({
   manager,
   auth,
   onDone,
+  onSignup,
 }: {
   manager: NostrManagerLike | null;
   auth: Pick<AuthState, 'pubkey'>;
   onDone: () => void;
+  onSignup?: () => void;
 }) {
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -210,17 +236,19 @@ export function PrivateKeyLogin({
         ? privateKey.trim()
         : nip19.nsecEncode(secretKey);
       manager.setSigner('privkey', privkey);
-      setAuth({privkey, nsec});
+      setAuth({ privkey, nsec });
       setPrivateKey('');
       setError(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(
+        nextError instanceof Error ? nextError.message : String(nextError),
+      );
     }
   };
 
   return (
     <View style={styles.modalBody}>
-      <View style={styles.modalSheet}>
+      <View style={styles.fullModalSheet}>
         <View style={styles.modalHandle} />
         <View style={styles.modalHeader}>
           <Text style={styles.stackTitle}>Authenticate</Text>
@@ -228,32 +256,53 @@ export function PrivateKeyLogin({
             <X size={22} color="#52616f" strokeWidth={2.2} />
           </Pressable>
         </View>
-        <Text style={styles.stackBody}>
-          Paste an nsec or 64-character hex private key. The native nipworker backend derives the public key and reports login through its auth event.
-        </Text>
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="nsec1... or hex private key"
-          placeholderTextColor="#8794a0"
-          secureTextEntry
-          style={styles.input}
-          value={privateKey}
-          onChangeText={text => {
-            setPrivateKey(text);
-            setError(null);
-          }}
-        />
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        {auth.pubkey ? (
-          <Text style={styles.successText}>Signed in as {auth.pubkey.slice(0, 16)}...</Text>
-        ) : null}
-        <Pressable style={[styles.action, manager ? styles.loginAction : styles.disabledAction]} onPress={submit}>
-          <Text style={styles.actionText}>Sign in</Text>
-        </Pressable>
-        <Pressable style={styles.secondaryAction} onPress={onDone}>
-          <Text style={styles.secondaryActionText}>Close</Text>
-        </Pressable>
+        <View style={styles.loginContent}>
+          <View>
+            <Text style={styles.stackBody}>
+              Paste an nsec or 64-character hex private key. The native
+              nipworker backend derives the public key and reports login through
+              its auth event.
+            </Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="nsec1... or hex private key"
+              placeholderTextColor="#8794a0"
+              secureTextEntry
+              style={styles.input}
+              value={privateKey}
+              onChangeText={text => {
+                setPrivateKey(text);
+                setError(null);
+              }}
+            />
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {auth.pubkey ? (
+              <Text style={styles.successText}>
+                Signed in as {auth.pubkey.slice(0, 16)}...
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.loginActions}>
+            <Pressable
+              style={[
+                styles.action,
+                manager ? styles.loginAction : styles.disabledAction,
+              ]}
+              onPress={submit}
+            >
+              <Text style={styles.actionText}>Sign in</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryAction} onPress={onDone}>
+              <Text style={styles.secondaryActionText}>Close</Text>
+            </Pressable>
+            {onSignup ? (
+              <Pressable style={styles.secondaryAction} onPress={onSignup}>
+                <Text style={styles.secondaryActionText}>Create account</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -268,7 +317,9 @@ export function LogoutModal({
 }) {
   const clearAuth = useAuthStore(state => state.clearAuth);
   const setWalletMnemonic = useWalletStore(state => state.setWalletMnemonic);
-  const setWalletPassphrase = useWalletStore(state => state.setWalletPassphrase);
+  const setWalletPassphrase = useWalletStore(
+    state => state.setWalletPassphrase,
+  );
 
   const logout = () => {
     clearAuth();
@@ -290,7 +341,9 @@ export function LogoutModal({
           </Pressable>
         </View>
         <View style={styles.warningBox}>
-          <Text style={styles.warningText}>Make sure you saved your private key before logging out.</Text>
+          <Text style={styles.warningText}>
+            Make sure you saved your private key before logging out.
+          </Text>
         </View>
         <Pressable style={[styles.action, styles.loginAction]} onPress={logout}>
           <Text style={styles.actionText}>Log out</Text>
@@ -356,6 +409,13 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 28,
   },
+  fullModalSheet: {
+    backgroundColor: '#ffffff',
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
   modalHandle: {
     alignSelf: 'center',
     backgroundColor: '#cbd5e1',
@@ -380,6 +440,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 16,
+  },
+  loginContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  loginActions: {
+    paddingBottom: 8,
   },
   accountButtons: {
     flexDirection: 'row',

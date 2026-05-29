@@ -33,7 +33,6 @@ import {
 } from '@candypoets/nipworker/utils';
 import type { Proof } from '@cashu/cashu-ts';
 import {
-  Bell,
   CheckCircle2,
   CirclePlus,
   Eye,
@@ -45,6 +44,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { Feed } from '../components/Feed';
+import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Avatar } from '../components/notes/Avatar';
 import { User } from '../components/notes/User';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
@@ -627,9 +627,7 @@ function HomeHeader({
             <HeaderIconButton>
               <QrCode size={19} color="#17212b" strokeWidth={2.2} />
             </HeaderIconButton>
-            <HeaderIconButton>
-              <Bell size={19} color="#17212b" strokeWidth={2.2} />
-            </HeaderIconButton>
+            <NotificationBellButton />
             <HeaderProfileButton pubkey={pubkey} />
           </View>
         </View>

@@ -1,4 +1,5 @@
 import { Dimensions } from 'react-native';
+import type { ParsedEvent } from '@candypoets/nipworker';
 import { create } from 'zustand';
 
 const initialDimensions = Dimensions.get('window');
@@ -6,7 +7,13 @@ const initialDimensions = Dimensions.get('window');
 export type UIStore = {
   dimensions: { width: number; height: number };
   imageZoom: {
-    links: { src: string; type?: 'image' | 'video' }[];
+    links: {
+      src: string;
+      type?: 'image' | 'video';
+      blurhash?: string;
+      dim?: string | null;
+    }[];
+    note?: ParsedEvent;
     zoomed?: number;
     gridId: string;
     videoTime: number;
@@ -36,4 +43,3 @@ Dimensions.addEventListener('change', ({ window }) => {
 });
 
 export const selectIsMobile = (state: UIStore) => state.dimensions.width <= 768;
-

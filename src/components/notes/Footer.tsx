@@ -9,12 +9,17 @@ import {
   type ParsedEvent,
   type RequestObject,
   type WorkerMessage,
+  type ConnectionStatus,
 } from '@candypoets/nipworker';
-import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
+import {
+  usePublish as publishToNostr,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asCountResponse,
   asEoce,
+  isConnectionStatus,
   ConnectionTracker,
 } from '@candypoets/nipworker/utils';
 import Animated, {
@@ -24,19 +29,22 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
+import { kinds, type EventTemplate } from 'nostr-tools';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
-import { useAuthStore, useNostrStore } from '../../stores';
+import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
 import { IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
 
 type FooterProps = {
   note: ParsedEvent;
   visible: boolean;
   main?: boolean;
+  mode?: 'inline' | 'zoom';
 };
 
 const tint = '#9b9ea4';
 const primary = '#158777';
 const accent = '#6d28d9';
+const zoomActionStyle = { backgroundColor: 'rgba(15, 23, 42, 0.46)' };
 const nutscashIcon = require('../../../assets/nutscash.svg');
 const nutscashUri = Image.resolveAssetSource(nutscashIcon).uri;
 let nutscashXmlCache: string | null = null;
@@ -74,7 +82,7 @@ function countLabel(count: number) {
 }
 
 function createCounterOptions(
-  kinds: number[],
+  targetKinds: number[],
   mutedPubkeys: string[],
   mutedHashtags: string[],
   mutedWords: string[],
@@ -95,7 +103,7 @@ function createCounterOptions(
       new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
       new PipeT(
         PipeConfig.CounterPipeConfig,
-        new CounterPipeConfigT(kinds, pubkey),
+        new CounterPipeConfigT(targetKinds, pubkey),
       ),
     ],
     bytesPerEvent: 256,
@@ -147,15 +155,24 @@ function Action({
   activeColor,
   activeState = false,
   animation = 'bounce',
+  mode = 'inline',
+  onPress,
 }: {
   kind: ActionKind;
   label?: string;
   activeColor?: string;
   activeState?: boolean;
   animation?: 'bounce' | 'repost' | 'share';
+  mode?: 'inline' | 'zoom';
+  onPress?: () => void;
 }) {
   const progress = useSharedValue(0);
-  const color = activeState && activeColor ? activeColor : tint;
+  const color =
+    mode === 'zoom'
+      ? '#fff'
+      : activeState && activeColor
+        ? activeColor
+        : tint;
 
   useEffect(() => {
     if (!activeState) return;
@@ -205,7 +222,15 @@ function Action({
 
   return (
     <Pressable
-      className="flex-row items-center gap-1 rounded px-0.5 py-0.5"
+      className={
+        mode === 'zoom'
+          ? 'min-w-[72px] flex-row items-center justify-center gap-2 rounded-full px-4 py-3'
+          : 'flex-row items-center gap-1 rounded px-0.5 py-0.5'
+      }
+      style={
+        mode === 'zoom' ? zoomActionStyle : undefined
+      }
+      onPress={onPress}
       onPressIn={pressIn}
       onPressOut={pressOut}
     >
@@ -218,7 +243,7 @@ function Action({
       {label ? (
         <Text
           className={[
-            'text-xs',
+            mode === 'zoom' ? 'text-base' : 'text-xs',
             activeState ? 'font-semibold' : '',
           ].join(' ')}
           style={{ color }}
@@ -230,7 +255,7 @@ function Action({
   );
 }
 
-function ZapAction() {
+function ZapAction({ mode = 'inline' }: { mode?: 'inline' | 'zoom' }) {
   const [nutscashXml, setNutscashXml] = useState<string | null>(null);
   const progress = useSharedValue(0);
   const style = useAnimatedStyle(() => ({
@@ -259,7 +284,14 @@ function ZapAction() {
 
   return (
     <Pressable
-      className="flex-row items-center gap-1"
+      className={
+        mode === 'zoom'
+          ? 'h-12 w-12 items-center justify-center rounded-full'
+          : 'flex-row items-center gap-1'
+      }
+      style={
+        mode === 'zoom' ? zoomActionStyle : undefined
+      }
       onPressIn={() => {
         progress.value = withTiming(1, { duration: 140 });
       }}
@@ -276,9 +308,15 @@ function ZapAction() {
   );
 }
 
-export function Footer({ note, visible, main = false }: FooterProps) {
+export function Footer({
+  note,
+  visible,
+  main = false,
+  mode = 'inline',
+}: FooterProps) {
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
+  const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
   const mutedHashtags = useNostrStore(state => state.mutedHashtags);
   const mutedWords = useNostrStore(state => state.mutedWords);
@@ -290,6 +328,7 @@ export function Footer({ note, visible, main = false }: FooterProps) {
   const pendingCountsRef = useRef<Counts>(emptyCounts);
   const pendingActiveRef = useRef<ActiveState>(emptyActive);
   const noteId = note.id() || '';
+  const notePubkey = note.pubkey() || '';
   const relays = useMemo(
     () => (readRelays.length ? readRelays : DEFAULT_FEED_RELAYS),
     [readRelays],
@@ -435,6 +474,47 @@ export function Footer({ note, visible, main = false }: FooterProps) {
     }
   }, []);
 
+  const sendReaction = useCallback(() => {
+    if (!pubkey || !noteId || !notePubkey || activeRef.current.reacted) return;
+
+    const event: EventTemplate = {
+      kind: kinds.Reaction,
+      tags: [
+        ['e', noteId],
+        ['p', notePubkey],
+      ],
+      content: '+',
+      created_at: Math.floor(Date.now() / 1000),
+    };
+    const sendStatus: Record<string, ConnectionStatus> = {};
+    const sendId = `reaction_${noteId}`;
+
+    publishToNostr(
+      sendId,
+      event,
+      (message: WorkerMessage) => {
+        const status = isConnectionStatus(message);
+        const relayUrl = status?.relayUrl();
+        if (!status || !relayUrl) return;
+
+        sendStatus[relayUrl] = status;
+        updateSendStatus(sendId, sendStatus);
+        if (status.status()?.toString() === 'true' && !activeRef.current.reacted) {
+          pendingActiveRef.current = {
+            ...pendingActiveRef.current,
+            reacted: true,
+          };
+          pendingCountsRef.current = {
+            ...pendingCountsRef.current,
+            reactions: pendingCountsRef.current.reactions + 1,
+          };
+          commitPendingState();
+        }
+      },
+      {defaultRelays: relays, trackStatus: true},
+    );
+  }, [commitPendingState, noteId, notePubkey, pubkey, relays, updateSendStatus]);
+
   useEffect(() => {
     if (!visible || !noteId) return;
 
@@ -549,16 +629,25 @@ export function Footer({ note, visible, main = false }: FooterProps) {
     <View
       accessibilityLabel={`Actions for note ${note.id() || ''}`}
       className={[
-        'mt-2 h-6 w-full flex-row items-center px-2',
-        main ? 'pl-2' : 'pl-10',
+        mode === 'zoom'
+          ? 'mt-3 w-full flex-row items-center justify-between'
+          : 'mt-2 h-6 w-full flex-row items-center px-2',
+        mode === 'zoom' ? '' : main ? 'pl-2' : 'pl-10',
       ].join(' ')}
     >
-      <View className="flex-1 flex-row items-center gap-2">
+      <View
+        className={
+          mode === 'zoom'
+            ? 'flex-1 flex-row items-center justify-between gap-3'
+            : 'flex-1 flex-row items-center gap-2'
+        }
+      >
         <Action
           kind="reply"
           label={countLabel(counts.replies)}
           activeColor={accent}
           activeState={active.replied}
+          mode={mode}
         />
         <Action
           kind="repost"
@@ -566,16 +655,19 @@ export function Footer({ note, visible, main = false }: FooterProps) {
           activeColor={primary}
           activeState={active.reposted}
           animation="repost"
+          mode={mode}
         />
         <Action
           kind="like"
           label={countLabel(counts.reactions)}
           activeColor={accent}
           activeState={active.reacted}
+          mode={mode}
+          onPress={sendReaction}
         />
-        <Action kind="share" animation="share" />
+        <Action kind="share" animation="share" mode={mode} />
       </View>
-      <ZapAction />
+      {mode === 'zoom' ? null : <ZapAction />}
     </View>
   );
 }

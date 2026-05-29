@@ -257,11 +257,11 @@ function ZoomImage({
     .numberOfTaps(2)
     .onEnd(event => {
       const nextScale = scale.value > 1 ? 1 : 2.4;
-      scale.value = withSpring(nextScale);
+      scale.value = withTiming(nextScale, { duration: 180 });
       savedScale.value = nextScale;
       if (nextScale === 1) {
-        translateX.value = withSpring(0);
-        imageTranslateY.value = withSpring(0);
+        translateX.value = withTiming(0, { duration: 180 });
+        imageTranslateY.value = withTiming(0, { duration: 180 });
         savedX.value = 0;
         savedY.value = 0;
       } else {
@@ -269,11 +269,8 @@ function ZoomImage({
         const offsetY = event.y - height / 2;
         const nextX = -offsetX * (nextScale - 1);
         const nextY = -offsetY * (nextScale - 1);
-        translateX.value = withSpring(nextX, { damping: 22, stiffness: 240 });
-        imageTranslateY.value = withSpring(nextY, {
-          damping: 22,
-          stiffness: 240,
-        });
+        translateX.value = withTiming(nextX, { duration: 180 });
+        imageTranslateY.value = withTiming(nextY, { duration: 180 });
         savedX.value = nextX;
         savedY.value = nextY;
       }

@@ -24,11 +24,34 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ContentData } from '@candypoets/nipworker';
+import { asKind1, fbArray } from '@candypoets/nipworker/utils';
 
 import { useSharedVideoPlayer } from '../media/videoPlayers';
 import { useUIStore, type UIStore } from '../stores/uiStore';
+import { Footer } from './notes/Footer';
+import { User } from './notes/User';
 
 type ZoomLink = UIStore['imageZoom']['links'][number];
+
+function zoomNoteText(note: NonNullable<UIStore['imageZoom']['note']>) {
+  const kind1 = asKind1(note);
+  if (!kind1) return '';
+
+  return fbArray(kind1, 'parsedContent')
+    .filter(block => {
+      const dataType = block.dataType();
+      return (
+        dataType !== ContentData.ImageData &&
+        dataType !== ContentData.VideoData &&
+        dataType !== ContentData.MediaGroupData
+      );
+    })
+    .map(block => block.text() || '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function clampIndex(index: number | undefined, count: number) {
   if (!count) return 0;
@@ -48,7 +71,13 @@ export function ImageZoom() {
   const backgroundOpacity = useSharedValue(0);
 
   const close = useCallback(() => {
-    setImageZoom({ links: [], zoomed: undefined, gridId: '', videoTime: 0 });
+    setImageZoom({
+      links: [],
+      note: undefined,
+      zoomed: undefined,
+      gridId: '',
+      videoTime: 0,
+    });
   }, [setImageZoom]);
 
   useEffect(() => {
@@ -134,8 +163,47 @@ export function ImageZoom() {
           ) : null}
           <View style={styles.closeButtonSpacer} />
         </View>
+        <ZoomNoteOverlay bottomInset={insets.bottom} />
       </View>
     </Modal>
+  );
+}
+
+function ZoomNoteOverlay({ bottomInset }: { bottomInset: number }) {
+  const note = useUIStore(state => state.imageZoom.note);
+  const visible = useUIStore(state => state.imageZoom.zoomed !== undefined);
+
+  if (!note) return null;
+
+  const content = zoomNoteText(note);
+  const pubkey = note.pubkey?.() || '';
+
+  return (
+    <View
+      style={[
+        styles.noteOverlay,
+        { paddingBottom: Math.max(12, bottomInset + 8) },
+      ]}
+    >
+      <View style={styles.noteCard}>
+        {pubkey ? (
+          <User
+            pubkey={pubkey}
+            link
+            className="text-[14px] font-semibold text-white"
+          />
+        ) : null}
+        {content ? (
+          <Text
+            numberOfLines={4}
+            style={styles.noteText}
+          >
+            {content}
+          </Text>
+        ) : null}
+        <Footer note={note} visible={visible} />
+      </View>
+    </View>
   );
 }
 
@@ -454,5 +522,27 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  noteCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.58)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+  },
+  noteOverlay: {
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 12,
+    position: 'absolute',
+    right: 0,
+    zIndex: 3,
+  },
+  noteText: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 19,
   },
 });

@@ -96,6 +96,7 @@ function isInlineContentBlock(block: ContentBlock) {
 function ContentBlocksComponent({
   content,
   shortContent,
+  note,
   depth = 0,
   showQuote = true,
   renderQuote,
@@ -235,6 +236,7 @@ function ContentBlocksComponent({
           }}
         >
           <ImageGrid
+            note={note}
             links={[
               {
                 src: image?.url?.() || block.text() || '',
@@ -259,6 +261,7 @@ function ContentBlocksComponent({
           }}
         >
           <ImageGrid
+            note={note}
             links={[
               {
                 src: video?.url?.() || block.text() || '',
@@ -284,6 +287,7 @@ function ContentBlocksComponent({
           }}
         >
           <ImageGrid
+            note={note}
             links={
               mediaGroup
                 ? fbArray(mediaGroup, 'items').map(item => {

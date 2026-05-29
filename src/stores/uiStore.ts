@@ -1,4 +1,5 @@
 import { Dimensions } from 'react-native';
+import type { ParsedEvent } from '@candypoets/nipworker';
 import { create } from 'zustand';
 
 const initialDimensions = Dimensions.get('window');
@@ -12,6 +13,7 @@ export type UIStore = {
       blurhash?: string;
       dim?: string | null;
     }[];
+    note?: ParsedEvent;
     zoomed?: number;
     gridId: string;
     videoTime: number;

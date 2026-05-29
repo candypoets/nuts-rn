@@ -1,5 +1,6 @@
 import {VideoView} from 'expo-video';
 import {Volume2, VolumeX} from 'lucide-react-native';
+import type {ParsedEvent} from '@candypoets/nipworker';
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   Image,
@@ -291,7 +292,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export function ImageGrid({links}: {links: ImageGridLink[]}) {
+export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedEvent}) {
   const {width} = useWindowDimensions();
   const setImageZoom = useUIStore(state => state.setImageZoom);
   const displayLinks = useMemo(
@@ -328,6 +329,7 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
           const openZoom = () => {
             setImageZoom({
               links: links.filter(item => item.src),
+              note,
               zoomed: index,
               gridId: `${links[0]?.src || 'media'}-${links.length}`,
               videoTime: 0,

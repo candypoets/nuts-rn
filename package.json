@@ -43,6 +43,7 @@
     "react-native": "0.85.3",
     "react-native-enriched": "^0.7.0",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-gesture-image-viewer": "^2.3.2",
     "react-native-get-random-values": "^2.0.0",
     "react-native-pager-view": "^8.0.2",
     "react-native-reanimated": "^4.3.1",

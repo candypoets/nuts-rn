@@ -255,7 +255,7 @@ function ZoomImage({
 
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
-    .onEnd(() => {
+    .onEnd(event => {
       const nextScale = scale.value > 1 ? 1 : 2.4;
       scale.value = withSpring(nextScale);
       savedScale.value = nextScale;
@@ -264,6 +264,18 @@ function ZoomImage({
         imageTranslateY.value = withSpring(0);
         savedX.value = 0;
         savedY.value = 0;
+      } else {
+        const offsetX = event.x - width / 2;
+        const offsetY = event.y - height / 2;
+        const nextX = -offsetX * (nextScale - 1);
+        const nextY = -offsetY * (nextScale - 1);
+        translateX.value = withSpring(nextX, { damping: 22, stiffness: 240 });
+        imageTranslateY.value = withSpring(nextY, {
+          damping: 22,
+          stiffness: 240,
+        });
+        savedX.value = nextX;
+        savedY.value = nextY;
       }
     });
 

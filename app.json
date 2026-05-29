@@ -20,6 +20,12 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow NutsRn to choose a profile picture and attach images to posts."
+        }
+      ],
+      [
         "expo-dev-client",
         {
           "launchMode": "most-recent",

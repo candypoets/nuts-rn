@@ -29,7 +29,7 @@ export function HeaderProfileButton({
     <Pressable
       className={`items-center justify-center overflow-hidden rounded-full border ${className}`}
       hitSlop={12}
-      onPress={() => navigation.navigate('Profile')}
+      onPress={() => navigation.navigate(pubkey ? 'Profile' : 'Login')}
     >
       {pubkey ? (
         <Image source={picture} className="h-full w-full" resizeMode="cover" />

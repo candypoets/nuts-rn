@@ -17,6 +17,7 @@ import {
 } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -65,31 +66,6 @@ export function ImageZoom() {
     close();
   }, [backgroundOpacity, close]);
 
-  const verticalPan = Gesture.Pan()
-    .activeOffsetY([-18, 18])
-    .failOffsetX([-28, 28])
-    .onUpdate(event => {
-      translateY.value = event.translationY;
-      backgroundOpacity.value = Math.max(
-        0.2,
-        1 - Math.abs(event.translationY) / Math.max(280, height * 0.45),
-      );
-    })
-    .onEnd(event => {
-      const shouldClose =
-        Math.abs(event.translationY) > 120 || Math.abs(event.velocityY) > 900;
-      if (shouldClose) {
-        translateY.value = withTiming(
-          event.translationY > 0 ? height : -height,
-          { duration: 180 },
-          () => runOnJS(dismiss)(),
-        );
-        return;
-      }
-      translateY.value = withSpring(0, { damping: 22, stiffness: 240 });
-      backgroundOpacity.value = withTiming(1, { duration: 140 });
-    });
-
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: backgroundOpacity.value,
   }));
@@ -104,34 +80,39 @@ export function ImageZoom() {
     <Modal transparent visible={visible} statusBarTranslucent animationType="fade">
       <View style={styles.modal}>
         <Animated.View style={[styles.backdrop, backdropStyle]} />
-        <GestureDetector gesture={verticalPan}>
-          <Animated.View style={[styles.content, contentStyle]}>
-            <FlatList
-              ref={listRef}
-              data={links}
-              keyExtractor={(item, index) => `${item.src}-${index}`}
-              horizontal
-              pagingEnabled
-              bounces={false}
-              showsHorizontalScrollIndicator={false}
-              getItemLayout={(_, index) => ({
-                length: width,
-                offset: width * index,
-                index,
-              })}
-              onMomentumScrollEnd={event => {
-                setCurrentIndex(
-                  Math.round(event.nativeEvent.contentOffset.x / width),
-                );
-              }}
-              renderItem={({ item }) => (
-                <View style={[styles.page, { width, height }]}>
-                  <ZoomPage link={item} width={width} height={height} />
-                </View>
-              )}
-            />
-          </Animated.View>
-        </GestureDetector>
+        <Animated.View style={[styles.content, contentStyle]}>
+          <FlatList
+            ref={listRef}
+            data={links}
+            keyExtractor={(item, index) => `${item.src}-${index}`}
+            horizontal
+            pagingEnabled
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            getItemLayout={(_, index) => ({
+              length: width,
+              offset: width * index,
+              index,
+            })}
+            onMomentumScrollEnd={event => {
+              setCurrentIndex(
+                Math.round(event.nativeEvent.contentOffset.x / width),
+              );
+            }}
+            renderItem={({ item }) => (
+              <View style={[styles.page, { width, height }]}>
+                <ZoomPage
+                  link={item}
+                  width={width}
+                  height={height}
+                  onDismiss={dismiss}
+                  overlayTranslateY={translateY}
+                  backgroundOpacity={backgroundOpacity}
+                />
+              </View>
+            )}
+          />
+        </Animated.View>
         <View
           pointerEvents="box-none"
           style={[styles.chrome, { paddingTop: insets.top + 12 }]}
@@ -161,31 +142,60 @@ const ZoomPage = memo(function ZoomPage({
   link,
   width,
   height,
+  onDismiss,
+  overlayTranslateY,
+  backgroundOpacity,
 }: {
   link: ZoomLink;
   width: number;
   height: number;
+  onDismiss: () => void;
+  overlayTranslateY: SharedValue<number>;
+  backgroundOpacity: SharedValue<number>;
 }) {
   if (link.type === 'video') {
-    return <ZoomVideo link={link} />;
+    return (
+      <ZoomVideo
+        link={link}
+        height={height}
+        onDismiss={onDismiss}
+        overlayTranslateY={overlayTranslateY}
+        backgroundOpacity={backgroundOpacity}
+      />
+    );
   }
 
-  return <ZoomImage link={link} width={width} height={height} />;
+  return (
+    <ZoomImage
+      link={link}
+      width={width}
+      height={height}
+      onDismiss={onDismiss}
+      overlayTranslateY={overlayTranslateY}
+      backgroundOpacity={backgroundOpacity}
+    />
+  );
 });
 
 function ZoomImage({
   link,
   width,
   height,
+  onDismiss,
+  overlayTranslateY,
+  backgroundOpacity,
 }: {
   link: ZoomLink;
   width: number;
   height: number;
+  onDismiss: () => void;
+  overlayTranslateY: SharedValue<number>;
+  backgroundOpacity: SharedValue<number>;
 }) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
+  const imageTranslateY = useSharedValue(0);
   const savedX = useSharedValue(0);
   const savedY = useSharedValue(0);
 
@@ -199,7 +209,7 @@ function ZoomImage({
         scale.value = withSpring(1);
         savedScale.value = 1;
         translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
+        imageTranslateY.value = withSpring(0);
         savedX.value = 0;
         savedY.value = 0;
       }
@@ -209,11 +219,38 @@ function ZoomImage({
     .onUpdate(event => {
       if (scale.value <= 1) return;
       translateX.value = savedX.value + event.translationX;
-      translateY.value = savedY.value + event.translationY;
+      imageTranslateY.value = savedY.value + event.translationY;
     })
     .onEnd(() => {
       savedX.value = translateX.value;
-      savedY.value = translateY.value;
+      savedY.value = imageTranslateY.value;
+    });
+
+  const dismissPan = Gesture.Pan()
+    .activeOffsetY([-14, 14])
+    .failOffsetX([-26, 26])
+    .onUpdate(event => {
+      if (scale.value > 1.02) return;
+      overlayTranslateY.value = event.translationY;
+      backgroundOpacity.value = Math.max(
+        0.18,
+        1 - Math.abs(event.translationY) / Math.max(280, height * 0.45),
+      );
+    })
+    .onEnd(event => {
+      if (scale.value > 1.02) return;
+      const shouldClose =
+        Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 850;
+      if (shouldClose) {
+        overlayTranslateY.value = withTiming(
+          event.translationY > 0 ? height : -height,
+          { duration: 180 },
+          () => runOnJS(onDismiss)(),
+        );
+        return;
+      }
+      overlayTranslateY.value = withSpring(0, { damping: 22, stiffness: 240 });
+      backgroundOpacity.value = withTiming(1, { duration: 140 });
     });
 
   const doubleTap = Gesture.Tap()
@@ -224,17 +261,17 @@ function ZoomImage({
       savedScale.value = nextScale;
       if (nextScale === 1) {
         translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
+        imageTranslateY.value = withSpring(0);
         savedX.value = 0;
         savedY.value = 0;
       }
     });
 
-  const gesture = Gesture.Simultaneous(doubleTap, pinch, pan);
+  const gesture = Gesture.Simultaneous(doubleTap, pinch, pan, dismissPan);
   const imageStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
-      { translateY: translateY.value },
+      { translateY: imageTranslateY.value },
       { scale: scale.value },
     ],
   }));
@@ -252,7 +289,19 @@ function ZoomImage({
   );
 }
 
-function ZoomVideo({ link }: { link: ZoomLink }) {
+function ZoomVideo({
+  link,
+  height,
+  onDismiss,
+  overlayTranslateY,
+  backgroundOpacity,
+}: {
+  link: ZoomLink;
+  height: number;
+  onDismiss: () => void;
+  overlayTranslateY: SharedValue<number>;
+  backgroundOpacity: SharedValue<number>;
+}) {
   const player = useVideoPlayer(link.src, videoPlayer => {
     videoPlayer.loop = false;
     videoPlayer.muted = false;
@@ -260,25 +309,51 @@ function ZoomVideo({ link }: { link: ZoomLink }) {
     videoPlayer.staysActiveInBackground = false;
     videoPlayer.play();
   });
+  const dismissPan = Gesture.Pan()
+    .activeOffsetY([-14, 14])
+    .failOffsetX([-26, 26])
+    .onUpdate(event => {
+      overlayTranslateY.value = event.translationY;
+      backgroundOpacity.value = Math.max(
+        0.18,
+        1 - Math.abs(event.translationY) / Math.max(280, height * 0.45),
+      );
+    })
+    .onEnd(event => {
+      const shouldClose =
+        Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 850;
+      if (shouldClose) {
+        overlayTranslateY.value = withTiming(
+          event.translationY > 0 ? height : -height,
+          { duration: 180 },
+          () => runOnJS(onDismiss)(),
+        );
+        return;
+      }
+      overlayTranslateY.value = withSpring(0, { damping: 22, stiffness: 240 });
+      backgroundOpacity.value = withTiming(1, { duration: 140 });
+    });
 
   return (
-    <View style={styles.videoWrap}>
-      <VideoView
-        player={player}
-        nativeControls
-        contentFit="contain"
-        allowsPictureInPicture={false}
-        startsPictureInPictureAutomatically={false}
-        style={styles.video}
-      />
-      {link.blurhash ? (
-        <Image
-          source={{ uri: link.blurhash }}
-          resizeMode="contain"
-          style={styles.videoPoster}
+    <GestureDetector gesture={dismissPan}>
+      <View style={styles.videoWrap}>
+        <VideoView
+          player={player}
+          nativeControls
+          contentFit="contain"
+          allowsPictureInPicture={false}
+          startsPictureInPictureAutomatically={false}
+          style={styles.video}
         />
-      ) : null}
-    </View>
+        {link.blurhash ? (
+          <Image
+            source={{ uri: link.blurhash }}
+            resizeMode="contain"
+            style={styles.videoPoster}
+          />
+        ) : null}
+      </View>
+    </GestureDetector>
   );
 }
 

@@ -1,10 +1,10 @@
-import React, {memo, useEffect, useRef, useState} from 'react';
+import React, {memo, useCallback, useMemo} from 'react';
 import { Image, Pressable, View } from 'react-native';
-import type { Kind0Parsed } from '@candypoets/nipworker';
-import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
-import { isKind0 } from '@candypoets/nipworker/utils';
-import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
-import {useAggregateRenderWhy} from '../../debug/renderTrace';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useKind0Value} from '../../hooks/useKind0Value';
+import {pushDistinct} from '../../navigation/pushDistinct';
+import type {RootStackParamList} from '../../navigation/types';
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 
@@ -32,70 +32,44 @@ function AvatarComponent({
   link = false,
   onProfileOpen,
 }: AvatarProps) {
-  const profileRef = useRef<Kind0Parsed | null>(null);
-  const [, setTick] = useState(0);
-  useAggregateRenderWhy('Avatar', {
-    link,
-    onProfileOpen,
-    pubkey,
-    query,
-    size,
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const selectPicture = useCallback(
+    (profile: import('@candypoets/nipworker').Kind0Parsed) =>
+      profile.picture?.() || null,
+    [],
+  );
+  const picture = useKind0Value(pubkey, {
+    enabled: query,
+    fallback: null,
+    selector: selectPicture,
   });
-
-  useEffect(() => {
-    if (!query || !pubkey) return;
-    profileRef.current = null;
-    setTick(tick => tick + 1);
-
-    const unsubscribe = subscribeToNostr(
-      `u_${pubkey}`,
-      [
-        {
-          kinds: [0],
-          authors: [pubkey],
-          limit: 1,
-          relays: DEFAULT_FEED_RELAYS,
-        },
-      ],
-      message => {
-        const profile = isKind0(message);
-        if (!profile || profile.pubkey?.() !== pubkey) return;
-        profileRef.current = profile;
-        setTick(tick => tick + 1);
-      },
-      { closeOnEose: false },
-    );
-
-    return () => {
-      profileRef.current = null;
-      unsubscribe();
-    };
-  }, [pubkey, query]);
-
-  const picture = profileRef.current?.picture?.() || null;
+  const imageSource = useMemo(
+    () => (picture ? {uri: picture} : fallbackProfileImage),
+    [picture],
+  );
+  const openProfile = useCallback(() => {
+    if (onProfileOpen) {
+      onProfileOpen(pubkey);
+      return;
+    }
+    pushDistinct(navigation, 'PublicProfile', {pubkey});
+  }, [navigation, onProfileOpen, pubkey]);
 
   const content = (
     <View className={`${sizeClass[size]} overflow-hidden rounded-full border border-slate-200 bg-slate-200`}>
-      {picture ? (
-        <Image
-          source={{ uri: picture }}
-          className="h-full w-full"
-          resizeMode="cover"
-        />
-      ) : (
-        <Image
-          source={fallbackProfileImage}
-          className="h-full w-full"
-          resizeMode="cover"
-        />
-      )}
+      <Image
+        source={imageSource}
+        className="h-full w-full"
+        resizeMode="cover"
+      />
     </View>
   );
 
   if (!link) return content;
 
   return (
-    <Pressable hitSlop={8} onPress={() => onProfileOpen?.(pubkey)}>
+    <Pressable hitSlop={8} onPress={openProfile}>
       {content}
     </Pressable>
   );

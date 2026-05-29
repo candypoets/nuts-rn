@@ -1,5 +1,7 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, Text, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {Kind4Parsed, ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -13,8 +15,11 @@ import {
 import {Info, MessageCirclePlus} from 'lucide-react-native';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
+import {wasRecentSwipeGesture} from '../components/notes/press';
 import {RelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {pushDistinct} from '../navigation/pushDistinct';
+import type {RootStackParamList} from '../navigation/types';
 import {useAuthStore, useNostrStore, useRelayStore} from '../stores';
 
 type ChatListTab = 'messages' | 'requests';
@@ -22,7 +27,6 @@ type ChatListTab = 'messages' | 'requests';
 type ChatFeedProps = {
   enabled: boolean;
   visible: boolean;
-  onChatOpen: (peerPubkey: string) => void;
 };
 
 type Conversation = {
@@ -71,6 +75,7 @@ function groupConversations(
   pubkey: string | null,
   contacts: string[],
   hasContactList: boolean,
+  _eventsVersion: number,
 ) {
   const contactSet = new Set(contacts);
   const chats = new Map<string, Conversation>();
@@ -120,7 +125,7 @@ function groupConversations(
     );
 }
 
-export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
+export function ChatFeed({enabled, visible}: ChatFeedProps) {
   const eventsRef = useRef<ParsedEvent[]>([]);
   const pendingEventsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -153,8 +158,13 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
     [hasSigner, pubkey, relays],
   );
   const conversations = useMemo(() => {
-    void eventsVersion;
-    return groupConversations(eventsRef.current, pubkey, contacts, hasContactList);
+    return groupConversations(
+      eventsRef.current,
+      pubkey,
+      contacts,
+      hasContactList,
+      eventsVersion,
+    );
   }, [contacts, eventsVersion, hasContactList, pubkey]);
   const items =
     activeTab === 'requests' ? conversations.requests : conversations.messages;
@@ -364,14 +374,13 @@ export function ChatFeed({enabled, visible, onChatOpen}: ChatFeedProps) {
         <ChatRow
           conversation={item}
           pubkey={pubkey}
-          onPress={() => onChatOpen(item.peerPubkey)}
         />
       )}
       loading={loading || refreshing}
       refreshing={refreshing}
       onRefresh={handleRefresh}
       empty={empty}
-      contentContainerClassName="pb-28 px-2"
+      contentContainerClassName="pb-28"
     />
   );
 }
@@ -394,8 +403,8 @@ function ChatHeader({
   sticky?: boolean;
 }) {
   return (
-    <View className={`${sticky ? 'border-b border-slate-200 bg-slate-50/95 px-4 py-2' : 'bg-slate-50 px-1 pt-2'}`}>
-      <View className={`${sticky ? '' : 'mx-1 rounded-lg bg-white/90 px-3 py-3 shadow-sm'}`}>
+    <View className={`${sticky ? 'border-b border-slate-200 bg-slate-50/95' : 'bg-slate-50'}`}>
+      <View className={`${sticky ? '' : 'rounded-lg bg-white/90 px-3 py-3 shadow-sm'}`}>
         <View className="h-14 flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
             <Text className="text-2xl font-bold text-slate-900">BM</Text>
@@ -460,12 +469,12 @@ function ChatTab({
 function ChatRow({
   conversation,
   pubkey,
-  onPress,
 }: {
   conversation: Conversation;
   pubkey: string | null;
-  onPress: () => void;
 }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const kind4 = asKind4(conversation.latest) as Kind4Parsed | null;
   const parsedContent = kind4 ? fbArray(kind4, 'parsedContent') : [];
   const outgoing = conversation.latest.pubkey() === pubkey;
@@ -473,7 +482,14 @@ function ChatRow({
   return (
     <Pressable
       className="mt-1 min-h-24 flex-row gap-3 overflow-hidden rounded-lg bg-white/90 px-3 py-4 shadow-sm"
-      onPress={onPress}
+      onPress={event => {
+        event.stopPropagation();
+        if (!wasRecentSwipeGesture()) {
+          pushDistinct(navigation, 'ChatThread', {
+            peerPubkey: conversation.peerPubkey,
+          });
+        }
+      }}
     >
       <Avatar pubkey={conversation.peerPubkey} size="lg" />
       <View className="min-w-0 flex-1">

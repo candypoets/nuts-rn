@@ -6,8 +6,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Text, View } from 'react-native';
-import type { ParsedEvent } from '@candypoets/nipworker';
+import { Pressable, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asKind1,
@@ -18,11 +20,14 @@ import {
 } from '@candypoets/nipworker/utils';
 import { ContentData } from '@candypoets/nipworker';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import {pushDistinct} from '../../navigation/pushDistinct';
+import type { RootStackParamList } from '../../navigation/types';
 import { BOOTSTRAP_RELAYS } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
-import {useAggregateRenderWhy} from '../../debug/renderTrace';
+import { wasRecentSwipeGesture } from './press';
+import { neventEncode } from 'nostr-tools/nip19';
 
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
@@ -63,21 +68,153 @@ type NoteProps = {
   relays?: string[];
   visible?: boolean;
   footer?: boolean;
+  main?: boolean;
   showQuote?: boolean;
+  showRoot?: boolean;
+  threadCard?: boolean;
   depth?: number;
   leading?: boolean;
   tailing?: boolean;
   ancestorIds?: string[];
-  onProfileOpen?: (pubkey: string) => void;
 };
 
 function parsedEventId(event?: ParsedEvent) {
   return event?.id?.() ?? null;
 }
 
-function parsedEventIds(events?: ParsedEvent[]) {
-  return events?.map(event => event?.id?.() ?? '').join(',') ?? '';
-}
+type RenderQuote = (quote: {
+  id: string;
+  author?: string;
+  relays: string[];
+  depth: number;
+  key: string;
+}) => React.ReactNode;
+
+type NoteBodyProps = {
+  ancestor?: React.ReactNode;
+  containerClassName: string;
+  depth: number;
+  effectiveNote: ParsedEvent;
+  footer: boolean;
+  main: boolean;
+  isQuote: boolean;
+  parsedContent: ContentBlock[];
+  renderQuote: RenderQuote;
+  shortContent: ContentBlock[];
+  showQuote: boolean;
+  threadConnectors: React.ReactNode;
+  visible: boolean;
+  onOpen: () => void;
+};
+
+type LoadingNoteBodyProps = {
+  containerClassName: string;
+  effectiveId: string;
+  threadConnectors: React.ReactNode;
+};
+
+type UnsupportedNoteBodyProps = {
+  containerClassName: string;
+  effectiveNote: ParsedEvent;
+  threadConnectors: React.ReactNode;
+};
+
+const LoadingNoteBody = memo(function LoadingNoteBody({
+  containerClassName,
+  effectiveId,
+  threadConnectors,
+}: LoadingNoteBodyProps) {
+  return (
+    <View className={containerClassName}>
+      {threadConnectors}
+      <Text className="text-xs text-slate-500">
+        Loading note {effectiveId ? `${effectiveId.slice(0, 12)}...` : ''}
+      </Text>
+    </View>
+  );
+});
+
+const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
+  containerClassName,
+  effectiveNote,
+  threadConnectors,
+}: UnsupportedNoteBodyProps) {
+  return (
+    <View className={containerClassName}>
+      {threadConnectors}
+      <Text className="text-sm text-slate-500">
+        Kind {effectiveNote.kind()} is not supported yet.
+      </Text>
+    </View>
+  );
+});
+
+const NoteBody = memo(
+  function NoteBody({
+    ancestor,
+    containerClassName,
+    depth,
+    effectiveNote,
+    footer,
+    main,
+    isQuote,
+    renderQuote,
+    shortContent,
+    parsedContent,
+    showQuote,
+    threadConnectors,
+    visible,
+    onOpen,
+  }: NoteBodyProps) {
+    return (
+      <>
+        {ancestor}
+        <View className={containerClassName}>
+          {threadConnectors}
+          <Header note={effectiveNote} depth={depth} main={main} />
+          <Pressable
+            className={isQuote || main ? 'mt-1 flex-row gap-0' : 'mt-1 flex-row gap-2'}
+            onPress={event => {
+              event.stopPropagation();
+              if (!wasRecentSwipeGesture()) onOpen();
+            }}
+          >
+            <View className={isQuote || main ? 'w-0' : 'w-8'} />
+            <View className="min-w-0 flex-1">
+              <ContentBlocks
+                content={parsedContent}
+                shortContent={shortContent}
+                note={effectiveNote}
+                depth={depth}
+                showQuote={showQuote}
+                renderQuote={renderQuote}
+              />
+            </View>
+          </Pressable>
+          {footer && depth === 0 ? (
+            <Footer note={effectiveNote} visible={visible} main={main} />
+          ) : null}
+        </View>
+      </>
+    );
+  },
+  (previous, next) =>
+    previous.ancestor === next.ancestor &&
+    previous.containerClassName === next.containerClassName &&
+    previous.depth === next.depth &&
+    parsedEventId(previous.effectiveNote) ===
+      parsedEventId(next.effectiveNote) &&
+    previous.footer === next.footer &&
+    previous.main === next.main &&
+    previous.isQuote === next.isQuote &&
+    previous.parsedContent === next.parsedContent &&
+    previous.renderQuote === next.renderQuote &&
+    previous.shortContent === next.shortContent &&
+    previous.showQuote === next.showQuote &&
+    previous.threadConnectors === next.threadConnectors &&
+    previous.visible === next.visible &&
+    previous.onOpen === next.onOpen,
+);
 
 function NoteComponent({
   note,
@@ -86,27 +223,17 @@ function NoteComponent({
   relays = EMPTY_RELAYS,
   visible = true,
   footer = true,
+  main = false,
   showQuote = true,
+  showRoot = true,
+  threadCard = false,
   depth = 0,
   leading = false,
   tailing = false,
   ancestorIds = [],
-  onProfileOpen,
 }: NoteProps) {
-  useAggregateRenderWhy(depth > 0 ? 'Note:quote' : 'Note', {
-    ancestorIds: ancestorIds.join(','),
-    context: parsedEventIds(context),
-    depth,
-    footer,
-    leading,
-    note: parsedEventId(note),
-    noteId,
-    onProfileOpen,
-    relays: relays.join(','),
-    showQuote,
-    tailing,
-    visible,
-  });
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const fetchedRef = useRef<ParsedEvent | null>(null);
   const contextRef = useRef<ParsedEvent[]>(context);
   const [contextVersion, setContextVersion] = useState(0);
@@ -118,7 +245,11 @@ function NoteComponent({
       noteId ? context.find(event => event?.id?.() === noteId) ?? null : null,
     [context, noteId],
   );
-  const effectiveNote = note || contextNote || fetchedRef.current;
+  const fetchedNote =
+    !noteId || fetchedRef.current?.id?.() === noteId
+      ? fetchedRef.current
+      : null;
+  const effectiveNote = note || contextNote || fetchedNote;
   const effectiveId = noteId || effectiveNote?.id() || '';
   const lookupRelays = useMemo(
     () => [...new Set([...relays, ...DEFAULT_FEED_RELAYS])],
@@ -133,6 +264,17 @@ function NoteComponent({
         : [];
     return [...new Set([...relays, ...noteRelays, ...DEFAULT_FEED_RELAYS])];
   }, [effectiveNote, relays]);
+  const openNote = useCallback(() => {
+    if (!effectiveId) return;
+    pushDistinct(navigation, 'Kind1Thread', {
+      nevent: neventEncode({
+        id: effectiveId,
+        author: effectiveNote?.pubkey() || undefined,
+        relays: effectiveRelays,
+        kind: effectiveNote?.kind() || 1,
+      }),
+    });
+  }, [effectiveId, effectiveNote, effectiveRelays, navigation]);
 
   useEffect(() => {
     const nextContext = [...contextRef.current];
@@ -158,7 +300,8 @@ function NoteComponent({
   }, []);
 
   useEffect(() => {
-    if (note || contextNote || fetchedRef.current || !noteId || !visible) return;
+    if (note || contextNote || fetchedNote || !noteId || !visible)
+      return;
 
     const unsubscribe = subscribeToNostr(
       `note_${noteId}`,
@@ -175,7 +318,7 @@ function NoteComponent({
     return () => {
       unsubscribe();
     };
-  }, [addContextEvent, contextNote, lookupRelays, note, noteId, visible]);
+  }, [addContextEvent, contextNote, fetchedNote, lookupRelays, note, noteId, visible]);
 
   const kind1 = useMemo(
     () => (effectiveNote ? asKind1(effectiveNote) : null),
@@ -263,6 +406,7 @@ function NoteComponent({
     );
   }, [contentQuotes, contextVersion, effectiveId, mentionQuotes, showQuote]);
   const shouldRenderAncestor = !!(
+    showRoot &&
     replyId &&
     replyId !== effectiveId &&
     depth === 0 &&
@@ -272,19 +416,26 @@ function NoteComponent({
   const isQuote = depth > 0;
   const hasTopThreadConnector = shouldRenderAncestor || tailing;
   const hasBottomThreadConnector = leading;
-  const containerClassName = [
-    isQuote
-      ? 'relative rounded-lg border-l border-t border-slate-200 bg-white/95 px-2 py-2'
-      : 'relative rounded-lg border border-slate-200 bg-white/95 px-3 py-3',
-    hasTopThreadConnector || hasBottomThreadConnector
-      ? 'shadow-none'
-      : isQuote
-      ? 'shadow-none'
-      : 'shadow-sm',
-    hasTopThreadConnector ? '-mt-px border-t-0' : 'mt-1',
-    hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
-    hasTopThreadConnector ? 'rounded-t-none' : '',
-  ].join(' ');
+  const containerClassName = threadCard
+    ? [
+        'relative rounded-xl border border-slate-200 bg-white/95 px-3 py-3',
+        hasTopThreadConnector || hasBottomThreadConnector ? 'shadow-none' : 'shadow-sm',
+        hasTopThreadConnector ? '-mt-px rounded-t-none border-t-0' : '',
+        hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
+      ].join(' ')
+    : [
+        isQuote
+          ? 'relative rounded-lg border-l border-t border-slate-200 bg-white/95 px-2 py-2'
+          : 'relative rounded-lg border border-slate-200 bg-white/95 px-3 py-3',
+        hasTopThreadConnector || hasBottomThreadConnector
+          ? 'shadow-none'
+          : isQuote
+          ? 'shadow-none'
+          : 'shadow-sm',
+        hasTopThreadConnector ? '-mt-px border-t-0' : 'mt-1',
+        hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
+        hasTopThreadConnector ? 'rounded-t-none' : '',
+      ].join(' ');
   const threadConnectors = (
     <>
       {hasBottomThreadConnector ? (
@@ -376,7 +527,9 @@ function NoteComponent({
       { closeOnEose: false },
     );
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+    };
   }, [
     addContextEvent,
     effectiveId,
@@ -416,10 +569,9 @@ function NoteComponent({
           ]),
         ]}
         footer={false}
-        onProfileOpen={onProfileOpen}
       />
     ),
-    [effectiveRelays, onProfileOpen, quoteAuthorRelays, visible],
+    [effectiveRelays, quoteAuthorRelays, visible],
   );
 
   if (depth > 3) {
@@ -428,89 +580,86 @@ function NoteComponent({
 
   if (!effectiveNote) {
     return (
-      <View className={containerClassName}>
-        {threadConnectors}
-        <Text className="text-xs text-slate-500">
-          Loading note {effectiveId ? `${effectiveId.slice(0, 12)}...` : ''}
-        </Text>
-      </View>
+      <LoadingNoteBody
+        containerClassName={containerClassName}
+        effectiveId={effectiveId}
+        threadConnectors={threadConnectors}
+      />
     );
   }
 
   if (effectiveNote.kind() !== 1 || !kind1) {
     return (
-      <View className={containerClassName}>
-        {threadConnectors}
-        <Text className="text-sm text-slate-500">
-          Kind {effectiveNote.kind()} is not supported yet.
-        </Text>
-      </View>
+      <UnsupportedNoteBody
+        containerClassName={containerClassName}
+        effectiveNote={effectiveNote}
+        threadConnectors={threadConnectors}
+      />
     );
   }
 
+  const ancestor = shouldRenderAncestor ? (
+    <Note
+      noteId={replyId}
+      context={contextRef.current}
+      visible={visible}
+      relays={effectiveRelays}
+      showQuote={showQuote}
+      leading
+      depth={depth}
+      ancestorIds={effectiveId ? [...ancestorIds, effectiveId] : ancestorIds}
+    />
+  ) : null;
+
   return (
-    <>
-      {shouldRenderAncestor ? (
-        <Note
-          noteId={replyId}
-          context={contextRef.current}
-          visible={visible}
-          relays={effectiveRelays}
-          showQuote={showQuote}
-          leading
-          depth={depth}
-          ancestorIds={
-            effectiveId ? [...ancestorIds, effectiveId] : ancestorIds
-          }
-          onProfileOpen={onProfileOpen}
-        />
-      ) : null}
-      <View className={containerClassName}>
-        {threadConnectors}
-        <Header note={effectiveNote} depth={depth} onProfileOpen={onProfileOpen} />
-        <View
-          className={isQuote ? 'mt-1 flex-row gap-0' : 'mt-1 flex-row gap-2'}
-        >
-          <View className={isQuote ? 'w-0' : 'w-8'} />
-          <View className="min-w-0 flex-1">
-            <ContentBlocks
-              content={parsedContent}
-              shortContent={shortContent}
-              note={effectiveNote}
-              context={contextRef.current}
-              visible={visible}
-              depth={depth}
-              showQuote={showQuote}
-              onProfileOpen={onProfileOpen}
-              renderQuote={renderQuote}
-            />
-          </View>
-        </View>
-        {footer && depth === 0 ? (
-          <Footer note={effectiveNote} visible={visible} />
-        ) : null}
-      </View>
-    </>
+    <NoteBody
+      ancestor={ancestor}
+      containerClassName={containerClassName}
+      depth={depth}
+      effectiveNote={effectiveNote}
+      footer={footer}
+      main={main}
+      isQuote={isQuote}
+      parsedContent={parsedContent}
+      renderQuote={renderQuote}
+      shortContent={shortContent}
+      showQuote={showQuote}
+      threadConnectors={threadConnectors}
+      visible={visible}
+      onOpen={openNote}
+    />
   );
 }
 
 function sameParsedEventArray(left?: ParsedEvent[], right?: ParsedEvent[]) {
   if (left === right) return true;
   if (!left || !right || left.length !== right.length) return false;
-  return left.every((event, index) => parsedEventId(event) === parsedEventId(right[index]));
+  return left.every(
+    (event, index) => parsedEventId(event) === parsedEventId(right[index]),
+  );
 }
 
-export const Note = memo(NoteComponent, (previous, next) => (
-  parsedEventId(previous.note) === parsedEventId(next.note) &&
-  previous.noteId === next.noteId &&
-  sameParsedEventArray(previous.context, next.context) &&
-  sameStringArray(previous.relays ?? EMPTY_RELAYS, next.relays ?? EMPTY_RELAYS) &&
-  (previous.visible ?? true) === (next.visible ?? true) &&
-  (previous.footer ?? true) === (next.footer ?? true) &&
-  (previous.showQuote ?? true) === (next.showQuote ?? true) &&
-  (previous.depth ?? 0) === (next.depth ?? 0) &&
-  (previous.leading ?? false) === (next.leading ?? false) &&
-  (previous.tailing ?? false) === (next.tailing ?? false) &&
-  sameStringArray(previous.ancestorIds ?? EMPTY_RELAYS, next.ancestorIds ?? EMPTY_RELAYS) &&
-  previous.onProfileOpen === next.onProfileOpen
-));
+export const Note = memo(
+  NoteComponent,
+  (previous, next) =>
+    parsedEventId(previous.note) === parsedEventId(next.note) &&
+    previous.noteId === next.noteId &&
+    sameParsedEventArray(previous.context, next.context) &&
+    sameStringArray(
+      previous.relays ?? EMPTY_RELAYS,
+      next.relays ?? EMPTY_RELAYS,
+    ) &&
+    (previous.visible ?? true) === (next.visible ?? true) &&
+    (previous.footer ?? true) === (next.footer ?? true) &&
+    (previous.main ?? false) === (next.main ?? false) &&
+    (previous.showQuote ?? true) === (next.showQuote ?? true) &&
+    (previous.showRoot ?? true) === (next.showRoot ?? true) &&
+    (previous.threadCard ?? false) === (next.threadCard ?? false) &&
+    (previous.depth ?? 0) === (next.depth ?? 0) &&
+    (previous.leading ?? false) === (next.leading ?? false) &&
+    (previous.tailing ?? false) === (next.tailing ?? false) &&
+    sameStringArray(
+      previous.ancestorIds ?? EMPTY_RELAYS,
+      next.ancestorIds ?? EMPTY_RELAYS,
+    ),
+);

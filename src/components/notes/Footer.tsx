@@ -5,6 +5,7 @@ import {
   MuteFilterPipeConfigT,
   PipeConfig,
   PipeT,
+  SaveToDbPipeConfigT,
   type ParsedEvent,
   type RequestObject,
   type WorkerMessage,
@@ -30,6 +31,7 @@ import { IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
 type FooterProps = {
   note: ParsedEvent;
   visible: boolean;
+  main?: boolean;
 };
 
 const tint = '#9b9ea4';
@@ -90,6 +92,7 @@ function createCounterOptions(
           mutedEventIds,
         ),
       ),
+      new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
       new PipeT(
         PipeConfig.CounterPipeConfig,
         new CounterPipeConfigT(kinds, pubkey),
@@ -273,7 +276,7 @@ function ZapAction() {
   );
 }
 
-export function Footer({ note, visible }: FooterProps) {
+export function Footer({ note, visible, main = false }: FooterProps) {
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
@@ -545,7 +548,10 @@ export function Footer({ note, visible }: FooterProps) {
   return (
     <View
       accessibilityLabel={`Actions for note ${note.id() || ''}`}
-      className="mt-2 h-6 w-full flex-row items-center px-2 pl-10"
+      className={[
+        'mt-2 h-6 w-full flex-row items-center px-2',
+        main ? 'pl-2' : 'pl-10',
+      ].join(' ')}
     >
       <View className="flex-1 flex-row items-center gap-2">
         <Action

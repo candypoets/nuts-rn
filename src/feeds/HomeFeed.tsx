@@ -1,7 +1,24 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Pressable, ScrollView, Text, View} from 'react-native';
-import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import {
+  ParsePipeConfigT,
+  PipeConfig,
+  PipeT,
+  ProofVerificationPipeConfigT,
+  SaveToDbPipeConfigT,
+  type ParsedEvent,
+  type RequestObject,
+  type WorkerMessage,
+} from '@candypoets/nipworker';
+import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind17375,
@@ -10,7 +27,11 @@ import {
   asParsedEvent,
   asEoce,
   ConnectionTracker,
+  fbIterable,
+  fbArray,
+  isValidProofs,
 } from '@candypoets/nipworker/utils';
+import type { Proof } from '@cashu/cashu-ts';
 import {
   Bell,
   CheckCircle2,
@@ -18,26 +39,28 @@ import {
   Eye,
   EyeOff,
   QrCode,
-  RefreshCw,
   ScanLine,
   Send,
   Wallet,
   Zap,
 } from 'lucide-react-native';
-import {Feed} from '../components/Feed';
-import {Avatar} from '../components/notes/Avatar';
-import {User} from '../components/notes/User';
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import {useAuthStore, useNostrStore, useRelayStore, useWalletStore} from '../stores';
-import {HeaderProfileButton} from '../components/HeaderProfileButton';
-import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
+import { Feed } from '../components/Feed';
+import { Avatar } from '../components/notes/Avatar';
+import { User } from '../components/notes/User';
+import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
+import {
+  useAuthStore,
+  useNostrStore,
+  useRelayStore,
+  useWalletStore,
+} from '../stores';
+import { HeaderProfileButton } from '../components/HeaderProfileButton';
+import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
+import type { RootStackParamList } from '../navigation/types';
 
 type HomeFeedProps = {
   enabled: boolean;
   visible: boolean;
-  onLoginOpen: () => void;
-  onProfileOpen: () => void;
-  onNotificationsOpen: () => void;
 };
 
 type WalletActivity = {
@@ -58,17 +81,13 @@ type MintInfo = {
   state?: string;
 };
 
-export function HomeFeed({
-  enabled,
-  visible,
-  onLoginOpen,
-  onProfileOpen,
-  onNotificationsOpen,
-}: HomeFeedProps) {
+export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribeWalletRef = useRef<(() => void) | null>(null);
+  const unsubscribeProofsRef = useRef<(() => void) | null>(null);
+  const proofSubscriptionSeqRef = useRef(0);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
@@ -79,7 +98,6 @@ export function HomeFeed({
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [viewHidden, setViewHidden] = useState(false);
-  const [defaultRelays, setDefaultRelays] = useState<string[]>([]);
   const [, setTick] = useState(0);
   const authPubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
@@ -91,52 +109,45 @@ export function HomeFeed({
   const balanceByMint = useWalletStore(state => state.balanceByMint);
   const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
-  const homeRelays = useMemo(
-    () => [...new Set([...defaultRelays, ...walletReadRelays, ...readRelays])],
-    [defaultRelays, readRelays, walletReadRelays],
+  const initializeProofWallet = useWalletStore(
+    state => state.initializeProofWallet,
   );
-  const homeKey = useMemo(
-    () => `${authPubkey || 'anon'}:${homeRelays.join(',')}`,
-    [authPubkey, homeRelays],
+  const addProofs = useWalletStore(state => state.addProofs);
+  const verifyAndCleanProofs = useWalletStore(
+    state => state.verifyAndCleanProofs,
   );
+  const homeRelays = useMemo(() => {
+    const resolvedRelays = [...new Set([...walletReadRelays, ...readRelays])];
+    return resolvedRelays.length ? resolvedRelays : DEFAULT_FEED_RELAYS;
+  }, [readRelays, walletReadRelays]);
+  const homeKey = authPubkey || 'anon';
 
-  const requestList = useCallback(
-    (): RequestObject[] => {
-      if (!authPubkey) return [];
-      return [
-        {
-          kinds: [9321, 9735],
-          authors: [authPubkey],
-          limit: 50,
-          noCache: !!requestCacheRef.current,
-          relays: homeRelays,
-        },
-        {
-          kinds: [9321, 9735],
-          tags: {'#p': [authPubkey]},
-          limit: 50,
-          noCache: !!requestCacheRef.current,
-          relays: homeRelays,
-        },
-        {
-          kinds: [9735],
-          tags: {'#P': [authPubkey]},
-          limit: 50,
-          noCache: !!requestCacheRef.current,
-          relays: homeRelays,
-        },
-      ];
-    },
-    [authPubkey, homeRelays],
-  );
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setDefaultRelays(DEFAULT_FEED_RELAYS);
-    }, 3000);
-
-    return () => clearTimeout(timeout);
-  }, []);
+  const requestList = useCallback((): RequestObject[] => {
+    if (!authPubkey) return [];
+    return [
+      {
+        kinds: [9321, 9735],
+        authors: [authPubkey],
+        limit: 50,
+        noCache: !!requestCacheRef.current,
+        relays: homeRelays,
+      },
+      {
+        kinds: [9321, 9735],
+        tags: { '#p': [authPubkey] },
+        limit: 50,
+        noCache: !!requestCacheRef.current,
+        relays: homeRelays,
+      },
+      {
+        kinds: [9735],
+        tags: { '#P': [authPubkey] },
+        limit: 50,
+        noCache: !!requestCacheRef.current,
+        relays: homeRelays,
+      },
+    ];
+  }, [authPubkey, homeRelays]);
 
   const clearRefreshTimeout = useCallback(() => {
     if (refreshTimeoutRef.current) {
@@ -201,7 +212,12 @@ export function HomeFeed({
       const parsed = asParsedEvent(message);
       if (parsed) addEvent(parsed);
     },
-    [addEvent, commitPendingItems, completeResolvingSubscription, setRelayStatus],
+    [
+      addEvent,
+      commitPendingItems,
+      completeResolvingSubscription,
+      setRelayStatus,
+    ],
   );
 
   const initFeed = useCallback(() => {
@@ -226,7 +242,16 @@ export function HomeFeed({
     refreshTimeoutRef.current = setTimeout(() => {
       completeResolvingSubscription();
     }, 10000);
-  }, [authPubkey, completeResolvingSubscription, enabled, handleMessage, homeRelays, requestList, setRelayStatus, visible]);
+  }, [
+    authPubkey,
+    completeResolvingSubscription,
+    enabled,
+    handleMessage,
+    homeRelays,
+    requestList,
+    setRelayStatus,
+    visible,
+  ]);
 
   const handleWalletMessage = useCallback(
     (message: WorkerMessage) => {
@@ -246,7 +271,7 @@ export function HomeFeed({
       if (!wallet) return;
 
       const mintUrls = Array.from(
-        {length: wallet.mintsLength()},
+        { length: wallet.mintsLength() },
         (_, index) => wallet.mints(index),
       ).filter((mint): mint is string => !!mint);
 
@@ -256,14 +281,67 @@ export function HomeFeed({
           ? activeMintUrl
           : mintUrls[0] ?? null,
       );
+      if (authPubkey) {
+        initializeProofWallet(authPubkey, mintUrls).catch(error => {
+          console.error('[home-wallet] proof wallet init failed', error);
+        });
+      }
     },
-    [activeMintUrl, setActiveMintUrl, setRelayStatus, setWalletMintUrls],
+    [
+      activeMintUrl,
+      authPubkey,
+      initializeProofWallet,
+      setActiveMintUrl,
+      setRelayStatus,
+      setWalletMintUrls,
+    ],
+  );
+
+  const handleProofsMessage = useCallback(
+    (message: WorkerMessage) => {
+      if (asEoce(message)) {
+        verifyAndCleanProofs().catch(error => {
+          console.error('[home-wallet] proof cleanup failed', error);
+        });
+        return;
+      }
+
+      const status = asConnectionStatus(message);
+      if (status) {
+        const relayStatus = status.status()?.toString();
+        if (relayStatus === 'EOSE') {
+          verifyAndCleanProofs().catch(error => {
+            console.error('[home-wallet] proof cleanup failed', error);
+          });
+        }
+        return;
+      }
+
+      const validProofs = isValidProofs(message);
+      if (!validProofs) return;
+
+      for (const mintProofs of fbIterable(validProofs, 'proofs')) {
+        const mint = mintProofs.mint();
+        if (!mint) continue;
+        const proofs = fbArray(mintProofs, 'proofs')
+          .map(toCashuProof)
+          .filter((proof): proof is Proof => !!proof);
+        if (proofs.length) {
+          addProofs(mint, proofs).catch(error => {
+            console.error('[home-wallet] proof ingest failed', error);
+          });
+        }
+      }
+    },
+    [addProofs, verifyAndCleanProofs],
   );
 
   const initWallet = useCallback(() => {
     if (!enabled || !visible || !authPubkey) return;
     if (!homeRelays.length) return;
-    const subId = `active_wallet_${authPubkey}_${requestCacheRef.current}_${hashKey(homeRelays.join(','))}`;
+    const subId = `active_wallet_${authPubkey}_${
+      requestCacheRef.current
+    }_${hashKey(homeRelays.join(','))}`;
     unsubscribeWalletRef.current?.();
     unsubscribeWalletRef.current = subscribeToNostr(
       subId,
@@ -277,9 +355,69 @@ export function HomeFeed({
         },
       ],
       handleWalletMessage,
-      {bytesPerEvent: 6144},
+      { bytesPerEvent: 6144 },
     );
   }, [authPubkey, enabled, handleWalletMessage, homeRelays, visible]);
+
+  const initProofs = useCallback(() => {
+    if (!enabled || !visible || !authPubkey) return;
+    if (!homeRelays.length) return;
+    const seq = proofSubscriptionSeqRef.current + 1;
+    proofSubscriptionSeqRef.current = seq;
+    const subId = `wallet_proofs_${authPubkey}_${
+      requestCacheRef.current
+    }_${hashKey(homeRelays.join(','))}`;
+    unsubscribeProofsRef.current?.();
+    unsubscribeProofsRef.current = null;
+    initializeProofWallet(authPubkey, walletMintUrls)
+      .then(() => {
+        if (proofSubscriptionSeqRef.current !== seq) return;
+        unsubscribeProofsRef.current = subscribeToNostr(
+          subId,
+          [
+            {
+              kinds: [7375],
+              authors: [authPubkey],
+              noCache: !!requestCacheRef.current,
+              relays: homeRelays,
+            },
+            {
+              kinds: [9321],
+              tags: { '#p': [authPubkey] },
+              limit: 50,
+              noCache: !!requestCacheRef.current,
+              relays: homeRelays,
+            },
+          ],
+          handleProofsMessage,
+          {
+            isSlow: true,
+            pipeline: [
+              new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
+              new PipeT(
+                PipeConfig.SaveToDbPipeConfig,
+                new SaveToDbPipeConfigT(),
+              ),
+              new PipeT(
+                PipeConfig.ProofVerificationPipeConfig,
+                new ProofVerificationPipeConfigT(500),
+              ),
+            ],
+          },
+        );
+      })
+      .catch(error => {
+        console.error('[home-wallet] proof wallet init failed', error);
+      });
+  }, [
+    authPubkey,
+    enabled,
+    handleProofsMessage,
+    homeRelays,
+    initializeProofWallet,
+    visible,
+    walletMintUrls,
+  ]);
 
   useEffect(() => {
     if (lastHomeKeyRef.current === homeKey) return;
@@ -300,11 +438,16 @@ export function HomeFeed({
     unsubscribeRef.current = null;
     unsubscribeWalletRef.current?.();
     unsubscribeWalletRef.current = null;
+    unsubscribeProofsRef.current?.();
+    unsubscribeProofsRef.current = null;
+    proofSubscriptionSeqRef.current += 1;
     setLoading(false);
     setRefreshing(false);
 
     if (enabled && visible && authPubkey) {
-      initWallet();
+      // Temporarily disabled while investigating iOS crashes around wallet/kind0 resolution.
+      // initWallet();
+      // initProofs();
       initFeed();
     }
 
@@ -313,21 +456,34 @@ export function HomeFeed({
       unsubscribeRef.current = null;
       unsubscribeWalletRef.current?.();
       unsubscribeWalletRef.current = null;
+      unsubscribeProofsRef.current?.();
+      unsubscribeProofsRef.current = null;
+      proofSubscriptionSeqRef.current += 1;
       pendingItemsRef.current = [];
       connectionTracker.reset();
       subscriptionResolvingRef.current = false;
       eoceReceivedRef.current = false;
       clearRefreshTimeout();
     };
-  }, [authPubkey, clearRefreshTimeout, enabled, initFeed, initWallet, visible]);
+  }, [
+    authPubkey,
+    clearRefreshTimeout,
+    enabled,
+    initFeed,
+    initProofs,
+    initWallet,
+    visible,
+  ]);
 
   const handleRefresh = useCallback(() => {
     if (!authPubkey || refreshing) return;
     requestCacheRef.current += 1;
     setRefreshing(true);
-    initWallet();
+    // Temporarily disabled while investigating iOS crashes around wallet/kind0 resolution.
+    // initWallet();
+    // initProofs();
     initFeed();
-  }, [authPubkey, initFeed, initWallet, refreshing]);
+  }, [authPubkey, initFeed, initProofs, initWallet, refreshing]);
 
   const activities = useMemo(
     () =>
@@ -343,7 +499,6 @@ export function HomeFeed({
       <HomeHeader
         relays={homeRelays}
         relayStatuses={relayStatuses}
-        refreshing={refreshing}
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={walletMintUrls}
@@ -351,9 +506,6 @@ export function HomeFeed({
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
-        onRefresh={handleRefresh}
-        onProfileOpen={onProfileOpen}
-        onNotificationsOpen={onNotificationsOpen}
       />
     ),
     [
@@ -361,10 +513,6 @@ export function HomeFeed({
       activeMintUrl,
       balanceByMint,
       homeRelays,
-      handleRefresh,
-      onNotificationsOpen,
-      onProfileOpen,
-      refreshing,
       relayStatuses,
       setActiveMintUrl,
       viewHidden,
@@ -375,10 +523,8 @@ export function HomeFeed({
   const renderStickyHeader = useCallback(
     () => (
       <HomeHeader
-        compact
         relays={homeRelays}
         relayStatuses={relayStatuses}
-        refreshing={refreshing}
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={[]}
@@ -386,9 +532,7 @@ export function HomeFeed({
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
-        onRefresh={handleRefresh}
-        onProfileOpen={onProfileOpen}
-        onNotificationsOpen={onNotificationsOpen}
+        showMintCards={false}
       />
     ),
     [
@@ -396,10 +540,6 @@ export function HomeFeed({
       activeMintUrl,
       balanceByMint,
       homeRelays,
-      handleRefresh,
-      onNotificationsOpen,
-      onProfileOpen,
-      refreshing,
       relayStatuses,
       setActiveMintUrl,
       viewHidden,
@@ -413,8 +553,8 @@ export function HomeFeed({
         header={renderHeader}
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
-        empty={<LoggedOutHome onLoginOpen={onLoginOpen} />}
-        contentContainerClassName="pb-28 px-2"
+        empty={<LoggedOutHome />}
+        contentContainerClassName="pb-28"
       />
     );
   }
@@ -426,14 +566,14 @@ export function HomeFeed({
       pullToRefresh
       header={renderHeader}
       stickyHeader={renderStickyHeader}
-      renderItem={({item}) => (
+      renderItem={({ item }) => (
         <WalletActivityRow activity={item} currentPubkey={authPubkey} />
       )}
       loading={loading && activities.length === 0}
       refreshing={refreshing}
       onRefresh={handleRefresh}
       empty={<EmptyWalletStub />}
-      contentContainerClassName="pb-28 px-2"
+      contentContainerClassName="pb-28"
     />
   );
 }
@@ -442,7 +582,6 @@ function HomeHeader({
   compact = false,
   relays,
   relayStatuses,
-  refreshing,
   viewHidden,
   pubkey,
   mintUrls,
@@ -450,14 +589,11 @@ function HomeHeader({
   balanceByMint,
   onSelectMint,
   onToggleView,
-  onRefresh,
-  onProfileOpen,
-  onNotificationsOpen,
+  showMintCards = true,
 }: {
   compact?: boolean;
   relays: string[];
   relayStatuses: Record<string, string>;
-  refreshing: boolean;
   viewHidden: boolean;
   pubkey: string | null;
   mintUrls: string[];
@@ -465,13 +601,19 @@ function HomeHeader({
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   onToggleView: () => void;
-  onRefresh: () => void;
-  onProfileOpen: () => void;
-  onNotificationsOpen: () => void;
+  showMintCards?: boolean;
 }) {
   return (
-    <View className={`${compact ? 'border-b border-slate-200 bg-slate-50/95 px-4 py-2' : 'bg-slate-50 px-1 pt-2'}`}>
-      <View className={`${compact ? '' : 'mx-1 rounded-lg bg-white/90 px-3 py-3 shadow-sm'}`}>
+    <View
+      className={`${
+        compact ? 'border-b border-slate-200 bg-slate-50/95' : 'bg-slate-50'
+      }`}
+    >
+      <View
+        className={`${
+          compact ? '' : 'rounded-lg bg-white/90 px-3 py-3 shadow-sm'
+        }`}
+      >
         <View className="h-14 flex-row items-center justify-between">
           <Text className="text-2xl font-semibold text-slate-950">Home</Text>
           <View className="flex-row items-center gap-2">
@@ -485,26 +627,24 @@ function HomeHeader({
             <HeaderIconButton>
               <QrCode size={19} color="#17212b" strokeWidth={2.2} />
             </HeaderIconButton>
-            <HeaderIconButton onPress={onRefresh}>
-              <RefreshCw
-                size={19}
-                color={refreshing ? '#1f7a5a' : '#52616f'}
-                strokeWidth={2.2}
-              />
-            </HeaderIconButton>
-            <HeaderIconButton onPress={onNotificationsOpen}>
+            <HeaderIconButton>
               <Bell size={19} color="#17212b" strokeWidth={2.2} />
             </HeaderIconButton>
-            <HeaderProfileButton pubkey={pubkey} onPress={onProfileOpen} />
+            <HeaderProfileButton pubkey={pubkey} />
           </View>
         </View>
-        <HeaderRelaysList relays={relays} statuses={relayStatuses} mini={compact} />
+        <HeaderRelaysList
+          relays={relays}
+          statuses={relayStatuses}
+          mini={compact}
+        />
         {!compact && pubkey ? (
-          <WalletCarousel
+          <WalletHeaderSection
             mintUrls={mintUrls}
             activeMintUrl={activeMintUrl}
             balanceByMint={balanceByMint}
             onSelectMint={onSelectMint}
+            showMintCards={showMintCards}
           />
         ) : null}
       </View>
@@ -512,18 +652,20 @@ function HomeHeader({
   );
 }
 
-function WalletCarousel({
+function WalletHeaderSection({
   mintUrls,
   activeMintUrl,
   balanceByMint,
   onSelectMint,
+  showMintCards = true,
 }: {
   mintUrls: string[];
   activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
+  showMintCards?: boolean;
 }) {
-  if (!mintUrls.length) {
+  if (showMintCards && !mintUrls.length) {
     return (
       <View className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
         <View className="flex-row items-center justify-between gap-3">
@@ -545,26 +687,49 @@ function WalletCarousel({
 
   return (
     <View className="mt-3">
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerClassName="gap-3 pr-4"
-      >
-        {mintUrls.map(mintUrl => (
-          <MintCard
-            key={mintUrl}
-            mintUrl={mintUrl}
-            selected={mintUrl === activeMintUrl}
-            balance={balanceByMint[mintUrl] ?? 0}
-            onPress={() => onSelectMint(mintUrl)}
-          />
-        ))}
-      </ScrollView>
-      <View className="mt-4 flex-row items-start gap-5 px-2">
-        <WalletAction icon={<CirclePlus size={25} color="#ffffff" strokeWidth={2.3} />} label="Receive" />
-        <WalletAction icon={<Send size={25} color="#ffffff" strokeWidth={2.3} />} label="Send" />
-        <WalletAction outlined icon={<ScanLine size={25} color="#1f7a5a" strokeWidth={2.3} />} label="Scan" />
-      </View>
+      {showMintCards ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerClassName="gap-3 pr-4"
+        >
+          {mintUrls.map(mintUrl => (
+            <MintCard
+              key={mintUrl}
+              mintUrl={mintUrl}
+              selected={mintUrl === activeMintUrl}
+              balance={balanceByMint[mintUrl] ?? 0}
+              onPress={() => onSelectMint(mintUrl)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+      <WalletActions className={showMintCards ? 'mt-4' : undefined} />
+    </View>
+  );
+}
+
+function WalletActions({ className = '' }: { className?: string }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  return (
+    <View className={`${className} flex-row items-start gap-5 px-2`}>
+      <WalletAction
+        icon={<CirclePlus size={25} color="#ffffff" strokeWidth={2.3} />}
+        label="Receive"
+      />
+      <WalletAction
+        icon={<Send size={25} color="#ffffff" strokeWidth={2.3} />}
+        label="Send"
+        onPress={() => navigation.navigate('Send')}
+      />
+      <WalletAction
+        outlined
+        icon={<ScanLine size={25} color="#1f7a5a" strokeWidth={2.3} />}
+        label="Scan"
+        onPress={() => navigation.navigate('Scan')}
+      />
     </View>
   );
 }
@@ -599,17 +764,19 @@ function MintCard({
 
   return (
     <Pressable
-      className={`h-32 w-72 overflow-hidden rounded-xl p-4 shadow-sm ${selected ? 'border-2 border-emerald-400' : 'border border-transparent'}`}
-      style={{backgroundColor: colors.base}}
+      className={`h-32 w-72 overflow-hidden rounded-xl p-4 shadow-sm ${
+        selected ? 'border-2 border-emerald-400' : 'border border-transparent'
+      }`}
+      style={{ backgroundColor: colors.base }}
       onPress={onPress}
     >
       <View
         className="absolute -bottom-16 -right-12 h-40 w-40 rounded-full border-2 opacity-20"
-        style={{borderColor: colors.accent}}
+        style={{ borderColor: colors.accent }}
       />
       <View
         className="absolute -bottom-8 right-14 h-24 w-24 rounded-full border-2 opacity-20"
-        style={{borderColor: '#ffffff'}}
+        style={{ borderColor: '#ffffff' }}
       />
       <View className="flex-row items-start justify-between">
         <Text className="max-w-52 text-lg font-bold text-white">
@@ -617,7 +784,9 @@ function MintCard({
         </Text>
         <View
           className="h-3 w-3 rounded-full"
-          style={{backgroundColor: mint.state === 'ERROR' ? '#ef4444' : '#22c55e'}}
+          style={{
+            backgroundColor: mint.state === 'ERROR' ? '#ef4444' : '#22c55e',
+          }}
         />
       </View>
       <View className="mt-5 flex-row gap-3">
@@ -646,15 +815,20 @@ function WalletAction({
   icon,
   label,
   outlined = false,
+  onPress,
 }: {
   icon: React.ReactNode;
   label: string;
   outlined?: boolean;
+  onPress?: () => void;
 }) {
   return (
     <View className="items-center">
       <Pressable
-        className={`h-14 w-14 items-center justify-center rounded-full ${outlined ? 'border border-emerald-700 bg-white' : 'bg-emerald-700'}`}
+        className={`h-14 w-14 items-center justify-center rounded-full ${
+          outlined ? 'border border-emerald-700 bg-white' : 'bg-emerald-700'
+        }`}
+        onPress={onPress}
       >
         {icon}
       </Pressable>
@@ -688,8 +862,12 @@ function WalletActivityRow({
   activity: WalletActivity;
   currentPubkey: string;
 }) {
-  const isSender = activity.sender === currentPubkey || activity.event.pubkey() === currentPubkey;
-  const otherPubkey = isSender ? activity.recipient : activity.sender || activity.event.pubkey();
+  const isSender =
+    activity.sender === currentPubkey ||
+    activity.event.pubkey() === currentPubkey;
+  const otherPubkey = isSender
+    ? activity.recipient
+    : activity.sender || activity.event.pubkey();
   const kindColor = activity.kind === 9321 ? '#b7791f' : '#eab308';
 
   return (
@@ -697,15 +875,24 @@ function WalletActivityRow({
       <View className="flex-row items-center justify-between gap-3">
         <View className="min-w-0 flex-1 flex-row items-center gap-3">
           <View>
-            <Avatar pubkey={otherPubkey || ''} size="lg" query={!!otherPubkey} />
+            <Avatar
+              pubkey={otherPubkey || ''}
+              size="lg"
+              query={!!otherPubkey}
+            />
             <View
               className="absolute bottom-0 right-0 h-5 w-5 translate-x-1 items-center justify-center rounded-full border-2 border-white"
-              style={{backgroundColor: kindColor}}
+              style={{ backgroundColor: kindColor }}
             >
               {activity.kind === 9321 ? (
                 <Wallet size={11} color="#ffffff" strokeWidth={2.4} />
               ) : (
-                <Zap size={11} color="#ffffff" fill="#ffffff" strokeWidth={2.4} />
+                <Zap
+                  size={11}
+                  color="#ffffff"
+                  fill="#ffffff"
+                  strokeWidth={2.4}
+                />
               )}
             </View>
           </View>
@@ -713,18 +900,23 @@ function WalletActivityRow({
             <View className="flex-row flex-wrap items-center gap-1">
               {isSender ? (
                 <>
-                  <Text className="text-sm font-semibold text-slate-900">You zapped</Text>
+                  <Text className="text-sm font-semibold text-slate-900">
+                    You zapped
+                  </Text>
                   {otherPubkey ? <User pubkey={otherPubkey} /> : null}
                 </>
               ) : (
                 <>
                   {otherPubkey ? <User pubkey={otherPubkey} /> : null}
-                  <Text className="text-sm font-semibold text-slate-900">zapped you</Text>
+                  <Text className="text-sm font-semibold text-slate-900">
+                    zapped you
+                  </Text>
                 </>
               )}
             </View>
             <Text className="mt-1 text-xs text-slate-500">
-              {formatActivityDate(activity.createdAt)} · NIP-{activity.kind === 9321 ? '61' : '57'}
+              {formatActivityDate(activity.createdAt)} · NIP-
+              {activity.kind === 9321 ? '61' : '57'}
             </Text>
           </View>
         </View>
@@ -744,7 +936,10 @@ function WalletActivityRow({
   );
 }
 
-function LoggedOutHome({onLoginOpen}: {onLoginOpen: () => void}) {
+function LoggedOutHome() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
   return (
     <View className="rounded-lg border border-slate-200 bg-white/95 px-5 py-6 shadow-sm">
       <View className="items-center">
@@ -755,11 +950,12 @@ function LoggedOutHome({onLoginOpen}: {onLoginOpen: () => void}) {
           Sign in to load your wallet feed
         </Text>
         <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
-          Home shows your NIP-61 NutsZap and NIP-57 zap activity once a Nostr key is available.
+          Home shows your NIP-61 NutsZap and NIP-57 zap activity once a Nostr
+          key is available.
         </Text>
         <Pressable
           className="mt-5 rounded-full bg-emerald-700 px-5 py-3"
-          onPress={onLoginOpen}
+          onPress={() => navigation.navigate('Login')}
         >
           <Text className="text-sm font-semibold text-white">
             Login with private key
@@ -781,7 +977,8 @@ function EmptyWalletStub() {
           No wallet activity yet
         </Text>
         <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
-          Cashu wallet loading is stubbed for now. Activity will appear here when NIP-61 or NIP-57 events are found.
+          Cashu wallet loading is stubbed for now. Activity will appear here
+          when NIP-61 or NIP-57 events are found.
         </Text>
       </View>
     </View>
@@ -826,6 +1023,48 @@ function toWalletActivity(event: ParsedEvent): WalletActivity | null {
   return null;
 }
 
+function toCashuProof(proof: {
+  amount(): bigint;
+  id(): string | Uint8Array | null;
+  secret(): string | Uint8Array | null;
+  c(): string | Uint8Array | null;
+  dleq(): {
+    e(): string | Uint8Array | null;
+    r(): string | Uint8Array | null;
+    s(): string | Uint8Array | null;
+  } | null;
+}): Proof | null {
+  const id = proof.id();
+  const secret = proof.secret();
+  const c = proof.c();
+  if (!id || !secret || !c) return null;
+
+  const dleq = proof.dleq();
+  const e = dleq?.e();
+  const r = dleq?.r();
+  const s = dleq?.s();
+
+  return {
+    amount: Number(proof.amount()),
+    id: toText(id),
+    secret: toText(secret),
+    C: toText(c),
+    dleq:
+      e && s
+        ? { e: toText(e), r: r ? toText(r) : undefined, s: toText(s) }
+        : undefined,
+  };
+}
+
+function toText(value: string | Uint8Array) {
+  if (typeof value === 'string') return value;
+  let text = '';
+  for (let index = 0; index < value.length; index += 1) {
+    text += String.fromCharCode(value[index]);
+  }
+  return text;
+}
+
 const mintInfoCache = new Map<string, MintInfo>();
 
 async function fetchMintData(mintUrl: string): Promise<MintInfo> {
@@ -868,7 +1107,9 @@ function displayMintName(url: string) {
 }
 
 function cleanMintName(name: string) {
-  return name.replace(/mint/gi, '').replace(/cashu/gi, '').trim() || 'Unknown Mint';
+  return (
+    name.replace(/mint/gi, '').replace(/cashu/gi, '').trim() || 'Unknown Mint'
+  );
 }
 
 function cardColors(value: string) {
@@ -911,6 +1152,7 @@ function formatActivityDate(timestamp: number) {
   return date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
-    year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+    year:
+      date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
   });
 }

@@ -1,8 +1,26 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FlatList, Image, Pressable, Text, TextInput, View} from 'react-native';
-import type {ListParsed, ParsedEvent, RequestObject} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
-import {asNip51, asParsedEvent, fbArray} from '@candypoets/nipworker/utils';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  FlatList,
+  Image,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import type {
+  ListParsed,
+  ParsedEvent,
+  RequestObject,
+} from '@candypoets/nipworker';
+import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
+import { asNip51, asParsedEvent, fbArray } from '@candypoets/nipworker/utils';
 import {
   Check,
   ChevronDown,
@@ -11,7 +29,7 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import {
   ALL_FEED_KINDS,
   KIND_DESCRIPTIONS,
@@ -35,23 +53,24 @@ type SeenList = {
 };
 
 type UnifiedSelection =
-  | {type: 'pack'; id: string; title: string}
-  | {type: 'kind'; kind: FeedKind; title: string};
+  | { type: 'pack'; id: string; title: string }
+  | { type: 'kind'; kind: FeedKind; title: string };
 
-type PackItem = ParsedEvent | {selection: FeedPackSelection};
+type PackItem = ParsedEvent | { selection: FeedPackSelection };
 type FeedBuilderListItem = PackItem | FeedKind;
 
 const followListImage = require('../../assets/followlist.png');
 
-export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
+export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   const pubkey = useAuthStore(state => state.pubkey);
   const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
-  const togglePack = useFeedBuilderStore(state => state.togglePack);
-  const removePack = useFeedBuilderStore(state => state.removePack);
-  const toggleKind = useFeedBuilderStore(state => state.toggleKind);
+  const applySelection = useFeedBuilderStore(state => state.applySelection);
   const follows = useNostrStore(state => state.follows);
-  const followListPack = useMemo(() => createFollowListPack(follows), [follows]);
+  const followListPack = useMemo(
+    () => createFollowListPack(follows),
+    [follows],
+  );
   const followSetsRef = useRef<ParsedEvent[]>([]);
   const publicPacksRef = useRef<ParsedEvent[]>([]);
   const seenFollowSetsRef = useRef(new Map<string, SeenList>());
@@ -59,37 +78,76 @@ export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
   const [tab, setTab] = useState<Tab>('packs');
   const [search, setSearch] = useState('');
   const [contentSearch, setContentSearch] = useState('');
-  const [, setRevision] = useState(0);
+  const [revision, setRevision] = useState(0);
+  const [draftPacks, setDraftPacks] =
+    useState<FeedPackSelection[]>(selectedPacks);
+  const [draftKinds, setDraftKinds] = useState<FeedKind[]>(selectedKinds);
+  const draftPacksRef = useRef(draftPacks);
+  const draftKindsRef = useRef(draftKinds);
+  const committedRef = useRef(false);
 
-  const updateList = useCallback((parsedEvent: ParsedEvent, list: ListParsed) => {
-    const kind = parsedEvent.kind();
-    if (kind !== 30000 && kind !== 39089) return;
-    if (kind === 39089 && parsedEvent.id() === 'followlist') return;
+  useEffect(() => {
+    draftPacksRef.current = draftPacks;
+  }, [draftPacks]);
 
-    const dTag = list.d();
-    if (!dTag) return;
-    const targetRef = kind === 30000 ? followSetsRef : publicPacksRef;
-    const seenRef = kind === 30000 ? seenFollowSetsRef : seenPublicPacksRef;
-    const existing = seenRef.current.get(dTag);
+  useEffect(() => {
+    draftKindsRef.current = draftKinds;
+  }, [draftKinds]);
 
-    if (existing) {
-      if (parsedEvent.createdAt() <= existing.createdAt) return;
-      targetRef.current[existing.index] = parsedEvent;
-    } else {
-      targetRef.current = [...targetRef.current, parsedEvent];
-    }
-
-    targetRef.current = targetRef.current.sort(
-      (left, right) => right.createdAt() - left.createdAt(),
-    );
-    seenRef.current.clear();
-    targetRef.current.forEach((event, index) => {
-      const eventDTag = asNip51(event)?.d();
-      if (!eventDTag) return;
-      seenRef.current.set(eventDTag, {createdAt: event.createdAt(), index});
+  const commitDraft = useCallback(() => {
+    committedRef.current = true;
+    const kinds = draftKindsRef.current;
+    const packs = draftPacksRef.current;
+    requestAnimationFrame(() => {
+      setTimeout(() => applySelection(kinds, packs), 0);
     });
-    setRevision(current => current + 1);
-  }, []);
+  }, [applySelection]);
+
+  useEffect(
+    () => () => {
+      if (!committedRef.current) {
+        const kinds = draftKindsRef.current;
+        const packs = draftPacksRef.current;
+        requestAnimationFrame(() => {
+          setTimeout(() => applySelection(kinds, packs), 0);
+        });
+      }
+    },
+    [applySelection],
+  );
+
+  const updateList = useCallback(
+    (parsedEvent: ParsedEvent, list: ListParsed) => {
+      const kind = parsedEvent.kind();
+      if (kind !== 30000 && kind !== 39089) return;
+      if (kind === 39089 && parsedEvent.id() === 'followlist') return;
+
+      const dTag = list.d();
+      if (!dTag) return;
+      const targetRef = kind === 30000 ? followSetsRef : publicPacksRef;
+      const seenRef = kind === 30000 ? seenFollowSetsRef : seenPublicPacksRef;
+      const existing = seenRef.current.get(dTag);
+
+      if (existing) {
+        if (parsedEvent.createdAt() <= existing.createdAt) return;
+        targetRef.current[existing.index] = parsedEvent;
+      } else {
+        targetRef.current = [...targetRef.current, parsedEvent];
+      }
+
+      targetRef.current = targetRef.current.sort(
+        (left, right) => right.createdAt() - left.createdAt(),
+      );
+      seenRef.current.clear();
+      targetRef.current.forEach((event, index) => {
+        const eventDTag = asNip51(event)?.d();
+        if (!eventDTag) return;
+        seenRef.current.set(eventDTag, { createdAt: event.createdAt(), index });
+      });
+      setRevision(current => current + 1);
+    },
+    [],
+  );
 
   useEffect(() => {
     const seenFollowSets = seenFollowSetsRef.current;
@@ -112,7 +170,7 @@ export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
         if (!list?.title()) return;
         updateList(parsedEvent, list);
       },
-      {closeOnEose: false},
+      { closeOnEose: false },
     );
 
     return () => {
@@ -124,8 +182,14 @@ export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
     };
   }, [pubkey, updateList]);
 
-  const packItems = [followListPack, ...followSetsRef.current, ...publicPacksRef.current].filter(
-    event => includePack(event, search),
+  const packItems = useMemo(
+    () =>
+      [
+        followListPack,
+        ...followSetsRef.current,
+        ...publicPacksRef.current,
+      ].filter(event => includePack(event, search)),
+    [followListPack, revision, search],
   );
 
   const contentKinds = useMemo(
@@ -140,33 +204,69 @@ export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
       }),
     [contentSearch],
   );
+  const selectedPackIds = useMemo(
+    () => new Set(draftPacks.map(pack => pack.id)),
+    [draftPacks],
+  );
+  const selectedKindSet = useMemo(() => new Set(draftKinds), [draftKinds]);
+
   const selections = useMemo<UnifiedSelection[]>(
     () => [
-      ...selectedPacks.map(pack => ({
+      ...draftPacks.map(pack => ({
         type: 'pack' as const,
         id: pack.id,
         title: pack.title,
       })),
-      ...selectedKinds.map(kind => ({
+      ...draftKinds.map(kind => ({
         type: 'kind' as const,
         kind,
         title: KIND_LABELS[kind],
       })),
     ],
-    [selectedKinds, selectedPacks],
+    [draftKinds, draftPacks],
   );
+
+  const handleClose = useCallback(() => {
+    onClose();
+    commitDraft();
+  }, [commitDraft, onClose]);
+
+  const handleTogglePack = useCallback((pack: FeedPackSelection) => {
+    setDraftPacks(current => {
+      const exists = current.some(selected => selected.id === pack.id);
+      return exists
+        ? current.filter(selected => selected.id !== pack.id)
+        : [...current, pack];
+    });
+  }, []);
+
+  const handleToggleKind = useCallback((kind: FeedKind) => {
+    setDraftKinds(current => {
+      const exists = current.includes(kind);
+      return exists
+        ? current.filter(selected => selected !== kind)
+        : [...current, kind].sort((left, right) => left - right);
+    });
+  }, []);
+
+  const handleRemoveSelection = useCallback((selection: UnifiedSelection) => {
+    if (selection.type === 'pack') {
+      setDraftPacks(current =>
+        current.filter(pack => pack.id !== selection.id),
+      );
+      return;
+    }
+    setDraftKinds(current => current.filter(kind => kind !== selection.kind));
+  }, []);
 
   const renderHeader = useCallback(
     () => (
       <FeedBuilderHeader
         contentSearch={contentSearch}
-        onClose={onClose}
+        onClose={handleClose}
         onContentSearchChange={setContentSearch}
         onPackSearchChange={setSearch}
-        onRemoveSelection={selection => {
-          if (selection.type === 'pack') removePack(selection.id);
-          else toggleKind(selection.kind);
-        }}
+        onRemoveSelection={handleRemoveSelection}
         onTabChange={setTab}
         packSearch={search}
         selections={selections}
@@ -175,19 +275,20 @@ export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
     ),
     [
       contentSearch,
-      onClose,
-      removePack,
+      handleClose,
+      handleRemoveSelection,
       search,
       selections,
       tab,
-      toggleKind,
     ],
   );
 
   const empty = (
     <View className="px-2 py-10">
       <Text className="text-center text-sm text-slate-500">
-        {tab === 'packs' ? 'Waiting for follow packs.' : 'No content types found.'}
+        {tab === 'packs'
+          ? 'Waiting for follow packs.'
+          : 'No content types found.'}
       </Text>
     </View>
   );
@@ -196,33 +297,28 @@ export function FeedBuilderModal({onClose}: FeedBuilderModalProps) {
     [contentKinds, packItems, tab],
   );
   const renderItem = useCallback(
-    ({item}: {item: FeedBuilderListItem; index: number}) => {
+    ({ item }: { item: FeedBuilderListItem; index: number }) => {
       if (tab === 'content') {
         const kind = item as FeedKind;
         return (
-          <KindCard
+          <KindListItem
             kind={kind}
-            selected={selectedKinds.includes(kind)}
-            onPress={() => toggleKind(kind)}
+            selected={selectedKindSet.has(kind)}
+            onToggle={handleToggleKind}
           />
         );
       }
 
       const packItem = item as PackItem;
-      const selection =
-        'selection' in packItem ? packItem.selection : packSelectionFromEvent(packItem);
-      if (!selection) return null;
-      const selected = selectedPacks.some(pack => pack.id === selection.id);
       return (
-        <PackCard
-          event={packItem}
-          selected={selected}
-          selection={selection}
-          onPress={() => togglePack(selection)}
+        <PackListItem
+          item={packItem}
+          selectedPackIds={selectedPackIds}
+          onToggle={handleTogglePack}
         />
       );
     },
-    [selectedKinds, selectedPacks, tab, toggleKind, togglePack],
+    [handleToggleKind, handleTogglePack, selectedKindSet, selectedPackIds, tab],
   );
   const keyExtractor = useCallback(
     (item: FeedBuilderListItem, index: number) =>
@@ -258,6 +354,50 @@ function FeedBuilderItemSeparator() {
   return <View className="h-3" />;
 }
 
+const PackListItem = memo(function PackListItem({
+  item,
+  selectedPackIds,
+  onToggle,
+}: {
+  item: PackItem;
+  selectedPackIds: Set<string>;
+  onToggle: (selection: FeedPackSelection) => void;
+}) {
+  const selection = useMemo(
+    () => ('selection' in item ? item.selection : packSelectionFromEvent(item)),
+    [item],
+  );
+  const selected = !!selection && selectedPackIds.has(selection.id);
+  const handlePress = useCallback(() => {
+    if (selection) onToggle(selection);
+  }, [onToggle, selection]);
+
+  if (!selection) return null;
+
+  return (
+    <PackCard
+      event={item}
+      selected={selected}
+      selection={selection}
+      onPress={handlePress}
+    />
+  );
+});
+
+const KindListItem = memo(function KindListItem({
+  kind,
+  selected,
+  onToggle,
+}: {
+  kind: FeedKind;
+  selected: boolean;
+  onToggle: (kind: FeedKind) => void;
+}) {
+  const handlePress = useCallback(() => onToggle(kind), [kind, onToggle]);
+
+  return <KindCard kind={kind} selected={selected} onPress={handlePress} />;
+});
+
 function buildFollowListRequests(pubkey: string | null): RequestObject[] {
   return [
     ...(pubkey
@@ -280,7 +420,9 @@ function buildFollowListRequests(pubkey: string | null): RequestObject[] {
   ];
 }
 
-function createFollowListPack(follows: string[]): {selection: FeedPackSelection} {
+function createFollowListPack(follows: string[]): {
+  selection: FeedPackSelection;
+} {
   return {
     selection: {
       id: 'followlist',
@@ -398,7 +540,9 @@ function FeedBuilderHeader({
         placeholder={
           tab === 'packs' ? 'Search follow packs...' : 'Search content types...'
         }
-        onChangeText={tab === 'packs' ? onPackSearchChange : onContentSearchChange}
+        onChangeText={
+          tab === 'packs' ? onPackSearchChange : onContentSearchChange
+        }
       />
     </View>
   );
@@ -446,7 +590,9 @@ function SelectionChips({
     <View className="mt-3 flex-row flex-wrap gap-2 px-1">
       {selections.map(selection => (
         <Pressable
-          key={selection.type === 'pack' ? selection.id : `kind_${selection.kind}`}
+          key={
+            selection.type === 'pack' ? selection.id : `kind_${selection.kind}`
+          }
           className="flex-row items-center gap-1 rounded-full bg-emerald-700 px-3 py-1.5"
           onPress={() => onRemove(selection)}
         >
@@ -518,7 +664,11 @@ function PackCard({
             <Image
               className="h-full w-full"
               resizeMode="cover"
-              source={hasLocalImage ? followListImage : {uri: selection.image ?? undefined}}
+              source={
+                hasLocalImage
+                  ? followListImage
+                  : { uri: selection.image ?? undefined }
+              }
             />
           ) : (
             <View className="h-full w-full items-center justify-center bg-slate-200">
@@ -526,10 +676,7 @@ function PackCard({
             </View>
           )}
           <View className="absolute bottom-0 left-0 right-0 bg-black/55 px-3 py-2">
-            <Text
-              className="text-base font-bold text-white"
-              numberOfLines={1}
-            >
+            <Text className="text-base font-bold text-white" numberOfLines={1}>
               {selection.title}
             </Text>
           </View>
@@ -541,7 +688,10 @@ function PackCard({
         </View>
         <View className="gap-2 px-3 py-3">
           {selection.description ? (
-            <Text className="text-sm leading-5 text-slate-600" numberOfLines={2}>
+            <Text
+              className="text-sm leading-5 text-slate-600"
+              numberOfLines={2}
+            >
               {selection.description}
             </Text>
           ) : null}
@@ -550,7 +700,11 @@ function PackCard({
               {selection.people.length} people
             </Text>
             <Text className="text-xs font-semibold text-slate-500">
-              {isFollowList ? 'Your follows' : isFollowSet ? 'Follow set' : 'Public pack'}
+              {isFollowList
+                ? 'Your follows'
+                : isFollowSet
+                ? 'Follow set'
+                : 'Public pack'}
             </Text>
           </View>
         </View>
@@ -587,7 +741,9 @@ function KindCard({
             {KIND_DESCRIPTIONS[kind]}
           </Text>
         </View>
-        {selected ? <Check size={20} color="#047857" strokeWidth={2.4} /> : null}
+        {selected ? (
+          <Check size={20} color="#047857" strokeWidth={2.4} />
+        ) : null}
       </View>
     </Pressable>
   );

@@ -4,5 +4,6 @@ export {
   PrivateKeyLogin,
   ProfileModal,
   ProfileStubModal,
-  type ProfileModalTarget,
 } from './ProfileModal';
+export {ScanModal} from './ScanModal';
+export {SendModal, SendPlaceholderModal} from './SendModal';

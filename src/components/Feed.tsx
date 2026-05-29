@@ -18,6 +18,7 @@ import {
   type FlashListRef,
   type ListRenderItemInfo,
 } from '@shopify/flash-list';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -36,12 +37,14 @@ export type FeedRenderItemInfo<T> = ListRenderItemInfo<T> & {
 
 export type FeedProps<T> = {
   items: T[];
+  resetScrollKey?: string | number;
   getItemId?: (item: T, index: number) => string | number;
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   header?: (props: FeedChromeProps) => ReactNode;
   stickyHeader?: (props: FeedChromeProps) => ReactNode;
   stickyFooter?: (props: FeedChromeProps) => ReactNode;
   fixedHeader?: (props: FeedChromeProps) => ReactNode;
+  headerSafeArea?: boolean;
   empty?: ReactNode;
   loading?: boolean;
   refreshing?: boolean;
@@ -49,6 +52,7 @@ export type FeedProps<T> = {
   pullToRefresh?: boolean;
   bottom?: boolean;
   bottomAutoScroll?: boolean | 'initial';
+  maintainVisibleContentPosition?: boolean;
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   onRefresh?: () => void | Promise<void>;
@@ -60,6 +64,8 @@ export type FeedProps<T> = {
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
+const TOP_SAFE_AREA_OFFSET = 8;
+const SAFE_AREA_FROST = 'rgba(248, 250, 252, 0.72)';
 
 function defaultGetItemId<T>(item: T, index: number) {
   const maybeItem = item as T & {id?: unknown};
@@ -75,12 +81,14 @@ function defaultGetItemId<T>(item: T, index: number) {
 
 export function Feed<T>({
   items,
+  resetScrollKey,
   getItemId = defaultGetItemId,
   renderItem,
   header,
   stickyHeader,
   stickyFooter,
   fixedHeader,
+  headerSafeArea = true,
   empty,
   loading = false,
   refreshing = false,
@@ -88,6 +96,7 @@ export function Feed<T>({
   pullToRefresh = false,
   bottom = false,
   bottomAutoScroll = true,
+  maintainVisibleContentPosition = bottom,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   onRefresh,
@@ -100,12 +109,14 @@ export function Feed<T>({
   const [end, setEnd] = useState(0);
   const [down, setDown] = useState(true);
   const listRef = useRef<FlashListRef<T>>(null);
+  const insets = useSafeAreaInsets();
   const lastOffsetRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
   const lastItemsLengthRef = useRef(items.length);
   const didInitialBottomScrollRef = useRef(false);
   const headerVisible = useSharedValue(0);
   const footerVisible = useSharedValue(1);
+  const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
 
   const chromeProps = useMemo(
     () => ({visible: true, scrolled: start >= 1, start}),
@@ -138,6 +149,15 @@ export function Feed<T>({
   }, [bottom, bottomAutoScroll, items.length, start]);
 
   useEffect(() => {
+    if (resetScrollKey === undefined || bottom) return;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({offset: 0, animated: false});
+      lastOffsetRef.current = 0;
+      setDown(true);
+    });
+  }, [bottom, resetScrollKey]);
+
+  useEffect(() => {
     onViewportChange?.({start, end, down});
   }, [down, end, onViewportChange, start]);
 
@@ -153,12 +173,14 @@ export function Feed<T>({
 
   const stickyHeaderStyle = useAnimatedStyle(() => ({
     opacity: headerVisible.value,
-    transform: [{translateY: (1 - headerVisible.value) * -72}],
+    paddingTop: topInset,
+    transform: [{translateY: (1 - headerVisible.value) * -(72 + topInset)}],
   }));
 
   const stickyFooterStyle = useAnimatedStyle(() => ({
     opacity: footerVisible.value,
-    transform: [{translateY: (1 - footerVisible.value) * 88}],
+    paddingBottom: insets.bottom,
+    transform: [{translateY: (1 - footerVisible.value) * (88 + insets.bottom)}],
   }));
 
   const handleViewableItemsChanged = useCallback(
@@ -215,8 +237,18 @@ export function Feed<T>({
 
   const listHeader = useMemo(() => {
     if (!header) return null;
-    return <View className="w-full">{header({...chromeProps, scrolled: false})}</View>;
-  }, [chromeProps, header]);
+    return (
+      <View className="w-full">
+        {headerSafeArea && topInset > 0 ? (
+          <View
+            pointerEvents="none"
+            style={{height: topInset, backgroundColor: SAFE_AREA_FROST}}
+          />
+        ) : null}
+        {header({...chromeProps, scrolled: false})}
+      </View>
+    );
+  }, [chromeProps, header, headerSafeArea, topInset]);
 
   const listEmpty = useMemo(() => {
     if (loading) {
@@ -228,6 +260,7 @@ export function Feed<T>({
     }
     return empty ? <View className="px-6 py-12">{empty}</View> : null;
   }, [empty, loading]);
+  const refreshOffset = headerSafeArea ? topInset : 0;
 
   return (
     <View className="relative flex-1">
@@ -235,6 +268,7 @@ export function Feed<T>({
         <View
           pointerEvents="box-none"
           className="absolute bottom-0 left-0 right-0 top-0 z-20"
+          style={{paddingTop: topInset}}
         >
           {fixedHeader(chromeProps)}
         </View>
@@ -264,13 +298,15 @@ export function Feed<T>({
         inverted={bottom}
         initialScrollIndex={bottom && items.length ? 0 : undefined}
         maintainVisibleContentPosition={
-          bottom && bottomAutoScroll === true
-            ? {
-                startRenderingFromBottom: true,
-                autoscrollToBottomThreshold: 0.2,
-                animateAutoScrollToBottom: true,
-              }
-            : undefined
+          maintainVisibleContentPosition
+            ? bottom && bottomAutoScroll === true
+              ? {
+                  startRenderingFromBottom: true,
+                  autoscrollToBottomThreshold: 0.2,
+                  animateAutoScrollToBottom: true,
+                }
+              : undefined
+            : {disabled: true}
         }
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.35}
@@ -278,7 +314,11 @@ export function Feed<T>({
         onViewableItemsChanged={handleViewableItemsChanged}
         refreshControl={
           pullToRefresh && onRefresh ? (
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl
+              progressViewOffset={refreshOffset}
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+            />
           ) : undefined
         }
         removeClippedSubviews={removeClippedSubviews}

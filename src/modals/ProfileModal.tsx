@@ -1,5 +1,7 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {NostrManagerLike} from '@candypoets/nipworker';
 import {
   ChevronRight,
@@ -15,9 +17,11 @@ import {
 import {nip19} from 'nostr-tools';
 
 import {HeaderProfileButton} from '../components/HeaderProfileButton';
+import {pushDistinct} from '../navigation/pushDistinct';
+import type {RootStackParamList} from '../navigation/types';
 import {useAuthStore, useWalletStore, type AuthState} from '../stores';
 
-export type ProfileModalTarget =
+type ProfileModalTarget =
   | {type: 'login'}
   | {type: 'logout'}
   | {type: 'profileStub'; path: 'relays' | 'wallet' | 'theme' | 'nprofile'};
@@ -25,7 +29,6 @@ export type ProfileModalTarget =
 type ProfileModalProps = {
   auth: Pick<AuthState, 'pubkey' | 'hasSigner'>;
   onClose: () => void;
-  onNavigate: (item: ProfileModalTarget) => void;
 };
 
 function bytesToHex(bytes: Uint8Array) {
@@ -57,7 +60,28 @@ function decodePrivateKey(input: string) {
   return hexToBytes(hex);
 }
 
-export function ProfileModal({auth, onClose, onNavigate}: ProfileModalProps) {
+export function ProfileModal({auth, onClose}: ProfileModalProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigate = useCallback(
+    (item: ProfileModalTarget) => {
+      if (item.type === 'login') {
+        navigation.navigate('Login');
+        return;
+      }
+      if (item.type === 'logout') {
+        navigation.navigate('Logout');
+        return;
+      }
+      if (item.path === 'nprofile' && auth.pubkey) {
+        pushDistinct(navigation, 'PublicProfile', {pubkey: auth.pubkey});
+        return;
+      }
+      navigation.navigate('ProfileStub', {path: item.path});
+    },
+    [auth.pubkey, navigation],
+  );
+
   return (
     <View style={styles.modalBody}>
       <View style={styles.profileSheet}>
@@ -76,7 +100,7 @@ export function ProfileModal({auth, onClose, onNavigate}: ProfileModalProps) {
                 className="h-14 w-14 border-emerald-600 bg-white"
               />
             ) : null}
-            <Pressable style={styles.addAccountButton} onPress={() => onNavigate({type: 'login'})}>
+            <Pressable style={styles.addAccountButton} onPress={() => navigate({type: 'login'})}>
               <Plus size={22} color="#17212b" strokeWidth={2.4} />
             </Pressable>
           </View>
@@ -86,13 +110,13 @@ export function ProfileModal({auth, onClose, onNavigate}: ProfileModalProps) {
               <ProfileMenuRow
                 icon={<LogOut size={21} color="#17212b" strokeWidth={2.1} />}
                 label="Log out"
-                onPress={() => onNavigate({type: 'logout'})}
+                onPress={() => navigate({type: 'logout'})}
               />
             ) : (
               <ProfileMenuRow
                 icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
                 label="Sign in"
-                onPress={() => onNavigate({type: 'login'})}
+                onPress={() => navigate({type: 'login'})}
               />
             )}
           </View>
@@ -102,30 +126,30 @@ export function ProfileModal({auth, onClose, onNavigate}: ProfileModalProps) {
             <ProfileMenuRow
               icon={<User size={21} color="#17212b" strokeWidth={2.1} />}
               label="My Profile"
-              onPress={() => onNavigate({type: 'profileStub', path: 'nprofile'})}
+              onPress={() => navigate({type: 'profileStub', path: 'nprofile'})}
             />
             <ProfileMenuRow
               icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
               label="Keys"
-              onPress={() => onNavigate({type: 'login'})}
+              onPress={() => navigate({type: 'login'})}
             />
             <ProfileMenuRow
               icon={<Radio size={21} color="#17212b" strokeWidth={2.1} />}
               label="Relays"
               detail="Your relay preferences"
-              onPress={() => onNavigate({type: 'profileStub', path: 'relays'})}
+              onPress={() => navigate({type: 'profileStub', path: 'relays'})}
             />
             <ProfileMenuRow
               icon={<Wallet size={21} color="#17212b" strokeWidth={2.1} />}
               label="Wallet"
               detail="Wallet preferences"
-              onPress={() => onNavigate({type: 'profileStub', path: 'wallet'})}
+              onPress={() => navigate({type: 'profileStub', path: 'wallet'})}
             />
             <ProfileMenuRow
               icon={<Palette size={21} color="#17212b" strokeWidth={2.1} />}
               label="Theme"
               detail="Appearance settings"
-              onPress={() => onNavigate({type: 'profileStub', path: 'theme'})}
+              onPress={() => navigate({type: 'profileStub', path: 'theme'})}
               last
             />
           </View>
@@ -319,9 +343,7 @@ const styles = StyleSheet.create({
   },
   profileSheet: {
     backgroundColor: '#f8fafc',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '88%',
+    flex: 1,
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 28,

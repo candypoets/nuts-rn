@@ -1,7 +1,19 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Image, Pressable, Text, View} from 'react-native';
-import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Image, Pressable, Text, View } from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {
+  ParsedEvent,
+  RequestObject,
+  WorkerMessage,
+} from '@candypoets/nipworker';
+import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asEoce,
@@ -17,15 +29,10 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import {Feed} from '../components/Feed';
-import {Note} from '../components/notes';
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import {
-  Bell,
-  Infinity,
-  RefreshCw,
-  Users,
-} from 'lucide-react-native';
+import { Feed } from '../components/Feed';
+import { Note } from '../components/notes';
+import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
+import { Bell, Infinity, Users } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
   type FeedPackSelection,
@@ -34,8 +41,9 @@ import {
   useRelayStore,
   useNostrStore,
 } from '../stores';
-import {HeaderProfileButton} from '../components/HeaderProfileButton';
-import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
+import { HeaderProfileButton } from '../components/HeaderProfileButton';
+import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
+import type {RootStackParamList} from '../navigation/types';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -43,11 +51,38 @@ type ExploreFeedProps = {
   header?: () => React.ReactNode;
   stickyHeader?: () => React.ReactNode;
   stickyFooter?: () => React.ReactNode;
-  onFeedBuilderOpen?: () => void;
-  onProfileOpen?: (pubkey: string) => void;
 };
 
 const followListImage = require('../../assets/followlist.png');
+
+function verifyExploreItemIds(items: ParsedEvent[], feedKey: string) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+
+  const ids = new Map<string, number>();
+  let missing = 0;
+
+  items.forEach(item => {
+    const id = item.id();
+    if (!id) {
+      missing += 1;
+      return;
+    }
+    ids.set(id, (ids.get(id) ?? 0) + 1);
+  });
+
+  const duplicates = Array.from(ids.entries()).filter(([, count]) => count > 1);
+  if (!missing && !duplicates.length) return;
+
+  console.warn('[explore-feed] invalid item ids', {
+    feedKey,
+    items: items.length,
+    missing,
+    duplicates: duplicates.slice(0, 10).map(([id, count]) => ({
+      id: id.slice(0, 12),
+      count,
+    })),
+  });
+}
 
 export function ExploreFeed({
   enabled,
@@ -55,8 +90,6 @@ export function ExploreFeed({
   header,
   stickyHeader,
   stickyFooter,
-  onFeedBuilderOpen,
-  onProfileOpen,
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -75,9 +108,15 @@ export function ExploreFeed({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const paginationCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const commitFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const paginationCheckTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const commitFrameRef = useRef<ReturnType<
+    typeof requestAnimationFrame
+  > | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
@@ -104,10 +143,12 @@ export function ExploreFeed({
     authPubkey && readRelays.length ? readRelays : DEFAULT_FEED_RELAYS;
   const feedKey = useMemo(
     () =>
-      `${requestKinds.join(',') || 'kind1'}:${selectedAuthors.join(',') || 'global'}:${feedRelays.join(',')}`,
+      `${requestKinds.join(',') || 'kind1'}:${
+        selectedAuthors.join(',') || 'global'
+      }:${feedRelays.join(',')}`,
     [feedRelays, requestKinds, selectedAuthors],
   );
-  const [, setTick] = useState(0);
+  const [itemsVersion, setItemsVersion] = useState(0);
 
   const defaultHeader = useCallback(
     () => (
@@ -117,10 +158,9 @@ export function ExploreFeed({
         relayStatuses={relayStatuses}
         selectedPacks={selectedPacks}
         surfaceClassName="bg-slate-50"
-        onFeedBuilderOpen={onFeedBuilderOpen}
       />
     ),
-    [authPubkey, feedRelays, onFeedBuilderOpen, relayStatuses, selectedPacks],
+    [authPubkey, feedRelays, relayStatuses, selectedPacks],
   );
 
   const defaultStickyHeader = useCallback(
@@ -130,12 +170,10 @@ export function ExploreFeed({
         relays={feedRelays}
         relayStatuses={relayStatuses}
         selectedPacks={selectedPacks}
-        mini
-        surfaceClassName="bg-white"
-        onFeedBuilderOpen={onFeedBuilderOpen}
+        surfaceClassName="bg-slate-50"
       />
     ),
-    [authPubkey, feedRelays, onFeedBuilderOpen, relayStatuses, selectedPacks],
+    [authPubkey, feedRelays, relayStatuses, selectedPacks],
   );
 
   const tabsSpacer = useCallback(() => <View className="h-[72px]" />, []);
@@ -174,7 +212,9 @@ export function ExploreFeed({
           kinds: requestKinds,
           authors: selectedAuthors.length ? selectedAuthors : undefined,
           limit: 50,
-          since: forPagination ? undefined : Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
+          since: forPagination
+            ? undefined
+            : Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
           until: forPagination ? untilRef.current : undefined,
           noCache: !!requestCacheRef.current,
           relays: feedRelays,
@@ -186,7 +226,9 @@ export function ExploreFeed({
 
   const shouldIncludeKind = useCallback(
     (kind: number) =>
-      requestKinds.length > 0 ? requestKinds.includes(kind as (typeof ALL_FEED_KINDS)[number]) : true,
+      requestKinds.length > 0
+        ? requestKinds.includes(kind as (typeof ALL_FEED_KINDS)[number])
+        : true,
     [requestKinds],
   );
 
@@ -214,7 +256,7 @@ export function ExploreFeed({
     pendingItemsRef.current = [];
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = false;
-    setTick(t => t + 1);
+    setItemsVersion(version => version + 1);
 
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
@@ -244,7 +286,7 @@ export function ExploreFeed({
     } else if (newAboveViewport) {
       setNewPostsCount(count => count + newAboveViewport);
     }
-    setTick(t => t + 1);
+    setItemsVersion(version => version + 1);
   }, []);
 
   const scheduleCommitPendingItems = useCallback(() => {
@@ -277,15 +319,18 @@ export function ExploreFeed({
     }
   }, [commitPendingItems]);
 
-  const addItem = useCallback((parsedEvent: ParsedEvent) => {
-    const id = parsedEvent.id();
-    if (!id || seenIdsRef.current.has(id)) return;
-    seenIdsRef.current.add(id);
-    pendingItemsRef.current.push(parsedEvent);
-    if (!subscriptionResolvingRef.current) {
-      scheduleCommitPendingItems();
-    }
-  }, [scheduleCommitPendingItems]);
+  const addItem = useCallback(
+    (parsedEvent: ParsedEvent) => {
+      const id = parsedEvent.id();
+      if (!id || seenIdsRef.current.has(id)) return;
+      seenIdsRef.current.add(id);
+      pendingItemsRef.current.push(parsedEvent);
+      if (!subscriptionResolvingRef.current) {
+        scheduleCommitPendingItems();
+      }
+    },
+    [scheduleCommitPendingItems],
+  );
 
   const handleEvents = useCallback(
     (message: WorkerMessage) => {
@@ -370,7 +415,9 @@ export function ExploreFeed({
     }
 
     unsubscribeRef.current?.();
-    rootSubIdRef.current = `feed_explore_${hashKey(`${feedKey}:${requestCacheRef.current}`)}`;
+    rootSubIdRef.current = `feed_explore_${hashKey(
+      `${feedKey}:${requestCacheRef.current}`,
+    )}`;
     pendingItemsRef.current = [];
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = true;
@@ -382,7 +429,7 @@ export function ExploreFeed({
       rootSubIdRef.current,
       requests,
       handleEvents,
-      {bytesPerEvent: 10 * 1024},
+      { bytesPerEvent: 10 * 1024 },
     );
     prevPaginationSubIdRef.current = rootSubIdRef.current;
     hasInitializedRef.current = true;
@@ -397,7 +444,17 @@ export function ExploreFeed({
         }
       }
     }, 1500);
-  }, [completeResolvingSubscription, enabled, feedKey, feedRelays, handleEvents, requestList, setRelayStatus, setSubRelays, visible]);
+  }, [
+    completeResolvingSubscription,
+    enabled,
+    feedKey,
+    feedRelays,
+    handleEvents,
+    requestList,
+    setRelayStatus,
+    setSubRelays,
+    visible,
+  ]);
 
   const handleRefresh = useCallback(() => {
     if (refreshing) return;
@@ -451,17 +508,22 @@ export function ExploreFeed({
       setLoading(false);
       setHasMore(false);
     }
-    },
-    [completeResolvingSubscription, feedKey, handleEvents, hasMore, loading, requestList],
-  );
+  }, [
+    completeResolvingSubscription,
+    feedKey,
+    handleEvents,
+    hasMore,
+    loading,
+    requestList,
+  ]);
 
   useEffect(() => {
     if (!loading) {
       const itemsAtCheck = itemsBeforePaginationRef.current;
       if (itemsAtCheck > 0) {
-      if (paginationTimeoutRef.current) {
-        clearTimeout(paginationTimeoutRef.current);
-        paginationTimeoutRef.current = null;
+        if (paginationTimeoutRef.current) {
+          clearTimeout(paginationTimeoutRef.current);
+          paginationTimeoutRef.current = null;
         }
 
         paginationCheckTimeoutRef.current = setTimeout(() => {
@@ -478,6 +540,10 @@ export function ExploreFeed({
       }
     }
   }, [loading]);
+
+  useEffect(() => {
+    verifyExploreItemIds(itemsRef.current, feedKey);
+  }, [feedKey, itemsVersion]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -523,7 +589,7 @@ export function ExploreFeed({
   );
 
   const handleViewportChange = useCallback(
-    ({start}: {start: number; end: number; down: boolean}) => {
+    ({ start }: { start: number; end: number; down: boolean }) => {
       startRef.current = start;
       if (start === 0) {
         lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
@@ -534,15 +600,22 @@ export function ExploreFeed({
   );
 
   const renderItem = useCallback(
-    ({item, visible: itemVisible}: {item: ParsedEvent; visible: boolean}) => (
-      <Note
-        note={item}
-        visible={visible && itemVisible}
-        onProfileOpen={onProfileOpen}
-      />
+    ({
+      item,
+      visible: itemVisible,
+    }: {
+      item: ParsedEvent;
+      visible: boolean;
+    }) => (
+      <Note note={item} visible={visible && itemVisible} />
     ),
-    [onProfileOpen, visible],
+    [visible],
   );
+  const getItemId = useCallback(
+    (item: ParsedEvent, index: number) => item.id() || `missing:${index}`,
+    [],
+  );
+  const listHeader = header ?? defaultHeader;
 
   const empty = (
     <View className="px-6 py-16">
@@ -557,10 +630,10 @@ export function ExploreFeed({
 
   return (
     <View className="flex-1">
-      {(header ?? defaultHeader)()}
       <Feed
         items={itemsRef.current}
-        getItemId={item => item.id() || ''}
+        getItemId={getItemId}
+        header={listHeader}
         pullToRefresh
         stickyFooterVisible
         stickyHeader={stickyHeader ?? defaultStickyHeader}
@@ -573,7 +646,7 @@ export function ExploreFeed({
         onNearBottom={handleNearBottom}
         onViewportChange={handleViewportChange}
         empty={empty}
-        contentContainerClassName="pb-28 px-2"
+        contentContainerClassName="pb-28"
       />
     </View>
   );
@@ -586,7 +659,6 @@ function ExploreHeader({
   relays,
   selectedPacks,
   surfaceClassName,
-  onFeedBuilderOpen,
 }: {
   mini?: boolean;
   pubkey: string | null;
@@ -594,28 +666,37 @@ function ExploreHeader({
   relays: string[];
   selectedPacks: FeedPackSelection[];
   surfaceClassName: string;
-  onFeedBuilderOpen?: () => void;
 }) {
   return (
     <View
       className={
         mini
-          ? 'border-b border-slate-200 bg-slate-50/95 px-4 py-2'
-          : 'bg-slate-50 px-1 pt-2'
+          ? 'border-b border-slate-200 bg-slate-50/95'
+          : ''
       }
     >
-      <View className={mini ? 'h-12 flex-row items-center justify-between' : 'mx-1 rounded-lg bg-white/90 px-3 py-3 shadow-sm'}>
-        <View className={mini ? 'flex-row items-center justify-between' : 'h-14 flex-row items-center justify-between'}>
+      <View
+        className={
+          mini
+            ? 'h-12 flex-row items-center justify-between'
+            : 'rounded-lg bg-white/90 px-3 py-3 shadow-sm'
+        }
+      >
+        <View
+          className={
+            mini
+              ? 'flex-row items-center justify-between'
+              : 'h-14 flex-row items-center justify-between'
+          }
+        >
           <FeedPackHeaderButtons
             packs={selectedPacks}
             surfaceClassName={surfaceClassName}
-            onPress={onFeedBuilderOpen}
           />
           <View className="flex-row items-center gap-2">
-            <Pressable className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}>
-              <RefreshCw size={18} color="#52616f" strokeWidth={2.2} />
-            </Pressable>
-            <Pressable className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}>
+            <Pressable
+              className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+            >
               <Bell size={19} color="#17212b" strokeWidth={2.2} />
             </Pressable>
             <HeaderProfileButton
@@ -624,7 +705,11 @@ function ExploreHeader({
             />
           </View>
         </View>
-        <HeaderRelaysList relays={relays} statuses={relayStatuses} mini={mini} />
+        <HeaderRelaysList
+          relays={relays}
+          statuses={relayStatuses}
+          mini={mini}
+        />
       </View>
     </View>
   );
@@ -633,18 +718,23 @@ function ExploreHeader({
 function FeedPackHeaderButtons({
   packs,
   surfaceClassName,
-  onPress,
 }: {
   packs: FeedPackSelection[];
   surfaceClassName: string;
-  onPress?: () => void;
 }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const openFeedBuilder = useCallback(
+    () => navigation.navigate('FeedBuilder'),
+    [navigation],
+  );
+
   if (!packs.length) {
     return (
       <Pressable
         className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
         hitSlop={12}
-        onPress={onPress}
+        onPress={openFeedBuilder}
       >
         <Infinity size={21} color="#17212b" strokeWidth={2.2} />
       </Pressable>
@@ -660,11 +750,15 @@ function FeedPackHeaderButtons({
           accessibilityLabel={pack.title}
           className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-slate-200 ${surfaceClassName}`}
           hitSlop={12}
-          onPress={onPress}
+          onPress={openFeedBuilder}
         >
           {pack.localImage === 'followlist' || pack.image ? (
             <Image
-              source={pack.localImage === 'followlist' ? followListImage : {uri: pack.image ?? ''}}
+              source={
+                pack.localImage === 'followlist'
+                  ? followListImage
+                  : { uri: pack.image ?? '' }
+              }
               className="h-full w-full"
               resizeMode="cover"
             />
@@ -699,12 +793,12 @@ function NewNotesBanner({
   const shown = useSharedValue(0);
 
   useEffect(() => {
-    shown.value = withTiming(count > 0 ? 1 : 0, {duration: 180});
+    shown.value = withTiming(count > 0 ? 1 : 0, { duration: 180 });
   }, [count, shown]);
 
   const style = useAnimatedStyle(() => ({
     opacity: shown.value,
-    transform: [{translateY: -16 + shown.value * 16}],
+    transform: [{ translateY: -16 + shown.value * 16 }],
   }));
 
   return (

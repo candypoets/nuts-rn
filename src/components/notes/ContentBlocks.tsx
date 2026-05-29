@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Linking, Text, View } from 'react-native';
+import React, { memo, useRef } from 'react';
+import { Linking, Pressable, Text, View } from 'react-native';
 import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
 import { ContentData } from '@candypoets/nipworker';
 import {
@@ -20,10 +20,8 @@ type ContentBlocksProps = {
   shortContent?: ContentBlock[];
   note?: ParsedEvent;
   context?: ParsedEvent[];
-  visible?: boolean;
   depth?: number;
   showQuote?: boolean;
-  onProfileOpen?: (pubkey: string) => void;
   renderQuote?: (quote: {
     id: string;
     author?: string;
@@ -47,6 +45,9 @@ function InlineLink({ text, url }: { text: string; url: string }) {
   return (
     <Text
       className="text-emerald-700"
+      onPress={event => {
+        event.stopPropagation();
+      }}
       onPressIn={event => {
         pressStartRef.current = {
           x: event.nativeEvent.pageX,
@@ -92,12 +93,11 @@ function isInlineContentBlock(block: ContentBlock) {
   return false;
 }
 
-export function ContentBlocks({
+function ContentBlocksComponent({
   content,
   shortContent,
   depth = 0,
   showQuote = true,
-  onProfileOpen,
   renderQuote,
 }: ContentBlocksProps) {
   const displayContent = shortContent?.length ? shortContent : content;
@@ -136,6 +136,9 @@ export function ContentBlocks({
         <Text
           key={blockKey}
           className="text-[15px] font-semibold text-emerald-700"
+          onPress={event => {
+            event.stopPropagation();
+          }}
         >
           {block.text() || `#${hashtag?.tag?.() || ''}`}
         </Text>
@@ -150,7 +153,6 @@ export function ContentBlocks({
           key={blockKey}
           pubkey={author}
           link
-          onProfileOpen={onProfileOpen}
           className="text-[15px] font-semibold text-emerald-700"
         />
       );
@@ -164,7 +166,9 @@ export function ContentBlocks({
 
   while (index < displayContent.length) {
     const block = displayContent[index];
-    const blockKey = `${block.type() || 'block'}-${index}-${block.text() || ''}`;
+    const blockKey = `${block.type() || 'block'}-${index}-${
+      block.text() || ''
+    }`;
 
     if (isInlineContentBlock(block)) {
       const inlineChildren: React.ReactNode[] = [];
@@ -224,16 +228,22 @@ export function ContentBlocks({
     if (block.dataType() === ContentData.ImageData) {
       const image = asImageData(block);
       renderedBlocks.push(
-        <ImageGrid
+        <Pressable
           key={blockKey}
-          links={[
-            {
-              src: image?.url?.() || block.text() || '',
-              type: 'image',
-              dim: image?.dim?.(),
-            },
-          ]}
-        />,
+          onPress={event => {
+            event.stopPropagation();
+          }}
+        >
+          <ImageGrid
+            links={[
+              {
+                src: image?.url?.() || block.text() || '',
+                type: 'image',
+                dim: image?.dim?.(),
+              },
+            ]}
+          />
+        </Pressable>,
       );
       index += 1;
       continue;
@@ -242,17 +252,23 @@ export function ContentBlocks({
     if (block.dataType() === ContentData.VideoData) {
       const video = asVideoData(block);
       renderedBlocks.push(
-        <ImageGrid
+        <Pressable
           key={blockKey}
-          links={[
-            {
-              src: video?.url?.() || block.text() || '',
-              type: 'video',
-              blurhash: video?.thumbnail?.() || undefined,
-              dim: video?.dim?.(),
-            },
-          ]}
-        />,
+          onPress={event => {
+            event.stopPropagation();
+          }}
+        >
+          <ImageGrid
+            links={[
+              {
+                src: video?.url?.() || block.text() || '',
+                type: 'video',
+                blurhash: video?.thumbnail?.() || undefined,
+                dim: video?.dim?.(),
+              },
+            ]}
+          />
+        </Pressable>,
       );
       index += 1;
       continue;
@@ -261,29 +277,35 @@ export function ContentBlocks({
     if (block.dataType() === ContentData.MediaGroupData) {
       const mediaGroup = asMediaGroupData(block);
       renderedBlocks.push(
-        <ImageGrid
+        <Pressable
           key={blockKey}
-          links={
-            mediaGroup
-              ? fbArray(mediaGroup, 'items').map(item => {
-                  const image = item.image();
-                  const video = item.video();
-                  return image
-                    ? {
-                        src: image.url() || '',
-                        type: 'image',
-                        dim: image.dim(),
-                      }
-                    : {
-                        src: video?.url() || '',
-                        type: 'video',
-                        blurhash: video?.thumbnail() || undefined,
-                        dim: video?.dim(),
-                      };
-                })
-              : []
-          }
-        />,
+          onPress={event => {
+            event.stopPropagation();
+          }}
+        >
+          <ImageGrid
+            links={
+              mediaGroup
+                ? fbArray(mediaGroup, 'items').map(item => {
+                    const image = item.image();
+                    const video = item.video();
+                    return image
+                      ? {
+                          src: image.url() || '',
+                          type: 'image',
+                          dim: image.dim(),
+                        }
+                      : {
+                          src: video?.url() || '',
+                          type: 'video',
+                          blurhash: video?.thumbnail() || undefined,
+                          dim: video?.dim(),
+                        };
+                  })
+                : []
+            }
+          />
+        </Pressable>,
       );
       index += 1;
       continue;
@@ -297,9 +319,16 @@ export function ContentBlocks({
     index += 1;
   }
 
-  return (
-    <View className="gap-2">
-      {renderedBlocks}
-    </View>
-  );
+  return <View className="gap-2">{renderedBlocks}</View>;
 }
+
+export const ContentBlocks = memo(
+  ContentBlocksComponent,
+  (previous, next) =>
+    previous.content === next.content &&
+    previous.shortContent === next.shortContent &&
+    previous.note?.id() === next.note?.id() &&
+    (previous.depth ?? 0) === (next.depth ?? 0) &&
+    (previous.showQuote ?? true) === (next.showQuote ?? true) &&
+    previous.renderQuote === next.renderQuote,
+);

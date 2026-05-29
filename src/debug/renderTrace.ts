@@ -125,3 +125,64 @@ export function useAggregateRenderWhy(
     return () => recordAggregate(label, 'unmounts');
   }, [label]);
 }
+
+type ValueRenderCounts = {
+  commits: number;
+  mounts: number;
+  unmounts: number;
+  valueChanges: number;
+};
+
+const valueRenderCounts = new Map<string, ValueRenderCounts>();
+let valueRenderTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushValueRenderAggregate() {
+  valueRenderTimer = null;
+  if (!valueRenderCounts.size) return;
+
+  const rows = Array.from(valueRenderCounts.entries())
+    .map(([key, counts]) => ({key, ...counts}))
+    .sort((left, right) => right.commits - left.commits);
+  valueRenderCounts.clear();
+  console.log('[render-value:aggregate]', rows);
+}
+
+function recordValueRender(
+  key: string,
+  field: keyof ValueRenderCounts,
+) {
+  if (!enabled) return;
+  const counts = valueRenderCounts.get(key) ?? {
+    commits: 0,
+    mounts: 0,
+    unmounts: 0,
+    valueChanges: 0,
+  };
+  counts[field] += 1;
+  valueRenderCounts.set(key, counts);
+  if (!valueRenderTimer) {
+    valueRenderTimer = setTimeout(flushValueRenderAggregate, 1000);
+  }
+}
+
+export function useValueRenderTrace(
+  label: string,
+  id: string,
+  value: unknown,
+) {
+  const previousValueRef = useRef<unknown>(undefined);
+  const key = `${label}:${id}`;
+
+  useEffect(() => {
+    recordValueRender(key, 'commits');
+    if (!Object.is(previousValueRef.current, value)) {
+      previousValueRef.current = value;
+      recordValueRender(key, 'valueChanges');
+    }
+  });
+
+  useEffect(() => {
+    recordValueRender(key, 'mounts');
+    return () => recordValueRender(key, 'unmounts');
+  }, [key]);
+}

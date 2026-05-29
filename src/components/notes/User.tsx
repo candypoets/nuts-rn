@@ -1,10 +1,11 @@
-import React, {memo, useEffect, useRef, useState} from 'react';
+import React, {memo, useCallback} from 'react';
 import {Text} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {Kind0Parsed} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
-import {isKind0} from '@candypoets/nipworker/utils';
-import {DEFAULT_FEED_RELAYS} from '../../nostr/relays';
-import {useAggregateRenderWhy} from '../../debug/renderTrace';
+import {useKind0Value} from '../../hooks/useKind0Value';
+import {pushDistinct} from '../../navigation/pushDistinct';
+import type {RootStackParamList} from '../../navigation/types';
 import {shortPubkey} from './time';
 
 type UserProps = {
@@ -31,44 +32,38 @@ function UserComponent({
   className = 'text-sm font-semibold text-slate-900',
   onProfileOpen,
 }: UserProps) {
-  const profileRef = useRef<Kind0Parsed | null>(null);
-  const [, setTick] = useState(0);
-  useAggregateRenderWhy('User', {
-    className,
-    link,
-    onProfileOpen,
-    pubkey,
-    query,
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const fallbackName = shortPubkey(pubkey);
+  const selectName = useCallback(
+    (profile: Kind0Parsed) => displayName(profile, pubkey),
+    [pubkey],
+  );
+  const name = useKind0Value(pubkey, {
+    enabled: query,
+    fallback: fallbackName,
+    selector: selectName,
   });
-
-  useEffect(() => {
-    if (!query || !pubkey) return;
-    profileRef.current = null;
-    setTick(tick => tick + 1);
-
-    const unsubscribe = subscribeToNostr(
-      `u_${pubkey}`,
-      [{kinds: [0], authors: [pubkey], limit: 1, relays: DEFAULT_FEED_RELAYS}],
-      message => {
-        const profile = isKind0(message);
-        if (!profile || profile.pubkey?.() !== pubkey) return;
-        profileRef.current = profile;
-        setTick(tick => tick + 1);
-      },
-      {closeOnEose: false},
-    );
-
-    return () => {
-      profileRef.current = null;
-      unsubscribe();
-    };
-  }, [pubkey, query]);
+  const openProfile = useCallback(() => {
+    if (onProfileOpen) {
+      onProfileOpen(pubkey);
+      return;
+    }
+    pushDistinct(navigation, 'PublicProfile', {pubkey});
+  }, [navigation, onProfileOpen, pubkey]);
 
   return (
     <Text
       className={className}
-      onPress={link ? () => onProfileOpen?.(pubkey) : undefined}>
-      {displayName(profileRef.current, pubkey)}
+      onPress={
+        link
+          ? event => {
+              event.stopPropagation();
+              openProfile();
+            }
+          : undefined
+      }>
+      {name}
     </Text>
   );
 }

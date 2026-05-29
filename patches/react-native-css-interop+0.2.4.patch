@@ -1,0 +1,70 @@
+diff --git a/node_modules/react-native-css-interop/dist/metro/index.js b/node_modules/react-native-css-interop/dist/metro/index.js
+index c91ba6a..6dbd1ed 100644
+--- a/node_modules/react-native-css-interop/dist/metro/index.js
++++ b/node_modules/react-native-css-interop/dist/metro/index.js
+@@ -176,18 +176,25 @@ async function startCSSProcessor(filePath, platform, isDev, { input, getCSSForPl
+                 ? css
+                 : getNativeJS((0, css_to_rn_1.cssToReactNativeRuntime)(css, options), debug)));
+             debug(`virtualStyles.emit ${platform}`);
++            const metadata = {
++                modifiedTime: Date.now(),
++                size: 1,
++                type: "virtual",
++            };
+             haste.emit("change", {
++                changes: {
++                    addedFiles: new Map(),
++                    modifiedFiles: new Map([[filePath, metadata]]),
++                    removedFiles: new Map(),
++                },
+                 eventsQueue: [
+                     {
+                         filePath,
+-                        metadata: {
+-                            modifiedTime: Date.now(),
+-                            size: 1,
+-                            type: "virtual",
+-                        },
++                        metadata,
+                         type: "change",
+                     },
+                 ],
++                rootDir: "",
+             });
+         }).then((css) => {
+             debug(`virtualStyles.initial ${platform}`);
+diff --git a/node_modules/react-native-css-interop/src/metro/index.ts b/node_modules/react-native-css-interop/src/metro/index.ts
+index fa58c7b..6d59081 100644
+--- a/node_modules/react-native-css-interop/src/metro/index.ts
++++ b/node_modules/react-native-css-interop/src/metro/index.ts
+@@ -341,18 +341,25 @@ async function startCSSProcessor(
+         );
+ 
+         debug(`virtualStyles.emit ${platform}`);
++        const metadata = {
++          modifiedTime: Date.now(),
++          size: 1, // Can be anything
++          type: "virtual", // Can be anything
++        };
+         haste.emit("change", {
++          changes: {
++            addedFiles: new Map(),
++            modifiedFiles: new Map([[filePath, metadata]]),
++            removedFiles: new Map(),
++          },
+           eventsQueue: [
+             {
+               filePath,
+-              metadata: {
+-                modifiedTime: Date.now(),
+-                size: 1, // Can be anything
+-                type: "virtual", // Can be anything
+-              },
++              metadata,
+               type: "change",
+             },
+           ],
++          rootDir: "",
+         });
+       }).then((css) => {
+         debug(`virtualStyles.initial ${platform}`);

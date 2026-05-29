@@ -1,21 +1,24 @@
 import React from 'react';
 import {Image, Pressable, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {User} from 'lucide-react-native';
+import type {RootStackParamList} from '../navigation/types';
 import {useNostrStore} from '../stores';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 
 type HeaderProfileButtonProps = {
   pubkey: string | null;
-  onPress?: () => void;
   className?: string;
 };
 
 export function HeaderProfileButton({
   pubkey,
-  onPress,
   className = 'h-9 w-9 border-slate-200 bg-slate-50',
 }: HeaderProfileButtonProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const profile = useNostrStore(state => state.profile);
   const picture =
     pubkey && profile?.pubkey === pubkey && profile.picture
@@ -26,7 +29,7 @@ export function HeaderProfileButton({
     <Pressable
       className={`items-center justify-center overflow-hidden rounded-full border ${className}`}
       hitSlop={12}
-      onPress={onPress}
+      onPress={() => navigation.navigate('Profile')}
     >
       {pubkey ? (
         <Image source={picture} className="h-full w-full" resizeMode="cover" />

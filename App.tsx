@@ -2,24 +2,24 @@ import './global.css';
 import './textEncodingPolyfill';
 
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {NativeModules, StatusBar, StyleSheet, useColorScheme, View} from 'react-native';
+import {StatusBar, StyleSheet, useColorScheme, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
-import {NavigationContainer, useIsFocused, useNavigation} from '@react-navigation/native';
+import {
+  DefaultTheme,
+  NavigationContainer,
+  useIsFocused,
+} from '@react-navigation/native';
 import {
   createNativeStackNavigator,
-  type NativeStackNavigationProp,
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import {enableFreeze, enableScreens} from 'react-native-screens';
 import {
-  default as Animated,
   ReanimatedLogLevel,
   configureReanimatedLogger,
-  type SharedValue,
-  useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
 import type {NostrManagerLike} from '@candypoets/nipworker';
 import {
   ReactNativeBackend,
@@ -39,12 +39,14 @@ import {
   PrivateKeyLogin,
   ProfileModal,
   ProfileStubModal,
-  type ProfileModalTarget,
+  ScanModal,
+  SendModal,
+  SendPlaceholderModal,
 } from './src/modals';
-import {Kind0Sub, Kind4Sub} from './src/subs';
+import {Kind0Sub, Kind1Sub, Kind4Sub} from './src/subs';
 import {useAuthStore} from './src/stores';
 import {CarouselAnimator} from './src/components/CarouselAnimator';
-import {useRenderTrace} from './src/debug/renderTrace';
+import type {RootStackParamList} from './src/navigation/types';
 
 enableScreens(true);
 enableFreeze(true);
@@ -55,17 +57,6 @@ configureReanimatedLogger({
 });
 
 type RouteId = 'home' | 'explore' | 'chat';
-type RootStackParamList = {
-  Main: undefined;
-  Profile: undefined;
-  Login: undefined;
-  Logout: undefined;
-  FeedBuilder: undefined;
-  ProfileStub: {path: 'relays' | 'wallet' | 'theme' | 'nprofile'};
-  PublicProfile: {pubkey: string};
-  ChatThread: {peerPubkey: string};
-};
-
 const ROUTES: Array<{id: RouteId; label: string}> = [
   {id: 'home', label: 'Home'},
   {id: 'explore', label: 'Explore'},
@@ -73,6 +64,13 @@ const ROUTES: Array<{id: RouteId; label: string}> = [
 ];
 
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
+const navigationTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: 'transparent',
+  },
+};
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -82,9 +80,6 @@ function App() {
     if (!hasReactNativeModule()) return;
 
     try {
-      if (__DEV__) {
-        NativeModules.NipworkerReactNativeModule?.deinit?.();
-      }
       const nextManager = __DEV__
         ? new ReactNativeBackend()
         : createNostrManager();
@@ -99,10 +94,14 @@ function App() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <RootServices manager={manager} />
-        <SafeAreaView style={styles.root}>
-          <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+        <View style={styles.root}>
+          <StatusBar
+            translucent
+            backgroundColor="transparent"
+            barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+          />
           <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
-        </SafeAreaView>
+        </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -116,12 +115,14 @@ function RootNavigator({
   nostrEnabled: boolean;
 }) {
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navigationTheme}>
       <NativeStack.Navigator
         initialRouteName="Main"
         screenOptions={{
           contentStyle: styles.root,
           freezeOnBlur: true,
+          fullScreenGestureEnabled: true,
+          animationMatchesGesture: true,
           headerShown: false,
         }}
       >
@@ -136,6 +137,11 @@ function RootNavigator({
         <NativeStack.Screen
           name="ChatThread"
           component={ChatThreadScreen}
+          options={{animation: 'slide_from_right'}}
+        />
+        <NativeStack.Screen
+          name="Kind1Thread"
+          component={Kind1ThreadScreen}
           options={{animation: 'slide_from_right'}}
         />
         <NativeStack.Screen
@@ -156,6 +162,31 @@ function RootNavigator({
         <NativeStack.Screen
           name="FeedBuilder"
           component={FeedBuilderScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen
+          name="Send"
+          component={SendScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen
+          name="SendEcash"
+          component={SendEcashScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen
+          name="Scan"
+          component={ScanScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen
+          name="Tapcash"
+          component={TapcashScreen}
+          options={{presentation: 'modal'}}
+        />
+        <NativeStack.Screen
+          name="Lightning"
+          component={LightningScreen}
           options={{presentation: 'modal'}}
         />
         <NativeStack.Screen
@@ -200,8 +231,6 @@ function RootServices({manager}: {manager: NostrManagerLike | null}) {
 }
 
 function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('home');
   const [activatedRoutes, setActivatedRoutes] = useState<Record<RouteId, boolean>>({
     home: true,
@@ -227,33 +256,9 @@ function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
     );
   }, [activeRoute.id]);
 
-  const openLogin = useCallback(() => navigation.navigate('Login'), [navigation]);
-  const openProfile = useCallback(() => navigation.navigate('Profile'), [navigation]);
-  const openFeedBuilder = useCallback(
-    () => navigation.navigate('FeedBuilder'),
-    [navigation],
-  );
-  const openPublicProfile = useCallback(
-    (pubkey: string) => navigation.push('PublicProfile', {pubkey}),
-    [navigation],
-  );
-  const openChatThread = useCallback(
-    (peerPubkey: string) => navigation.push('ChatThread', {peerPubkey}),
-    [navigation],
-  );
   const changeRouteIndex = useCallback((index: number) => {
     setActiveRouteId(ROUTES[index]?.id ?? 'home');
   }, []);
-  const noop = useCallback(() => undefined, []);
-
-  useRenderTrace('MainTabs', {
-    activeRouteId,
-    activeRouteIndex,
-    activatedRoutes: Object.entries(activatedRoutes)
-      .filter(([, active]) => active)
-      .map(([route]) => route)
-      .join(','),
-  });
 
   return (
     <View style={styles.navigator}>
@@ -266,33 +271,25 @@ function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
         dismissProgress={dismissProgress}
         stackPresentation="flat"
         onIndexChange={changeRouteIndex}
-        renderPage={({index, width, virtualIndex}) => (
+        renderPage={({index, width}) => (
           <FeedPage
             key={ROUTES[index].id}
-            index={index}
             width={width}
-            virtualIndex={virtualIndex}
           >
             {ROUTES[index].id === 'home' ? (
               <HomeFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.home}
-                onLoginOpen={openLogin}
-                onProfileOpen={openProfile}
-                onNotificationsOpen={noop}
               />
             ) : ROUTES[index].id === 'explore' ? (
               <ExploreFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.explore}
-                onFeedBuilderOpen={openFeedBuilder}
-                onProfileOpen={openPublicProfile}
               />
             ) : (
               <ChatFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.chat}
-                onChatOpen={openChatThread}
               />
             )}
           </FeedPage>
@@ -301,7 +298,6 @@ function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
     </View>
   );
 }
-
 function useAuthValue() {
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
@@ -310,25 +306,10 @@ function useAuthValue() {
 
 function ProfileScreen({navigation}: NativeStackScreenProps<RootStackParamList, 'Profile'>) {
   const auth = useAuthValue();
-  const rootNavigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const openProfileTarget = useCallback(
-    (item: ProfileModalTarget) => {
-      if (item.type === 'profileStub' && item.path === 'nprofile' && auth.pubkey) {
-        rootNavigation.push('PublicProfile', {pubkey: auth.pubkey});
-        return;
-      }
-      if (item.type === 'profileStub') {
-        rootNavigation.navigate('ProfileStub', {path: item.path});
-      }
-    },
-    [auth.pubkey, rootNavigation],
-  );
   return (
     <ProfileModal
       auth={auth}
       onClose={navigation.goBack}
-      onNavigate={openProfileTarget}
     />
   );
 }
@@ -360,6 +341,50 @@ function FeedBuilderScreen({
   return <FeedBuilderModal onClose={navigation.goBack} />;
 }
 
+function SendScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Send'>) {
+  return <SendModal onClose={navigation.goBack} />;
+}
+
+function SendEcashScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'SendEcash'>) {
+  return (
+    <SendPlaceholderModal
+      title="Ecash"
+      pubkey={route.params.pubkey}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function ScanScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Scan'>) {
+  return <ScanModal onClose={navigation.goBack} />;
+}
+
+function TapcashScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Tapcash'>) {
+  return <SendPlaceholderModal title="Tap cash" onClose={navigation.goBack} />;
+}
+
+function LightningScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Lightning'>) {
+  return (
+    <SendPlaceholderModal
+      title="Lightning"
+      invoice={route.params?.invoice}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
 function ProfileStubScreen({
   navigation,
   route,
@@ -379,16 +404,27 @@ function PublicProfileScreen({
   route,
 }: NativeStackScreenProps<RootStackParamList, 'PublicProfile'>) {
   const isFocused = useIsFocused();
-  const openPublicProfile = useCallback(
-    (pubkey: string) => navigation.push('PublicProfile', {pubkey}),
-    [navigation],
-  );
+  const [subVisible, setSubVisible] = useState(false);
+
+  useEffect(() => {
+    setSubVisible(false);
+    if (!isFocused) return undefined;
+
+    const frame = requestAnimationFrame(() => {
+      setSubVisible(true);
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      setSubVisible(false);
+    };
+  }, [isFocused, route.params.pubkey]);
+
   return (
     <Kind0Sub
       pubkey={route.params.pubkey}
-      visible={isFocused}
+      visible={isFocused && subVisible}
       onClose={navigation.goBack}
-      onProfileOpen={openPublicProfile}
     />
   );
 }
@@ -407,35 +443,37 @@ function ChatThreadScreen({
   );
 }
 
-function FeedPage({
-  children,
-  index,
-  virtualIndex,
-  width,
-}: {
-  children: React.ReactNode;
-  index: number;
-  virtualIndex: SharedValue<number>;
-  width: number;
-}) {
-  useRenderTrace(`FeedPage:${index}`, {
-    index,
-    width,
-  });
-  const pageStyle = useAnimatedStyle(() => ({
-    transform: [{translateX: (index - virtualIndex.value) * width}],
-  }));
+function Kind1ThreadScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Kind1Thread'>) {
+  const isFocused = useIsFocused();
 
   return (
-    <Animated.View
-      pointerEvents="box-none"
-      style={[styles.page, {width}, pageStyle]}
-    >
-      {children}
-    </Animated.View>
+    <Kind1Sub
+      nevent={route.params.nevent}
+      visible={isFocused}
+      onClose={navigation.goBack}
+    />
   );
 }
 
+function FeedPage({
+  children,
+  width,
+}: {
+  children: React.ReactNode;
+  width: number;
+}) {
+  return (
+    <View
+      pointerEvents="box-none"
+      style={[styles.page, {width}]}
+    >
+      {children}
+    </View>
+  );
+}
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -446,7 +484,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   page: {
-    ...StyleSheet.absoluteFill,
+    flex: 1,
     backgroundColor: '#f5f7f8',
   },
 });

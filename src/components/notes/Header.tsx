@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Text, View } from 'react-native';
 import type { ParsedEvent } from '@candypoets/nipworker';
 import { Avatar } from './Avatar';
@@ -10,10 +10,13 @@ type HeaderProps = {
   note: ParsedEvent;
   depth?: number;
   main?: boolean;
-  onProfileOpen?: (pubkey: string) => void;
 };
 
-export function Header({ note, depth = 0, main = false, onProfileOpen }: HeaderProps) {
+function HeaderComponent({
+  note,
+  depth = 0,
+  main = false,
+}: HeaderProps) {
   const pubkey = note.pubkey() || '';
   const isQuote = depth > 0;
 
@@ -24,7 +27,6 @@ export function Header({ note, depth = 0, main = false, onProfileOpen }: HeaderP
           pubkey={pubkey}
           size={isQuote ? 'xs' : 'md'}
           link
-          onProfileOpen={onProfileOpen}
         />
       </View>
       <View className="min-w-0 flex-1">
@@ -33,7 +35,6 @@ export function Header({ note, depth = 0, main = false, onProfileOpen }: HeaderP
             <User
               pubkey={pubkey}
               link
-              onProfileOpen={onProfileOpen}
               className={
                 main
                   ? 'text-base font-semibold text-slate-900'
@@ -50,3 +51,11 @@ export function Header({ note, depth = 0, main = false, onProfileOpen }: HeaderP
     </View>
   );
 }
+
+export const Header = memo(
+  HeaderComponent,
+  (previous, next) =>
+    previous.note.id() === next.note.id() &&
+    (previous.depth ?? 0) === (next.depth ?? 0) &&
+    (previous.main ?? false) === (next.main ?? false),
+);

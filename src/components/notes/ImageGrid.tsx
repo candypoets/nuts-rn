@@ -1,5 +1,6 @@
-import React from 'react';
-import {Image, Text, useWindowDimensions, View} from 'react-native';
+import {VideoView, useVideoPlayer} from 'expo-video';
+import React, {useEffect, useState} from 'react';
+import {Image, Pressable, StyleSheet, Text, useWindowDimensions, View} from 'react-native';
 
 export type ImageGridLink = {
   src: string;
@@ -50,6 +51,88 @@ function getRounded(i: number, total: number, columns: number) {
     .join(' ');
 }
 
+function VideoTile({
+  src,
+  poster,
+  autoplay,
+  single,
+}: {
+  src: string;
+  poster?: string;
+  autoplay: boolean;
+  single: boolean;
+}) {
+  const [firstFrameRendered, setFirstFrameRendered] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [playRequested, setPlayRequested] = useState(autoplay);
+  const player = useVideoPlayer(src, videoPlayer => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+    videoPlayer.volume = 0;
+    videoPlayer.showNowPlayingNotification = false;
+    videoPlayer.staysActiveInBackground = false;
+    if (autoplay) {
+      videoPlayer.play();
+    }
+  });
+
+  useEffect(() => {
+    setPlayRequested(autoplay);
+    player.loop = true;
+    player.muted = true;
+    player.volume = 0;
+    if (autoplay) {
+      player.play();
+    } else {
+      player.pause();
+      player.currentTime = 0;
+    }
+  }, [autoplay, player]);
+
+  return (
+    <View className="h-full w-full bg-slate-950">
+      <VideoView
+        player={player}
+        nativeControls
+        contentFit={single ? 'contain' : 'cover'}
+        allowsPictureInPicture={false}
+        startsPictureInPictureAutomatically={false}
+        style={styles.video}
+        onFirstFrameRender={() => setFirstFrameRendered(true)}
+      />
+      {poster && !firstFrameRendered && !failed ? (
+        <Image
+          source={{uri: poster}}
+          resizeMode={single ? 'contain' : 'cover'}
+          className="absolute inset-0 h-full w-full"
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {!playRequested ? (
+        <Pressable
+          className="absolute inset-0 items-center justify-center bg-black/15"
+          onPress={() => {
+            setPlayRequested(true);
+            setFirstFrameRendered(true);
+            player.play();
+          }}
+        >
+          <View className="h-14 w-14 items-center justify-center rounded-full bg-black/65">
+            <Text className="ml-1 text-3xl text-white">▶</Text>
+          </View>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  video: {
+    height: '100%',
+    width: '100%',
+  },
+});
+
 export function ImageGrid({links}: {links: ImageGridLink[]}) {
   const {width} = useWindowDimensions();
   const displayLinks = links.filter(link => link.src).slice(0, 5);
@@ -72,6 +155,7 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
             : IMAGE_GRID_HEIGHT;
           const rounded = getRounded(index, displayLinks.length, columns);
           const imageUri = link.type === 'video' && link.blurhash ? link.blurhash : link.src;
+          const autoplay = link.type === 'video' && (single || index === 0);
 
           return (
             <View
@@ -79,10 +163,13 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
               className={['relative overflow-hidden bg-slate-100', rounded].join(' ')}
               style={{width: tileWidth, height}}
             >
-              {link.type === 'video' && !link.blurhash ? (
-                <View className="h-full w-full items-center justify-center bg-slate-900">
-                  <Text className="text-sm font-semibold text-white">Video</Text>
-                </View>
+              {link.type === 'video' ? (
+                <VideoTile
+                  src={link.src}
+                  poster={link.blurhash || undefined}
+                  autoplay={autoplay}
+                  single={single}
+                />
               ) : (
                 <Image
                   source={{uri: imageUri}}

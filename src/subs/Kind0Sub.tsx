@@ -1,33 +1,200 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FlatList, Image, Platform, Pressable, Text, View} from 'react-native';
-import type {Kind0Parsed, ParsedEvent} from '@candypoets/nipworker';
+import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {
+  Image,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+  type ImageSourcePropType,
+} from 'react-native';
+import type {ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
-  asKind10002,
-  asKind3,
   asParsedEvent,
-  fbArray,
-  isKind0,
 } from '@candypoets/nipworker/utils';
 import {ChevronLeft, CircleSlash, UserPlus, Zap} from 'lucide-react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {Feed} from '../components/Feed';
 import {Avatar, Note} from '../components/notes';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {ALL_FEED_KINDS, useRelayStore} from '../stores';
-import {useRenderTrace} from '../debug/renderTrace';
+import {useKind0ProfileData} from '../hooks/useKind0ProfileData';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
+const TOP_SAFE_AREA_OFFSET = 8;
+
+type Kind0HeaderMode = 'profile' | 'feed';
+
+type Kind0ProfileHeaderProps = {
+  about: string;
+  activeRelays: string[];
+  banner: string | null;
+  lnaddress: string;
+  mode: Kind0HeaderMode;
+  name: string;
+  nip05: string;
+  onClose: () => void;
+  onFeedPress: () => void;
+  onProfilePress: () => void;
+  picture: string | null;
+  profileContactsLength: number;
+  pubkey: string;
+};
+
+type Kind0StickyHeaderProps = {
+  onClose: () => void;
+  pubkey: string;
+};
+
+type Kind0ImageProps = {
+  uri: string | null;
+  fallback?: ImageSourcePropType;
+  className: string;
+};
+
+type Kind0RelayBlockProps = {
+  relays: string[];
+};
+
+const Kind0TrackedImage = memo(function Kind0TrackedImage({
+  className,
+  fallback,
+  uri,
+}: Kind0ImageProps) {
+  const source = useMemo(
+    () => (uri ? {uri} : fallback),
+    [fallback, uri],
+  );
+
+  if (!source) return null;
+
+  return <Image source={source} className={className} resizeMode="cover" />;
+});
+
+const Kind0StickyHeader = memo(function Kind0StickyHeader({
+  onClose,
+  pubkey,
+}: Kind0StickyHeaderProps) {
+  return (
+    <View className="h-24 flex-row items-center justify-between bg-white/95 px-4 pt-10">
+      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
+        <ChevronLeft size={22} color="#17212b" />
+      </Pressable>
+      <Avatar pubkey={pubkey} size="lg" />
+      <View className="h-9 w-9" />
+    </View>
+  );
+});
+
+const Kind0RelayBlock = memo(function Kind0RelayBlock({
+  relays,
+}: Kind0RelayBlockProps) {
+  const relayStatuses = useRelayStore(state => state.relayStatuses);
+
+  return <HeaderRelaysList relays={relays} statuses={relayStatuses} />;
+});
+
+const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
+  about,
+  activeRelays,
+  banner,
+  lnaddress,
+  mode,
+  name,
+  nip05,
+  onClose,
+  onFeedPress,
+  onProfilePress,
+  picture,
+  profileContactsLength,
+  pubkey,
+}: Kind0ProfileHeaderProps) {
+  const insets = useSafeAreaInsets();
+  const {width: screenWidth} = useWindowDimensions();
+  const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
+
+  return (
+    <View className="overflow-hidden rounded-lg bg-slate-100">
+      <View
+        className="bg-slate-200"
+        style={{
+          height: 208 + topInset,
+          width: screenWidth,
+        }}
+      >
+        <Kind0TrackedImage
+          uri={banner}
+          className="h-full w-full"
+        />
+        <View
+          className="absolute left-0 right-0 top-0 h-20 flex-row items-center justify-between px-4"
+          style={{paddingTop: topInset + 24}}
+        >
+          <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-white/85" hitSlop={12} onPress={onClose}>
+            <ChevronLeft size={22} color="#17212b" />
+          </Pressable>
+          <View className="h-9 w-9" />
+        </View>
+      </View>
+
+      <View className="px-4 pb-4">
+        <View className="-mt-16 mb-4 flex-row items-end gap-3">
+          <View className="h-32 w-32 overflow-hidden rounded-full border border-white bg-slate-200">
+            <Kind0TrackedImage
+              uri={picture}
+              fallback={fallbackProfileImage}
+              className="h-full w-full"
+            />
+          </View>
+          <View className="mb-2 flex-row gap-2">
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+              <UserPlus size={19} color="#17212b" />
+            </Pressable>
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+              <Zap size={19} color="#17212b" />
+            </Pressable>
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+              <CircleSlash size={19} color="#17212b" />
+            </Pressable>
+          </View>
+        </View>
+
+        <Text className="text-xl font-bold text-slate-950">{name}</Text>
+        <Text className="mt-1 text-sm font-medium text-emerald-700">{nip05 || pubkey.slice(0, 8)}</Text>
+        {lnaddress ? <Text className="mt-1 text-sm font-medium text-emerald-700">{lnaddress}</Text> : null}
+        {about ? <Text className="mt-4 text-[15px] leading-5 text-slate-700">{about}</Text> : null}
+        <View className="mt-4 items-start">
+          <Kind0RelayBlock relays={activeRelays} />
+        </View>
+      </View>
+
+      <View className="flex-row border-t border-slate-200 bg-white">
+        <Pressable className="flex-1 items-center py-3" onPress={onProfilePress}>
+          <Text className={`text-sm font-semibold ${mode === 'profile' ? 'text-slate-950' : 'text-slate-500'}`}>Posts</Text>
+        </Pressable>
+        <Pressable
+          className="flex-1 items-center py-3"
+          disabled={!profileContactsLength}
+          onPress={onFeedPress}
+        >
+          <Text
+            className={`text-sm font-semibold ${
+              mode === 'feed' ? 'text-slate-950' : profileContactsLength ? 'text-slate-500' : 'text-slate-300'
+            }`}
+          >
+            Feed
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
-}
-
-function sameStringArray(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function relayHash(relays: string[]) {
@@ -48,24 +215,17 @@ export function Kind0Sub({
   pubkey,
   visible,
   onClose,
-  onProfileOpen,
 }: {
   pubkey: string;
   visible: boolean;
   onClose: () => void;
-  onProfileOpen: (pubkey: string) => void;
 }) {
-  const [profile, setProfile] = useState<Kind0Parsed | null>(null);
   const [profilePosts, setProfilePosts] = useState<ParsedEvent[]>([]);
   const [feedPosts, setFeedPosts] = useState<ParsedEvent[]>([]);
-  const [profileContacts, setProfileContacts] = useState<string[]>([]);
-  const [writeRelays, setWriteRelays] = useState<string[]>([]);
-  const [readRelays, setReadRelays] = useState<string[]>([]);
   const [mode, setMode] = useState<'profile' | 'feed'>('profile');
   const [loading, setLoading] = useState(false);
   const [hasMoreProfile, setHasMoreProfile] = useState(true);
   const [hasMoreFeed, setHasMoreFeed] = useState(true);
-  const [feedReady, setFeedReady] = useState(false);
   const profilePostsRef = useRef<ParsedEvent[]>([]);
   const feedPostsRef = useRef<ParsedEvent[]>([]);
   const profileSeenIdsRef = useRef(new Set<string>());
@@ -74,14 +234,18 @@ export function Kind0Sub({
   const feedFlushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const profilePaginationUnsubRef = useRef<(() => void) | null>(null);
   const feedPaginationUnsubRef = useRef<(() => void) | null>(null);
-  const discoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const feedReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileCountRef = useRef(0);
   const feedCountRef = useRef(0);
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
-  const fallbackRelays = useMemo(() => DEFAULT_FEED_RELAYS.map(normalizeRelayUrl), []);
+  const {
+    fallbackRelays,
+    feedReady,
+    profile,
+    profileContacts,
+    readRelays,
+    writeRelays,
+  } = useKind0ProfileData(pubkey);
   const activeRelays = useMemo(
     () =>
       mode === 'profile'
@@ -131,99 +295,18 @@ export function Kind0Sub({
   }, [feedPosts.length]);
 
   useEffect(() => {
-    if (!pubkey) return;
-    setProfile(null);
+    if (!pubkey) return undefined;
     profilePostsRef.current = [];
     feedPostsRef.current = [];
     profileSeenIdsRef.current.clear();
     feedSeenIdsRef.current.clear();
     setProfilePosts([]);
     setFeedPosts([]);
-    setProfileContacts([]);
-    setWriteRelays([]);
-    setReadRelays([]);
     setMode('profile');
     setHasMoreProfile(true);
     setHasMoreFeed(true);
-    setFeedReady(false);
-
-    const unsubscribeProfile = subscribeToNostr(
-      `u_${pubkey}`,
-      [
-        {
-          kinds: [0],
-          authors: [pubkey],
-          limit: 1,
-          cacheFirst: true,
-          closeOnEOSE: true,
-          relays: fallbackRelays,
-        },
-      ],
-      message => {
-        const kind0 = isKind0(message);
-        if (kind0 && kind0.pubkey?.() === pubkey) {
-          setProfile(kind0);
-        }
-      },
-      {closeOnEose: true},
-    );
-
-    let unsubscribeDiscovery: (() => void) | null = null;
-    discoveryTimeoutRef.current = setTimeout(() => {
-      fallbackRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
-      unsubscribeDiscovery = subscribeToNostr(
-        `kind0_meta_${pubkey}_${relayHash(fallbackRelays)}`,
-        [
-          {kinds: [10002], authors: [pubkey], limit: 1, cacheFirst: true, closeOnEOSE: true, relays: fallbackRelays},
-          {kinds: [3], authors: [pubkey], limit: 1, cacheFirst: true, closeOnEOSE: true, relays: fallbackRelays},
-        ],
-        message => {
-          const status = asConnectionStatus(message);
-          if (status) {
-            const relayUrl = status.relayUrl();
-            const relayStatus = status.status()?.toString();
-            if (relayUrl && relayStatus) setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-            return;
-          }
-
-          const event = asParsedEvent(message);
-          const kind10002 = event ? asKind10002(event) : null;
-          if (event && kind10002 && event.pubkey() === pubkey) {
-            const discoveredWriteRelays = fbArray(kind10002, 'relays')
-              .filter(relay => relay.write())
-              .map(relay => relay.url() ?? '')
-              .filter(Boolean)
-              .map(normalizeRelayUrl);
-            const discoveredReadRelays = fbArray(kind10002, 'relays')
-              .filter(relay => relay.read())
-              .map(relay => relay.url() ?? '')
-              .filter(Boolean)
-              .map(normalizeRelayUrl);
-            setWriteRelays(current => (sameStringArray(current, discoveredWriteRelays) ? current : discoveredWriteRelays));
-            setReadRelays(current => (sameStringArray(current, discoveredReadRelays) ? current : discoveredReadRelays));
-            return;
-          }
-
-          const kind3 = event ? asKind3(event) : null;
-          if (event && kind3 && event.pubkey() === pubkey) {
-            const contacts = fbArray(kind3, 'contacts').map(contact => contact.pubkey() ?? '').filter(Boolean);
-            setProfileContacts(current => (sameStringArray(current, contacts) ? current : contacts));
-          }
-        },
-        {closeOnEose: true},
-      );
-    }, 240);
-    feedReadyTimeoutRef.current = setTimeout(() => setFeedReady(true), 320);
 
     return () => {
-      if (discoveryTimeoutRef.current) {
-        clearTimeout(discoveryTimeoutRef.current);
-        discoveryTimeoutRef.current = null;
-      }
-      if (feedReadyTimeoutRef.current) {
-        clearTimeout(feedReadyTimeoutRef.current);
-        feedReadyTimeoutRef.current = null;
-      }
       if (profileFlushRef.current) {
         cancelAnimationFrame(profileFlushRef.current);
         profileFlushRef.current = null;
@@ -232,14 +315,12 @@ export function Kind0Sub({
         cancelAnimationFrame(feedFlushRef.current);
         feedFlushRef.current = null;
       }
-      unsubscribeProfile();
-      unsubscribeDiscovery?.();
       profilePaginationUnsubRef.current?.();
       profilePaginationUnsubRef.current = null;
       feedPaginationUnsubRef.current?.();
       feedPaginationUnsubRef.current = null;
     };
-  }, [fallbackRelays, pubkey, setRelayStatus]);
+  }, [pubkey]);
 
   useEffect(() => {
     if (!pubkey || !feedReady) return;
@@ -319,19 +400,6 @@ export function Kind0Sub({
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
   const items = mode === 'profile' ? profilePosts : feedPosts;
 
-  useRenderTrace('Kind0Sub', {
-    feedReady,
-    hasProfile: Boolean(profile),
-    itemsLength: items.length,
-    loading,
-    mode,
-    profileContactsLength: profileContacts.length,
-    pubkey: pubkey.slice(0, 8),
-    readRelaysLength: readRelays.length,
-    visible,
-    writeRelaysLength: writeRelays.length,
-  });
-
   const handleNearBottom = useCallback(() => {
     if (loading || !items.length) return;
     const currentRelays = activeRelays;
@@ -407,130 +475,55 @@ export function Kind0Sub({
     setRelayStatus,
   ]);
 
-  const stickyHeader = () => (
-    <View className="h-24 flex-row items-center justify-between bg-white/95 px-4 pt-10">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
-        <ChevronLeft size={22} color="#17212b" />
-      </Pressable>
-      <Avatar pubkey={pubkey} size="lg" />
-      <View className="h-9 w-9" />
-    </View>
+  const handleProfileModePress = useCallback(() => setMode('profile'), []);
+  const handleFeedModePress = useCallback(() => {
+    if (profileContacts.length) setMode('feed');
+  }, [profileContacts.length]);
+  const stickyHeader = useCallback(
+    () => <Kind0StickyHeader onClose={onClose} pubkey={pubkey} />,
+    [onClose, pubkey],
   );
 
-  const header = () => (
-    <View className="overflow-hidden rounded-lg bg-slate-100">
-      <View className="h-52 bg-slate-200">
-        {banner ? <Image source={{uri: banner}} className="h-full w-full" resizeMode="cover" /> : null}
-        <View className="absolute left-0 right-0 top-0 h-20 flex-row items-center justify-between px-4 pt-10">
-          <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-white/85" hitSlop={12} onPress={onClose}>
-            <ChevronLeft size={22} color="#17212b" />
-          </Pressable>
-          <View className="h-9 w-9" />
-        </View>
-      </View>
-
-      <View className="px-4 pb-4">
-        <View className="-mt-16 mb-4 flex-row items-end gap-3">
-          <View className="h-32 w-32 overflow-hidden rounded-full border border-white bg-slate-200">
-            <Image source={picture ? {uri: picture} : fallbackProfileImage} className="h-full w-full" resizeMode="cover" />
-          </View>
-          <View className="mb-2 flex-row gap-2">
-            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
-              <UserPlus size={19} color="#17212b" />
-            </Pressable>
-            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
-              <Zap size={19} color="#17212b" />
-            </Pressable>
-            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
-              <CircleSlash size={19} color="#17212b" />
-            </Pressable>
-          </View>
-        </View>
-
-        <Text className="text-xl font-bold text-slate-950">{name}</Text>
-        <Text className="mt-1 text-sm font-medium text-emerald-700">{nip05 || pubkey.slice(0, 8)}</Text>
-        {lnaddress ? <Text className="mt-1 text-sm font-medium text-emerald-700">{lnaddress}</Text> : null}
-        {about ? <Text className="mt-4 text-[15px] leading-5 text-slate-700">{about}</Text> : null}
-        <View className="mt-4 items-start">
-          <HeaderRelaysList relays={activeRelays} statuses={relayStatuses} />
-        </View>
-      </View>
-
-      <View className="flex-row border-t border-slate-200 bg-white">
-        <Pressable className="flex-1 items-center py-3" onPress={() => setMode('profile')}>
-          <Text className={`text-sm font-semibold ${mode === 'profile' ? 'text-slate-950' : 'text-slate-500'}`}>Posts</Text>
-        </Pressable>
-        <Pressable
-          className="flex-1 items-center py-3"
-          disabled={!profileContacts.length}
-          onPress={() => {
-            if (profileContacts.length) setMode('feed');
-          }}
-        >
-          <Text
-            className={`text-sm font-semibold ${
-              mode === 'feed' ? 'text-slate-950' : profileContacts.length ? 'text-slate-500' : 'text-slate-300'
-            }`}
-          >
-            Feed
-          </Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-
-  if (Platform.OS === 'ios') {
-    return (
-      <View className="flex-1 bg-slate-50">
-        {stickyHeader()}
-        <FlatList
-          data={items}
-          className="flex-1"
-          contentContainerClassName="px-2 pb-28"
-          initialNumToRender={6}
-          keyExtractor={item => String(item.id() || item.createdAt())}
-          ListHeaderComponent={header}
-          ListEmptyComponent={
-            <View className="px-6 py-12">
-              <Text className="text-center text-sm text-slate-500">
-                {loading
-                  ? 'Loading...'
-                  : mode === 'profile'
-                    ? 'Loading posts...'
-                    : profileContacts.length
-                      ? 'Loading feed...'
-                      : 'No follows found for this profile.'}
-              </Text>
-            </View>
-          }
-          maxToRenderPerBatch={4}
-          onEndReached={handleNearBottom}
-          onEndReachedThreshold={0.5}
-          removeClippedSubviews={false}
-          renderItem={({item, index}) => (
-            <Note
-              note={item}
-              visible={visible && index < 12}
-              onProfileOpen={onProfileOpen}
-            />
-          )}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          updateCellsBatchingPeriod={80}
-          windowSize={5}
-        />
-      </View>
-    );
-  }
-
+  const header = useCallback(() => (
+    <Kind0ProfileHeader
+      about={about}
+      activeRelays={activeRelays}
+      banner={banner}
+      lnaddress={lnaddress}
+      mode={mode}
+      name={name}
+      nip05={nip05}
+      onClose={onClose}
+      onFeedPress={handleFeedModePress}
+      onProfilePress={handleProfileModePress}
+      picture={picture}
+      profileContactsLength={profileContacts.length}
+      pubkey={pubkey}
+    />
+  ), [
+    about,
+    activeRelays,
+    banner,
+    handleFeedModePress,
+    handleProfileModePress,
+    lnaddress,
+    mode,
+    name,
+    nip05,
+    onClose,
+    picture,
+    profileContacts.length,
+    pubkey,
+  ]);
   return (
     <Feed
       items={items}
       getItemId={item => item.id() || item.createdAt()}
       renderItem={({item, visible: itemVisible}) => (
-        <Note note={item} visible={visible && itemVisible} onProfileOpen={onProfileOpen} />
+        <Note note={item} visible={visible && itemVisible} />
       )}
       header={header}
+      headerSafeArea={false}
       stickyHeader={stickyHeader}
       visible={visible}
       loading={loading}
@@ -547,7 +540,7 @@ export function Kind0Sub({
           </Text>
         </View>
       }
-      contentContainerClassName="pb-28 px-2"
+      contentContainerClassName="pb-28"
     />
   );
 }

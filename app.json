@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "NutsRn",
+    "name": "Nuts Dev",
     "slug": "nuts-rn",
     "scheme": "nutsrn",
     "ios": {
@@ -13,6 +13,12 @@
       "bundler": "metro"
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow NutsRn to scan payment and profile QR codes."
+        }
+      ],
       [
         "expo-dev-client",
         {

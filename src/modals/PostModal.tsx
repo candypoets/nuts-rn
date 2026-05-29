@@ -29,6 +29,7 @@ import {
   EnrichedTextInput,
   type EnrichedTextInputInstance,
 } from 'react-native-enriched';
+import * as ImagePicker from 'expo-image-picker';
 import { usePublish as publishToNostr } from '@candypoets/nipworker/hooks';
 import { isConnectionStatus } from '@candypoets/nipworker/utils';
 import type { ConnectionStatus, WorkerMessage } from '@candypoets/nipworker';
@@ -435,14 +436,6 @@ function ComposerToolbar({
   onTogglePoll: () => void;
 }) {
   const pickImage = useCallback(async () => {
-    let ImagePicker: typeof import('expo-image-picker');
-    try {
-      ImagePicker = await import('expo-image-picker');
-    } catch (error) {
-      console.warn('[post] image picker unavailable', error);
-      return;
-    }
-
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) return;
 

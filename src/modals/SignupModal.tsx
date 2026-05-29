@@ -17,6 +17,7 @@ import {
   usePublish as publishToNostr,
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
+import * as ImagePicker from 'expo-image-picker';
 import {asNip51, asParsedEvent} from '@candypoets/nipworker/utils';
 import {isConnectionStatus} from '@candypoets/nipworker/utils';
 import {Camera, Check, ChevronLeft, Search, UserPlus, X} from 'lucide-react-native';
@@ -214,13 +215,6 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
   );
 
   const pickAvatar = useCallback(async () => {
-    let ImagePicker: typeof import('expo-image-picker');
-    try {
-      ImagePicker = await import('expo-image-picker');
-    } catch (error) {
-      console.warn('[signup] image picker unavailable', error);
-      return;
-    }
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) return;
     const result = await ImagePicker.launchImageLibraryAsync({

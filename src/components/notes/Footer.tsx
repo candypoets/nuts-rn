@@ -9,12 +9,17 @@ import {
   type ParsedEvent,
   type RequestObject,
   type WorkerMessage,
+  type ConnectionStatus,
 } from '@candypoets/nipworker';
-import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
+import {
+  usePublish as publishToNostr,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asCountResponse,
   asEoce,
+  isConnectionStatus,
   ConnectionTracker,
 } from '@candypoets/nipworker/utils';
 import Animated, {
@@ -24,8 +29,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
+import { kinds, type EventTemplate } from 'nostr-tools';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
-import { useAuthStore, useNostrStore } from '../../stores';
+import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
 import { IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
 
 type FooterProps = {
@@ -147,12 +153,14 @@ function Action({
   activeColor,
   activeState = false,
   animation = 'bounce',
+  onPress,
 }: {
   kind: ActionKind;
   label?: string;
   activeColor?: string;
   activeState?: boolean;
   animation?: 'bounce' | 'repost' | 'share';
+  onPress?: () => void;
 }) {
   const progress = useSharedValue(0);
   const color = activeState && activeColor ? activeColor : tint;
@@ -206,6 +214,7 @@ function Action({
   return (
     <Pressable
       className="flex-row items-center gap-1 rounded px-0.5 py-0.5"
+      onPress={onPress}
       onPressIn={pressIn}
       onPressOut={pressOut}
     >
@@ -279,6 +288,7 @@ function ZapAction() {
 export function Footer({ note, visible, main = false }: FooterProps) {
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
+  const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
   const mutedHashtags = useNostrStore(state => state.mutedHashtags);
   const mutedWords = useNostrStore(state => state.mutedWords);
@@ -290,6 +300,7 @@ export function Footer({ note, visible, main = false }: FooterProps) {
   const pendingCountsRef = useRef<Counts>(emptyCounts);
   const pendingActiveRef = useRef<ActiveState>(emptyActive);
   const noteId = note.id() || '';
+  const notePubkey = note.pubkey() || '';
   const relays = useMemo(
     () => (readRelays.length ? readRelays : DEFAULT_FEED_RELAYS),
     [readRelays],
@@ -435,6 +446,47 @@ export function Footer({ note, visible, main = false }: FooterProps) {
     }
   }, []);
 
+  const sendReaction = useCallback(() => {
+    if (!pubkey || !noteId || !notePubkey || activeRef.current.reacted) return;
+
+    const event: EventTemplate = {
+      kind: kinds.Reaction,
+      tags: [
+        ['e', noteId],
+        ['p', notePubkey],
+      ],
+      content: '+',
+      created_at: Math.floor(Date.now() / 1000),
+    };
+    const sendStatus: Record<string, ConnectionStatus> = {};
+    const sendId = `reaction_${noteId}`;
+
+    publishToNostr(
+      sendId,
+      event,
+      (message: WorkerMessage) => {
+        const status = isConnectionStatus(message);
+        const relayUrl = status?.relayUrl();
+        if (!status || !relayUrl) return;
+
+        sendStatus[relayUrl] = status;
+        updateSendStatus(sendId, sendStatus);
+        if (status.status()?.toString() === 'true' && !activeRef.current.reacted) {
+          pendingActiveRef.current = {
+            ...pendingActiveRef.current,
+            reacted: true,
+          };
+          pendingCountsRef.current = {
+            ...pendingCountsRef.current,
+            reactions: pendingCountsRef.current.reactions + 1,
+          };
+          commitPendingState();
+        }
+      },
+      {defaultRelays: relays, trackStatus: true},
+    );
+  }, [commitPendingState, noteId, notePubkey, pubkey, relays, updateSendStatus]);
+
   useEffect(() => {
     if (!visible || !noteId) return;
 
@@ -572,6 +624,7 @@ export function Footer({ note, visible, main = false }: FooterProps) {
           label={countLabel(counts.reactions)}
           activeColor={accent}
           activeState={active.reacted}
+          onPress={sendReaction}
         />
         <Action kind="share" animation="share" />
       </View>

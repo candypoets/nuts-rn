@@ -1,4 +1,4 @@
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoView } from 'expo-video';
 import { X } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -25,6 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSharedVideoPlayer } from '../media/videoPlayers';
 import { useUIStore, type UIStore } from '../stores/uiStore';
 
 type ZoomLink = UIStore['imageZoom']['links'][number];
@@ -311,13 +312,17 @@ function ZoomVideo({
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
 }) {
-  const player = useVideoPlayer(link.src, videoPlayer => {
-    videoPlayer.loop = false;
-    videoPlayer.muted = false;
-    videoPlayer.showNowPlayingNotification = false;
-    videoPlayer.staysActiveInBackground = false;
-    videoPlayer.play();
-  });
+  const player = useSharedVideoPlayer(link.src);
+
+  useEffect(() => {
+    player.loop = false;
+    player.muted = false;
+    player.volume = 1;
+    player.showNowPlayingNotification = false;
+    player.staysActiveInBackground = false;
+    player.play();
+  }, [player]);
+
   const dismissPan = Gesture.Pan()
     .activeOffsetY([-14, 14])
     .failOffsetX([-26, 26])

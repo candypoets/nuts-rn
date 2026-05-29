@@ -1,6 +1,7 @@
-import {VideoView, useVideoPlayer} from 'expo-video';
+import {VideoView} from 'expo-video';
 import React, {useEffect, useMemo, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, useWindowDimensions, View} from 'react-native';
+import {useSharedVideoPlayer} from '../../media/videoPlayers';
 import {useUIStore} from '../../stores/uiStore';
 
 export type ImageGridLink = {
@@ -63,44 +64,47 @@ function VideoTile({
   autoplay: boolean;
   single: boolean;
 }) {
+  const zoomedVideoSrc = useUIStore(state => {
+    const zoomed = state.imageZoom.zoomed;
+    if (zoomed === undefined) return null;
+    const link = state.imageZoom.links[zoomed];
+    return link?.type === 'video' ? link.src : null;
+  });
+  const zoomOwnsPlayer = zoomedVideoSrc === src;
   const [firstFrameRendered, setFirstFrameRendered] = useState(false);
   const [failed, setFailed] = useState(false);
   const [playRequested, setPlayRequested] = useState(autoplay);
-  const player = useVideoPlayer(src, videoPlayer => {
-    videoPlayer.loop = true;
-    videoPlayer.muted = true;
-    videoPlayer.volume = 0;
-    videoPlayer.showNowPlayingNotification = false;
-    videoPlayer.staysActiveInBackground = false;
-    if (autoplay) {
-      videoPlayer.play();
-    }
-  });
+  const player = useSharedVideoPlayer(src);
 
   useEffect(() => {
+    if (zoomOwnsPlayer) return;
     setPlayRequested(autoplay);
     player.loop = true;
     player.muted = true;
     player.volume = 0;
+    player.showNowPlayingNotification = false;
+    player.staysActiveInBackground = false;
     if (autoplay) {
       player.play();
     } else {
       player.pause();
       player.currentTime = 0;
     }
-  }, [autoplay, player]);
+  }, [autoplay, player, zoomOwnsPlayer]);
 
   return (
     <View className="h-full w-full bg-slate-950">
-      <VideoView
-        player={player}
-        nativeControls
-        contentFit={single ? 'contain' : 'cover'}
-        allowsPictureInPicture={false}
-        startsPictureInPictureAutomatically={false}
-        style={styles.video}
-        onFirstFrameRender={() => setFirstFrameRendered(true)}
-      />
+      {zoomOwnsPlayer ? null : (
+        <VideoView
+          player={player}
+          nativeControls
+          contentFit={single ? 'contain' : 'cover'}
+          allowsPictureInPicture={false}
+          startsPictureInPictureAutomatically={false}
+          style={styles.video}
+          onFirstFrameRender={() => setFirstFrameRendered(true)}
+        />
+      )}
       {poster && !firstFrameRendered && !failed ? (
         <Image
           source={{uri: poster}}
@@ -112,7 +116,8 @@ function VideoTile({
       {!playRequested ? (
         <Pressable
           className="absolute inset-0 items-center justify-center bg-black/15"
-          onPress={() => {
+          onPress={event => {
+            event.stopPropagation();
             setPlayRequested(true);
             setFirstFrameRendered(true);
             player.play();

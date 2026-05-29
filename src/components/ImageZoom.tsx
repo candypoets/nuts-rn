@@ -249,7 +249,7 @@ function ZoomImage({
         );
         return;
       }
-      overlayTranslateY.value = withSpring(0, { damping: 22, stiffness: 240 });
+      overlayTranslateY.value = withTiming(0, { duration: 160 });
       backgroundOpacity.value = withTiming(1, { duration: 140 });
     });
 
@@ -339,7 +339,7 @@ function ZoomVideo({
         );
         return;
       }
-      overlayTranslateY.value = withSpring(0, { damping: 22, stiffness: 240 });
+      overlayTranslateY.value = withTiming(0, { duration: 160 });
       backgroundOpacity.value = withTiming(1, { duration: 140 });
     });
 

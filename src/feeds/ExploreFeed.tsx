@@ -5,9 +5,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BlurView } from 'expo-blur';
 import type {
   ParsedEvent,
   RequestObject,
@@ -30,9 +31,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Feed } from '../components/Feed';
+import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
-import { Bell, Infinity, Users } from 'lucide-react-native';
+import { Infinity, PenLine, Users } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
   type FeedPackSelection,
@@ -43,7 +45,7 @@ import {
 } from '../stores';
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
-import type {RootStackParamList} from '../navigation/types';
+import type { RootStackParamList } from '../navigation/types';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -54,6 +56,11 @@ type ExploreFeedProps = {
 };
 
 const followListImage = require('../../assets/followlist.png');
+const GUEST_EXPLORE_RELAYS = [
+  'wss://nostr.wine',
+  'wss://pyramid.fiatjaf.com',
+  'wss://nostr.mom',
+];
 
 function verifyExploreItemIds(items: ParsedEvent[], feedKey: string) {
   if (typeof __DEV__ === 'undefined' || !__DEV__) return;
@@ -139,8 +146,15 @@ export function ExploreFeed({
     () => (selectedKinds.length ? selectedKinds : ALL_FEED_KINDS),
     [selectedKinds],
   );
-  const feedRelays =
-    authPubkey && readRelays.length ? readRelays : DEFAULT_FEED_RELAYS;
+  const feedRelays = useMemo(
+    () =>
+      authPubkey
+        ? readRelays.length
+          ? readRelays
+          : DEFAULT_FEED_RELAYS
+        : GUEST_EXPLORE_RELAYS,
+    [authPubkey, readRelays],
+  );
   const feedKey = useMemo(
     () =>
       `${requestKinds.join(',') || 'kind1'}:${
@@ -176,7 +190,7 @@ export function ExploreFeed({
     [authPubkey, feedRelays, relayStatuses, selectedPacks],
   );
 
-  const tabsSpacer = useCallback(() => <View className="h-[72px]" />, []);
+  const defaultStickyFooter = useCallback(() => <ExploreComposerFooter />, []);
 
   const clearTimers = useCallback(() => {
     if (timeoutRef.current) {
@@ -335,7 +349,7 @@ export function ExploreFeed({
   const handleEvents = useCallback(
     (message: WorkerMessage) => {
       if (asEoce(message)) {
-        commitPendingItems();
+        completeResolvingSubscription();
         return;
       }
 
@@ -358,20 +372,29 @@ export function ExploreFeed({
       if (!parsed) return;
 
       const kind = parsed.kind();
-      if (!shouldIncludeKind(kind)) return;
+      const id = parsed.id();
+      if (!shouldIncludeKind(kind)) {
+        return;
+      }
 
       if (kind === 1 || kind === 6) {
         const kind1 = asKind1(parsed);
         if (kind1) {
           const reply = kind1.reply()?.id();
           const root = kind1.root()?.id();
-          if (reply && !root) return;
-          if (reply && root && reply !== root) return;
+          if (reply && !root) {
+            return;
+          }
+          if (reply && root && reply !== root) {
+            return;
+          }
         }
 
         if (kind === 6) {
           const kind6 = asKind6(parsed);
-          if (!kind6?.repostedEvent()) return;
+          if (!kind6?.repostedEvent()) {
+            return;
+          }
         }
       } else if (kind === 20) {
         const kind20 = asKind20(parsed);
@@ -383,15 +406,17 @@ export function ExploreFeed({
         }
       }
 
-      const id = parsed.id();
-      if (!id) return;
-      if (seenIdsRef.current.has(id)) return;
+      if (!id) {
+        return;
+      }
+      if (seenIdsRef.current.has(id)) {
+        return;
+      }
 
       addItem(parsed);
     },
     [
       addItem,
-      commitPendingItems,
       completeResolvingSubscription,
       setRelayStatus,
       shouldIncludeKind,
@@ -399,10 +424,18 @@ export function ExploreFeed({
   );
 
   const initFeed = useCallback(() => {
-    if (!enabled || !visible) return;
-    if (hasInitializedRef.current) return;
-    if (loadingRef.current) return;
-    if (isInitializingRef.current) return;
+    if (!enabled || !visible) {
+      return;
+    }
+    if (hasInitializedRef.current) {
+      return;
+    }
+    if (loadingRef.current) {
+      return;
+    }
+    if (isInitializingRef.current) {
+      return;
+    }
 
     isInitializingRef.current = true;
     setLoading(itemsRef.current.length === 0);
@@ -584,7 +617,15 @@ export function ExploreFeed({
   }, []);
 
   const renderNewNotesBanner = useCallback(
-    () => <NewNotesBanner count={newPostsCount} onPress={mergePendingItems} />,
+    ({ scrollToTop }: { scrollToTop: () => void }) => (
+      <NewNotesBanner
+        count={newPostsCount}
+        onPress={() => {
+          mergePendingItems();
+          scrollToTop();
+        }}
+      />
+    ),
     [mergePendingItems, newPostsCount],
   );
 
@@ -606,9 +647,7 @@ export function ExploreFeed({
     }: {
       item: ParsedEvent;
       visible: boolean;
-    }) => (
-      <Note note={item} visible={visible && itemVisible} />
-    ),
+    }) => <Note note={item} visible={visible && itemVisible} />,
     [visible],
   );
   const getItemId = useCallback(
@@ -638,7 +677,7 @@ export function ExploreFeed({
         stickyFooterVisible
         stickyHeader={stickyHeader ?? defaultStickyHeader}
         fixedHeader={renderNewNotesBanner}
-        stickyFooter={stickyFooter ?? tabsSpacer}
+        stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
         loading={loading || refreshing}
         refreshing={refreshing}
@@ -648,6 +687,23 @@ export function ExploreFeed({
         empty={empty}
         contentContainerClassName="pb-28"
       />
+    </View>
+  );
+}
+
+function ExploreComposerFooter() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const openPost = useCallback(() => navigation.navigate('Post'), [navigation]);
+
+  return (
+    <View className="items-end px-4 pb-4">
+      <Pressable hitSlop={8} onPress={openPost} style={styles.composerButton}>
+        <BlurView intensity={28} tint="light" style={styles.composerBlur}>
+          <PenLine size={17} color="#52616f" strokeWidth={2.1} />
+          <Text style={styles.composerText}>What's up?</Text>
+        </BlurView>
+      </Pressable>
     </View>
   );
 }
@@ -668,13 +724,7 @@ function ExploreHeader({
   surfaceClassName: string;
 }) {
   return (
-    <View
-      className={
-        mini
-          ? 'border-b border-slate-200 bg-slate-50/95'
-          : ''
-      }
-    >
+    <View className={mini ? 'border-b border-slate-200 bg-slate-50/95' : ''}>
       <View
         className={
           mini
@@ -694,11 +744,9 @@ function ExploreHeader({
             surfaceClassName={surfaceClassName}
           />
           <View className="flex-row items-center gap-2">
-            <Pressable
+            <NotificationBellButton
               className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
-            >
-              <Bell size={19} color="#17212b" strokeWidth={2.2} />
-            </Pressable>
+            />
             <HeaderProfileButton
               pubkey={pubkey}
               className={`h-9 w-9 border-slate-200 ${surfaceClassName}`}
@@ -779,6 +827,53 @@ function hashKey(value: string) {
   return hash.toString(36);
 }
 
+const styles = StyleSheet.create({
+  composerButton: {
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+  },
+  composerBlur: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  composerText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  newNotesButton: {
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+  },
+  newNotesBlur: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  newNotesText: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});
+
 function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
@@ -790,30 +885,30 @@ function NewNotesBanner({
   count: number;
   onPress: () => void;
 }) {
+  const debugCount = count || 1;
   const shown = useSharedValue(0);
 
   useEffect(() => {
-    shown.value = withTiming(count > 0 ? 1 : 0, { duration: 180 });
-  }, [count, shown]);
+    shown.value = withTiming(1, { duration: 180 });
+  }, [shown]);
 
   const style = useAnimatedStyle(() => ({
     opacity: shown.value,
-    transform: [{ translateY: -16 + shown.value * 16 }],
+    transform: [{ translateY: -36 + shown.value * 36 }],
   }));
 
   return (
     <Animated.View
-      pointerEvents={count > 0 ? 'box-none' : 'none'}
-      className="px-4 pt-24"
+      pointerEvents="box-none"
+      className="items-center pt-3"
       style={style}
     >
-      <Pressable
-        className="items-center rounded-full bg-emerald-700 px-4 py-2 shadow-sm"
-        onPress={onPress}
-      >
-        <Text className="text-sm font-semibold text-white">
-          {count} new {count === 1 ? 'note' : 'notes'}
-        </Text>
+      <Pressable hitSlop={8} onPress={onPress} style={styles.newNotesButton}>
+        <BlurView intensity={30} tint="light" style={styles.newNotesBlur}>
+          <Text style={styles.newNotesText}>
+            {debugCount} new {debugCount === 1 ? 'note' : 'notes'}
+          </Text>
+        </BlurView>
       </Pressable>
     </Animated.View>
   );

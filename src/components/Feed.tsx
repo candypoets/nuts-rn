@@ -26,6 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 type FeedChromeProps = {
+  scrollToTop: () => void;
   visible: boolean;
   scrolled: boolean;
   start: number;
@@ -118,9 +119,13 @@ export function Feed<T>({
   const footerVisible = useSharedValue(1);
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
 
+  const scrollToTop = useCallback(() => {
+    listRef.current?.scrollToOffset({offset: 0, animated: true});
+  }, []);
+
   const chromeProps = useMemo(
-    () => ({visible: true, scrolled: start >= 1, start}),
-    [start],
+    () => ({visible: true, scrolled: start >= 1, start, scrollToTop}),
+    [scrollToTop, start],
   );
 
   useEffect(() => {
@@ -216,9 +221,6 @@ export function Feed<T>({
     (item: T, index: number) => String(getItemId(item, index)),
     [getItemId],
   );
-  const scrollToTop = useCallback(() => {
-    listRef.current?.scrollToOffset({offset: 0, animated: true});
-  }, []);
   const handleEndReached = useCallback(() => {
     if (
       !onNearBottom ||
@@ -267,7 +269,7 @@ export function Feed<T>({
       {fixedHeader ? (
         <View
           pointerEvents="box-none"
-          className="absolute bottom-0 left-0 right-0 top-0 z-20"
+          className="absolute bottom-0 left-0 right-0 top-0 z-40"
           style={{paddingTop: topInset}}
         >
           {fixedHeader(chromeProps)}

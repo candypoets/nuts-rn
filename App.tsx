@@ -1,9 +1,9 @@
 import './global.css';
 import './textEncodingPolyfill';
 
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {StatusBar, StyleSheet, useColorScheme, View} from 'react-native';
-import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   DefaultTheme,
   NavigationContainer,
@@ -13,29 +13,31 @@ import {
   createNativeStackNavigator,
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack';
-import {enableFreeze, enableScreens} from 'react-native-screens';
+import { enableFreeze, enableScreens } from 'react-native-screens';
 import {
   ReanimatedLogLevel,
   configureReanimatedLogger,
   useSharedValue,
 } from 'react-native-reanimated';
-import {SafeAreaProvider} from 'react-native-safe-area-context';
-import type {NostrManagerLike} from '@candypoets/nipworker';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { NostrManagerLike } from '@candypoets/nipworker';
 import {
   ReactNativeBackend,
   createNostrManager,
   hasReactNativeModule,
   setManager,
 } from '@candypoets/nipworker/react-native';
-import {nip19} from 'nostr-tools';
+import { nip19 } from 'nostr-tools';
 
-import {ChatFeed, ExploreFeed, HomeFeed} from './src/feeds';
-import {useFollowListPackSync} from './src/hooks/useFollowListPackSync';
-import {useRelayTracking} from './src/hooks/useRelayTracking';
-import {useRootNostrSubscriptions} from './src/hooks/useRootNostrSubscriptions';
+import { ChatFeed, ExploreFeed, HomeFeed } from './src/feeds';
+import { useFollowListPackSync } from './src/hooks/useFollowListPackSync';
+import { useNotificationSubscription } from './src/hooks/useNotificationSubscription';
+import { useRelayTracking } from './src/hooks/useRelayTracking';
+import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions';
 import {
   FeedBuilderModal,
   LogoutModal,
+  PostModal,
   PrivateKeyLogin,
   ProfileModal,
   ProfileStubModal,
@@ -43,10 +45,11 @@ import {
   SendModal,
   SendPlaceholderModal,
 } from './src/modals';
-import {Kind0Sub, Kind1Sub, Kind4Sub} from './src/subs';
-import {useAuthStore} from './src/stores';
-import {CarouselAnimator} from './src/components/CarouselAnimator';
-import type {RootStackParamList} from './src/navigation/types';
+import { Kind0Sub, Kind1Sub, Kind4Sub, NotificationsSub } from './src/subs';
+import { useAuthStore } from './src/stores';
+import { CarouselAnimator } from './src/components/CarouselAnimator';
+import { SendStatuses } from './src/components/SendStatuses';
+import type { RootStackParamList } from './src/navigation/types';
 
 enableScreens(true);
 enableFreeze(true);
@@ -57,10 +60,10 @@ configureReanimatedLogger({
 });
 
 type RouteId = 'home' | 'explore' | 'chat';
-const ROUTES: Array<{id: RouteId; label: string}> = [
-  {id: 'home', label: 'Home'},
-  {id: 'explore', label: 'Explore'},
-  {id: 'chat', label: 'Chat'},
+const ROUTES: Array<{ id: RouteId; label: string }> = [
+  { id: 'home', label: 'Home' },
+  { id: 'explore', label: 'Explore' },
+  { id: 'chat', label: 'Chat' },
 ];
 
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
@@ -101,6 +104,7 @@ function App() {
             barStyle={isDarkMode ? 'light-content' : 'dark-content'}
           />
           <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
+          <SendStatuses />
         </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
@@ -126,83 +130,94 @@ function RootNavigator({
           headerShown: false,
         }}
       >
-        <NativeStack.Screen name="Main" options={{freezeOnBlur: false}}>
+        <NativeStack.Screen name="Main" options={{ freezeOnBlur: false }}>
           {() => <MainTabs nostrEnabled={nostrEnabled} />}
         </NativeStack.Screen>
         <NativeStack.Screen
           name="PublicProfile"
           component={PublicProfileScreen}
-          options={{animation: 'slide_from_right'}}
+          options={{ animation: 'slide_from_right' }}
         />
         <NativeStack.Screen
           name="ChatThread"
           component={ChatThreadScreen}
-          options={{animation: 'slide_from_right'}}
+          options={{ animation: 'slide_from_right' }}
         />
         <NativeStack.Screen
           name="Kind1Thread"
           component={Kind1ThreadScreen}
-          options={{animation: 'slide_from_right'}}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
+          name="Notifications"
+          component={NotificationsScreen}
+          options={{ animation: 'slide_from_right' }}
         />
         <NativeStack.Screen
           name="Profile"
           component={ProfileScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
-        <NativeStack.Screen name="Login" options={{presentation: 'modal'}}>
-          {({navigation}) => (
+        <NativeStack.Screen name="Login" options={{ presentation: 'modal' }}>
+          {({ navigation }) => (
             <LoginScreen manager={manager} onClose={navigation.goBack} />
           )}
         </NativeStack.Screen>
-        <NativeStack.Screen name="Logout" options={{presentation: 'modal'}}>
-          {({navigation}) => (
+        <NativeStack.Screen name="Logout" options={{ presentation: 'modal' }}>
+          {({ navigation }) => (
             <LogoutScreen manager={manager} onClose={navigation.goBack} />
           )}
         </NativeStack.Screen>
         <NativeStack.Screen
           name="FeedBuilder"
           component={FeedBuilderScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
+        />
+        <NativeStack.Screen
+          name="Post"
+          component={PostScreen}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="Send"
           component={SendScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="SendEcash"
           component={SendEcashScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="Scan"
           component={ScanScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="Tapcash"
           component={TapcashScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="Lightning"
           component={LightningScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="ProfileStub"
           component={ProfileStubScreen}
-          options={{presentation: 'modal'}}
+          options={{ presentation: 'modal' }}
         />
       </NativeStack.Navigator>
     </NavigationContainer>
   );
 }
 
-function RootServices({manager}: {manager: NostrManagerLike | null}) {
+function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   const setAuth = useAuthStore(state => state.setAuth);
 
   useRootNostrSubscriptions(Boolean(manager));
+  useNotificationSubscription(Boolean(manager));
   useRelayTracking(Boolean(manager));
   useFollowListPackSync();
 
@@ -212,7 +227,7 @@ function RootServices({manager}: {manager: NostrManagerLike | null}) {
     const handleAuth = (event: Event) => {
       const detail = (
         event as Event & {
-          detail?: {pubkey?: string | null; hasSigner?: boolean};
+          detail?: { pubkey?: string | null; hasSigner?: boolean };
         }
       ).detail;
       const pubkey = detail?.pubkey ?? null;
@@ -230,17 +245,23 @@ function RootServices({manager}: {manager: NostrManagerLike | null}) {
   return null;
 }
 
-function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
-  const [activeRouteId, setActiveRouteId] = useState<RouteId>('home');
-  const [activatedRoutes, setActivatedRoutes] = useState<Record<RouteId, boolean>>({
-    home: true,
-    explore: false,
+function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
+  const [activeRouteId, setActiveRouteId] = useState<RouteId>('explore');
+  const [activatedRoutes, setActivatedRoutes] = useState<
+    Record<RouteId, boolean>
+  >({
+    home: false,
+    explore: true,
     chat: false,
   });
   const stackDepth = useSharedValue(0);
   const dismissProgress = useSharedValue(0);
   const activeRouteIndex = useMemo(
-    () => Math.max(0, ROUTES.findIndex(route => route.id === activeRouteId)),
+    () =>
+      Math.max(
+        0,
+        ROUTES.findIndex(route => route.id === activeRouteId),
+      ),
     [activeRouteId],
   );
   const activeRoute = ROUTES[activeRouteIndex] ?? ROUTES[0];
@@ -257,7 +278,7 @@ function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
   }, [activeRoute.id]);
 
   const changeRouteIndex = useCallback((index: number) => {
-    setActiveRouteId(ROUTES[index]?.id ?? 'home');
+    setActiveRouteId(ROUTES[index]?.id ?? 'explore');
   }, []);
 
   return (
@@ -271,26 +292,17 @@ function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
         dismissProgress={dismissProgress}
         stackPresentation="flat"
         onIndexChange={changeRouteIndex}
-        renderPage={({index, width}) => (
-          <FeedPage
-            key={ROUTES[index].id}
-            width={width}
-          >
+        renderPage={({ index, width }) => (
+          <FeedPage key={ROUTES[index].id} width={width}>
             {ROUTES[index].id === 'home' ? (
-              <HomeFeed
-                enabled={nostrEnabled}
-                visible={activatedRoutes.home}
-              />
+              <HomeFeed enabled={nostrEnabled} visible={activatedRoutes.home} />
             ) : ROUTES[index].id === 'explore' ? (
               <ExploreFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.explore}
               />
             ) : (
-              <ChatFeed
-                enabled={nostrEnabled}
-                visible={activatedRoutes.chat}
-              />
+              <ChatFeed enabled={nostrEnabled} visible={activatedRoutes.chat} />
             )}
           </FeedPage>
         )}
@@ -301,17 +313,14 @@ function MainTabs({nostrEnabled}: {nostrEnabled: boolean}) {
 function useAuthValue() {
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
-  return useMemo(() => ({pubkey, hasSigner}), [hasSigner, pubkey]);
+  return useMemo(() => ({ pubkey, hasSigner }), [hasSigner, pubkey]);
 }
 
-function ProfileScreen({navigation}: NativeStackScreenProps<RootStackParamList, 'Profile'>) {
+function ProfileScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Profile'>) {
   const auth = useAuthValue();
-  return (
-    <ProfileModal
-      auth={auth}
-      onClose={navigation.goBack}
-    />
-  );
+  return <ProfileModal auth={auth} onClose={navigation.goBack} />;
 }
 
 function LoginScreen({
@@ -339,6 +348,19 @@ function FeedBuilderScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, 'FeedBuilder'>) {
   return <FeedBuilderModal onClose={navigation.goBack} />;
+}
+
+function NotificationsScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Notifications'>) {
+  const focused = useIsFocused();
+  return <NotificationsSub visible={focused} onClose={navigation.goBack} />;
+}
+
+function PostScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Post'>) {
+  return <PostModal onClose={navigation.goBack} />;
 }
 
 function SendScreen({
@@ -466,10 +488,7 @@ function FeedPage({
   width: number;
 }) {
   return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.page, {width}]}
-    >
+    <View pointerEvents="box-none" style={[styles.page, { width }]}>
       {children}
     </View>
   );

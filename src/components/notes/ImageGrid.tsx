@@ -1,6 +1,7 @@
 import {VideoView, useVideoPlayer} from 'expo-video';
 import React, {useEffect, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, useWindowDimensions, View} from 'react-native';
+import {useUIStore} from '../../stores/uiStore';
 
 export type ImageGridLink = {
   src: string;
@@ -135,6 +136,7 @@ const styles = StyleSheet.create({
 
 export function ImageGrid({links}: {links: ImageGridLink[]}) {
   const {width} = useWindowDimensions();
+  const setImageZoom = useUIStore(state => state.setImageZoom);
   const displayLinks = links.filter(link => link.src).slice(0, 5);
   const remainingCount = Math.max(0, links.length - displayLinks.length);
   const columns = getColumns(displayLinks.length);
@@ -158,10 +160,19 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
           const autoplay = link.type === 'video' && (single || index === 0);
 
           return (
-            <View
+            <Pressable
               key={`${link.src}-${index}`}
               className={['relative overflow-hidden bg-slate-100', rounded].join(' ')}
               style={{width: tileWidth, height}}
+              onPress={event => {
+                event.stopPropagation();
+                setImageZoom({
+                  links: links.filter(item => item.src),
+                  zoomed: index,
+                  gridId: `${links[0]?.src || 'media'}-${links.length}`,
+                  videoTime: 0,
+                });
+              }}
             >
               {link.type === 'video' ? (
                 <VideoTile
@@ -183,7 +194,7 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
                   <Text className="text-sm text-white">more</Text>
                 </View>
               ) : null}
-            </View>
+            </Pressable>
           );
         })}
       </View>

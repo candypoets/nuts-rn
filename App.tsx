@@ -49,6 +49,7 @@ import {
 import { Kind0Sub, Kind1Sub, Kind4Sub, NotificationsSub } from './src/subs';
 import { useAuthStore } from './src/stores';
 import { CarouselAnimator } from './src/components/CarouselAnimator';
+import { ImageZoom } from './src/components/ImageZoom';
 import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
 
@@ -106,6 +107,7 @@ function App() {
           />
           <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
           <SendStatuses />
+          <ImageZoom />
         </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>

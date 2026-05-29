@@ -1,5 +1,5 @@
 import {VideoView} from 'expo-video';
-import {Maximize2, Volume2, VolumeX} from 'lucide-react-native';
+import {Volume2, VolumeX} from 'lucide-react-native';
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   Image,
@@ -75,11 +75,13 @@ function VideoTile({
   poster,
   autoplay,
   single,
+  onOpenZoom,
 }: {
   src: string;
   poster?: string;
   autoplay: boolean;
   single: boolean;
+  onOpenZoom: () => void;
 }) {
   const zoomedVideoSrc = useUIStore(state => {
     const zoomed = state.imageZoom.zoomed;
@@ -151,8 +153,27 @@ function VideoTile({
     setCurrentTime(duration * nextProgress);
   };
 
+  const handleVideoPress = () => {
+    if (muted) {
+      player.muted = false;
+      player.volume = 1;
+      setMuted(false);
+      setPlayRequested(true);
+      player.play();
+      return;
+    }
+
+    onOpenZoom();
+  };
+
   return (
-    <View className="h-full w-full bg-slate-950">
+    <Pressable
+      className="h-full w-full bg-slate-950"
+      onPress={event => {
+        event.stopPropagation();
+        handleVideoPress();
+      }}
+    >
       {zoomOwnsPlayer ? null : (
         <VideoView
           player={player}
@@ -223,7 +244,7 @@ function VideoTile({
           <Text style={styles.remainingTime}>-{formatRemaining(remaining)}</Text>
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -231,17 +252,6 @@ const styles = StyleSheet.create({
   video: {
     height: '100%',
     width: '100%',
-  },
-  expandButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.68)',
-    borderRadius: 18,
-    height: 36,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: 8,
-    top: 8,
-    width: 36,
   },
   controlButton: {
     alignItems: 'center',
@@ -336,19 +346,8 @@ export function ImageGrid({links}: {links: ImageGridLink[]}) {
                   poster={link.blurhash || undefined}
                   autoplay={autoplay}
                   single={single}
+                  onOpenZoom={openZoom}
                 />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Open video"
-                  hitSlop={8}
-                  onPress={event => {
-                    event.stopPropagation();
-                    openZoom();
-                  }}
-                  style={styles.expandButton}
-                >
-                  <Maximize2 size={18} color="#fff" strokeWidth={2.4} />
-                </Pressable>
                 {remainingCount > 0 && index === displayLinks.length - 1 ? (
                   <View className="absolute inset-0 items-center justify-center bg-black/60">
                     <Text className="text-2xl font-bold text-white">+{remainingCount}</Text>

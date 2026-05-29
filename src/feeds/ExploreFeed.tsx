@@ -617,15 +617,16 @@ export function ExploreFeed({
   }, []);
 
   const renderNewNotesBanner = useCallback(
-    ({ scrollToTop }: { scrollToTop: () => void }) => (
-      <NewNotesBanner
-        count={newPostsCount}
-        onPress={() => {
-          mergePendingItems();
-          scrollToTop();
-        }}
-      />
-    ),
+    ({ scrollToTop }: { scrollToTop: () => void }) =>
+      newPostsCount > 0 ? (
+        <NewNotesBanner
+          count={newPostsCount}
+          onPress={() => {
+            mergePendingItems();
+            scrollToTop();
+          }}
+        />
+      ) : null,
     [mergePendingItems, newPostsCount],
   );
 
@@ -885,7 +886,6 @@ function NewNotesBanner({
   count: number;
   onPress: () => void;
 }) {
-  const debugCount = count || 1;
   const shown = useSharedValue(0);
 
   useEffect(() => {
@@ -906,7 +906,7 @@ function NewNotesBanner({
       <Pressable hitSlop={8} onPress={onPress} style={styles.newNotesButton}>
         <BlurView intensity={30} tint="light" style={styles.newNotesBlur}>
           <Text style={styles.newNotesText}>
-            {debugCount} new {debugCount === 1 ? 'note' : 'notes'}
+            {count} new {count === 1 ? 'note' : 'notes'}
           </Text>
         </BlurView>
       </Pressable>

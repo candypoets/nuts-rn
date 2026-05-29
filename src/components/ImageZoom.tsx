@@ -29,6 +29,7 @@ import { asKind1, fbArray } from '@candypoets/nipworker/utils';
 
 import { useSharedVideoPlayer } from '../media/videoPlayers';
 import { useUIStore, type UIStore } from '../stores/uiStore';
+import { Avatar } from './notes/Avatar';
 import { Footer } from './notes/Footer';
 import { User } from './notes/User';
 
@@ -195,11 +196,14 @@ function ZoomNoteOverlay({ bottomInset }: { bottomInset: number }) {
       <View style={styles.noteCard}>
         <View style={styles.noteHeader}>
           {pubkey ? (
-            <User
-              pubkey={pubkey}
-              link
-              className="text-[18px] font-bold text-white"
-            />
+            <>
+              <Avatar pubkey={pubkey} size="sm" link />
+              <User
+                pubkey={pubkey}
+                link
+                className="text-sm font-semibold text-white"
+              />
+            </>
           ) : null}
         </View>
         {content ? (
@@ -541,14 +545,15 @@ const styles = StyleSheet.create({
   },
   noteText: {
     color: '#fff',
-    fontSize: 25,
-    lineHeight: 32,
+    fontSize: 15,
+    lineHeight: 20,
     textShadowColor: 'rgba(0, 0, 0, 0.45)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   noteHeader: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
 });

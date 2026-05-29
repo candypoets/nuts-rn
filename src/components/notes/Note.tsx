@@ -173,7 +173,13 @@ const NoteBody = memo(
           {threadConnectors}
           <Header note={effectiveNote} depth={depth} main={main} />
           <Pressable
-            className={isQuote || main ? 'mt-1 flex-row gap-0' : 'mt-1 flex-row gap-2'}
+            className={
+              main
+                ? 'mt-1 flex-row gap-0'
+                : isQuote
+                  ? '-mt-1 flex-row gap-0'
+                  : '-mt-1 flex-row gap-2'
+            }
             onPress={event => {
               event.stopPropagation();
               if (!wasRecentSwipeGesture()) onOpen();

@@ -107,7 +107,6 @@ function App() {
           />
           <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
           <SendStatuses />
-          <ImageZoom />
         </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
@@ -215,6 +214,7 @@ function RootNavigator({
           options={{ presentation: 'modal' }}
         />
       </NativeStack.Navigator>
+      <ImageZoom />
     </NavigationContainer>
   );
 }

@@ -1,5 +1,5 @@
 import { VideoView } from 'expo-video';
-import { X } from 'lucide-react-native';
+import { ChevronLeft, MoreHorizontal } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
@@ -154,14 +154,21 @@ export function ImageZoom() {
             onPress={close}
             style={styles.closeButton}
           >
-            <X size={22} color="#fff" strokeWidth={2.4} />
+            <ChevronLeft size={28} color="#fff" strokeWidth={2.4} />
           </Pressable>
           {links.length > 1 ? (
             <Text style={styles.counter}>
               {currentIndex + 1} / {links.length}
             </Text>
           ) : null}
-          <View style={styles.closeButtonSpacer} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="More"
+            hitSlop={12}
+            style={styles.closeButton}
+          >
+            <MoreHorizontal size={25} color="#fff" strokeWidth={2.4} />
+          </Pressable>
         </View>
         <ZoomNoteOverlay bottomInset={insets.bottom} />
       </View>
@@ -186,22 +193,24 @@ function ZoomNoteOverlay({ bottomInset }: { bottomInset: number }) {
       ]}
     >
       <View style={styles.noteCard}>
-        {pubkey ? (
-          <User
-            pubkey={pubkey}
-            link
-            className="text-[14px] font-semibold text-white"
-          />
-        ) : null}
+        <View style={styles.noteHeader}>
+          {pubkey ? (
+            <User
+              pubkey={pubkey}
+              link
+              className="text-[18px] font-bold text-white"
+            />
+          ) : null}
+        </View>
         {content ? (
           <Text
-            numberOfLines={4}
+            numberOfLines={3}
             style={styles.noteText}
           >
             {content}
           </Text>
         ) : null}
-        <Footer note={note} visible={visible} />
+        <Footer note={note} visible={visible} mode="zoom" />
       </View>
     </View>
   );
@@ -507,16 +516,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   closeButton: {
-    height: 40,
-    width: 40,
+    height: 56,
+    width: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
-    backgroundColor: 'rgba(15, 23, 42, 0.64)',
-  },
-  closeButtonSpacer: {
-    height: 40,
-    width: 40,
+    borderRadius: 28,
+    backgroundColor: 'rgba(15, 23, 42, 0.38)',
   },
   counter: {
     color: '#fff',
@@ -524,25 +529,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   noteCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.58)',
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingTop: 10,
+    gap: 8,
   },
   noteOverlay: {
     bottom: 0,
     left: 0,
-    paddingHorizontal: 12,
+    paddingHorizontal: 32,
     position: 'absolute',
     right: 0,
     zIndex: 3,
   },
   noteText: {
     color: '#fff',
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 25,
+    lineHeight: 32,
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

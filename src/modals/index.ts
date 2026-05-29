@@ -1,5 +1,6 @@
 export { FeedBuilderModal } from './FeedBuilderModal';
 export { PostModal } from './PostModal';
+export { SignupModal } from './SignupModal';
 export {
   LogoutModal,
   PrivateKeyLogin,

@@ -56,7 +56,7 @@ type UnifiedSelection =
   | { type: 'pack'; id: string; title: string }
   | { type: 'kind'; kind: FeedKind; title: string };
 
-type PackItem = ParsedEvent | { selection: FeedPackSelection };
+export type PackItem = ParsedEvent | { selection: FeedPackSelection };
 type FeedBuilderListItem = PackItem | FeedKind;
 
 const followListImage = require('../../assets/followlist.png');
@@ -183,12 +183,14 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   }, [pubkey, updateList]);
 
   const packItems = useMemo(
-    () =>
-      [
+    () => {
+      void revision;
+      return [
         followListPack,
         ...followSetsRef.current,
         ...publicPacksRef.current,
-      ].filter(event => includePack(event, search)),
+      ].filter(event => includePack(event, search));
+    },
     [followListPack, revision, search],
   );
 
@@ -398,7 +400,7 @@ const KindListItem = memo(function KindListItem({
   return <KindCard kind={kind} selected={selected} onPress={handlePress} />;
 });
 
-function buildFollowListRequests(pubkey: string | null): RequestObject[] {
+export function buildFollowListRequests(pubkey: string | null): RequestObject[] {
   return [
     ...(pubkey
       ? [
@@ -437,7 +439,7 @@ function createFollowListPack(follows: string[]): {
   };
 }
 
-function includePack(event: PackItem, search: string) {
+export function includePack(event: PackItem, search: string) {
   if ('selection' in event) {
     if (!search) return true;
     const term = search.toLowerCase();
@@ -465,7 +467,7 @@ function includePack(event: PackItem, search: string) {
   );
 }
 
-function packSelectionFromEvent(event: ParsedEvent): FeedPackSelection | null {
+export function packSelectionFromEvent(event: ParsedEvent): FeedPackSelection | null {
   const list = asNip51(event);
   const title = list?.title() || list?.d() || null;
   if (!list || !title) return null;

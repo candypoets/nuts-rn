@@ -34,7 +34,7 @@ type ProfileModalTarget =
   | { type: 'profileStub'; path: 'relays' | 'wallet' | 'theme' | 'nprofile' };
 
 type ProfileModalProps = {
-  auth: Pick<AuthState, 'pubkey' | 'hasSigner'>;
+  auth: Pick<AuthState, 'pubkey' | 'hasSigner' | 'nsec'>;
   onClose: () => void;
 };
 
@@ -132,6 +132,14 @@ export function ProfileModal({ auth, onClose }: ProfileModalProps) {
             )}
           </View>
 
+          {auth.pubkey && auth.nsec ? (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
+                Save your key. It is the only way to recover this account on another device.
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={styles.sectionTitle}>Profile</Text>
           <View style={styles.menuGroup}>
             <ProfileMenuRow
@@ -204,10 +212,12 @@ export function PrivateKeyLogin({
   manager,
   auth,
   onDone,
+  onSignup,
 }: {
   manager: NostrManagerLike | null;
   auth: Pick<AuthState, 'pubkey'>;
   onDone: () => void;
+  onSignup?: () => void;
 }) {
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +296,11 @@ export function PrivateKeyLogin({
             <Pressable style={styles.secondaryAction} onPress={onDone}>
               <Text style={styles.secondaryActionText}>Close</Text>
             </Pressable>
+            {onSignup ? (
+              <Pressable style={styles.secondaryAction} onPress={onSignup}>
+                <Text style={styles.secondaryActionText}>Create account</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>

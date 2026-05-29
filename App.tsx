@@ -44,6 +44,7 @@ import {
   ScanModal,
   SendModal,
   SendPlaceholderModal,
+  SignupModal,
 } from './src/modals';
 import { Kind0Sub, Kind1Sub, Kind4Sub, NotificationsSub } from './src/subs';
 import { useAuthStore } from './src/stores';
@@ -160,7 +161,10 @@ function RootNavigator({
         />
         <NativeStack.Screen name="Login" options={{ presentation: 'modal' }}>
           {({ navigation }) => (
-            <LoginScreen manager={manager} onClose={navigation.goBack} />
+            <LoginScreen
+              manager={manager}
+              onClose={navigation.goBack}
+            />
           )}
         </NativeStack.Screen>
         <NativeStack.Screen name="Logout" options={{ presentation: 'modal' }}>
@@ -313,7 +317,8 @@ function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
 function useAuthValue() {
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
-  return useMemo(() => ({ pubkey, hasSigner }), [hasSigner, pubkey]);
+  const nsec = useAuthStore(state => state.nsec);
+  return useMemo(() => ({ pubkey, hasSigner, nsec }), [hasSigner, nsec, pubkey]);
 }
 
 function ProfileScreen({
@@ -330,8 +335,25 @@ function LoginScreen({
   manager: NostrManagerLike | null;
   onClose: () => void;
 }) {
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const auth = useAuthValue();
-  return <PrivateKeyLogin manager={manager} auth={auth} onDone={onClose} />;
+  if (mode === 'signup') {
+    return (
+      <SignupModal
+        manager={manager}
+        onBackToLogin={() => setMode('login')}
+        onDone={onClose}
+      />
+    );
+  }
+  return (
+    <PrivateKeyLogin
+      manager={manager}
+      auth={auth}
+      onDone={onClose}
+      onSignup={() => setMode('signup')}
+    />
+  );
 }
 
 function LogoutScreen({

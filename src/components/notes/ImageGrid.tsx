@@ -1,5 +1,5 @@
 import {VideoView, useVideoPlayer} from 'expo-video';
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, useWindowDimensions, View} from 'react-native';
 import {useUIStore} from '../../stores/uiStore';
 
@@ -137,10 +137,20 @@ const styles = StyleSheet.create({
 export function ImageGrid({links}: {links: ImageGridLink[]}) {
   const {width} = useWindowDimensions();
   const setImageZoom = useUIStore(state => state.setImageZoom);
-  const displayLinks = links.filter(link => link.src).slice(0, 5);
+  const displayLinks = useMemo(
+    () => links.filter(link => link.src).slice(0, 5),
+    [links],
+  );
   const remainingCount = Math.max(0, links.length - displayLinks.length);
   const columns = getColumns(displayLinks.length);
   const containerWidth = Math.max(160, width - 88);
+
+  useEffect(() => {
+    for (const link of displayLinks) {
+      if (link.type === 'video') continue;
+      Image.prefetch(link.src).catch(() => {});
+    }
+  }, [displayLinks]);
 
   if (!displayLinks.length) return null;
 

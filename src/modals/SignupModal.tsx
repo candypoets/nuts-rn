@@ -2,11 +2,19 @@ import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 're
 import {
   FlatList,
   Image,
+  InteractionManager,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useIsFocused} from '@react-navigation/native';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import type {
   ConnectionStatus,
   NostrManagerLike,
@@ -34,6 +42,7 @@ import {
   uploadFile,
   type LocalUploadAsset,
 } from '../nostr/upload';
+import { AppButton } from '../components/AppButton';
 import {
   buildFollowListRequests,
   includePack,
@@ -55,6 +64,10 @@ type SignupModalProps = {
 };
 
 type SignupStep = 'profile' | 'packs';
+type SignupStackParamList = {
+  SignupProfile: undefined;
+  SignupPacks: undefined;
+};
 
 type SelectedAvatar = LocalUploadAsset & {
   previewUri: string;
@@ -64,6 +77,8 @@ type SeenList = {
   createdAt: number;
   index: number;
 };
+
+const SignupStack = createNativeStackNavigator<SignupStackParamList>();
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -95,6 +110,7 @@ function publishWithStatus(
 }
 
 export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) {
+  const insets = useSafeAreaInsets();
   const setAuth = useAuthStore(state => state.setAuth);
   const setProfile = useNostrStore(state => state.setProfile);
   const setFollows = useNostrStore(state => state.setFollows);
@@ -124,6 +140,7 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
   );
+  const footerPaddingBottom = Math.max(24, insets.bottom + 12);
 
   const prepareFreshAccount = useCallback(() => {
     if (!manager) return null;
@@ -215,91 +232,110 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
   );
 
   const pickAvatar = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsMultipleSelection: false,
-      mediaTypes: ['images'],
-      quality: 0.9,
-    });
-    if (result.canceled || !result.assets[0]?.uri) return;
-    const asset = result.assets[0];
-    setAvatar({
-      uri: asset.uri,
-      previewUri: asset.uri,
-      width: Math.max(1, Math.round(asset.width || 320)),
-      height: Math.max(1, Math.round(asset.height || 320)),
-      mimeType: asset.mimeType,
-      fileName: asset.fileName,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: false,
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets[0]?.uri) return;
+      const asset = result.assets[0];
+      setAvatar({
+        uri: asset.uri,
+        previewUri: asset.uri,
+        width: Math.max(1, Math.round(asset.width || 320)),
+        height: Math.max(1, Math.round(asset.height || 320)),
+        mimeType: asset.mimeType,
+        fileName: asset.fileName,
+      });
+    } catch (error) {
+      console.warn('[signup] image picker failed', error);
+    }
   }, []);
 
-  const publishProfile = useCallback(async () => {
+  const continueFromProfile = useCallback(() => {
     const keypair = prepareFreshAccount();
-    if (!manager || !keypair || !name.trim()) return;
-    setStatus('Publishing profile...');
-    let picture: string | null = null;
-    if (avatar) {
-      setStatus('Uploading picture...');
-      const uploaded = await uploadFile(avatar, {
-        server: DEFAULT_UPLOAD_SERVER,
-        serverType: 'blossom',
-      });
-      picture = uploaded.url;
-    }
+    const trimmedName = name.trim();
+    if (!manager || !keypair || !trimmedName) return false;
+    const signupAvatar = avatar;
+    const trimmedBio = bio.trim();
+    const publishRelays = relays;
 
-    const metadata = {
-      name: name.trim(),
-      display_name: name.trim(),
-      about: bio.trim(),
-      picture: picture || undefined,
-    };
-    const event: EventTemplate = {
-      kind: 0,
-      content: JSON.stringify(metadata),
-      created_at: now(),
-      tags: [],
-    };
-    publishWithStatus(`signup_profile_${Date.now()}`, event, relays, updateSendStatus);
-    publishWithStatus(
-      `signup_wallet_${Date.now()}`,
-      {
-        kind: 17375,
-        content: JSON.stringify([
-          ['privkey', keypair.privkey],
-          ...DEFAULT_MINTS.map(mint => ['mint', mint]),
-        ]),
-        created_at: now(),
-        tags: [],
-      },
-      relays,
-      updateSendStatus,
-    );
-    publishWithStatus(
-      `signup_trusted_mints_${Date.now()}`,
-      {
-        kind: 10019,
-        content: '',
-        created_at: now(),
-        tags: [
-          ...DEFAULT_MINTS.map(mint => ['mint', mint]),
-          ['pubkey', keypair.pubkey],
-          ...relays.map(relay => ['relay', relay]),
-        ],
-      },
-      relays,
-      updateSendStatus,
-    );
     setProfile({
       pubkey: keypair.pubkey,
-      name: name.trim(),
-      displayName: name.trim(),
-      picture,
+      name: trimmedName,
+      displayName: trimmedName,
+      picture: signupAvatar?.previewUri ?? null,
       updatedAt: now(),
     });
-    setWalletReadRelays(relays);
+    setWalletReadRelays(publishRelays);
     setStatus(null);
-    setStep('packs');
+
+    void (async () => {
+      try {
+        let picture: string | null = null;
+        if (signupAvatar) {
+          const uploaded = await uploadFile(signupAvatar, {
+            server: DEFAULT_UPLOAD_SERVER,
+            serverType: 'blossom',
+          });
+          picture = uploaded.url;
+          setProfile({
+            pubkey: keypair.pubkey,
+            name: trimmedName,
+            displayName: trimmedName,
+            picture,
+            updatedAt: now(),
+          });
+        }
+
+        const metadata = {
+          name: trimmedName,
+          display_name: trimmedName,
+          about: trimmedBio,
+          picture: picture || undefined,
+        };
+        const event: EventTemplate = {
+          kind: 0,
+          content: JSON.stringify(metadata),
+          created_at: now(),
+          tags: [],
+        };
+        publishWithStatus(`signup_profile_${Date.now()}`, event, publishRelays, updateSendStatus);
+        publishWithStatus(
+          `signup_wallet_${Date.now()}`,
+          {
+            kind: 17375,
+            content: JSON.stringify([
+              ['privkey', keypair.privkey],
+              ...DEFAULT_MINTS.map(mint => ['mint', mint]),
+            ]),
+            created_at: now(),
+            tags: [],
+          },
+          publishRelays,
+          updateSendStatus,
+        );
+        publishWithStatus(
+          `signup_trusted_mints_${Date.now()}`,
+          {
+            kind: 10019,
+            content: '',
+            created_at: now(),
+            tags: [
+              ...DEFAULT_MINTS.map(mint => ['mint', mint]),
+              ['pubkey', keypair.pubkey],
+              ...publishRelays.map(relay => ['relay', relay]),
+            ],
+          },
+          publishRelays,
+          updateSendStatus,
+        );
+      } catch (error) {
+        console.warn('[signup] profile publish failed', error);
+      }
+    })();
+    return true;
   }, [
     avatar,
     bio,
@@ -344,90 +380,218 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
     onDone();
   }, [applySelection, onDone, relays, selectedPacks, setFollows, updateSendStatus]);
 
-  if (step === 'packs') {
-    return (
-      <View className="h-full bg-slate-50">
-        <View className="px-4 pt-4">
-          <SignupHeader title="Choose what to see" onBack={() => setStep('profile')} />
-          <Text className="mt-2 text-sm leading-5 text-slate-600">
-            Select follow packs. We will create your follow list from the people inside them.
-          </Text>
-          <SearchBox value={search} onChangeText={setSearch} />
-          <Text className="mb-2 text-xs font-semibold text-slate-500">
-            {selectedPacks.length} selected
-          </Text>
-        </View>
-        <FlatList
-          className="flex-1"
-          contentContainerClassName="px-3 pb-24"
-          data={packItems}
-          keyboardShouldPersistTaps="handled"
-          keyExtractor={(item, index) => item.id() || `pack_${index}`}
-          renderItem={({item}) => (
-            <SignupPackItem
-              item={item}
-              selected={selectedPackIds.has(packSelectionFromEvent(item)?.id || '')}
-              onToggle={togglePack}
-            />
-          )}
-          ItemSeparatorComponent={() => <View className="h-3" />}
-          ListEmptyComponent={
-            <Text className="px-4 py-10 text-center text-sm text-slate-500">
-              Waiting for follow packs.
-            </Text>
-          }
-        />
-        <View className="border-t border-slate-200 bg-white px-4 py-4">
-          <Pressable className="items-center rounded-lg bg-emerald-700 py-3" onPress={finish}>
-            <Text className="text-base font-bold text-white">Finish</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
+  return (
+    <SignupStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+        contentStyle: {backgroundColor: '#f8fafc'},
+      }}
+    >
+      <SignupStack.Screen name="SignupProfile">
+        {({navigation}) => (
+          <SignupProfileStep
+            avatar={avatar}
+            bio={bio}
+            canContinue={Boolean(name.trim() && manager)}
+            footerPaddingBottom={footerPaddingBottom}
+            name={name}
+            status={status}
+            onBack={onBackToLogin}
+            onBioChange={setBio}
+            onContinue={() => {
+              navigation.navigate('SignupPacks');
+              InteractionManager.runAfterInteractions(() => {
+                continueFromProfile();
+              });
+            }}
+            onFocus={() => setStep('profile')}
+            onNameChange={setName}
+            onPickAvatar={pickAvatar}
+          />
+        )}
+      </SignupStack.Screen>
+      <SignupStack.Screen name="SignupPacks">
+        {({navigation}) => (
+          <SignupPacksStep
+            footerPaddingBottom={footerPaddingBottom}
+            items={packItems}
+            selectedPackIds={selectedPackIds}
+            selectedPacksCount={selectedPacks.length}
+            search={search}
+            onBack={navigation.goBack}
+            onFinish={finish}
+            onFocus={() => setStep('packs')}
+            onSearchChange={setSearch}
+            onTogglePack={togglePack}
+          />
+        )}
+      </SignupStack.Screen>
+    </SignupStack.Navigator>
+  );
+}
+
+function SignupProfileStep({
+  avatar,
+  bio,
+  canContinue,
+  footerPaddingBottom,
+  name,
+  status,
+  onBack,
+  onBioChange,
+  onContinue,
+  onFocus,
+  onNameChange,
+  onPickAvatar,
+}: {
+  avatar: SelectedAvatar | null;
+  bio: string;
+  canContinue: boolean;
+  footerPaddingBottom: number;
+  name: string;
+  status: string | null;
+  onBack: () => void;
+  onBioChange: (value: string) => void;
+  onContinue: () => void;
+  onFocus: () => void;
+  onNameChange: (value: string) => void;
+  onPickAvatar: () => void;
+}) {
+  const focused = useIsFocused();
+
+  useEffect(() => {
+    if (focused) onFocus();
+  }, [focused, onFocus]);
 
   return (
-    <View className="h-full bg-slate-50 px-4 pt-4">
-      <SignupHeader title="Create account" onBack={onBackToLogin} />
-      <View className="mt-6 items-center">
-        <Pressable
-          className="h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm"
-          onPress={pickAvatar}
-        >
-          {avatar ? (
-            <Image source={{uri: avatar.previewUri}} className="h-full w-full" resizeMode="cover" />
-          ) : (
-            <Camera size={30} color="#52616f" strokeWidth={2.1} />
-          )}
-        </Pressable>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      className="h-full bg-slate-50"
+    >
+      <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
+        <View className="h-full px-4 pt-4">
+          <SignupHeader title="Create account" onBack={onBack} />
+          <View className="mt-6 items-center">
+            <Pressable
+              className="h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm"
+              onPress={onPickAvatar}
+            >
+              {avatar ? (
+                <Image source={{uri: avatar.previewUri}} className="h-full w-full" resizeMode="cover" />
+              ) : (
+                <Camera size={30} color="#52616f" strokeWidth={2.1} />
+              )}
+            </Pressable>
+          </View>
+          <View className="w-full" style={styles.profileForm}>
+            <Text className="mb-2 mt-8 text-sm font-semibold text-slate-700">Name</Text>
+            <TextInput
+              className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
+              placeholder="Your name"
+              placeholderTextColor="#8794a0"
+              returnKeyType="done"
+              value={name}
+              onChangeText={onNameChange}
+              onSubmitEditing={Keyboard.dismiss}
+            />
+            <Text className="mb-2 mt-4 text-sm font-semibold text-slate-700">Bio</Text>
+            <TextInput
+              className="min-h-28 rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
+              multiline
+              placeholder="A short bio"
+              placeholderTextColor="#8794a0"
+              blurOnSubmit
+              textAlignVertical="top"
+              returnKeyType="done"
+              value={bio}
+              onChangeText={onBioChange}
+              onSubmitEditing={Keyboard.dismiss}
+            />
+            {status ? <Text className="mt-3 text-sm text-slate-500">{status}</Text> : null}
+          </View>
+          <View
+            className="mt-auto w-full"
+            style={[styles.profileForm, {paddingBottom: footerPaddingBottom}]}
+          >
+            <AppButton
+              disabled={!canContinue}
+              title="Continue"
+              onPress={onContinue}
+            />
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
+  );
+}
+
+function SignupPacksStep({
+  footerPaddingBottom,
+  items,
+  search,
+  selectedPackIds,
+  selectedPacksCount,
+  onBack,
+  onFinish,
+  onFocus,
+  onSearchChange,
+  onTogglePack,
+}: {
+  footerPaddingBottom: number;
+  items: ParsedEvent[];
+  search: string;
+  selectedPackIds: Set<string>;
+  selectedPacksCount: number;
+  onBack: () => void;
+  onFinish: () => void;
+  onFocus: () => void;
+  onSearchChange: (value: string) => void;
+  onTogglePack: (selection: FeedPackSelection) => void;
+}) {
+  const focused = useIsFocused();
+
+  useEffect(() => {
+    if (focused) onFocus();
+  }, [focused, onFocus]);
+
+  return (
+    <View className="h-full bg-slate-50">
+      <View className="px-4 pt-4">
+        <SignupHeader title="Choose what to see" onBack={onBack} />
+        <Text className="mt-2 text-sm leading-5 text-slate-600">
+          Select follow packs. We will create your follow list from the people inside them.
+        </Text>
+        <SearchBox value={search} onChangeText={onSearchChange} />
+        <Text className="mb-2 text-xs font-semibold text-slate-500">
+          {selectedPacksCount} selected
+        </Text>
       </View>
-      <Text className="mb-2 mt-8 text-sm font-semibold text-slate-700">Name</Text>
-      <TextInput
-        className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
-        placeholder="Your name"
-        placeholderTextColor="#8794a0"
-        value={name}
-        onChangeText={setName}
+      <FlatList
+        className="flex-1"
+        contentContainerClassName="px-3 pb-24"
+        data={items}
+        keyboardShouldPersistTaps="handled"
+        keyExtractor={(item, index) => item.id() || `pack_${index}`}
+        renderItem={({item}) => (
+          <SignupPackItem
+            item={item}
+            selected={selectedPackIds.has(packSelectionFromEvent(item)?.id || '')}
+            onToggle={onTogglePack}
+          />
+        )}
+        ItemSeparatorComponent={() => <View className="h-3" />}
+        ListEmptyComponent={
+          <Text className="px-4 py-10 text-center text-sm text-slate-500">
+            Waiting for follow packs.
+          </Text>
+        }
       />
-      <Text className="mb-2 mt-4 text-sm font-semibold text-slate-700">Bio</Text>
-      <TextInput
-        className="min-h-28 rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
-        multiline
-        placeholder="A short bio"
-        placeholderTextColor="#8794a0"
-        textAlignVertical="top"
-        value={bio}
-        onChangeText={setBio}
-      />
-      {status ? <Text className="mt-3 text-sm text-slate-500">{status}</Text> : null}
-      <View className="mt-auto pb-8">
-        <Pressable
-          className={`items-center rounded-lg py-3 ${name.trim() && manager ? 'bg-emerald-700' : 'bg-slate-300'}`}
-          disabled={!name.trim() || !manager}
-          onPress={publishProfile}
-        >
-          <Text className="text-base font-bold text-white">Continue</Text>
-        </Pressable>
+      <View
+        className="border-t border-slate-200 bg-white px-4 pt-4"
+        style={{paddingBottom: footerPaddingBottom}}
+      >
+        <AppButton title="Finish" onPress={onFinish} />
       </View>
     </View>
   );
@@ -472,6 +636,13 @@ function SearchBox({
     </View>
   );
 }
+
+const styles = {
+  profileForm: {
+    alignSelf: 'center' as const,
+    maxWidth: 448,
+  },
+};
 
 const SignupPackItem = memo(function SignupPackItem({
   item,

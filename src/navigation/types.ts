@@ -4,7 +4,7 @@ export type RootStackParamList = {
   Login: undefined;
   Logout: undefined;
   FeedBuilder: undefined;
-  Post: undefined;
+  Post: { reply?: string } | undefined;
   Send: undefined;
   SendEcash: { pubkey: string };
   Scan: undefined;

@@ -22,6 +22,7 @@ type ContentBlocksProps = {
   context?: ParsedEvent[];
   depth?: number;
   showQuote?: boolean;
+  showMedia?: boolean;
   renderQuote?: (quote: {
     id: string;
     author?: string;
@@ -70,6 +71,12 @@ function InlineLink({ text, url }: { text: string; url: string }) {
   );
 }
 
+function truncateMiddle(value: string, maxLength = 54) {
+  if (value.length <= maxLength) return value;
+  const edgeLength = Math.floor((maxLength - 1) / 2);
+  return `${value.slice(0, edgeLength)}...${value.slice(-edgeLength)}`;
+}
+
 function isUserEntity(entity?: string | null) {
   return !!entity?.match(/n(profile|pub)/);
 }
@@ -99,6 +106,7 @@ function ContentBlocksComponent({
   note,
   depth = 0,
   showQuote = true,
+  showMedia = true,
   renderQuote,
 }: ContentBlocksProps) {
   const displayContent = shortContent?.length ? shortContent : content;
@@ -111,16 +119,19 @@ function ContentBlocksComponent({
     block: ContentBlock,
     index: number,
     blockKey: string,
+    trimTrailingWhitespace = false,
   ) => {
     if (block.type() === 'text') {
       const text = normalizeText(block.text() || '');
+      const displayText = trimTrailingWhitespace ? text.trimEnd() : text;
+      if (!displayText) return null;
       return (
         <Text key={blockKey}>
           {index === 0
-            ? text.trimStart()
+            ? displayText.trimStart()
             : index === displayContent.length - 1
-            ? text.trimEnd()
-            : text}
+            ? displayText.trimEnd()
+            : displayText}
         </Text>
       );
     }
@@ -172,27 +183,44 @@ function ContentBlocksComponent({
     }`;
 
     if (isInlineContentBlock(block)) {
-      const inlineChildren: React.ReactNode[] = [];
+      const inlineBlocks: ContentBlock[] = [];
+      const inlineStartIndex = index;
       while (
         index < displayContent.length &&
         isInlineContentBlock(displayContent[index])
       ) {
-        const inlineBlock = displayContent[index];
-        const inlineKey = `${inlineBlock.type() || 'block'}-${index}-${
-          inlineBlock.text() || ''
-        }`;
-        inlineChildren.push(renderInlineBlock(inlineBlock, index, inlineKey));
+        inlineBlocks.push(displayContent[index]);
         index += 1;
       }
 
-      renderedBlocks.push(
-        <Text
-          key={`inline-${blockKey}`}
-          className="text-[15px] leading-5 text-slate-900"
-        >
-          {inlineChildren}
-        </Text>,
-      );
+      const nextBlock = displayContent[index];
+      const trimEnd = !nextBlock || !isInlineContentBlock(nextBlock);
+      const inlineChildren: React.ReactNode[] = [];
+      inlineBlocks.forEach((inlineBlock, inlineBlockIndex) => {
+        const displayIndex = inlineStartIndex + inlineBlockIndex;
+        const inlineKey = `${inlineBlock.type() || 'block'}-${displayIndex}-${
+          inlineBlock.text() || ''
+        }`;
+        inlineChildren.push(
+          renderInlineBlock(
+            inlineBlock,
+            displayIndex,
+            inlineKey,
+            trimEnd && inlineBlockIndex === inlineBlocks.length - 1,
+          ),
+        );
+      });
+
+      if (inlineChildren.some(Boolean)) {
+        renderedBlocks.push(
+          <Text
+            key={`inline-${blockKey}`}
+            className="text-[15px] leading-5 text-slate-900"
+          >
+            {inlineChildren}
+          </Text>,
+        );
+      }
       continue;
     }
 
@@ -228,6 +256,14 @@ function ContentBlocksComponent({
 
     if (block.dataType() === ContentData.ImageData) {
       const image = asImageData(block);
+      const url = image?.url?.() || block.text() || '';
+      if (!showMedia) {
+        renderedBlocks.push(
+          <InlineLink key={blockKey} text={truncateMiddle(url)} url={url} />,
+        );
+        index += 1;
+        continue;
+      }
       renderedBlocks.push(
         <Pressable
           key={blockKey}
@@ -253,6 +289,14 @@ function ContentBlocksComponent({
 
     if (block.dataType() === ContentData.VideoData) {
       const video = asVideoData(block);
+      const url = video?.url?.() || block.text() || '';
+      if (!showMedia) {
+        renderedBlocks.push(
+          <InlineLink key={blockKey} text={truncateMiddle(url)} url={url} />,
+        );
+        index += 1;
+        continue;
+      }
       renderedBlocks.push(
         <Pressable
           key={blockKey}
@@ -279,6 +323,26 @@ function ContentBlocksComponent({
 
     if (block.dataType() === ContentData.MediaGroupData) {
       const mediaGroup = asMediaGroupData(block);
+      if (!showMedia) {
+        const mediaLinks = mediaGroup
+          ? fbArray(mediaGroup, 'items')
+              .map(item => item.image()?.url() || item.video()?.url() || '')
+              .filter(Boolean)
+          : [];
+        renderedBlocks.push(
+          <View key={blockKey} className="gap-1">
+            {mediaLinks.map((url, mediaIndex) => (
+              <InlineLink
+                key={`${blockKey}-${mediaIndex}`}
+                text={truncateMiddle(url)}
+                url={url}
+              />
+            ))}
+          </View>,
+        );
+        index += 1;
+        continue;
+      }
       renderedBlocks.push(
         <Pressable
           key={blockKey}
@@ -334,5 +398,6 @@ export const ContentBlocks = memo(
     previous.note?.id() === next.note?.id() &&
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.showQuote ?? true) === (next.showQuote ?? true) &&
+    (previous.showMedia ?? true) === (next.showMedia ?? true) &&
     previous.renderQuote === next.renderQuote,
 );

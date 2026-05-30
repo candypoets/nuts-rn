@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, InteractionManager, Pressable, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   CounterPipeConfigT,
   MuteFilterPipeConfigT,
@@ -30,7 +32,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
 import { kinds, type EventTemplate } from 'nostr-tools';
+import { neventEncode } from 'nostr-tools/nip19';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import type { RootStackParamList } from '../../navigation/types';
 import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
 import { IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
 
@@ -314,6 +318,8 @@ export function Footer({
   main = false,
   mode = 'inline',
 }: FooterProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
@@ -334,6 +340,16 @@ export function Footer({
     [readRelays],
   );
   const relayKey = relays.join(',');
+  const openReply = useCallback(() => {
+    navigation.navigate('Post', {
+      reply: neventEncode({
+        id: noteId,
+        author: notePubkey || undefined,
+        kind: note.kind(),
+        relays,
+      }),
+    });
+  }, [navigation, note, noteId, notePubkey, relays]);
   const mainRequest = useMemo<RequestObject[]>(
     () => [
       {
@@ -648,6 +664,7 @@ export function Footer({
           activeColor={accent}
           activeState={active.replied}
           mode={mode}
+          onPress={openReply}
         />
         <Action
           kind="repost"

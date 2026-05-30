@@ -1,5 +1,6 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,15 +15,12 @@ import {
   AlignLeft,
   Bold,
   ChevronDown,
-  Code2,
   Image as ImageIcon,
   Italic,
   List,
-  ListOrdered,
+  ListChecks,
   Plus,
   Send,
-  Square,
-  Strikethrough,
   X,
 } from 'lucide-react-native';
 import {
@@ -30,10 +28,23 @@ import {
   type EnrichedTextInputInstance,
 } from 'react-native-enriched';
 import * as ImagePicker from 'expo-image-picker';
-import { usePublish as publishToNostr } from '@candypoets/nipworker/hooks';
-import { isConnectionStatus } from '@candypoets/nipworker/utils';
-import type { ConnectionStatus, WorkerMessage } from '@candypoets/nipworker';
+import {
+  usePublish as publishToNostr,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
+import {
+  asParsedEvent,
+  fbArray,
+  isConnectionStatus,
+} from '@candypoets/nipworker/utils';
+import type {
+  ConnectionStatus,
+  ParsedEvent,
+  RequestObject,
+  WorkerMessage,
+} from '@candypoets/nipworker';
 import type { EventTemplate } from 'nostr-tools';
+import { decode } from 'nostr-tools/nip19';
 
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { prepareEvent } from '../nostr/prepareEvent';
@@ -48,8 +59,10 @@ import {
   useNostrStore,
   useSendStatusStore,
 } from '../stores';
+import { Note } from '../components/notes/Note';
 
 type Props = {
+  reply?: string;
   onClose: () => void;
 };
 
@@ -71,10 +84,33 @@ type SelectedImage = LocalUploadAsset & {
 
 const now = () => Math.floor(Date.now() / 1000);
 
-export function PostModal({ onClose }: Props) {
+function decodeReplyTarget(reply?: string) {
+  if (!reply) return null;
+
+  try {
+    const decoded = decode(reply);
+    if (decoded.type === 'nevent') {
+      return {
+        id: decoded.data.id,
+        author: decoded.data.author,
+        kind: decoded.data.kind,
+        relays: decoded.data.relays ?? [],
+      };
+    }
+  } catch {
+    // Plain hex ids are accepted for internal callers and tests.
+  }
+
+  return { id: reply, relays: [] as string[] };
+}
+
+export function PostModal({ reply, onClose }: Props) {
   const editorRef = useRef<EnrichedTextInputInstance>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const editorYRef = useRef(0);
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
+  const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
   const uploadPreference = useNostrStore(selectPreferredUploadServer);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
@@ -88,9 +124,23 @@ export function PostModal({ onClose }: Props) {
   const [pollType, setPollType] = useState<PollType>('singlechoice');
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [pollEndsAt, setPollEndsAt] = useState<number | null>(null);
+  const [replyNote, setReplyNote] = useState<ParsedEvent | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const replyTarget = useMemo(() => decodeReplyTarget(reply), [reply]);
   const relays = useMemo(
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
+  );
+  const lookupRelays = useMemo(
+    () => [
+      ...new Set([
+        ...(replyTarget?.relays ?? []),
+        ...readRelays,
+        ...writeRelays,
+        ...DEFAULT_FEED_RELAYS,
+      ]),
+    ],
+    [readRelays, replyTarget, writeRelays],
   );
   const mediaServerType = uploadPreference?.type || 'blossom';
   const mediaServer = uploadPreference?.servers[0] || DEFAULT_UPLOAD_SERVER;
@@ -106,6 +156,68 @@ export function PostModal({ onClose }: Props) {
         selectedImages.length ||
         (pollEnabled && validPollOptions.length >= 2),
     );
+
+  const scrollToComposer = useCallback(() => {
+    if (!replyTarget?.id) return;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, editorYRef.current - 12),
+        animated: true,
+      });
+      editorRef.current?.focus();
+    });
+  }, [replyTarget]);
+
+  useEffect(() => {
+    const keyboardShow = Keyboard.addListener('keyboardDidShow', event => {
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, editorYRef.current - 12),
+          animated: true,
+        });
+      });
+    });
+    const keyboardHide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      keyboardShow.remove();
+      keyboardHide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    setReplyNote(null);
+    if (!replyTarget?.id) return undefined;
+
+    const request: RequestObject[] = [
+      {
+        ids: [replyTarget.id],
+        limit: 1,
+        relays: lookupRelays,
+        cacheFirst: true,
+      },
+    ];
+
+    return subscribeToNostr(
+      `post_${replyTarget.id}_${lookupRelays.join('|')}`,
+      request,
+      (message: WorkerMessage) => {
+        const event = asParsedEvent(message);
+        if (event?.id() === replyTarget.id) {
+          setReplyNote(event);
+        }
+      },
+    );
+  }, [lookupRelays, replyTarget]);
+
+  useEffect(() => {
+    if (!replyTarget?.id) return;
+    const timeout = setTimeout(scrollToComposer, 120);
+    return () => clearTimeout(timeout);
+  }, [replyNote, replyTarget, scrollToComposer]);
 
   const updatePollOption = useCallback((index: number, value: string) => {
     setPollOptions(current =>
@@ -190,19 +302,27 @@ export function PostModal({ onClose }: Props) {
       }
 
       setSubmitStatus('Publishing post...');
-      const baseTags: string[][] = [];
+      let baseTags: string[][] = [];
+      if (replyTarget?.id && replyNote) {
+        baseTags = fbArray(replyNote, 'tags').map(tag =>
+          fbArray(tag, 'items').map(item => String(item)),
+        );
+      }
       const content = [
         text.trim(),
         ...uploadedImages.map(image => image.uploadUrl).filter(Boolean),
       ]
         .filter(Boolean)
         .join('\n\n');
-      let event: EventTemplate = {
+      let event: EventTemplate & { id?: string } = {
         kind: pollEnabled ? 1068 : 1,
         content,
         created_at: now(),
         tags: baseTags,
       };
+      if (replyTarget?.id && replyNote) {
+        event.id = replyTarget.id;
+      }
 
       event = prepareEvent(event);
 
@@ -219,7 +339,7 @@ export function PostModal({ onClose }: Props) {
         ];
       }
 
-      const sendId = `${pollEnabled ? 'poll' : 'post'}_${Date.now()}`;
+      const sendId = `${pollEnabled ? 'poll' : reply ? 'reply' : 'post'}_${Date.now()}`;
       const sendStatus: Record<string, ConnectionStatus> = {};
 
       publishToNostr(
@@ -232,7 +352,13 @@ export function PostModal({ onClose }: Props) {
           sendStatus[relayUrl] = status;
           updateSendStatus(sendId, sendStatus);
         },
-        { defaultRelays: relays, trackStatus: true },
+        {
+          defaultRelays: relays,
+          trackStatus: true,
+          subId: replyTarget?.id
+            ? [`f_${replyTarget.id}`, `replies_${replyTarget.id}`]
+            : undefined,
+        },
       );
 
       editorRef.current?.setValue('');
@@ -253,6 +379,9 @@ export function PostModal({ onClose }: Props) {
     pollEnabled,
     pollEndsAt,
     pollType,
+    reply,
+    replyNote,
+    replyTarget,
     relays,
     text,
     updateSendStatus,
@@ -264,29 +393,41 @@ export function PostModal({ onClose }: Props) {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       style={styles.root}
     >
       <View style={styles.header}>
         <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
           <ChevronDown size={23} color="#17212b" strokeWidth={2.3} />
         </Pressable>
-        <Text style={styles.headerTitle}>New post</Text>
+        <Text style={styles.headerTitle}>
+          {reply ? 'Reply' : 'New post'}
+        </Text>
         <Pressable
           style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
           disabled={!canSubmit}
           onPress={submit}
         >
           <Text style={styles.submitText}>
-            {isSubmitting ? 'Signing' : pollEnabled ? 'Poll' : 'Post'}
+            {isSubmitting
+              ? 'Signing'
+              : pollEnabled
+                ? 'Poll'
+                : reply
+                  ? 'Reply'
+                  : 'Post'}
           </Text>
           <Send size={16} color="#ffffff" strokeWidth={2.4} />
         </Pressable>
       </View>
 
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
+        onContentSizeChange={scrollToComposer}
+        onTouchStart={Keyboard.dismiss}
       >
         {!pubkey || !hasSigner ? (
           <View style={styles.notice}>
@@ -296,30 +437,26 @@ export function PostModal({ onClose }: Props) {
           </View>
         ) : null}
 
-        <View style={styles.editorShell}>
-          <EnrichedTextInput
-            ref={editorRef}
-            autoFocus
-            autoCapitalize="sentences"
-            mentionIndicators={['@']}
-            placeholder="What's up?"
-            placeholderTextColor="#8794a0"
-            selectionColor="#158777"
-            cursorColor="#158777"
-            linkRegex={/(https?:\/\/|nostr:)[^\s]+/}
-            onChangeText={(event: NativeSyntheticEvent<{ value: string }>) =>
-              setText(event.nativeEvent.value)
-            }
-            onChangeState={(event: NativeSyntheticEvent<StyleState>) =>
-              setStyleState(event.nativeEvent)
-            }
-            onPasteImages={event => {
-              console.log('[post] pasted images', event.nativeEvent);
-            }}
-            htmlStyle={editorHtmlStyle}
-            style={styles.editor}
-          />
-        </View>
+        {replyTarget?.id ? (
+          replyNote ? (
+            <Note
+              note={replyNote}
+              context={[replyNote]}
+              visible
+              footer={false}
+              main
+              disableOpen
+              showQuote={false}
+              showMedia={false}
+              showRoot={false}
+              depth={0}
+            />
+          ) : (
+            <View style={styles.replyLoading}>
+              <Text style={styles.replyLoadingText}>Loading note...</Text>
+            </View>
+          )
+        ) : null}
 
         <ComposerToolbar
           editorRef={editorRef}
@@ -345,6 +482,42 @@ export function PostModal({ onClose }: Props) {
           pollEnabled={pollEnabled}
           onTogglePoll={togglePoll}
         />
+
+        <View
+          style={[styles.editorShell, reply && styles.replyEditorShell]}
+          onLayout={event => {
+            editorYRef.current = event.nativeEvent.layout.y;
+          }}
+        >
+          <EnrichedTextInput
+            ref={editorRef}
+            autoFocus
+            autoCapitalize="sentences"
+            mentionIndicators={['@']}
+            placeholder={
+              reply
+                ? replyNote
+                  ? `Reply to ${(replyNote.pubkey() || '').slice(0, 8)}...`
+                  : 'Write your reply...'
+                : "What's up?"
+            }
+            placeholderTextColor="#8794a0"
+            selectionColor="#158777"
+            cursorColor="#158777"
+            linkRegex={/(https?:\/\/|nostr:)[^\s]+/}
+            onChangeText={(event: NativeSyntheticEvent<{ value: string }>) =>
+              setText(event.nativeEvent.value)
+            }
+            onChangeState={(event: NativeSyntheticEvent<StyleState>) =>
+              setStyleState(event.nativeEvent)
+            }
+            onPasteImages={event => {
+              console.log('[post] pasted images', event.nativeEvent);
+            }}
+            htmlStyle={editorHtmlStyle}
+            style={reply ? styles.replyEditor : styles.editor}
+          />
+        </View>
 
         {selectedImages.length ? (
           <UploadStatus
@@ -372,6 +545,10 @@ export function PostModal({ onClose }: Props) {
           <Text style={styles.debugHtml} numberOfLines={2}>
             {htmlPreview}
           </Text>
+        ) : null}
+
+        {keyboardHeight ? (
+          <View style={{ height: Math.round(keyboardHeight * 0.4) }} />
         ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -458,6 +635,18 @@ function ComposerToolbar({
   return (
     <View style={styles.toolbar}>
       <ToolbarButton
+        icon={<ImageIcon size={19} color="#52616f" />}
+        onPress={pickImage}
+      />
+      <ToolbarButton
+        active={pollEnabled}
+        icon={
+          <ListChecks size={18} color={pollEnabled ? '#ffffff' : '#52616f'} />
+        }
+        onPress={onTogglePoll}
+      />
+      <ToolbarDivider />
+      <ToolbarButton
         active={styleState.bold?.isActive}
         disabled={styleState.bold?.isBlocking}
         icon={
@@ -479,28 +668,6 @@ function ComposerToolbar({
         }
         onPress={() => editorRef.current?.toggleItalic()}
       />
-      <ToolbarButton
-        active={styleState.strikeThrough?.isActive}
-        disabled={styleState.strikeThrough?.isBlocking}
-        icon={
-          <Strikethrough
-            size={18}
-            color={styleState.strikeThrough?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleStrikeThrough()}
-      />
-      <ToolbarButton
-        active={styleState.inlineCode?.isActive}
-        disabled={styleState.inlineCode?.isBlocking}
-        icon={
-          <Code2
-            size={18}
-            color={styleState.inlineCode?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleInlineCode()}
-      />
       <ToolbarDivider />
       <ToolbarButton
         active={styleState.unorderedList?.isActive}
@@ -514,17 +681,6 @@ function ComposerToolbar({
         onPress={() => editorRef.current?.toggleUnorderedList()}
       />
       <ToolbarButton
-        active={styleState.orderedList?.isActive}
-        disabled={styleState.orderedList?.isBlocking}
-        icon={
-          <ListOrdered
-            size={19}
-            color={styleState.orderedList?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleOrderedList()}
-      />
-      <ToolbarButton
         active={styleState.blockQuote?.isActive}
         disabled={styleState.blockQuote?.isBlocking}
         icon={
@@ -534,16 +690,6 @@ function ComposerToolbar({
           />
         }
         onPress={() => editorRef.current?.toggleBlockQuote()}
-      />
-      <ToolbarDivider />
-      <ToolbarButton
-        icon={<ImageIcon size={18} color="#52616f" />}
-        onPress={pickImage}
-      />
-      <ToolbarButton
-        active={pollEnabled}
-        icon={<Square size={17} color={pollEnabled ? '#ffffff' : '#52616f'} />}
-        onPress={onTogglePoll}
       />
     </View>
   );
@@ -776,6 +922,20 @@ const styles = StyleSheet.create({
     color: '#92400e',
     fontSize: 14,
   },
+  replyLoading: {
+    minHeight: 96,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  replyLoadingText: {
+    color: '#64748b',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   editorShell: {
     minHeight: 190,
     borderRadius: 8,
@@ -784,11 +944,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     overflow: 'hidden',
   },
+  replyEditorShell: {
+    minHeight: 104,
+  },
   editor: {
     minHeight: 190,
     padding: 14,
     fontSize: 17,
     lineHeight: 24,
+    color: '#17212b',
+  },
+  replyEditor: {
+    minHeight: 104,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    lineHeight: 22,
     color: '#17212b',
   },
   toolbar: {

@@ -383,8 +383,9 @@ function NotificationsScreen({
 
 function PostScreen({
   navigation,
+  route,
 }: NativeStackScreenProps<RootStackParamList, 'Post'>) {
-  return <PostModal onClose={navigation.goBack} />;
+  return <PostModal reply={route.params?.reply} onClose={navigation.goBack} />;
 }
 
 function SendScreen({

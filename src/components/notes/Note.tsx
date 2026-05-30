@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Keyboard, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
@@ -70,8 +70,10 @@ type NoteProps = {
   footer?: boolean;
   main?: boolean;
   showQuote?: boolean;
+  showMedia?: boolean;
   showRoot?: boolean;
   threadCard?: boolean;
+  disableOpen?: boolean;
   depth?: number;
   leading?: boolean;
   tailing?: boolean;
@@ -102,6 +104,7 @@ type NoteBodyProps = {
   renderQuote: RenderQuote;
   shortContent: ContentBlock[];
   showQuote: boolean;
+  showMedia: boolean;
   threadConnectors: React.ReactNode;
   visible: boolean;
   onOpen: () => void;
@@ -162,6 +165,7 @@ const NoteBody = memo(
     shortContent,
     parsedContent,
     showQuote,
+    showMedia,
     threadConnectors,
     visible,
     onOpen,
@@ -178,7 +182,7 @@ const NoteBody = memo(
                 ? 'mt-1 flex-row gap-0'
                 : isQuote
                   ? '-mt-1 flex-row gap-0'
-                  : '-mt-1 flex-row gap-2'
+                  : '-mt-4 flex-row gap-2'
             }
             onPress={event => {
               event.stopPropagation();
@@ -193,6 +197,7 @@ const NoteBody = memo(
                 note={effectiveNote}
                 depth={depth}
                 showQuote={showQuote}
+                showMedia={showMedia}
                 renderQuote={renderQuote}
               />
             </View>
@@ -217,6 +222,7 @@ const NoteBody = memo(
     previous.renderQuote === next.renderQuote &&
     previous.shortContent === next.shortContent &&
     previous.showQuote === next.showQuote &&
+    previous.showMedia === next.showMedia &&
     previous.threadConnectors === next.threadConnectors &&
     previous.visible === next.visible &&
     previous.onOpen === next.onOpen,
@@ -231,8 +237,10 @@ function NoteComponent({
   footer = true,
   main = false,
   showQuote = true,
+  showMedia = true,
   showRoot = true,
   threadCard = false,
+  disableOpen = false,
   depth = 0,
   leading = false,
   tailing = false,
@@ -271,6 +279,10 @@ function NoteComponent({
     return [...new Set([...relays, ...noteRelays, ...DEFAULT_FEED_RELAYS])];
   }, [effectiveNote, relays]);
   const openNote = useCallback(() => {
+    if (disableOpen) {
+      Keyboard.dismiss();
+      return;
+    }
     if (!effectiveId) return;
     pushDistinct(navigation, 'Kind1Thread', {
       nevent: neventEncode({
@@ -280,7 +292,7 @@ function NoteComponent({
         kind: effectiveNote?.kind() || 1,
       }),
     });
-  }, [effectiveId, effectiveNote, effectiveRelays, navigation]);
+  }, [disableOpen, effectiveId, effectiveNote, effectiveRelays, navigation]);
 
   useEffect(() => {
     const nextContext = [...contextRef.current];
@@ -430,12 +442,14 @@ function NoteComponent({
         hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
       ].join(' ')
     : [
-        isQuote
+        main
+          ? 'relative px-0 py-1'
+          : isQuote
           ? 'relative rounded-lg border-l border-t border-slate-200 bg-white/95 px-2 py-2'
           : 'relative rounded-lg border border-slate-200 bg-white/95 px-3 py-3',
         hasTopThreadConnector || hasBottomThreadConnector
           ? 'shadow-none'
-          : isQuote
+          : main || isQuote
           ? 'shadow-none'
           : 'shadow-sm',
         hasTopThreadConnector ? '-mt-px border-t-0' : 'mt-1',
@@ -610,8 +624,9 @@ function NoteComponent({
       context={contextRef.current}
       visible={visible}
       relays={effectiveRelays}
-      showQuote={showQuote}
-      leading
+        showQuote={showQuote}
+        showMedia={showMedia}
+        leading
       depth={depth}
       ancestorIds={effectiveId ? [...ancestorIds, effectiveId] : ancestorIds}
     />
@@ -630,6 +645,7 @@ function NoteComponent({
       renderQuote={renderQuote}
       shortContent={shortContent}
       showQuote={showQuote}
+      showMedia={showMedia}
       threadConnectors={threadConnectors}
       visible={visible}
       onOpen={openNote}
@@ -659,8 +675,10 @@ export const Note = memo(
     (previous.footer ?? true) === (next.footer ?? true) &&
     (previous.main ?? false) === (next.main ?? false) &&
     (previous.showQuote ?? true) === (next.showQuote ?? true) &&
+    (previous.showMedia ?? true) === (next.showMedia ?? true) &&
     (previous.showRoot ?? true) === (next.showRoot ?? true) &&
     (previous.threadCard ?? false) === (next.threadCard ?? false) &&
+    (previous.disableOpen ?? false) === (next.disableOpen ?? false) &&
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.leading ?? false) === (next.leading ?? false) &&
     (previous.tailing ?? false) === (next.tailing ?? false) &&

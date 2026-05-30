@@ -25,6 +25,7 @@ const StatusDot = memo(function StatusDot({
 }: {
   status: ConnectionStatus;
 }) {
+  const color = statusColor(status);
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -41,11 +42,11 @@ const StatusDot = memo(function StatusDot({
       ? (1 - progress.value) * 1000
       : -(progress.value - 1) * 1000;
     return {
-      backgroundColor: statusColor(status),
+      backgroundColor: color,
       opacity: progress.value <= 1 ? 0.5 + progress.value * 0.5 : 2 - progress.value,
       transform: [{translateY: offset}],
     };
-  });
+  }, [color]);
 
   return <Animated.View className="h-2.5 w-2.5 rounded-full" style={style} />;
 });

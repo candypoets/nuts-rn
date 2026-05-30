@@ -8,6 +8,7 @@ import React, {
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { neventEncode } from 'nostr-tools/nip19';
 import {
   ParsePipeConfigT,
   PipeConfig,
@@ -72,6 +73,8 @@ type WalletActivity = {
   sender: string | null;
   recipient: string | null;
   comment: string | null;
+  zappedEventId: string | null;
+  zappedRelays: string[];
   redeemed?: boolean;
 };
 
@@ -79,6 +82,21 @@ type MintInfo = {
   name: string;
   url: string;
   state?: string;
+  n_errors?: number;
+  n_mints?: number;
+  n_melts?: number;
+};
+
+type MintInfoResponse = {
+  name?: string;
+  icon_url?: string;
+};
+
+type MintAuditResponse = {
+  state?: string;
+  n_errors?: number;
+  n_mints?: number;
+  n_melts?: number;
 };
 
 export function HomeFeed({ enabled, visible }: HomeFeedProps) {
@@ -502,7 +520,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={walletMintUrls}
-        activeMintUrl={activeMintUrl}
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
@@ -510,7 +527,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     ),
     [
       authPubkey,
-      activeMintUrl,
       balanceByMint,
       homeRelays,
       relayStatuses,
@@ -528,7 +544,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={[]}
-        activeMintUrl={activeMintUrl}
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
@@ -537,7 +552,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     ),
     [
       authPubkey,
-      activeMintUrl,
       balanceByMint,
       homeRelays,
       relayStatuses,
@@ -552,6 +566,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         items={[]}
         header={renderHeader}
         stickyHeader={renderStickyHeader}
+        stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
         renderItem={() => null}
         empty={<LoggedOutHome />}
         contentContainerClassName="pb-28"
@@ -566,6 +581,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
       pullToRefresh
       header={renderHeader}
       stickyHeader={renderStickyHeader}
+      stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
       renderItem={({ item }) => (
         <WalletActivityRow activity={item} currentPubkey={authPubkey} />
       )}
@@ -585,7 +601,6 @@ function HomeHeader({
   viewHidden,
   pubkey,
   mintUrls,
-  activeMintUrl,
   balanceByMint,
   onSelectMint,
   onToggleView,
@@ -597,12 +612,14 @@ function HomeHeader({
   viewHidden: boolean;
   pubkey: string | null;
   mintUrls: string[];
-  activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   onToggleView: () => void;
   showMintCards?: boolean;
 }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
   return (
     <View
       className={`${
@@ -624,7 +641,7 @@ function HomeHeader({
                 <Eye size={19} color="#17212b" strokeWidth={2.2} />
               )}
             </HeaderIconButton>
-            <HeaderIconButton>
+            <HeaderIconButton onPress={() => navigation.navigate('Scan')}>
               <QrCode size={19} color="#17212b" strokeWidth={2.2} />
             </HeaderIconButton>
             <NotificationBellButton />
@@ -639,7 +656,6 @@ function HomeHeader({
         {!compact && pubkey ? (
           <WalletHeaderSection
             mintUrls={mintUrls}
-            activeMintUrl={activeMintUrl}
             balanceByMint={balanceByMint}
             onSelectMint={onSelectMint}
             showMintCards={showMintCards}
@@ -652,13 +668,11 @@ function HomeHeader({
 
 function WalletHeaderSection({
   mintUrls,
-  activeMintUrl,
   balanceByMint,
   onSelectMint,
   showMintCards = true,
 }: {
   mintUrls: string[];
-  activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   showMintCards?: boolean;
@@ -695,7 +709,6 @@ function WalletHeaderSection({
             <MintCard
               key={mintUrl}
               mintUrl={mintUrl}
-              selected={mintUrl === activeMintUrl}
               balance={balanceByMint[mintUrl] ?? 0}
               onPress={() => onSelectMint(mintUrl)}
             />
@@ -734,12 +747,10 @@ function WalletActions({ className = '' }: { className?: string }) {
 
 function MintCard({
   mintUrl,
-  selected,
   balance,
   onPress,
 }: {
   mintUrl: string;
-  selected: boolean;
   balance: number;
   onPress: () => void;
 }) {
@@ -759,12 +770,11 @@ function MintCard({
   }, [mintUrl]);
 
   const colors = cardColors(mint.name || mintUrl);
+  const health = getMintHealth(mint);
 
   return (
     <Pressable
-      className={`h-32 w-72 overflow-hidden rounded-xl p-4 shadow-sm ${
-        selected ? 'border-2 border-emerald-400' : 'border border-transparent'
-      }`}
+      className="h-36 w-72 overflow-hidden rounded-xl p-4 shadow-sm"
       style={{ backgroundColor: colors.base }}
       onPress={onPress}
     >
@@ -787,22 +797,37 @@ function MintCard({
           }}
         />
       </View>
-      <View className="mt-5 flex-row gap-3">
-        <View className="flex-1 rounded-lg bg-black/20 px-3 py-2">
-          <Text className="text-xs font-semibold uppercase text-white/70">
-            Balance
-          </Text>
-          <Text className="mt-1 font-mono text-xl font-semibold text-white">
-            {balance} sats
+      <View className="mt-3 flex-row gap-3">
+        <View className="h-16 flex-1 justify-center rounded-lg bg-black/20 p-3">
+          <Text className="font-mono text-xl font-semibold text-white">
+            {balance} <Text className="text-base font-bold">丰</Text>
           </Text>
         </View>
-        <View className="flex-1 rounded-lg bg-black/20 px-3 py-2">
+        <View className="h-16 flex-1 rounded-lg bg-black/20 px-3 pb-4 pt-2">
           <Text className="text-xs font-semibold uppercase text-white/70">
             Health
           </Text>
-          <Text className="mt-1 text-xl font-semibold text-white">
-            {mint.state === 'ERROR' ? 'Error' : 'OK'}
-          </Text>
+          <View className="mt-1 h-5 overflow-hidden rounded-full bg-white/80">
+            {health ? (
+              <View
+                className="h-full items-center justify-center rounded-full"
+                style={{
+                  width: `${health.percentage}%`,
+                  backgroundColor: health.color,
+                }}
+              >
+                <Text className="text-xs font-bold text-white">
+                  {health.percentage}%
+                </Text>
+              </View>
+            ) : (
+              <View className="h-full items-center justify-center">
+                <Text className="text-xs font-semibold text-slate-500">
+                  N/A
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
     </Pressable>
@@ -821,17 +846,21 @@ function WalletAction({
   onPress?: () => void;
 }) {
   return (
-    <View className="items-center">
-      <Pressable
+    <Pressable
+      className="items-center"
+      disabled={!onPress}
+      hitSlop={8}
+      onPress={onPress}
+    >
+      <View
         className={`h-14 w-14 items-center justify-center rounded-full ${
           outlined ? 'border border-emerald-700 bg-white' : 'bg-emerald-700'
         }`}
-        onPress={onPress}
       >
         {icon}
-      </Pressable>
+      </View>
       <Text className="mt-1 text-sm font-semibold text-slate-800">{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -860,6 +889,8 @@ function WalletActivityRow({
   activity: WalletActivity;
   currentPubkey: string;
 }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isSender =
     activity.sender === currentPubkey ||
     activity.event.pubkey() === currentPubkey;
@@ -867,9 +898,38 @@ function WalletActivityRow({
     ? activity.recipient
     : activity.sender || activity.event.pubkey();
   const kindColor = activity.kind === 9321 ? '#b7791f' : '#eab308';
+  const openActivity = useCallback(() => {
+    if (activity.zappedEventId) {
+      navigation.navigate('Kind1Thread', {
+        nevent: neventEncode({
+          id: activity.zappedEventId,
+          author: activity.recipient || undefined,
+          kind: 1,
+          relays: activity.zappedRelays,
+        }),
+      });
+      return;
+    }
+
+    const profilePubkey =
+      activity.recipient && activity.recipient !== currentPubkey
+        ? activity.recipient
+        : activity.sender && activity.sender !== currentPubkey
+          ? activity.sender
+          : activity.event.pubkey() && activity.event.pubkey() !== currentPubkey
+            ? activity.event.pubkey()
+            : null;
+
+    if (profilePubkey) {
+      navigation.navigate('PublicProfile', { pubkey: profilePubkey });
+    }
+  }, [activity, currentPubkey, navigation]);
 
   return (
-    <View className="mt-1 rounded-lg border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+    <Pressable
+      className="mt-1 rounded-lg border border-slate-200 bg-white/95 px-4 py-4 shadow-sm"
+      onPress={openActivity}
+    >
       <View className="flex-row items-center justify-between gap-3">
         <View className="min-w-0 flex-1 flex-row items-center gap-3">
           <View>
@@ -930,7 +990,7 @@ function WalletActivityRow({
           "{activity.comment}"
         </Text>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -999,6 +1059,8 @@ function toWalletActivity(event: ParsedEvent): WalletActivity | null {
       sender: zap.sender(),
       recipient: zap.recipient(),
       comment: zap.comment(),
+      zappedEventId: zap.eventId(),
+      zappedRelays: eventRelays(event),
       redeemed: zap.redeemed(),
     };
   }
@@ -1015,10 +1077,41 @@ function toWalletActivity(event: ParsedEvent): WalletActivity | null {
       sender: zap.sender(),
       recipient: zap.recipient(),
       comment: zap.content(),
+      zappedEventId: taggedEventId(event),
+      zappedRelays: taggedEventRelays(event),
     };
   }
 
   return null;
+}
+
+function eventRelays(event: ParsedEvent) {
+  if (typeof event.relaysLength !== 'function') return [];
+  return Array.from({ length: event.relaysLength() }, (_, index) =>
+    event.relays(index),
+  ).filter((relay): relay is string => !!relay);
+}
+
+function taggedEventId(event: ParsedEvent) {
+  return (
+    fbArray(event, 'tags')
+      .map(tag => fbArray(tag, 'items').map(item => String(item)))
+      .find(tag => tag[0] === 'e' && tag[1])?.[1] || null
+  );
+}
+
+function taggedEventRelays(event: ParsedEvent) {
+  const tagRelay =
+    fbArray(event, 'tags')
+      .map(tag => fbArray(tag, 'items').map(item => String(item)))
+      .find(tag => tag[0] === 'e' && tag[2])?.[2] || null;
+  return [
+    ...new Set(
+      [tagRelay, ...eventRelays(event)].filter(
+        (relay): relay is string => !!relay,
+      ),
+    ),
+  ];
 }
 
 function toCashuProof(proof: {
@@ -1071,16 +1164,33 @@ async function fetchMintData(mintUrl: string): Promise<MintInfo> {
   if (cached) return cached;
 
   try {
-    const response = await fetch(`${normalizedUrl}/v1/info`);
-    if (!response.ok) throw new Error('Mint info request failed');
-    const info = (await response.json()) as {
-      name?: string;
-      icon_url?: string;
-    };
+    const [info, audit] = await Promise.all([
+      fetch(`${normalizedUrl}/v1/info`)
+        .then(response => {
+          if (!response.ok) throw new Error('Mint info request failed');
+          return response.json() as Promise<MintInfoResponse>;
+        })
+        .catch(() => null),
+      fetch(
+        `https://api.audit.8333.space/mints/url/?url=${encodeURIComponent(
+          normalizedUrl,
+        )}`,
+      )
+        .then(response =>
+          response.ok ? (response.json() as Promise<MintAuditResponse>) : null,
+        )
+        .catch(() => null),
+    ]);
+
+    if (!info) throw new Error('Mint info request failed');
+
     const mint = {
       name: info.name || displayMintName(normalizedUrl),
       url: normalizedUrl,
-      state: 'OK',
+      state: audit?.state || 'OK',
+      n_errors: audit?.n_errors,
+      n_mints: audit?.n_mints,
+      n_melts: audit?.n_melts,
     };
     mintInfoCache.set(normalizedUrl, mint);
     return mint;
@@ -1108,6 +1218,18 @@ function cleanMintName(name: string) {
   return (
     name.replace(/mint/gi, '').replace(/cashu/gi, '').trim() || 'Unknown Mint'
   );
+}
+
+function getMintHealth(mint: MintInfo) {
+  const errors = mint.n_errors;
+  const operations = (mint.n_mints ?? 0) + (mint.n_melts ?? 0);
+  if (typeof errors !== 'number' || operations <= 0) return null;
+
+  const ratio = errors / operations;
+  const percentage = Math.max(0, Math.min(Math.round((1 - ratio) * 100), 100));
+  const color = ratio < 0.02 ? '#22c55e' : ratio < 0.05 ? '#eab308' : '#ef4444';
+
+  return { percentage, color };
 }
 
 function cardColors(value: string) {

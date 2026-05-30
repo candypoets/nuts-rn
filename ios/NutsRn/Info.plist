@@ -51,6 +51,8 @@
 		<string>_expo._tcp</string>
 		<string>_react-native-metro._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow NutsRn to scan payment and profile QR codes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>NutsRn connects to the development server on your local network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

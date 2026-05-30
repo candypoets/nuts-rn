@@ -71,7 +71,7 @@ function parseScanValue(rawValue: string): ScanResult {
 export function ScanModal({onClose}: ScanModalProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission] = useCameraPermissions();
   const [unknownValue, setUnknownValue] = useState<string | null>(null);
   const [cashuToken, setCashuToken] = useState<string | null>(null);
   const lockedRef = useRef(false);
@@ -131,16 +131,15 @@ export function ScanModal({onClose}: ScanModalProps) {
             </View>
             <Text style={styles.permissionTitle}>Scan QR codes</Text>
             <Text style={styles.permissionText}>{statusText}</Text>
-            <Pressable style={styles.permissionButton} onPress={requestPermission}>
+            <Pressable style={styles.permissionButton} onPress={() => Linking.openSettings()}>
               <Text style={styles.permissionButtonText}>Allow camera</Text>
-            </Pressable>
-            <Pressable style={styles.settingsButton} onPress={() => Linking.openSettings()}>
-              <Text style={styles.settingsButtonText}>Open settings</Text>
             </Pressable>
           </View>
         )}
         <View style={styles.scrim} pointerEvents="none" />
-        <View style={styles.scanBox} pointerEvents="none" />
+        {permissionReady ? (
+          <View style={styles.scanBox} pointerEvents="none" />
+        ) : null}
       </View>
 
       <View style={styles.topBar}>
@@ -153,10 +152,12 @@ export function ScanModal({onClose}: ScanModalProps) {
         </Pressable>
       </View>
 
-      <View style={styles.bottomPanel}>
-        <Text style={styles.panelTitle}>QR scanner</Text>
-        <Text style={styles.panelText}>{statusText}</Text>
-      </View>
+      {permissionReady ? (
+        <View style={styles.bottomPanel}>
+          <Text style={styles.panelTitle}>QR scanner</Text>
+          <Text style={styles.panelText}>{statusText}</Text>
+        </View>
+      ) : null}
 
       {unknownValue || cashuToken ? (
         <View style={styles.resultPanel}>
@@ -249,29 +250,36 @@ const styles = StyleSheet.create({
   },
   permissionBody: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    flex: 1,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(248, 250, 252, 0.94)',
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
+    borderWidth: 1,
     justifyContent: 'center',
-    paddingHorizontal: 28,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    position: 'absolute',
+    top: '31%',
+    width: 250,
   },
   permissionIcon: {
     alignItems: 'center',
     backgroundColor: '#ecfdf5',
     borderRadius: 32,
-    height: 64,
+    height: 58,
     justifyContent: 'center',
-    marginBottom: 14,
-    width: 64,
+    marginBottom: 12,
+    width: 58,
   },
   permissionTitle: {
     color: '#17212b',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
   },
   permissionText: {
     color: '#52616f',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -280,23 +288,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f7a5a',
     borderRadius: 12,
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 48,
-    paddingHorizontal: 22,
+    marginTop: 16,
+    minHeight: 44,
+    paddingHorizontal: 20,
   },
   permissionButtonText: {
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '800',
-  },
-  settingsButton: {
-    marginTop: 12,
-    padding: 8,
-  },
-  settingsButtonText: {
-    color: '#52616f',
-    fontSize: 14,
-    fontWeight: '700',
   },
   resultPanel: {
     backgroundColor: '#ffffff',

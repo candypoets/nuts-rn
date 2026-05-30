@@ -22,6 +22,7 @@ import {
 import {Builder, ByteBuffer} from 'flatbuffers';
 import {ChevronLeft, Send} from 'lucide-react-native';
 import {getEventHash, type UnsignedEvent} from 'nostr-tools';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -33,7 +34,8 @@ type Kind4ThreadProps = {
   onClose: () => void;
 };
 
-const THREAD_COMPOSER_HEIGHT = 92;
+const THREAD_HEADER_HEIGHT = 65;
+const TOP_SAFE_AREA_OFFSET = 8;
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -100,11 +102,13 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [eventsVersion, setEventsVersion] = useState(0);
+  const insets = useSafeAreaInsets();
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
   const readRelayList = readRelays.length ? readRelays : DEFAULT_FEED_RELAYS;
   const writeRelayList = writeRelays.length ? writeRelays : readRelayList;
+  const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
   const items = useMemo(() => {
     void eventsVersion;
     return processEvents(rawEventsRef.current);
@@ -290,7 +294,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
 
   const fixedHeader = useCallback(
     () => (
-      <View className="absolute left-0 right-0 top-0 z-20 flex-row items-center justify-between border-b border-slate-200 bg-slate-50/95 px-4 py-3">
+      <View className="flex-row items-center justify-between border-b border-slate-200 bg-slate-50/95 px-4 py-3">
         <Pressable
           className="h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
           hitSlop={12}
@@ -358,7 +362,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
             sentAt={sendingMapRef.current.get(getNonce(item) || '')}
           />
         )}
-        header={() => <View style={{height: THREAD_COMPOSER_HEIGHT}} />}
+        header={() => <View style={{height: THREAD_HEADER_HEIGHT + topInset}} />}
         empty={
           <View className="px-6 py-20">
             <Text className="text-center text-base font-semibold text-slate-700">

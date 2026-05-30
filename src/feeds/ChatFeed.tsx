@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Pressable, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {Kind4Parsed, ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
@@ -308,7 +308,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     resetEvents();
     startSubscription(true);
   }, [resetEvents, startSubscription]);
-
   const header = useCallback(
     () => (
       <ChatHeader
@@ -370,6 +369,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       pullToRefresh
       header={header}
       stickyHeader={stickyHeader}
+      stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
       renderItem={({item}) => (
         <ChatRow
           conversation={item}
@@ -449,9 +449,8 @@ function ChatTab({
 }) {
   return (
     <Pressable
-      className={`min-h-10 flex-1 flex-row items-center justify-center gap-2 rounded-md px-3 ${
-        active ? 'bg-white shadow-sm' : ''
-      }`}
+      className="min-h-10 flex-1 flex-row items-center justify-center gap-2 rounded-md px-3"
+      style={active ? styles.chatTabActive : null}
       onPress={onPress}
     >
       <Text className={`text-sm font-semibold ${active ? 'text-slate-900' : 'text-slate-500'}`}>
@@ -465,6 +464,20 @@ function ChatTab({
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  // Keep active shadow/background out of dynamic className changes. NativeWind
+  // can emit an upgrade warning for Pressable shadows, and that warning
+  // stringifier trips React Navigation's default context getters in dev.
+  chatTabActive: {
+    backgroundColor: '#ffffff',
+    elevation: 1,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+  },
+});
 
 function ChatRow({
   conversation,

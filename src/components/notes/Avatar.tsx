@@ -1,6 +1,6 @@
-import React, {memo, useCallback, useMemo} from 'react';
+import React, {memo, useCallback, useContext, useMemo} from 'react';
 import { Image, Pressable, View } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {NavigationContext} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
@@ -18,9 +18,9 @@ type AvatarProps = {
 
 const sizeClass: Record<AvatarSize, string> = {
   xs: 'h-4 w-4',
-  sm: 'h-6 w-6',
-  md: 'h-8 w-8',
-  lg: 'h-10 w-10',
+  sm: 'h-8 w-8',
+  md: 'h-10 w-10',
+  lg: 'h-12 w-12',
 };
 
 const fallbackProfileImage = require('../../../assets/miss-profile.png');
@@ -32,8 +32,9 @@ function AvatarComponent({
   link = false,
   onProfileOpen,
 }: AvatarProps) {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useContext(NavigationContext) as
+    | NativeStackNavigationProp<RootStackParamList>
+    | undefined;
   const selectPicture = useCallback(
     (profile: import('@candypoets/nipworker').Kind0Parsed) =>
       profile.picture?.() || null,
@@ -53,6 +54,7 @@ function AvatarComponent({
       onProfileOpen(pubkey);
       return;
     }
+    if (!navigation) return;
     pushDistinct(navigation, 'PublicProfile', {pubkey});
   }, [navigation, onProfileOpen, pubkey]);
 

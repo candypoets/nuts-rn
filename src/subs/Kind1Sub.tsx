@@ -131,7 +131,7 @@ const Kind1StickyHeader = memo(function Kind1StickyHeader({
   onClose: () => void;
 }) {
   return (
-    <View className="h-16 flex-row items-center justify-between border-b border-slate-200 bg-white/95 px-4">
+    <View className="h-16 flex-row items-center justify-between px-4">
       <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
         <ChevronLeft size={22} color="#17212b" />
       </Pressable>

@@ -79,7 +79,7 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
   pubkey,
 }: Kind0StickyHeaderProps) {
   return (
-    <View className="h-24 flex-row items-center justify-between bg-white/95 px-4 pt-10">
+    <View className="h-16 flex-row items-center justify-between px-4">
       <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
         <ChevronLeft size={22} color="#17212b" />
       </Pressable>

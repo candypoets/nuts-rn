@@ -313,7 +313,7 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
   if (!displayLinks.length) return null;
 
   return (
-    <View className="my-2 overflow-hidden rounded-lg">
+    <View className="mb-2 overflow-hidden rounded-lg">
       <View className="flex-row flex-wrap gap-1">
         {displayLinks.map((link, index) => {
           const single = displayLinks.length === 1;

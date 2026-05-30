@@ -43,6 +43,7 @@ export type FeedProps<T> = {
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   header?: (props: FeedChromeProps) => ReactNode;
   stickyHeader?: (props: FeedChromeProps) => ReactNode;
+  stickyHeaderSafeAreaColor?: string;
   stickyFooter?: (props: FeedChromeProps) => ReactNode;
   fixedHeader?: (props: FeedChromeProps) => ReactNode;
   headerSafeArea?: boolean;
@@ -87,6 +88,7 @@ export function Feed<T>({
   renderItem,
   header,
   stickyHeader,
+  stickyHeaderSafeAreaColor,
   stickyFooter,
   fixedHeader,
   headerSafeArea = true,
@@ -178,9 +180,10 @@ export function Feed<T>({
 
   const stickyHeaderStyle = useAnimatedStyle(() => ({
     opacity: headerVisible.value,
+    backgroundColor: stickyHeaderSafeAreaColor,
     paddingTop: topInset,
     transform: [{translateY: (1 - headerVisible.value) * -(72 + topInset)}],
-  }));
+  }), [stickyHeaderSafeAreaColor, topInset]);
 
   const stickyFooterStyle = useAnimatedStyle(() => ({
     opacity: footerVisible.value,

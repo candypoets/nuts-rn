@@ -46,6 +46,7 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
+import { useAppTheme } from '../theme';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -675,8 +676,8 @@ export function ExploreFeed({
         getItemId={getItemId}
         header={listHeader}
         pullToRefresh
-        stickyFooterVisible
         stickyHeader={stickyHeader ?? defaultStickyHeader}
+        stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
         fixedHeader={renderNewNotesBanner}
         stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
@@ -695,14 +696,29 @@ export function ExploreFeed({
 function ExploreComposerFooter() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const theme = useAppTheme();
+  const primary = theme.button.primary;
   const openPost = useCallback(() => navigation.navigate('Post'), [navigation]);
 
   return (
-    <View className="items-end px-4 pb-4">
-      <Pressable hitSlop={8} onPress={openPost} style={styles.composerButton}>
-        <BlurView intensity={28} tint="light" style={styles.composerBlur}>
-          <PenLine size={17} color="#52616f" strokeWidth={2.1} />
-          <Text style={styles.composerText}>What's up?</Text>
+    <View className="items-end px-4">
+      <Pressable
+        hitSlop={8}
+        onPress={openPost}
+        style={[styles.composerButton, {borderColor: `${primary.border}66`}]}
+      >
+        <BlurView
+          intensity={28}
+          tint="light"
+          style={[
+            styles.composerBlur,
+            {backgroundColor: `${primary.background}2E`},
+          ]}
+        >
+          <PenLine size={17} color={primary.background} strokeWidth={2.1} />
+          <Text style={[styles.composerText, {color: primary.background}]}>
+            What's up?
+          </Text>
         </BlurView>
       </Pressable>
     </View>
@@ -830,7 +846,6 @@ function hashKey(value: string) {
 
 const styles = StyleSheet.create({
   composerButton: {
-    borderColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
@@ -841,14 +856,12 @@ const styles = StyleSheet.create({
   },
   composerBlur: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   composerText: {
-    color: '#475569',
     fontSize: 14,
     fontWeight: '600',
   },

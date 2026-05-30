@@ -1,6 +1,8 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { Text, View } from 'react-native';
-import type { ParsedEvent } from '@candypoets/nipworker';
+import type { Kind0Parsed, ParsedEvent } from '@candypoets/nipworker';
+import { BadgeCheck } from 'lucide-react-native';
+import { useKind0Value } from '../../hooks/useKind0Value';
 import { Avatar } from './Avatar';
 import { RelaysList } from './RelaysList';
 import { formatTimeShort } from './time';
@@ -19,10 +21,19 @@ function HeaderComponent({
 }: HeaderProps) {
   const pubkey = note.pubkey() || '';
   const isQuote = depth > 0;
+  const selectNip05 = useCallback(
+    (profile: Kind0Parsed) => profile.nip05?.()?.trim() || '',
+    [],
+  );
+  const nip05 = useKind0Value(pubkey, {
+    enabled: !!pubkey,
+    fallback: '',
+    selector: selectNip05,
+  });
 
   return (
-    <View className={isQuote ? 'flex-row gap-1' : 'flex-row gap-2'}>
-      <View className={isQuote ? 'w-4 items-center' : 'w-8 items-center'}>
+    <View className={isQuote ? 'flex-row gap-1' : '-ml-1 flex-row gap-1'}>
+      <View className={isQuote ? 'w-4 items-center' : 'w-10 items-center'}>
         <Avatar
           pubkey={pubkey}
           size={isQuote ? 'xs' : 'md'}
@@ -41,6 +52,22 @@ function HeaderComponent({
                   : 'text-sm font-semibold text-slate-900'
               }
             />
+            {nip05 ? (
+              <View className="min-w-0 flex-shrink flex-row items-center gap-1">
+                <BadgeCheck
+                  size={14}
+                  color="#158777"
+                  strokeWidth={2.4}
+                />
+                <Text
+                  className="min-w-0 flex-shrink text-xs text-slate-500"
+                  ellipsizeMode="middle"
+                  numberOfLines={1}
+                >
+                  {nip05}
+                </Text>
+              </View>
+            ) : null}
             <Text className="text-xs text-slate-500">
               {formatTimeShort(note.createdAt())}
             </Text>

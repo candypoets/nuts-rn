@@ -1,6 +1,6 @@
-import React, {memo, useCallback} from 'react';
+import React, {memo, useCallback, useContext} from 'react';
 import {Text} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {NavigationContext} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useKind0Value} from '../../hooks/useKind0Value';
@@ -32,8 +32,9 @@ function UserComponent({
   className = 'text-sm font-semibold text-slate-900',
   onProfileOpen,
 }: UserProps) {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useContext(NavigationContext) as
+    | NativeStackNavigationProp<RootStackParamList>
+    | undefined;
   const fallbackName = shortPubkey(pubkey);
   const selectName = useCallback(
     (profile: Kind0Parsed) => displayName(profile, pubkey),
@@ -49,6 +50,7 @@ function UserComponent({
       onProfileOpen(pubkey);
       return;
     }
+    if (!navigation) return;
     pushDistinct(navigation, 'PublicProfile', {pubkey});
   }, [navigation, onProfileOpen, pubkey]);
 

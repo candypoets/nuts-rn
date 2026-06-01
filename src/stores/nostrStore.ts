@@ -9,7 +9,7 @@ export const BOOTSTRAP_RELAYS = [
   'wss://relay.nuts.cash',
 ];
 
-export const SEARCH_RELAYS = ['wss://relay.nostr.band', 'wss://purplepag.es'];
+export const SEARCH_RELAYS = ['wss://relay.vertexlab.io'];
 
 export type RelayMarker = {
   url: string;

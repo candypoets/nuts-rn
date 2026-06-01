@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Image,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -23,6 +23,12 @@ import {
   Send,
   X,
 } from 'lucide-react-native';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   EnrichedTextInput,
   type EnrichedTextInputInstance,
@@ -33,18 +39,22 @@ import {
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
+  asKind0,
   asParsedEvent,
   fbArray,
   isConnectionStatus,
+  isKind0,
 } from '@candypoets/nipworker/utils';
+import {MessageType} from '@candypoets/nipworker';
 import type {
   ConnectionStatus,
+  Kind0Parsed,
   ParsedEvent,
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
 import type { EventTemplate } from 'nostr-tools';
-import { decode } from 'nostr-tools/nip19';
+import { decode, nprofileEncode } from 'nostr-tools/nip19';
 
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { prepareEvent } from '../nostr/prepareEvent';
@@ -55,11 +65,13 @@ import {
 } from '../nostr/upload';
 import {
   selectPreferredUploadServer,
+  SEARCH_RELAYS,
   useAuthStore,
   useNostrStore,
   useSendStatusStore,
 } from '../stores';
 import { Note } from '../components/notes/Note';
+import { useKind0Value } from '../hooks/useKind0Value';
 
 type Props = {
   reply?: string;
@@ -81,8 +93,96 @@ type SelectedImage = LocalUploadAsset & {
   status: 'waiting' | 'uploading' | 'uploaded' | 'failed';
   error?: string;
 };
+type SelectedMention = {
+  name: string;
+  handle: string;
+  pubkey: string;
+  relays: string[];
+};
 
 const now = () => Math.floor(Date.now() / 1000);
+const fallbackProfileImage = require('../../assets/miss-profile.png');
+
+function mentionHandle(value: string) {
+  return value.replace(/\s+/g, '');
+}
+
+function mentionEventName(event: ParsedEvent) {
+  const kind0 = asKind0(event);
+  return (
+    kind0?.name?.()?.trim() ||
+    kind0?.displayName?.()?.trim() ||
+    event.pubkey()?.slice(0, 12) ||
+    'Unknown'
+  );
+}
+
+function kind0DisplayName(kind0: Kind0Parsed, pubkey: string) {
+  return (
+    kind0.displayName?.()?.trim() ||
+    kind0.name?.()?.trim() ||
+    `${pubkey.slice(0, 8)}...`
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function textWithNostrMentions(
+  value: string,
+  mentions: SelectedMention[],
+) {
+  let next = value;
+  for (const mention of mentions) {
+    const handle = mentionHandle(mention.handle);
+    const nprofile = nprofileEncode({
+      pubkey: mention.pubkey,
+      relays: mention.relays,
+    });
+    next = next.replace(
+      new RegExp(`@${escapeRegExp(handle)}\\b`, 'g'),
+      `nostr:${nprofile}`,
+    );
+  }
+  return next;
+}
+
+function mentionScore(
+  event: ParsedEvent,
+  searchQuery: string,
+  cachedPubkeys: Set<string>,
+) {
+  const name = mentionEventName(event);
+  if (!name || !searchQuery) return 0;
+  const lowerName = name.toLowerCase();
+  const lowerQuery = searchQuery.toLowerCase();
+  let score = 0;
+  if (lowerName === lowerQuery) score = 3;
+  if (lowerName.startsWith(lowerQuery)) score = 2;
+  if (lowerName.includes(lowerQuery)) score = 1;
+  if (cachedPubkeys.has(event.pubkey() || '')) score += 3;
+  return score;
+}
+
+function sortMentionEvents(
+  events: ParsedEvent[],
+  query: string,
+  cachedPubkeys: Set<string>,
+  descending = true,
+) {
+  const unique = new Map<string, ParsedEvent>();
+  for (const event of events) {
+    const pubkey = event.pubkey();
+    if (pubkey && !unique.has(pubkey)) unique.set(pubkey, event);
+  }
+  return [...unique.values()].sort((left, right) => {
+    const delta =
+      mentionScore(right, query, cachedPubkeys) -
+      mentionScore(left, query, cachedPubkeys);
+    return descending ? delta : -delta;
+  });
+}
 
 function decodeReplyTarget(reply?: string) {
   if (!reply) return null;
@@ -108,6 +208,9 @@ export function PostModal({ reply, onClose }: Props) {
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const scrollRef = useRef<ScrollView>(null);
   const editorYRef = useRef(0);
+  const editorHeightRef = useRef(0);
+  const scrollOffsetRef = useRef(0);
+  const mentionSearchUnsubscribeRef = useRef<(() => void) | null>(null);
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
   const readRelays = useNostrStore(state => state.readRelays);
@@ -125,7 +228,13 @@ export function PostModal({ reply, onClose }: Props) {
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [pollEndsAt, setPollEndsAt] = useState<number | null>(null);
   const [replyNote, setReplyNote] = useState<ParsedEvent | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionResults, setMentionResults] = useState<ParsedEvent[]>([]);
+  const [mentionLoading, setMentionLoading] = useState(false);
+  const [mentionFinished, setMentionFinished] = useState(false);
+  const [selectedMentions, setSelectedMentions] = useState<SelectedMention[]>([]);
+  const keyboardAccessoryBottom = useSharedValue(0);
   const replyTarget = useMemo(() => decodeReplyTarget(reply), [reply]);
   const relays = useMemo(
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
@@ -148,6 +257,40 @@ export function PostModal({ reply, onClose }: Props) {
     () => pollOptions.map(option => option.trim()).filter(Boolean),
     [pollOptions],
   );
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null || !mentionQuery.trim()) return [];
+    const query = mentionQuery.trim().toLowerCase();
+    return sortMentionEvents(
+      mentionResults.filter(event => {
+        const name = mentionEventName(event).toLowerCase();
+        const candidatePubkey = event.pubkey()?.toLowerCase() || '';
+        return (
+          name.includes(query) ||
+          mentionHandle(name).includes(query) ||
+          candidatePubkey.includes(query)
+        );
+      }),
+      query,
+      new Set(),
+    ).slice(0, 4);
+  }, [mentionQuery, mentionResults]);
+  const showMentionPanel = Boolean(
+    mentionQuery?.trim() &&
+      (mentionLoading || mentionFinished || mentionSuggestions.length),
+  );
+  const replyAuthorPubkey = replyNote?.pubkey() || '';
+  const replyAuthorFallback = replyAuthorPubkey
+    ? `${replyAuthorPubkey.slice(0, 8)}...`
+    : '';
+  const selectReplyAuthorName = useCallback(
+    (profile: Kind0Parsed) => kind0DisplayName(profile, replyAuthorPubkey),
+    [replyAuthorPubkey],
+  );
+  const replyAuthorName = useKind0Value(replyAuthorPubkey, {
+    enabled: Boolean(replyAuthorPubkey),
+    fallback: replyAuthorFallback,
+    selector: selectReplyAuthorName,
+  });
   const canSubmit =
     Boolean(pubkey && hasSigner) &&
     !isSubmitting &&
@@ -168,25 +311,54 @@ export function PostModal({ reply, onClose }: Props) {
     });
   }, [replyTarget]);
 
+  const blurComposer = useCallback(() => {
+    editorRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
+
+  const blurComposerWhenTouchingOutsideEditor = useCallback(
+    (event: NativeSyntheticEvent<{ locationY: number }>) => {
+      const touchY = event.nativeEvent.locationY + scrollOffsetRef.current;
+      const editorTop = editorYRef.current;
+      const editorBottom = editorTop + editorHeightRef.current;
+      if (touchY < editorTop || touchY > editorBottom) {
+        blurComposer();
+      }
+    },
+    [blurComposer],
+  );
+
   useEffect(() => {
-    const keyboardShow = Keyboard.addListener('keyboardDidShow', event => {
-      setKeyboardHeight(event.endCoordinates.height);
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollTo({
-          y: Math.max(0, editorYRef.current - 12),
-          animated: true,
-        });
+    const keyboardShowEvent =
+      Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const keyboardHideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const keyboardShow = Keyboard.addListener(keyboardShowEvent, event => {
+      const height = Math.max(0, event.endCoordinates.height);
+      setKeyboardOpen(true);
+      keyboardAccessoryBottom.value = withTiming(height, {
+        duration: Math.max(1, event.duration || 250),
       });
     });
-    const keyboardHide = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
+    const keyboardHide = Keyboard.addListener(keyboardHideEvent, event => {
+      keyboardAccessoryBottom.value = withTiming(
+        0,
+        {duration: Math.max(1, event.duration || 250)},
+        finished => {
+          if (finished) runOnJS(setKeyboardOpen)(false);
+        },
+      );
     });
 
     return () => {
       keyboardShow.remove();
       keyboardHide.remove();
     };
-  }, []);
+  }, [keyboardAccessoryBottom]);
+
+  const keyboardAccessoryStyle = useAnimatedStyle(() => ({
+    bottom: keyboardAccessoryBottom.value,
+  }));
 
   useEffect(() => {
     setReplyNote(null);
@@ -212,6 +384,90 @@ export function PostModal({ reply, onClose }: Props) {
       },
     );
   }, [lookupRelays, replyTarget]);
+
+  useEffect(() => {
+    const query = mentionQuery?.trim();
+    if (!query) {
+      setMentionResults([]);
+      setMentionLoading(false);
+      setMentionFinished(false);
+      return undefined;
+    }
+
+    mentionSearchUnsubscribeRef.current?.();
+    setMentionResults([]);
+    setMentionLoading(true);
+    setMentionFinished(false);
+
+    const cachedEvents: ParsedEvent[] = [];
+    const fetchedEvents: ParsedEvent[] = [];
+    const items: ParsedEvent[] = [];
+    const cachedPubkeys = new Set<string>();
+    let eose = false;
+    let eoce = false;
+
+    const updateItems = (
+      events: ParsedEvent[],
+      descending = true,
+    ) => {
+      setMentionResults(sortMentionEvents(events, query, cachedPubkeys, descending));
+    };
+
+    const unsubscribe = subscribeToNostr(
+      `mentionlist_${query}`,
+      [
+        {
+          kinds: [0],
+          search: query,
+          limit: 10,
+          relays: SEARCH_RELAYS,
+          noCache: true,
+        },
+      ],
+      (message: WorkerMessage) => {
+        switch (message.type()) {
+          case MessageType.ConnectionStatus:
+            setMentionLoading(false);
+            setMentionFinished(true);
+            eose = true;
+            updateItems([...cachedEvents, ...fetchedEvents, ...items]);
+            break;
+          case MessageType.Eoce:
+            eoce = true;
+            updateItems(
+              [...cachedEvents, ...fetchedEvents, ...items],
+              false,
+            );
+            break;
+          case MessageType.ParsedNostrEvent: {
+            const kind0 = isKind0(message);
+            if (!kind0) return;
+            const event = asParsedEvent(message);
+            const candidatePubkey = event?.pubkey();
+            if (!event || !candidatePubkey) return;
+            if (!eoce) {
+              cachedPubkeys.add(candidatePubkey);
+              cachedEvents.unshift(event);
+            } else if (!eose) {
+              fetchedEvents.unshift(event);
+            } else {
+              items.unshift(event);
+              updateItems(items);
+            }
+            break;
+          }
+        }
+      },
+    );
+    mentionSearchUnsubscribeRef.current = unsubscribe;
+
+    return () => {
+      unsubscribe();
+      if (mentionSearchUnsubscribeRef.current === unsubscribe) {
+        mentionSearchUnsubscribeRef.current = null;
+      }
+    };
+  }, [mentionQuery]);
 
   useEffect(() => {
     if (!replyTarget?.id) return;
@@ -248,6 +504,27 @@ export function PostModal({ reply, onClose }: Props) {
       }
       return !current;
     });
+  }, []);
+
+  const selectMention = useCallback((event: ParsedEvent) => {
+    const candidatePubkey = event.pubkey();
+    if (!candidatePubkey) return;
+    const name = mentionEventName(event);
+    const handle = mentionHandle(name);
+    editorRef.current?.setMention('@', `@${handle}`, {
+      name,
+      pubkey: candidatePubkey,
+      relays: SEARCH_RELAYS.join(','),
+    });
+    setSelectedMentions(current =>
+      current.some(mention => mention.pubkey === candidatePubkey)
+        ? current
+        : [
+            ...current,
+            {name, handle, pubkey: candidatePubkey, relays: SEARCH_RELAYS},
+          ],
+    );
+    setMentionQuery(null);
   }, []);
 
   const submit = useCallback(async () => {
@@ -309,7 +586,7 @@ export function PostModal({ reply, onClose }: Props) {
         );
       }
       const content = [
-        text.trim(),
+        textWithNostrMentions(text.trim(), selectedMentions),
         ...uploadedImages.map(image => image.uploadUrl).filter(Boolean),
       ]
         .filter(Boolean)
@@ -363,6 +640,7 @@ export function PostModal({ reply, onClose }: Props) {
 
       editorRef.current?.setValue('');
       setText('');
+      setSelectedMentions([]);
       setSelectedImages([]);
       setSubmitStatus(null);
       setPollEnabled(false);
@@ -387,16 +665,13 @@ export function PostModal({ reply, onClose }: Props) {
     updateSendStatus,
     validPollOptions,
     selectedImages,
+    selectedMentions,
     mediaServer,
     mediaServerType,
   ]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
-      style={styles.root}
-    >
+    <View style={styles.root}>
       <View style={styles.header}>
         <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
           <ChevronDown size={23} color="#17212b" strokeWidth={2.3} />
@@ -425,9 +700,15 @@ export function PostModal({ reply, onClose }: Props) {
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}
-        onContentSizeChange={scrollToComposer}
-        onTouchStart={Keyboard.dismiss}
+        contentContainerStyle={[
+          styles.content,
+          keyboardOpen && styles.contentWithKeyboardAccessory,
+        ]}
+        onScroll={event => {
+          scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+        }}
+        onTouchStart={blurComposerWhenTouchingOutsideEditor}
+        scrollEventThrottle={16}
       >
         {!pubkey || !hasSigner ? (
           <View style={styles.notice}>
@@ -458,35 +739,11 @@ export function PostModal({ reply, onClose }: Props) {
           )
         ) : null}
 
-        <ComposerToolbar
-          editorRef={editorRef}
-          onInsertImage={(uri, width, height, mimeType, fileName) => {
-            editorRef.current?.setImage(uri, width, height);
-            setSelectedImages(current =>
-              current.some(image => image.uri === uri)
-                ? current
-                : [
-                    ...current,
-                    {
-                      uri,
-                      width,
-                      height,
-                      mimeType,
-                      fileName,
-                      status: 'waiting',
-                    },
-                  ],
-            );
-          }}
-          styleState={styleState}
-          pollEnabled={pollEnabled}
-          onTogglePoll={togglePoll}
-        />
-
         <View
           style={[styles.editorShell, reply && styles.replyEditorShell]}
           onLayout={event => {
             editorYRef.current = event.nativeEvent.layout.y;
+            editorHeightRef.current = event.nativeEvent.layout.height;
           }}
         >
           <EnrichedTextInput
@@ -497,7 +754,7 @@ export function PostModal({ reply, onClose }: Props) {
             placeholder={
               reply
                 ? replyNote
-                  ? `Reply to ${(replyNote.pubkey() || '').slice(0, 8)}...`
+                  ? `Reply to ${replyAuthorName}`
                   : 'Write your reply...'
                 : "What's up?"
             }
@@ -511,6 +768,15 @@ export function PostModal({ reply, onClose }: Props) {
             onChangeState={(event: NativeSyntheticEvent<StyleState>) =>
               setStyleState(event.nativeEvent)
             }
+            onStartMention={indicator => {
+              if (indicator === '@') setMentionQuery('');
+            }}
+            onChangeMention={event => {
+              if (event.indicator === '@') setMentionQuery(event.text);
+            }}
+            onEndMention={indicator => {
+              if (indicator === '@') setMentionQuery(null);
+            }}
             onPasteImages={event => {
               console.log('[post] pasted images', event.nativeEvent);
             }}
@@ -547,11 +813,52 @@ export function PostModal({ reply, onClose }: Props) {
           </Text>
         ) : null}
 
-        {keyboardHeight ? (
-          <View style={{ height: Math.round(keyboardHeight * 0.4) }} />
-        ) : null}
       </ScrollView>
-    </KeyboardAvoidingView>
+
+      {keyboardOpen ? (
+        <Animated.View
+          style={[
+            styles.toolbarAccessory,
+            styles.keyboardAccessory,
+            keyboardAccessoryStyle,
+          ]}
+        >
+          {showMentionPanel ? (
+            <MentionSuggestions
+              candidates={mentionSuggestions}
+              loading={mentionLoading}
+              finished={mentionFinished}
+              onSelect={selectMention}
+            />
+          ) : null}
+          <ComposerToolbar
+            editorRef={editorRef}
+            onInsertImage={(uri, width, height, mimeType, fileName) => {
+              editorRef.current?.setImage(uri, width, height);
+              setSelectedImages(current =>
+                current.some(image => image.uri === uri)
+                  ? current
+                  : [
+                      ...current,
+                      {
+                        uri,
+                        width,
+                        height,
+                        mimeType,
+                        fileName,
+                        status: 'waiting',
+                      },
+                    ],
+              );
+            }}
+            styleState={styleState}
+            pollEnabled={pollEnabled}
+            onTogglePoll={togglePoll}
+            onDismissKeyboard={blurComposer}
+          />
+        </Animated.View>
+      ) : null}
+    </View>
   );
 }
 
@@ -593,12 +900,73 @@ function UploadStatus({
   );
 }
 
+function MentionSuggestions({
+  candidates,
+  loading,
+  finished,
+  onSelect,
+}: {
+  candidates: ParsedEvent[];
+  loading: boolean;
+  finished: boolean;
+  onSelect: (candidate: ParsedEvent) => void;
+}) {
+  return (
+    <View style={styles.mentionBox}>
+      {loading ? (
+        <View style={styles.mentionStateRow}>
+          <Text style={styles.mentionStateText}>Searching...</Text>
+        </View>
+      ) : null}
+      {candidates.length ? (
+        candidates.map(candidate => {
+          const pubkey = candidate.pubkey() || '';
+          const kind0 = asKind0(candidate);
+          const name = mentionEventName(candidate);
+          const handle = mentionHandle(name);
+          const picture = kind0?.picture?.();
+          return (
+            <Pressable
+              key={pubkey}
+              style={styles.mentionRow}
+              onPress={() => onSelect(candidate)}
+            >
+              <View style={styles.mentionAvatar}>
+                <Image
+                  source={picture ? {uri: picture} : fallbackProfileImage}
+                  style={styles.mentionAvatarImage}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={styles.mentionTextBlock}>
+                <Text style={styles.mentionName} numberOfLines={1}>
+                  {name}
+                </Text>
+                <Text style={styles.mentionHandle} numberOfLines={1}>
+                  @{handle}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })
+      ) : finished && !loading ? (
+        <View style={styles.mentionStateRow}>
+          <Text style={styles.mentionStateText}>
+            No matching profiles found
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function ComposerToolbar({
   editorRef,
   onInsertImage,
   styleState,
   pollEnabled,
   onTogglePoll,
+  onDismissKeyboard,
 }: {
   editorRef: React.RefObject<EnrichedTextInputInstance | null>;
   onInsertImage: (
@@ -611,6 +979,7 @@ function ComposerToolbar({
   styleState: StyleState;
   pollEnabled: boolean;
   onTogglePoll: () => void;
+  onDismissKeyboard: () => void;
 }) {
   const pickImage = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -690,6 +1059,11 @@ function ComposerToolbar({
           />
         }
         onPress={() => editorRef.current?.toggleBlockQuote()}
+      />
+      <ToolbarDivider />
+      <ToolbarButton
+        icon={<ChevronDown size={20} color="#52616f" strokeWidth={2.3} />}
+        onPress={onDismissKeyboard}
       />
     </View>
   );
@@ -911,6 +1285,9 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  contentWithKeyboardAccessory: {
+    paddingBottom: 86,
+  },
   notice: {
     borderRadius: 8,
     borderWidth: 1,
@@ -962,21 +1339,87 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#17212b',
   },
-  toolbar: {
-    minHeight: 46,
+  mentionBox: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#dbe3ea',
     backgroundColor: '#ffffff',
-    paddingHorizontal: 8,
+    overflow: 'hidden',
+  },
+  mentionRow: {
+    minHeight: 54,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
   },
-  toolbarButton: {
+  mentionStateRow: {
+    minHeight: 48,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mentionStateText: {
+    color: '#64748b',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  mentionAvatar: {
     width: 34,
     height: 34,
     borderRadius: 17,
+    backgroundColor: '#ccfbf1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  mentionAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mentionTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  mentionName: {
+    color: '#17212b',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  mentionHandle: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  toolbar: {
+    minHeight: 54,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  toolbarAccessory: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#cbd5e1',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  keyboardAccessory: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+  },
+  toolbarButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },

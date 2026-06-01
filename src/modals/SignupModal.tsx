@@ -4,8 +4,6 @@ import {
   Image,
   InteractionManager,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   Text,
   TextInput,
@@ -465,10 +463,7 @@ function SignupProfileStep({
   }, [focused, onFocus]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      className="h-full bg-slate-50"
-    >
+    <View className="h-full bg-slate-50">
       <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
         <View className="h-full px-4 pt-4">
           <SignupHeader title="Create account" onBack={onBack} />
@@ -522,7 +517,7 @@ function SignupProfileStep({
           </View>
         </View>
       </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

@@ -8,6 +8,7 @@ export type AuthState = {
   privkey: string | null;
   nsec: string | null;
   hasSigner: boolean;
+  authResolved: boolean;
 };
 
 type AuthStore = AuthState & {
@@ -21,6 +22,7 @@ const initialAuthState: AuthState = {
   privkey: null,
   nsec: null,
   hasSigner: false,
+  authResolved: false,
 };
 
 export const useAuthStore = create<AuthStore>()(
@@ -33,7 +35,13 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: 'auth',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: state => ({
+        pubkey: state.pubkey,
+        npub: state.npub,
+        privkey: state.privkey,
+        nsec: state.nsec,
+        hasSigner: state.hasSigner,
+      }),
     },
   ),
 );
-

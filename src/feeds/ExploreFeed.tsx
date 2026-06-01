@@ -62,6 +62,7 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://pyramid.fiatjaf.com',
   'wss://nostr.mom',
 ];
+const AUTH_FALLBACK_DELAY_MS = 1200;
 
 function verifyExploreItemIds(items: ParsedEvent[], feedKey: string) {
   if (typeof __DEV__ === 'undefined' || !__DEV__) return;
@@ -122,6 +123,9 @@ export function ExploreFeed({
   const paginationCheckTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const authFallbackTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const commitFrameRef = useRef<ReturnType<
     typeof requestAnimationFrame
   > | null>(null);
@@ -134,11 +138,13 @@ export function ExploreFeed({
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [newPostsCount, setNewPostsCount] = useState(0);
+  const [allowGuestExplore, setAllowGuestExplore] = useState(false);
   const loadingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
   const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
   const authPubkey = useAuthStore(state => state.pubkey);
+  const authResolved = useAuthStore(state => state.authResolved);
   const readRelays = useNostrStore(state => state.readRelays);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
@@ -156,6 +162,8 @@ export function ExploreFeed({
         : GUEST_EXPLORE_RELAYS,
     [authPubkey, readRelays],
   );
+  const authReadyForExplore = Boolean(authPubkey) || authResolved;
+  const canStartExplore = authReadyForExplore || allowGuestExplore;
   const feedKey = useMemo(
     () =>
       `${requestKinds.join(',') || 'kind1'}:${
@@ -425,7 +433,7 @@ export function ExploreFeed({
   );
 
   const initFeed = useCallback(() => {
-    if (!enabled || !visible) {
+    if (!enabled || !visible || !canStartExplore) {
       return;
     }
     if (hasInitializedRef.current) {
@@ -480,6 +488,7 @@ export function ExploreFeed({
     }, 1500);
   }, [
     completeResolvingSubscription,
+    canStartExplore,
     enabled,
     feedKey,
     feedRelays,
@@ -491,11 +500,14 @@ export function ExploreFeed({
   ]);
 
   const handleRefresh = useCallback(() => {
+    if (!canStartExplore) return;
     if (refreshing) return;
 
     setRefreshing(true);
     requestCacheRef.current += 1;
     hasInitializedRef.current = false;
+    loadingRef.current = false;
+    setLoading(false);
     setHasMore(true);
     untilRef.current = undefined;
     prevPaginationSubIdRef.current = null;
@@ -503,11 +515,21 @@ export function ExploreFeed({
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = true;
     clearTimers();
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+    unsubscribePaginationRef.current?.();
+    unsubscribePaginationRef.current = null;
     refreshTimeoutRef.current = setTimeout(() => {
       completeResolvingSubscription();
     }, 10000);
     initFeed();
-  }, [clearTimers, completeResolvingSubscription, initFeed, refreshing]);
+  }, [
+    canStartExplore,
+    clearTimers,
+    completeResolvingSubscription,
+    initFeed,
+    refreshing,
+  ]);
 
   const handleNearBottom = useCallback(() => {
     if (loading || !hasMore || itemsRef.current.length === 0) return;
@@ -581,14 +603,39 @@ export function ExploreFeed({
 
   useEffect(() => {
     if (!enabled) return;
+    if (!canStartExplore) return;
     if (lastFeedKeyRef.current === feedKey) return;
     lastFeedKeyRef.current = feedKey;
     resetFeed();
-  }, [enabled, feedKey, resetFeed]);
+  }, [canStartExplore, enabled, feedKey, resetFeed]);
+
+  useEffect(() => {
+    if (!enabled || !visible || authReadyForExplore) {
+      setAllowGuestExplore(false);
+      if (authFallbackTimeoutRef.current) {
+        clearTimeout(authFallbackTimeoutRef.current);
+        authFallbackTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (authFallbackTimeoutRef.current) return;
+    authFallbackTimeoutRef.current = setTimeout(() => {
+      authFallbackTimeoutRef.current = null;
+      setAllowGuestExplore(true);
+    }, AUTH_FALLBACK_DELAY_MS);
+
+    return () => {
+      if (authFallbackTimeoutRef.current) {
+        clearTimeout(authFallbackTimeoutRef.current);
+        authFallbackTimeoutRef.current = null;
+      }
+    };
+  }, [authReadyForExplore, enabled, visible]);
 
   useEffect(() => {
     if (!enabled) return;
-    if (!visible) {
+    if (!visible || !canStartExplore) {
       hasInitializedRef.current = false;
       isInitializingRef.current = false;
       setLoading(false);
@@ -610,7 +657,7 @@ export function ExploreFeed({
       unsubscribePaginationRef.current = null;
       clearTimers();
     };
-  }, [clearTimers, enabled, initFeed, visible]);
+  }, [canStartExplore, clearTimers, enabled, initFeed, visible]);
 
   const mergePendingItems = useCallback(() => {
     setNewPostsCount(0);

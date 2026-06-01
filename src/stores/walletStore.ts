@@ -9,6 +9,18 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 type ProofBucket = Map<string, Proof[]>;
 
+export type ProofDebugStats = {
+  received: number;
+  valid: number;
+  amount: number;
+};
+
+export const EMPTY_PROOF_DEBUG_STATS: ProofDebugStats = {
+  received: 0,
+  valid: 0,
+  amount: 0,
+};
+
 const unspentProofs: ProofBucket = new Map();
 const spentProofs: ProofBucket = new Map();
 const reservedProofs: ProofBucket = new Map();
@@ -46,6 +58,17 @@ function balanceFor(unspent: ProofBucket, reserved: ProofBucket) {
     next[mint] = Math.max(0, total - reservedTotal);
   }
   return next;
+}
+
+function proofCountFor(bucket: ProofBucket) {
+  return Array.from(bucket.values()).reduce(
+    (sum, proofs) => sum + proofs.length,
+    0,
+  );
+}
+
+function amountFor(balanceByMint: Record<string, number>) {
+  return Object.values(balanceByMint).reduce((sum, value) => sum + value, 0);
 }
 
 async function readProofs(
@@ -110,6 +133,7 @@ export type WalletStore = {
   walletMintUrls: string[];
   activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
+  proofDebugStats: ProofDebugStats;
   proofsLoaded: boolean;
   proofsVerifying: boolean;
   deletedKind7375Ids: string[];
@@ -134,6 +158,7 @@ export const useWalletStore = create<WalletStore>()(
       walletMintUrls: [],
       activeMintUrl: null,
       balanceByMint: {},
+      proofDebugStats: EMPTY_PROOF_DEBUG_STATS,
       proofsLoaded: false,
       proofsVerifying: false,
       deletedKind7375Ids: [],
@@ -162,9 +187,15 @@ export const useWalletStore = create<WalletStore>()(
           }),
         );
 
+        const balanceByMint = balanceFor(unspentProofs, reservedProofs);
         set({
           proofsLoaded: true,
-          balanceByMint: balanceFor(unspentProofs, reservedProofs),
+          balanceByMint,
+          proofDebugStats: {
+            received: 0,
+            valid: proofCountFor(unspentProofs),
+            amount: amountFor(balanceByMint),
+          },
         });
       },
       addProofs: async (mintUrl, proofs) => {
@@ -177,7 +208,19 @@ export const useWalletStore = create<WalletStore>()(
           rememberMint(activeWalletPubkey, mint),
           writeProofs('unspent', activeWalletPubkey, mint, merged),
         ]);
-        set({ balanceByMint: balanceFor(unspentProofs, reservedProofs) });
+        set(state => {
+          const balanceByMint = balanceFor(unspentProofs, reservedProofs);
+          const currentStats =
+            state.proofDebugStats ?? EMPTY_PROOF_DEBUG_STATS;
+          return {
+            balanceByMint,
+            proofDebugStats: {
+              received: currentStats.received + proofs.length,
+              valid: proofCountFor(unspentProofs),
+              amount: amountFor(balanceByMint),
+            },
+          };
+        });
       },
       verifyAndCleanProofs: async () => {
         if (!activeWalletPubkey || verifyingProofs) return;
@@ -222,7 +265,19 @@ export const useWalletStore = create<WalletStore>()(
               console.error('[wallet] proof state check failed', mint, error);
             }
           }
-          set({ balanceByMint: balanceFor(unspentProofs, reservedProofs) });
+          const balanceByMint = balanceFor(unspentProofs, reservedProofs);
+          set(state => {
+            const currentStats =
+              state.proofDebugStats ?? EMPTY_PROOF_DEBUG_STATS;
+            return {
+              balanceByMint,
+              proofDebugStats: {
+                received: currentStats.received,
+                valid: proofCountFor(unspentProofs),
+                amount: amountFor(balanceByMint),
+              },
+            };
+          });
         } finally {
           verifyingProofs = false;
           set({ proofsVerifying: false });

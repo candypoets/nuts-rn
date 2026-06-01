@@ -67,6 +67,7 @@ export type FeedProps<T> = {
 
 const NEAR_BOTTOM_THRESHOLD = 10;
 const TOP_SAFE_AREA_OFFSET = 8;
+const REFRESH_CONTROL_HEADER_OFFSET = 56;
 const SAFE_AREA_FROST = 'rgba(248, 250, 252, 0.72)';
 
 function defaultGetItemId<T>(item: T, index: number) {
@@ -120,6 +121,9 @@ export function Feed<T>({
   const headerVisible = useSharedValue(0);
   const footerVisible = useSharedValue(1);
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
+  const refreshInset = headerSafeArea
+    ? insets.top + REFRESH_CONTROL_HEADER_OFFSET
+    : 0;
 
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({offset: 0, animated: true});
@@ -265,8 +269,6 @@ export function Feed<T>({
     }
     return empty ? <View className="px-6 py-12">{empty}</View> : null;
   }, [empty, loading]);
-  const refreshOffset = headerSafeArea ? topInset : 0;
-
   return (
     <View className="relative flex-1">
       {fixedHeader ? (
@@ -320,7 +322,7 @@ export function Feed<T>({
         refreshControl={
           pullToRefresh && onRefresh ? (
             <RefreshControl
-              progressViewOffset={refreshOffset}
+              progressViewOffset={refreshInset}
               refreshing={refreshing}
               onRefresh={onRefresh}
             />

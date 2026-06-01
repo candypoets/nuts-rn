@@ -1,8 +1,19 @@
 import './global.css';
 import './textEncodingPolyfill';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  Easing,
+  Keyboard,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  useColorScheme,
+  useWindowDimensions,
+  View,
+  type KeyboardEvent,
+} from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   DefaultTheme,
@@ -80,6 +91,7 @@ const navigationTheme = {
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
   const [manager, setManagerInstance] = useState<NostrManagerLike | null>(null);
+  const keyboardResizeStyle = useKeyboardResizeStyle();
 
   useEffect(() => {
     if (!hasReactNativeModule()) return;
@@ -99,7 +111,7 @@ function App() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <RootServices manager={manager} />
-        <View style={styles.root}>
+        <Animated.View style={[styles.root, keyboardResizeStyle]}>
           <StatusBar
             translucent
             backgroundColor="transparent"
@@ -107,10 +119,58 @@ function App() {
           />
           <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
           <SendStatuses />
-        </View>
+        </Animated.View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+function useKeyboardResizeStyle() {
+  const { height: windowHeight } = useWindowDimensions();
+  const height = useRef(new Animated.Value(windowHeight)).current;
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+
+    height.setValue(windowHeight);
+  }, [height, windowHeight]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+
+    const animateToKeyboardFrame = (event: KeyboardEvent) => {
+      const keyboardTop = event.endCoordinates.screenY;
+      const nextHeight = Math.max(0, Math.min(windowHeight, keyboardTop));
+
+      Animated.timing(height, {
+        toValue: nextHeight,
+        duration: Math.max(1, event.duration || 250),
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    };
+
+    const change = Keyboard.addListener(
+      'keyboardWillChangeFrame',
+      animateToKeyboardFrame,
+    );
+    const hide = Keyboard.addListener('keyboardWillHide', event => {
+      Animated.timing(height, {
+        toValue: windowHeight,
+        duration: Math.max(1, event.duration || 250),
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => {
+      change.remove();
+      hide.remove();
+    };
+  }, [height, windowHeight]);
+
+  if (Platform.OS !== 'ios') return null;
+  return { flex: 0, height };
 }
 
 function RootNavigator({
@@ -241,6 +301,7 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
         pubkey,
         npub: pubkey ? nip19.npubEncode(pubkey) : null,
         hasSigner: detail?.hasSigner ?? false,
+        authResolved: true,
       });
     };
 

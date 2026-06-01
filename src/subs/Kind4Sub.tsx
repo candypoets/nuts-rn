@@ -1,5 +1,20 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Pressable, Text, TextInput, View} from 'react-native';
+import {
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   getManager,
   Kind4ParsedT,
@@ -36,6 +51,7 @@ type Kind4ThreadProps = {
 
 const THREAD_HEADER_HEIGHT = 65;
 const TOP_SAFE_AREA_OFFSET = 8;
+const KEYBOARD_ACCESSORY_SHOW_DELAY_MS = 45;
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -102,6 +118,8 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [eventsVersion, setEventsVersion] = useState(0);
+  const keyboardAccessoryBottom = useSharedValue(0);
+  const keyboardAccessoryProgress = useSharedValue(0);
   const insets = useSafeAreaInsets();
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
@@ -216,6 +234,49 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
       clearPaginationTimeout();
     };
   }, [clearPaginationTimeout, initSubscription, peerPubkey, pubkey, visible]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const keyboardShow = Keyboard.addListener('keyboardWillChangeFrame', event => {
+      const duration = Math.max(1, event.duration || 250);
+      keyboardAccessoryBottom.value = withDelay(
+        KEYBOARD_ACCESSORY_SHOW_DELAY_MS,
+        withTiming(0, {
+          duration: Math.max(1, duration - KEYBOARD_ACCESSORY_SHOW_DELAY_MS),
+        }),
+      );
+      keyboardAccessoryProgress.value = withDelay(
+        KEYBOARD_ACCESSORY_SHOW_DELAY_MS,
+        withTiming(1, {
+          duration: Math.max(1, duration - KEYBOARD_ACCESSORY_SHOW_DELAY_MS),
+        }),
+      );
+    });
+    const keyboardHide = Keyboard.addListener('keyboardWillHide', event => {
+      keyboardAccessoryBottom.value = withTiming(
+        0,
+        {duration: Math.max(1, event.duration || 250)},
+      );
+      keyboardAccessoryProgress.value = withTiming(0, {
+        duration: Math.max(1, event.duration || 250),
+      });
+    });
+
+    return () => {
+      keyboardShow.remove();
+      keyboardHide.remove();
+    };
+  }, [keyboardAccessoryBottom, keyboardAccessoryProgress]);
+
+  const keyboardAccessoryStyle = useAnimatedStyle(() => ({
+    bottom: keyboardAccessoryBottom.value,
+    paddingBottom: interpolate(
+      keyboardAccessoryProgress.value,
+      [0, 1],
+      [insets.bottom, 0],
+    ),
+  }));
 
   useEffect(() => {
     if (loading || itemsBeforePaginationRef.current === 0) return;
@@ -339,6 +400,8 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
     [handleSubmit, message],
   );
 
+  const useKeyboardAccessory = Platform.OS === 'ios';
+
   return (
     <View className="flex-1 bg-slate-50">
       <Feed
@@ -348,8 +411,8 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         bottom
         bottomAutoScroll="initial"
         fixedHeader={fixedHeader}
-        stickyFooter={stickyFooter}
-        stickyFooterVisible
+        stickyFooter={useKeyboardAccessory ? undefined : stickyFooter}
+        stickyFooterVisible={!useKeyboardAccessory}
         onNearBottom={handleNearBottom}
         removeClippedSubviews={false}
         renderItem={({item, index}) => (
@@ -372,6 +435,11 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         }
         contentContainerClassName="px-2 pb-4"
       />
+      {useKeyboardAccessory ? (
+        <Animated.View style={[styles.keyboardAccessory, keyboardAccessoryStyle]}>
+          {stickyFooter()}
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -400,7 +468,7 @@ function MessageBubble({
     : null;
 
   return (
-    <View>
+    <View className={`${isFirst ? 'pt-1.5' : 'pt-0.5'} pb-0.5`}>
       {date ? (
         <View className="my-2 items-center">
           <View className="rounded-full bg-white px-3 py-1">
@@ -433,3 +501,12 @@ function MessageBubble({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  keyboardAccessory: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 30,
+  },
+});

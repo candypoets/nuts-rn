@@ -50,14 +50,12 @@ import {
   Eye,
   EyeOff,
   QrCode,
-  Search,
   ScanLine,
   Send,
   Wallet,
   Zap,
 } from 'lucide-react-native';
 import { Feed } from '../components/Feed';
-import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Avatar } from '../components/notes/Avatar';
 import { User } from '../components/notes/User';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
@@ -904,9 +902,6 @@ function HomeHeader({
         <View className="h-14 flex-row items-center justify-between">
           <Text className="text-2xl font-semibold text-slate-900">Home</Text>
           <View className="flex-row items-center gap-2">
-            <HeaderIconButton onPress={() => navigation.navigate('CmdK')}>
-              <Search size={19} color={iconColor} strokeWidth={2.2} />
-            </HeaderIconButton>
             <HeaderIconButton onPress={onToggleView}>
               {viewHidden ? (
                 <EyeOff size={19} color={iconColor} strokeWidth={2.2} />
@@ -919,7 +914,6 @@ function HomeHeader({
             >
               <QrCode size={19} color={iconColor} strokeWidth={2.2} />
             </HeaderIconButton>
-            <NotificationBellButton />
             <HeaderProfileButton pubkey={pubkey} />
           </View>
         </View>
@@ -1075,7 +1069,6 @@ export function MintCardPicker({
           <MintSquare
             key={mintUrl}
             mintUrl={mintUrl}
-            balance={onChangeAmount ? undefined : balanceByMint[mintUrl] ?? 0}
             selected={mintUrl === activeMint}
             onPress={() => onSelectMint(mintUrl)}
           />
@@ -1119,12 +1112,10 @@ export function MintCardPicker({
 
 function MintSquare({
   mintUrl,
-  balance,
   selected,
   onPress,
 }: {
   mintUrl: string;
-  balance?: number;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -1218,11 +1209,6 @@ function MintSquare({
           </Text>
         </Animated.View>
       )}
-      {typeof balance === 'number' ? (
-        <Text className="absolute bottom-1.5 text-[10px] font-bold text-slate-700">
-          {balance}
-        </Text>
-      ) : null}
     </AnimatedPressable>
   );
 }

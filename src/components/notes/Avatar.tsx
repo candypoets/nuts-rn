@@ -7,7 +7,7 @@ import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type {RootStackParamList} from '../../navigation/types';
 
-type AvatarSize = 'xs' | 'sm' | 'md' | 'lg';
+type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 type AvatarProps = {
   pubkey: string;
@@ -22,6 +22,7 @@ const sizeClass: Record<AvatarSize, string> = {
   sm: 'h-8 w-8',
   md: 'h-10 w-10',
   lg: 'h-12 w-12',
+  xl: 'h-14 w-14',
 };
 
 const fallbackProfileImage = require('../../../assets/miss-profile.png');

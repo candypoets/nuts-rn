@@ -1,8 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +7,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import {Image} from 'expo-image';
 import type {
   Kind0Parsed,
   Kind10019Parsed,
@@ -27,10 +23,11 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import {Wallet as CashuWallet, type Proof} from '@cashu/cashu-ts';
-import {ChevronDown, Send, Zap} from 'lucide-react-native';
+import {ChevronDown} from 'lucide-react-native';
 import {decode} from 'nostr-tools/nip19';
 import type {Event, EventTemplate} from 'nostr-tools';
 
+import {Avatar} from '../components/notes/Avatar';
 import {shortPubkey} from '../components/notes/time';
 import {MintCardPicker} from '../components/MintCardPicker';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -57,7 +54,6 @@ type SendEcashModalProps = {
 
 type SendState = 'idle' | 'loading' | 'sending' | 'sent' | 'error';
 
-const fallbackProfileImage = require('../../assets/miss-profile.png');
 function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
@@ -121,12 +117,13 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     storedActiveMintUrl || walletMintUrls[0] || null,
   );
   const [kind0, setKind0] = useState<Kind0Parsed | null>(null);
-  const [picture, setPicture] = useState<string | null>(null);
   const [recipientMint, setRecipientMint] = useState<string | null>(null);
   const [recipientMints, setRecipientMints] = useState<string[]>([]);
   const [recipientP2pk, setRecipientP2pk] = useState<string | null>(null);
   const [state, setState] = useState<SendState>('loading');
-  const [message, setMessage] = useState('Loading recipient...');
+  const [message, setMessage] = useState('');
+  const [fees, setFees] = useState<number | null>(null);
+  const [feeLoading, setFeeLoading] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const relays = useMemo(() => {
@@ -147,26 +144,25 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
   const hexNoteId = useMemo(() => decodeNoteId(noteId), [noteId]);
   const lnurl = useMemo(() => getLNURLFromProfile(kind0), [kind0]);
   const hasNip61Wallet = !!recipientP2pk && recipientMints.length > 0;
-  const mode = hasNip61Wallet ? 'nutszap' : 'zap';
   const canSend =
     state !== 'sending' &&
+    !feeLoading &&
     !!fromMint &&
     (hasNip61Wallet || !!lnurl) &&
     Number.isInteger(numericAmount) &&
     numericAmount > 0 &&
-    numericAmount <= balance;
+    numericAmount + Number(fees || 0) <= balance;
   const name = profileName(kind0, pubkey);
 
   useEffect(() => {
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
     setKind0(null);
-    setPicture(null);
     setRecipientMint(null);
     setRecipientMints([]);
     setRecipientP2pk(null);
     setState('loading');
-    setMessage('Loading recipient...');
+    setMessage('');
 
     unsubscribeRef.current = subscribeToNostr(
       `send_ecash_${pubkey}_${relayHash(relays)}`,
@@ -180,7 +176,6 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         if (parsed.kind() === 0) {
           const profile = asKind0(parsed);
           setKind0(profile);
-          setPicture(profile?.picture?.() || null);
         }
         if (parsed.kind() === 10019) {
           const wallet = asKind10019(parsed) as Kind10019Parsed | null;
@@ -203,9 +198,6 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
 
     const fallback = setTimeout(() => {
       setState(current => (current === 'loading' ? 'idle' : current));
-      setMessage(current =>
-        current === 'Loading recipient...' ? 'Recipient wallet not found yet.' : current,
-      );
     }, 1800);
 
     return () => {
@@ -227,6 +219,82 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
   const selectRecipientMint = useCallback((mint: string) => {
     setRecipientMint(normalizeMintUrl(mint));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const toMint = recipientMint || recipientMints[0] || null;
+
+    setFees(null);
+    if (!fromMint || !Number.isInteger(numericAmount) || numericAmount <= 0) {
+      setFeeLoading(false);
+      return;
+    }
+    if (hasNip61Wallet && (!toMint || toMint === fromMint)) {
+      setFees(0);
+      setFeeLoading(false);
+      return;
+    }
+    if (!hasNip61Wallet && !lnurl) {
+      setFeeLoading(false);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setFeeLoading(true);
+      (async () => {
+        try {
+          const fromWallet = new CashuWallet(fromMint);
+          await fromWallet.loadMint();
+          if (hasNip61Wallet && toMint && recipientP2pk) {
+            const toWallet = new CashuWallet(toMint);
+            await toWallet.loadMint();
+            const mintQuote = await toWallet.createMintQuote(numericAmount, recipientP2pk);
+            const meltQuote = await fromWallet.createMeltQuote(mintQuote.request);
+            if (!cancelled) setFees(Number(meltQuote.fee_reserve || 0));
+            return;
+          }
+          if (lnurl) {
+            const zapRequest = buildZapRequestTemplate({
+              pubkey,
+              amount: numericAmount,
+              lnurl,
+              relays: writeRelays.length ? writeRelays : relays,
+              content: memo.trim(),
+              noteId: hexNoteId || undefined,
+              createdAt: Math.floor(Date.now() / 1000),
+            });
+            const signedZapRequest = await signEvent(zapRequest);
+            const {pr} = await getZapInvoice(lnurl, numericAmount, signedZapRequest);
+            const meltQuote = await fromWallet.createMeltQuote(pr);
+            if (!cancelled) setFees(Number(meltQuote.fee_reserve || 0));
+          }
+        } catch (error) {
+          console.warn('[send-ecash] fee quote failed', error);
+          if (!cancelled) setFees(null);
+        } finally {
+          if (!cancelled) setFeeLoading(false);
+        }
+      })();
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [
+    fromMint,
+    hasNip61Wallet,
+    hexNoteId,
+    lnurl,
+    memo,
+    numericAmount,
+    pubkey,
+    recipientMint,
+    recipientMints,
+    recipientP2pk,
+    relays,
+    writeRelays,
+  ]);
 
   const sendEcash = useCallback(async () => {
     if (!fromMint || !canSend) return;
@@ -494,23 +562,26 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
   ]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.modalBody}
-    >
+    <View style={styles.modalBody}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
       >
-        <View className="h-14 flex-row items-center justify-between">
+        <View style={styles.header}>
           <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full"
+            style={styles.iconButton}
             hitSlop={12}
             onPress={onClose}
           >
-            <ChevronDown size={24} color="#64748b" strokeWidth={2.4} />
+            <ChevronDown size={23} color="#17212b" strokeWidth={2.3} />
           </Pressable>
-          {state === 'loading' ? <ActivityIndicator color="#1f7a5a" /> : <View className="h-10 w-10" />}
+          <Pressable
+            style={[styles.submitButton, (!canSend || state === 'sent') && styles.submitDisabled]}
+            disabled={!canSend || state === 'sent'}
+            onPress={sendEcash}
+          >
+            <Text style={styles.submitText}>Zap</Text>
+          </Pressable>
         </View>
 
         <View className="mx-auto mt-2 w-full max-w-[340px]">
@@ -519,6 +590,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
             activeMintUrl={fromMint}
             balanceByMint={balanceByMint}
             amount={amount}
+            fee={fees}
             onChangeAmount={setAmount}
             onSelectMint={mint => {
               if (mint) selectMint(mint);
@@ -532,13 +604,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
           {hasNip61Wallet ? (
             <View className="w-full max-w-[340px] items-center">
               <View className="mb-3 flex-row items-center rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-                <View className="h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-200">
-                  <Image
-                    source={picture ? {uri: picture} : fallbackProfileImage}
-                    className="h-full w-full"
-                    contentFit="cover"
-                  />
-                </View>
+                <Avatar pubkey={pubkey} size="xl" />
                 <Text className="ml-2 max-w-[180px] text-lg font-semibold text-slate-700" numberOfLines={1}>
                   {name}
                 </Text>
@@ -555,13 +621,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
             </View>
           ) : (
             <View className="flex-row items-center rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-              <View className="h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-200">
-                <Image
-                  source={picture ? {uri: picture} : fallbackProfileImage}
-                  className="h-full w-full"
-                  contentFit="cover"
-                />
-              </View>
+              <Avatar pubkey={pubkey} size="xl" />
               <Text className="ml-2 max-w-[180px] text-lg font-semibold text-slate-700" numberOfLines={1}>
                 {name}
               </Text>
@@ -569,14 +629,18 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
           )}
         </View>
 
-        <Text className="mt-8 px-4 text-lg font-semibold leading-7 text-slate-500">
-          {hasNip61Wallet
-            ? recipientMint && recipientMint !== fromMint
-              ? 'A fee may apply for this transaction. This covers Lightning network costs and is only reserved - you might get some or all of it refunded.'
-              : 'No fees apply when both wallets use the same mint.'
+        <Text className="mt-8 px-4 text-center text-sm leading-5 text-slate-500">
+          {feeLoading
+            ? 'Calculating fees...'
+            : typeof fees === 'number'
+            ? fees > 0
+              ? `A fee of ${fees} sats may apply for this transaction. This covers Lightning network costs and is only reserved - you might get some or all of it refunded.`
+              : 'No fees apply.'
+            : hasNip61Wallet
+            ? 'Select the recipient mint to calculate fees.'
             : lnurl
-            ? 'Recipient has no NutsZap wallet, so this will be sent as a normal Lightning zap. A fee may apply.'
-            : 'Waiting for a NutsZap wallet or Lightning Address on this profile.'}
+            ? 'This will be sent as a normal Lightning zap. A fee may apply.'
+            : 'Add a Lightning Address to this profile to zap.'}
         </Text>
 
         <TextInput
@@ -600,33 +664,8 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
             {message}
           </Text>
         ) : null}
-
-        <View className="mx-4 mt-5 overflow-hidden rounded-xl border border-slate-300 bg-white">
-          <View className="flex-row">
-            <View className="h-16 w-20 items-center justify-center border-r border-slate-300 bg-slate-50">
-              <Zap size={30} color={mode === 'zap' ? '#eab308' : '#1f7a5a'} strokeWidth={2.4} />
-            </View>
-            <Pressable
-              className="h-16 flex-1 items-center justify-center"
-              accessibilityRole="button"
-              accessibilityState={{disabled: !canSend || state === 'sent'}}
-            disabled={!canSend || state === 'sent'}
-            onPress={sendEcash}
-            >
-              {state === 'sending' ? (
-                <ActivityIndicator color="#1f7a5a" />
-              ) : (
-                <Send
-                  size={28}
-                  color={canSend && state !== 'sent' ? '#1f7a5a' : '#cbd5e1'}
-                  strokeWidth={2.4}
-                />
-              )}
-            </Pressable>
-          </View>
-        </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -634,6 +673,41 @@ const styles = StyleSheet.create({
   modalBody: {
     backgroundColor: '#f8fafc',
     flex: 1,
+  },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    height: 56,
+    justifyContent: 'space-between',
+  },
+  iconButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  submitButton: {
+    alignItems: 'center',
+    backgroundColor: '#158777',
+    borderRadius: 19,
+    flexDirection: 'row',
+    gap: 7,
+    height: 38,
+    justifyContent: 'center',
+    minWidth: 88,
+    paddingHorizontal: 14,
+  },
+  submitDisabled: {
+    backgroundColor: '#cbd5e1',
+  },
+  submitText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   content: {
     paddingBottom: 36,

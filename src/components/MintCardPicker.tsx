@@ -16,6 +16,7 @@ type MintCardPickerProps = {
   activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   amount?: string;
+  fee?: number | null;
   onChangeAmount?: (amount: string) => void;
   stripOnly?: boolean;
   onSelectMint: (mintUrl: string | null) => void;
@@ -41,6 +42,7 @@ export function MintCardPicker({
   activeMintUrl,
   balanceByMint,
   amount,
+  fee,
   onChangeAmount,
   stripOnly = false,
   onSelectMint,
@@ -50,6 +52,7 @@ export function MintCardPicker({
       ? activeMintUrl
       : mintUrls[0];
   const activeBalance = activeMint ? balanceByMint[activeMint] ?? 0 : 0;
+  const maxAmount = Math.max(0, activeBalance - Number(fee || 0));
 
   if (!activeMint) return null;
 
@@ -87,7 +90,6 @@ export function MintCardPicker({
           <MintSquare
             key={mintUrl}
             mintUrl={mintUrl}
-            balance={onChangeAmount ? undefined : balanceByMint[mintUrl] ?? 0}
             selected={mintUrl === activeMint}
             onPress={() => onSelectMint(mintUrl)}
           />
@@ -113,6 +115,9 @@ export function MintCardPicker({
               />
               <Text className="pb-3 text-base font-bold text-slate-500">sats</Text>
             </View>
+            <Text className="text-xs font-semibold text-slate-500">
+              max {maxAmount} sats
+            </Text>
           </>
         ) : (
           <>
@@ -131,12 +136,10 @@ export function MintCardPicker({
 
 function MintSquare({
   mintUrl,
-  balance,
   selected,
   onPress,
 }: {
   mintUrl: string;
-  balance?: number;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -227,11 +230,6 @@ function MintSquare({
           </Text>
         </Animated.View>
       )}
-      {typeof balance === 'number' ? (
-        <Text className="absolute bottom-1.5 text-[10px] font-bold text-slate-700">
-          {balance}
-        </Text>
-      ) : null}
     </AnimatedPressable>
   );
 }

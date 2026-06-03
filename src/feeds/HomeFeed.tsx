@@ -5,11 +5,22 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import {Image} from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { neventEncode } from 'nostr-tools/nip19';
 import {
+  MuteFilterPipeConfigT,
   ParsePipeConfigT,
   PipeConfig,
   PipeT,
@@ -39,6 +50,7 @@ import {
   Eye,
   EyeOff,
   QrCode,
+  Search,
   ScanLine,
   Send,
   Wallet,
@@ -58,6 +70,9 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 type HomeFeedProps = {
   enabled: boolean;
@@ -81,6 +96,7 @@ type WalletActivity = {
 type MintInfo = {
   name: string;
   url: string;
+  iconUrl?: string;
   state?: string;
   n_errors?: number;
   n_mints?: number;
@@ -105,7 +121,16 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribeWalletRef = useRef<(() => void) | null>(null);
   const unsubscribeProofsRef = useRef<(() => void) | null>(null);
+  const unsubscribeNutzapsRef = useRef<(() => void) | null>(null);
+  const handleProofsMessageRef = useRef<((message: WorkerMessage) => void) | null>(
+    null,
+  );
   const proofSubscriptionSeqRef = useRef(0);
+  const proofSinceRef = useRef<number | null>(null);
+  const pendingProofEventsRef = useRef<ParsedEvent[]>([]);
+  const proofEoseReceivedRef = useRef(false);
+  const collectingProofBackupsRef = useRef(false);
+  const resolveProofBackupsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
@@ -117,28 +142,74 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const [loading, setLoading] = useState(false);
   const [viewHidden, setViewHidden] = useState(false);
   const [, setTick] = useState(0);
+  const [walletRelayFallbackReady, setWalletRelayFallbackReady] = useState(false);
+  const [proofDebug, setProofDebug] = useState({
+    validProofMessages: 0,
+    proofCount: 0,
+    backupEvents: 0,
+    nutzapEvents: 0,
+  });
   const authPubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
+  const kind10019UpdatedAt = useNostrStore(state => state.kind10019UpdatedAt);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const activeMintUrl = useWalletStore(state => state.activeMintUrl);
   const balanceByMint = useWalletStore(state => state.balanceByMint);
+  const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
+  const mutedHashtags = useNostrStore(state => state.mutedHashtags);
+  const mutedWords = useNostrStore(state => state.mutedWords);
+  const mutedEventIds = useNostrStore(state => state.mutedEventIds);
   const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
   const initializeProofWallet = useWalletStore(
     state => state.initializeProofWallet,
   );
-  const addProofs = useWalletStore(state => state.addProofs);
-  const verifyAndCleanProofs = useWalletStore(
-    state => state.verifyAndCleanProofs,
+  const clearProofStorageOnce = useWalletStore(
+    state => state.clearProofStorageOnce,
   );
+  const addProofs = useWalletStore(state => state.addProofs);
+  const checkAndFilterProofs = useWalletStore(state => state.checkAndFilterProofs);
+  const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
   const homeRelays = useMemo(() => {
-    const resolvedRelays = [...new Set([...walletReadRelays, ...readRelays])];
-    return resolvedRelays.length ? resolvedRelays : DEFAULT_FEED_RELAYS;
+    return [
+      ...new Set([
+        ...DEFAULT_FEED_RELAYS,
+        ...walletReadRelays,
+        ...readRelays,
+        'wss://relay.nuts.cash',
+      ]),
+    ];
   }, [readRelays, walletReadRelays]);
+  const walletProofRelays = useMemo(() => {
+    return [...new Set([...readRelays, ...walletReadRelays])];
+  }, [readRelays, walletReadRelays]);
+  const walletRelaysResolved =
+    kind10019UpdatedAt > 0 || walletRelayFallbackReady;
   const homeKey = authPubkey || 'anon';
+
+  const proofPipeline = useMemo(
+    () => [
+      new PipeT(
+        PipeConfig.MuteFilterPipeConfig,
+        new MuteFilterPipeConfigT(
+          mutedPubkeys,
+          mutedHashtags,
+          mutedWords,
+          mutedEventIds,
+        ),
+      ),
+      new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
+      new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
+      new PipeT(
+        PipeConfig.ProofVerificationPipeConfig,
+        new ProofVerificationPipeConfigT(500),
+      ),
+    ],
+    [mutedEventIds, mutedHashtags, mutedPubkeys, mutedWords],
+  );
 
   const requestList = useCallback((): RequestObject[] => {
     if (!authPubkey) return [];
@@ -206,7 +277,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   );
 
   const handleMessage = useCallback(
-    (message: WorkerMessage) => {
+    async (message: WorkerMessage) => {
       if (asEoce(message)) {
         eoceReceivedRef.current = true;
         commitPendingItems();
@@ -272,7 +343,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   ]);
 
   const handleWalletMessage = useCallback(
-    (message: WorkerMessage) => {
+    async (message: WorkerMessage) => {
       const status = asConnectionStatus(message);
       if (status) {
         const relayUrl = status.relayUrl();
@@ -293,73 +364,209 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         (_, index) => wallet.mints(index),
       ).filter((mint): mint is string => !!mint);
 
-      setWalletMintUrls(mintUrls);
-      setActiveMintUrl(
-        activeMintUrl && mintUrls.includes(activeMintUrl)
-          ? activeMintUrl
-          : mintUrls[0] ?? null,
-      );
-      if (authPubkey) {
-        initializeProofWallet(authPubkey, mintUrls).catch(error => {
-          console.error('[home-wallet] proof wallet init failed', error);
-        });
+      const currentWallet = useWalletStore.getState();
+      const normalizedMintUrls = mintUrls.map(normalizeMintUrl);
+      const currentMintUrls = currentWallet.walletMintUrls.map(normalizeMintUrl);
+      if (!sameStringArray(currentMintUrls, normalizedMintUrls)) {
+        setWalletMintUrls(mintUrls);
+      }
+
+      const nextActiveMintUrl =
+        currentWallet.activeMintUrl &&
+        normalizedMintUrls.includes(normalizeMintUrl(currentWallet.activeMintUrl))
+          ? currentWallet.activeMintUrl
+          : mintUrls[0] ?? null;
+      if (nextActiveMintUrl !== currentWallet.activeMintUrl) {
+        setActiveMintUrl(nextActiveMintUrl);
       }
     },
     [
-      activeMintUrl,
-      authPubkey,
-      initializeProofWallet,
       setActiveMintUrl,
       setRelayStatus,
       setWalletMintUrls,
     ],
   );
 
+  const subscribeToNutzapsSince = useCallback(
+    (since: number) => {
+      if (!authPubkey || !walletProofRelays.length) return;
+      proofSinceRef.current = since;
+      unsubscribeNutzapsRef.current?.();
+      console.log('[home-wallet] proof fetch relays', {
+        phase: 'nutzaps',
+        subId: `nutszap_events_${authPubkey}_${requestCacheRef.current}_${since}`,
+        since,
+        relays: walletProofRelays,
+        source: 'readRelays+walletReadRelays',
+        walletReadRelays,
+        readRelays,
+      });
+      unsubscribeNutzapsRef.current = subscribeToNostr(
+        `nutszap_events_${authPubkey}_${requestCacheRef.current}_${since}`,
+        [
+          {
+            kinds: [9321],
+            tags: { '#p': [authPubkey] },
+            since,
+            noCache: !!requestCacheRef.current,
+            limit: 50,
+            relays: walletProofRelays,
+          },
+        ],
+        message => handleProofsMessageRef.current?.(message),
+        {
+          isSlow: true,
+          pipeline: proofPipeline,
+        },
+      );
+      console.log('[home-wallet] querying nutzaps after proof backups', {
+        since,
+      });
+    },
+    [
+      authPubkey,
+      proofPipeline,
+      walletReadRelays,
+      walletProofRelays,
+    ],
+  );
+
+  const finishProofBackupScan = useCallback(() => {
+    if (resolveProofBackupsTimeoutRef.current) {
+      clearTimeout(resolveProofBackupsTimeoutRef.current);
+      resolveProofBackupsTimeoutRef.current = null;
+    }
+    if (!collectingProofBackupsRef.current) return;
+    collectingProofBackupsRef.current = false;
+    verifyAndCleanProofs()
+      .then(() => {
+        console.log('[home-wallet] finished proof backup scan');
+        subscribeToNutzapsSince(Math.floor(Date.now() / 1000) - 24 * 60 * 60);
+      })
+      .catch(error => {
+        console.error('[home-wallet] proof backup finish failed', error);
+      });
+  }, [
+    subscribeToNutzapsSince,
+    verifyAndCleanProofs,
+  ]);
+
+  const scheduleResolveProofBackups = useCallback(
+    (reason: string) => {
+      if (!collectingProofBackupsRef.current) return;
+      if (resolveProofBackupsTimeoutRef.current) {
+        clearTimeout(resolveProofBackupsTimeoutRef.current);
+      }
+      resolveProofBackupsTimeoutRef.current = setTimeout(() => {
+        console.log('[home-wallet] finishing proof backup scan', {
+          reason,
+        });
+        finishProofBackupScan();
+      }, 1200);
+    },
+    [finishProofBackupScan],
+  );
+
   const handleProofsMessage = useCallback(
-    (message: WorkerMessage) => {
+    async (message: WorkerMessage) => {
       if (asEoce(message)) {
         verifyAndCleanProofs().catch(error => {
-          console.error('[home-wallet] proof cleanup failed', error);
+          console.error('[home-wallet] proof verification failed', error);
         });
+        scheduleResolveProofBackups('eoce');
         return;
       }
 
       const status = asConnectionStatus(message);
       if (status) {
-        const relayStatus = status.status()?.toString();
-        if (relayStatus === 'EOSE') {
+        if (status.status()?.toString() === 'EOSE' && !proofEoseReceivedRef.current) {
+          proofEoseReceivedRef.current = true;
           verifyAndCleanProofs().catch(error => {
-            console.error('[home-wallet] proof cleanup failed', error);
+            console.error('[home-wallet] proof verification failed', error);
           });
+          scheduleResolveProofBackups('eose');
         }
         return;
       }
 
       const validProofs = isValidProofs(message);
-      if (!validProofs) return;
+      if (!validProofs) {
+        const parsed = asParsedEvent(message);
+        if (parsed && (parsed.kind() === 7375 || parsed.kind() === 9321)) {
+          pendingProofEventsRef.current.push(parsed);
+          console.log('[home-wallet] proof event forwarded', {
+            id: parsed.id(),
+            kind: parsed.kind(),
+            createdAt: parsed.createdAt(),
+            relays: fbArray(parsed, 'relays'),
+          });
+        }
+        return;
+      }
 
+      const sourceEvent = pendingProofEventsRef.current[0];
+      const sourceKind =
+        sourceEvent?.kind() ??
+        (collectingProofBackupsRef.current ? 7375 : undefined);
+      let rawProofCount = 0;
+      let messageProofCount = 0;
       for (const mintProofs of fbIterable(validProofs, 'proofs')) {
         const mint = mintProofs.mint();
         if (!mint) continue;
         const proofs = fbArray(mintProofs, 'proofs')
           .map(toCashuProof)
           .filter((proof): proof is Proof => !!proof);
-        if (proofs.length) {
-          addProofs(mint, proofs).catch(error => {
+        rawProofCount += proofs.length;
+        const checkedProofs =
+          proofEoseReceivedRef.current && !collectingProofBackupsRef.current
+            ? await checkAndFilterProofs(mint, proofs)
+            : proofs;
+        messageProofCount += checkedProofs.length;
+        if (checkedProofs.length) {
+          addProofs(mint, checkedProofs).catch(error => {
             console.error('[home-wallet] proof ingest failed', error);
           });
         }
       }
+      console.log('[home-wallet] valid proofs message', {
+        sourceKind,
+        rawProofs: rawProofCount,
+        keptProofs: messageProofCount,
+      });
+      if (pendingProofEventsRef.current.length) {
+        pendingProofEventsRef.current.shift();
+      }
+      if (sourceKind === 7375) {
+        scheduleResolveProofBackups('valid-proof-backup');
+      }
+      setProofDebug(current => ({
+        validProofMessages: current.validProofMessages + 1,
+        proofCount: current.proofCount + messageProofCount,
+        backupEvents:
+          sourceKind === 7375 ? current.backupEvents + 1 : current.backupEvents,
+        nutzapEvents:
+          sourceKind === 9321 ? current.nutzapEvents + 1 : current.nutzapEvents,
+      }));
     },
-    [addProofs, verifyAndCleanProofs],
+    [
+      addProofs,
+      checkAndFilterProofs,
+      scheduleResolveProofBackups,
+      verifyAndCleanProofs,
+    ],
   );
+
+  useEffect(() => {
+    handleProofsMessageRef.current = handleProofsMessage;
+  }, [handleProofsMessage]);
 
   const initWallet = useCallback(() => {
     if (!enabled || !visible || !authPubkey) return;
-    if (!homeRelays.length) return;
+    if (!walletRelaysResolved) return;
+    if (!walletProofRelays.length) return;
     const subId = `active_wallet_${authPubkey}_${
       requestCacheRef.current
-    }_${hashKey(homeRelays.join(','))}`;
+    }_${hashKey(walletProofRelays.join(','))}`;
     unsubscribeWalletRef.current?.();
     unsubscribeWalletRef.current = subscribeToNostr(
       subId,
@@ -369,58 +576,75 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
           authors: [authPubkey],
           limit: 10,
           noCache: !!requestCacheRef.current,
-          relays: homeRelays,
+          relays: walletProofRelays,
         },
       ],
       handleWalletMessage,
       { bytesPerEvent: 6144 },
     );
-  }, [authPubkey, enabled, handleWalletMessage, homeRelays, visible]);
+  }, [
+    authPubkey,
+    enabled,
+    handleWalletMessage,
+    visible,
+    walletProofRelays,
+    walletRelaysResolved,
+  ]);
 
   const initProofs = useCallback(() => {
     if (!enabled || !visible || !authPubkey) return;
-    if (!homeRelays.length) return;
+    if (!walletRelaysResolved) return;
+    if (!walletProofRelays.length) return;
     const seq = proofSubscriptionSeqRef.current + 1;
     proofSubscriptionSeqRef.current = seq;
-    const subId = `wallet_proofs_${authPubkey}_${
-      requestCacheRef.current
-    }_${hashKey(homeRelays.join(','))}`;
+    proofSinceRef.current = null;
+    pendingProofEventsRef.current = [];
+    proofEoseReceivedRef.current = false;
+    collectingProofBackupsRef.current = true;
+    if (resolveProofBackupsTimeoutRef.current) {
+      clearTimeout(resolveProofBackupsTimeoutRef.current);
+      resolveProofBackupsTimeoutRef.current = null;
+    }
+    setProofDebug({
+      validProofMessages: 0,
+      proofCount: 0,
+      backupEvents: 0,
+      nutzapEvents: 0,
+    });
+    const subId = `nutszap_${authPubkey}_${requestCacheRef.current}`;
+    const requests: RequestObject[] = [
+      {
+        kinds: [7375],
+        authors: [authPubkey],
+        noCache: !!requestCacheRef.current,
+        limit: 20,
+        relays: walletProofRelays,
+      },
+    ];
+    console.log('[home-wallet] proof fetch relays', {
+      phase: 'backups',
+      subId,
+      relays: walletProofRelays,
+      source: 'readRelays+walletReadRelays',
+      walletReadRelays,
+      readRelays,
+    });
     unsubscribeProofsRef.current?.();
+    unsubscribeNutzapsRef.current?.();
     unsubscribeProofsRef.current = null;
-    initializeProofWallet(authPubkey, walletMintUrls)
+    unsubscribeNutzapsRef.current = null;
+    clearProofStorageOnce(authPubkey)
+      .then(() => initializeProofWallet(authPubkey, walletMintUrls))
+      .then(() => verifyAndCleanProofs())
       .then(() => {
         if (proofSubscriptionSeqRef.current !== seq) return;
         unsubscribeProofsRef.current = subscribeToNostr(
           subId,
-          [
-            {
-              kinds: [7375],
-              authors: [authPubkey],
-              noCache: !!requestCacheRef.current,
-              relays: homeRelays,
-            },
-            {
-              kinds: [9321],
-              tags: { '#p': [authPubkey] },
-              limit: 50,
-              noCache: !!requestCacheRef.current,
-              relays: homeRelays,
-            },
-          ],
+          requests,
           handleProofsMessage,
           {
             isSlow: true,
-            pipeline: [
-              new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
-              new PipeT(
-                PipeConfig.SaveToDbPipeConfig,
-                new SaveToDbPipeConfigT(),
-              ),
-              new PipeT(
-                PipeConfig.ProofVerificationPipeConfig,
-                new ProofVerificationPipeConfigT(500),
-              ),
-            ],
+            pipeline: proofPipeline,
           },
         );
       })
@@ -429,12 +653,33 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
       });
   }, [
     authPubkey,
+    clearProofStorageOnce,
     enabled,
     handleProofsMessage,
-    homeRelays,
     initializeProofWallet,
+    proofPipeline,
+    verifyAndCleanProofs,
     visible,
+    walletProofRelays,
+    walletRelaysResolved,
     walletMintUrls,
+    walletReadRelays,
+  ]);
+
+  useEffect(() => {
+    setWalletRelayFallbackReady(false);
+    if (!enabled || !visible || !authPubkey || kind10019UpdatedAt > 0) return;
+
+    const timeout = setTimeout(() => {
+      setWalletRelayFallbackReady(true);
+    }, 1000);
+
+    return () => clearTimeout(timeout);
+  }, [
+    authPubkey,
+    enabled,
+    kind10019UpdatedAt,
+    visible,
   ]);
 
   useEffect(() => {
@@ -445,6 +690,14 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = false;
     eoceReceivedRef.current = false;
+    proofSinceRef.current = null;
+    pendingProofEventsRef.current = [];
+    proofEoseReceivedRef.current = false;
+    collectingProofBackupsRef.current = false;
+    if (resolveProofBackupsTimeoutRef.current) {
+      clearTimeout(resolveProofBackupsTimeoutRef.current);
+      resolveProofBackupsTimeoutRef.current = null;
+    }
     seenIdsRef.current.clear();
     setTick(tick => tick + 1);
   }, [homeKey]);
@@ -457,15 +710,25 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     unsubscribeWalletRef.current?.();
     unsubscribeWalletRef.current = null;
     unsubscribeProofsRef.current?.();
+    unsubscribeNutzapsRef.current?.();
     unsubscribeProofsRef.current = null;
+    unsubscribeNutzapsRef.current = null;
+    proofSinceRef.current = null;
+    pendingProofEventsRef.current = [];
+    proofEoseReceivedRef.current = false;
+    collectingProofBackupsRef.current = false;
+    if (resolveProofBackupsTimeoutRef.current) {
+      clearTimeout(resolveProofBackupsTimeoutRef.current);
+      resolveProofBackupsTimeoutRef.current = null;
+    }
     proofSubscriptionSeqRef.current += 1;
     setLoading(false);
     setRefreshing(false);
 
     if (enabled && visible && authPubkey) {
       // Temporarily disabled while investigating iOS crashes around wallet/kind0 resolution.
-      // initWallet();
-      // initProofs();
+      initWallet();
+      initProofs();
       initFeed();
     }
 
@@ -498,8 +761,8 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     requestCacheRef.current += 1;
     setRefreshing(true);
     // Temporarily disabled while investigating iOS crashes around wallet/kind0 resolution.
-    // initWallet();
-    // initProofs();
+    initWallet();
+    initProofs();
     initFeed();
   }, [authPubkey, initFeed, initProofs, initWallet, refreshing]);
 
@@ -520,6 +783,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={walletMintUrls}
+        activeMintUrl={activeMintUrl}
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
@@ -527,6 +791,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     ),
     [
       authPubkey,
+      activeMintUrl,
       balanceByMint,
       homeRelays,
       relayStatuses,
@@ -544,6 +809,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={[]}
+        activeMintUrl={activeMintUrl}
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
@@ -552,6 +818,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     ),
     [
       authPubkey,
+      activeMintUrl,
       balanceByMint,
       homeRelays,
       relayStatuses,
@@ -601,6 +868,7 @@ function HomeHeader({
   viewHidden,
   pubkey,
   mintUrls,
+  activeMintUrl,
   balanceByMint,
   onSelectMint,
   onToggleView,
@@ -612,6 +880,7 @@ function HomeHeader({
   viewHidden: boolean;
   pubkey: string | null;
   mintUrls: string[];
+  activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   onToggleView: () => void;
@@ -619,6 +888,7 @@ function HomeHeader({
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    const iconColor = "#17212b";
 
   return (
     <View
@@ -632,17 +902,22 @@ function HomeHeader({
         }`}
       >
         <View className="h-14 flex-row items-center justify-between">
-          <Text className="text-2xl font-semibold text-slate-950">Home</Text>
+          <Text className="text-2xl font-semibold text-slate-900">Home</Text>
           <View className="flex-row items-center gap-2">
+            <HeaderIconButton onPress={() => navigation.navigate('CmdK')}>
+              <Search size={19} color={iconColor} strokeWidth={2.2} />
+            </HeaderIconButton>
             <HeaderIconButton onPress={onToggleView}>
               {viewHidden ? (
-                <EyeOff size={19} color="#17212b" strokeWidth={2.2} />
+                <EyeOff size={19} color={iconColor} strokeWidth={2.2} />
               ) : (
-                <Eye size={19} color="#17212b" strokeWidth={2.2} />
+                <Eye size={19} color={iconColor} strokeWidth={2.2} />
               )}
             </HeaderIconButton>
-            <HeaderIconButton onPress={() => navigation.navigate('Scan')}>
-              <QrCode size={19} color="#17212b" strokeWidth={2.2} />
+            <HeaderIconButton
+              onPress={() => navigation.navigate('Scan', { mode: 'share' })}
+            >
+              <QrCode size={19} color={iconColor} strokeWidth={2.2} />
             </HeaderIconButton>
             <NotificationBellButton />
             <HeaderProfileButton pubkey={pubkey} />
@@ -656,6 +931,7 @@ function HomeHeader({
         {!compact && pubkey ? (
           <WalletHeaderSection
             mintUrls={mintUrls}
+            activeMintUrl={activeMintUrl}
             balanceByMint={balanceByMint}
             onSelectMint={onSelectMint}
             showMintCards={showMintCards}
@@ -668,16 +944,18 @@ function HomeHeader({
 
 function WalletHeaderSection({
   mintUrls,
+  activeMintUrl,
   balanceByMint,
   onSelectMint,
   showMintCards = true,
 }: {
   mintUrls: string[];
+  activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   showMintCards?: boolean;
 }) {
-  if (showMintCards && !mintUrls.length) {
+    if (showMintCards && !mintUrls.length) {
     return (
       <View className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
         <View className="flex-row items-center justify-between gap-3">
@@ -689,8 +967,8 @@ function WalletHeaderSection({
               No Cashu wallet event was found yet.
             </Text>
           </View>
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-emerald-50">
-            <Wallet size={20} color="#1f7a5a" strokeWidth={2.2} />
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-slate-200">
+            <Wallet size={20} color={"#1f7a5a"} strokeWidth={2.2} />
           </View>
         </View>
       </View>
@@ -698,22 +976,14 @@ function WalletHeaderSection({
   }
 
   return (
-    <View className="mt-3">
+    <View className="mt-1">
       {showMintCards ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-3 pr-4"
-        >
-          {mintUrls.map(mintUrl => (
-            <MintCard
-              key={mintUrl}
-              mintUrl={mintUrl}
-              balance={balanceByMint[mintUrl] ?? 0}
-              onPress={() => onSelectMint(mintUrl)}
-            />
-          ))}
-        </ScrollView>
+        <MintCardPicker
+          mintUrls={mintUrls}
+          activeMintUrl={activeMintUrl}
+          balanceByMint={balanceByMint}
+          onSelectMint={onSelectMint}
+        />
       ) : null}
       <WalletActions className={showMintCards ? 'mt-4' : undefined} />
     </View>
@@ -729,6 +999,7 @@ function WalletActions({ className = '' }: { className?: string }) {
       <WalletAction
         icon={<CirclePlus size={25} color="#ffffff" strokeWidth={2.3} />}
         label="Receive"
+        onPress={() => navigation.navigate('Receive')}
       />
       <WalletAction
         icon={<Send size={25} color="#ffffff" strokeWidth={2.3} />}
@@ -737,27 +1008,131 @@ function WalletActions({ className = '' }: { className?: string }) {
       />
       <WalletAction
         outlined
-        icon={<ScanLine size={25} color="#1f7a5a" strokeWidth={2.3} />}
+        icon={<ScanLine size={25} color={"#1f7a5a"} strokeWidth={2.3} />}
         label="Scan"
-        onPress={() => navigation.navigate('Scan')}
+        onPress={() => navigation.navigate('Scan', { mode: 'scan' })}
       />
     </View>
   );
 }
 
-function MintCard({
+export function MintCardPicker({
+  mintUrls,
+  activeMintUrl,
+  balanceByMint,
+  amount,
+  onChangeAmount,
+  stripOnly = false,
+  onSelectMint,
+}: {
+  mintUrls: string[];
+  activeMintUrl: string | null;
+  balanceByMint: Record<string, number>;
+  amount?: string;
+  onChangeAmount?: (amount: string) => void;
+  stripOnly?: boolean;
+  onSelectMint: (mintUrl: string | null) => void;
+}) {
+  const activeMint =
+    activeMintUrl && mintUrls.includes(activeMintUrl)
+      ? activeMintUrl
+      : mintUrls[0];
+  const activeBalance = activeMint ? balanceByMint[activeMint] ?? 0 : 0;
+
+  if (!activeMint) return null;
+
+  if (stripOnly) {
+    return (
+      <View className="h-[92px]">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          className="-mx-3 h-[92px]"
+          contentContainerStyle={styles.mintStripContent}
+        >
+          {mintUrls.map(mintUrl => (
+            <MintSquare
+              key={mintUrl}
+              mintUrl={mintUrl}
+              selected={mintUrl === activeMint}
+              onPress={() => onSelectMint(mintUrl)}
+            />
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        className="-mx-3 -mb-8 h-[82px] z-10"
+        contentContainerStyle={styles.mintStripContent}
+      >
+        {mintUrls.map(mintUrl => (
+          <MintSquare
+            key={mintUrl}
+            mintUrl={mintUrl}
+            balance={onChangeAmount ? undefined : balanceByMint[mintUrl] ?? 0}
+            selected={mintUrl === activeMint}
+            onPress={() => onSelectMint(mintUrl)}
+          />
+        ))}
+      </ScrollView>
+      <Pressable
+        className="rounded-2xl border border-slate-100 bg-white/55 px-5 pb-5 pt-10"
+        onPress={() => onSelectMint(activeMint)}
+      >
+        {onChangeAmount ? (
+          <>
+            <Text className="text-sm font-semibold uppercase text-slate-500">
+              amount
+            </Text>
+            <View className="mt-1 flex-row items-end">
+              <TextInput
+                keyboardType="number-pad"
+                className="min-h-16 flex-1 font-mono text-5xl font-semibold text-slate-900"
+                value={amount}
+                onChangeText={onChangeAmount}
+                placeholder="0"
+                placeholderTextColor="#cbd5e1"
+              />
+              <Text className="pb-3 text-base font-bold text-slate-500">sats</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text className="text-sm font-semibold uppercase text-slate-500">
+              current balance
+            </Text>
+            <Text className="mt-1 font-mono text-3xl font-semibold text-slate-900">
+              {activeBalance} <Text className="text-2xl font-bold">丰</Text>
+            </Text>
+          </>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+function MintSquare({
   mintUrl,
   balance,
+  selected,
   onPress,
 }: {
   mintUrl: string;
-  balance: number;
+  balance?: number;
+  selected: boolean;
   onPress: () => void;
 }) {
   const [mint, setMint] = useState<MintInfo>(() => ({
     name: displayMintName(mintUrl),
     url: mintUrl,
   }));
+  const sizeProgress = useRef(new Animated.Value(selected ? 1 : 0)).current;
 
   useEffect(() => {
     let alive = true;
@@ -769,68 +1144,86 @@ function MintCard({
     };
   }, [mintUrl]);
 
-  const colors = cardColors(mint.name || mintUrl);
-  const health = getMintHealth(mint);
+  useEffect(() => {
+    Animated.timing(sizeProgress, {
+      toValue: selected ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [selected, sizeProgress]);
+
+  const colors = mintColors(mint.name || mintUrl);
+  const initial = (mint.name || displayMintName(mintUrl))
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+  const tileSize = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [58, 82],
+  });
+  const tileRadius = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 18],
+  });
+  const iconSize = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [34, 48],
+  });
+  const iconRadius = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 16],
+  });
+  const initialClassName = selected ? 'text-3xl' : 'text-xl';
 
   return (
-    <Pressable
-      className="h-36 w-72 overflow-hidden rounded-xl p-4 shadow-sm"
-      style={{ backgroundColor: colors.base }}
+    <AnimatedPressable
+      className={`items-center justify-center overflow-hidden ${
+        selected ? 'border-2 border-white' : ''
+      }`}
+      style={[
+        {
+          backgroundColor: colors.soft,
+          borderRadius: tileRadius,
+          height: tileSize,
+          width: tileSize,
+        },
+        selected ? styles.selectedMintSquare : styles.mintSquare,
+      ]}
       onPress={onPress}
     >
-      <View
-        className="absolute -bottom-16 -right-12 h-40 w-40 rounded-full border-2 opacity-20"
-        style={{ borderColor: colors.accent }}
-      />
-      <View
-        className="absolute -bottom-8 right-14 h-24 w-24 rounded-full border-2 opacity-20"
-        style={{ borderColor: '#ffffff' }}
-      />
-      <View className="flex-row items-start justify-between">
-        <Text className="max-w-52 text-lg font-bold text-white">
-          {cleanMintName(mint.name)}
-        </Text>
-        <View
-          className="h-3 w-3 rounded-full"
+      {mint.iconUrl ? (
+        <AnimatedImage
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          source={{uri: mint.iconUrl}}
           style={{
-            backgroundColor: mint.state === 'ERROR' ? '#ef4444' : '#22c55e',
+            borderRadius: iconRadius,
+            height: iconSize,
+            width: iconSize,
           }}
         />
-      </View>
-      <View className="mt-3 flex-row gap-3">
-        <View className="h-16 flex-1 justify-center rounded-lg bg-black/20 p-3">
-          <Text className="font-mono text-xl font-semibold text-white">
-            {balance} <Text className="text-base font-bold">丰</Text>
+      ) : (
+        <Animated.View
+          className="items-center justify-center"
+          style={{
+            backgroundColor: colors.base,
+            borderRadius: iconRadius,
+            height: iconSize,
+            width: iconSize,
+          }}
+        >
+          <Text className={`${initialClassName} font-black text-white`}>
+            {initial}
           </Text>
-        </View>
-        <View className="h-16 flex-1 rounded-lg bg-black/20 px-3 pb-4 pt-2">
-          <Text className="text-xs font-semibold uppercase text-white/70">
-            Health
-          </Text>
-          <View className="mt-1 h-5 overflow-hidden rounded-full bg-white/80">
-            {health ? (
-              <View
-                className="h-full items-center justify-center rounded-full"
-                style={{
-                  width: `${health.percentage}%`,
-                  backgroundColor: health.color,
-                }}
-              >
-                <Text className="text-xs font-bold text-white">
-                  {health.percentage}%
-                </Text>
-              </View>
-            ) : (
-              <View className="h-full items-center justify-center">
-                <Text className="text-xs font-semibold text-slate-500">
-                  N/A
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-    </Pressable>
+        </Animated.View>
+      )}
+      {typeof balance === 'number' ? (
+        <Text className="absolute bottom-1.5 text-[10px] font-bold text-slate-700">
+          {balance}
+        </Text>
+      ) : null}
+    </AnimatedPressable>
   );
 }
 
@@ -859,7 +1252,7 @@ function WalletAction({
       >
         {icon}
       </View>
-      <Text className="mt-1 text-sm font-semibold text-slate-800">{label}</Text>
+      <Text className="mt-1 text-sm font-semibold text-slate-500">{label}</Text>
     </Pressable>
   );
 }
@@ -891,7 +1284,7 @@ function WalletActivityRow({
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const isSender =
+    const isSender =
     activity.sender === currentPubkey ||
     activity.event.pubkey() === currentPubkey;
   const otherPubkey = isSender
@@ -979,14 +1372,14 @@ function WalletActivityRow({
           </View>
         </View>
         <View className="shrink-0 flex-row items-center gap-1">
-          <CheckCircle2 size={16} color="#1f7a5a" strokeWidth={2.2} />
+          <CheckCircle2 size={16} color={"#1f7a5a"} strokeWidth={2.2} />
           <Text className="text-sm font-bold text-emerald-700">
             {activity.amount} sats
           </Text>
         </View>
       </View>
       {activity.comment ? (
-        <Text className="ml-13 mt-3 text-sm text-slate-600">
+        <Text className="ml-13 mt-3 text-sm text-slate-500">
           "{activity.comment}"
         </Text>
       ) : null}
@@ -1001,8 +1394,8 @@ function LoggedOutHome() {
   return (
     <View className="rounded-lg border border-slate-200 bg-white/95 px-5 py-6 shadow-sm">
       <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
-          <Wallet size={30} color="#1f7a5a" strokeWidth={2.2} />
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-slate-200">
+          <Wallet size={30} color={"#1f7a5a"} strokeWidth={2.2} />
         </View>
         <Text className="text-center text-xl font-semibold text-slate-900">
           Sign in to load your wallet feed
@@ -1025,11 +1418,11 @@ function LoggedOutHome() {
 }
 
 function EmptyWalletStub() {
-  return (
+    return (
     <View className="rounded-lg border border-slate-200 bg-white/95 px-5 py-6 shadow-sm">
       <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
-          <Wallet size={30} color="#1f7a5a" strokeWidth={2.2} />
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-slate-200">
+          <Wallet size={30} color={"#1f7a5a"} strokeWidth={2.2} />
         </View>
         <Text className="text-center text-xl font-semibold text-slate-900">
           No wallet activity yet
@@ -1156,6 +1549,28 @@ function toText(value: string | Uint8Array) {
   return text;
 }
 
+const styles = StyleSheet.create({
+  mintStripContent: {
+    alignItems: 'flex-end',
+    gap: 10,
+    minHeight: 82,
+    paddingHorizontal: 12,
+  },
+  mintSquare: {
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+  },
+  selectedMintSquare: {
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 5},
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    zIndex: 2,
+  },
+});
+
 const mintInfoCache = new Map<string, MintInfo>();
 
 async function fetchMintData(mintUrl: string): Promise<MintInfo> {
@@ -1187,6 +1602,7 @@ async function fetchMintData(mintUrl: string): Promise<MintInfo> {
     const mint = {
       name: info.name || displayMintName(normalizedUrl),
       url: normalizedUrl,
+      iconUrl: info.icon_url,
       state: audit?.state || 'OK',
       n_errors: audit?.n_errors,
       n_mints: audit?.n_mints,
@@ -1208,43 +1624,28 @@ function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
 
+function sameStringArray(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 function displayMintName(url: string) {
   return normalizeMintUrl(url)
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '');
 }
 
-function cleanMintName(name: string) {
-  return (
-    name.replace(/mint/gi, '').replace(/cashu/gi, '').trim() || 'Unknown Mint'
-  );
-}
-
-function getMintHealth(mint: MintInfo) {
-  const errors = mint.n_errors;
-  const operations = (mint.n_mints ?? 0) + (mint.n_melts ?? 0);
-  if (typeof errors !== 'number' || operations <= 0) return null;
-
-  const ratio = errors / operations;
-  const percentage = Math.max(0, Math.min(Math.round((1 - ratio) * 100), 100));
-  const color = ratio < 0.02 ? '#22c55e' : ratio < 0.05 ? '#eab308' : '#ef4444';
-
-  return { percentage, color };
-}
-
-function cardColors(value: string) {
-  const withoutCash = value.replace(/cash/gi, '');
-  let hash = 0;
-  for (let index = 0; index < withoutCash.length; index += 1) {
-    hash = (hash << 5) - hash + withoutCash.charCodeAt(index);
-    hash |= 0;
-  }
+function mintColors(value: string) {
+  const hash = value
+    .replace(/cash/gi, '')
+    .split('')
+    .reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 2147483647, 0);
   const hue = Math.abs(hash % 320) + 20;
-  const saturation = 65 + Math.abs((hash >> 8) % 25);
-  const light = 18 + Math.abs((hash >> 16) % 12);
   return {
-    base: `hsl(${hue}, ${saturation}%, ${light}%)`,
-    accent: `hsl(${(hue + 48) % 360}, 70%, 80%)`,
+    base: `hsl(${hue}, 72%, 34%)`,
+    soft: `hsl(${hue}, 42%, 90%)`,
   };
 }
 

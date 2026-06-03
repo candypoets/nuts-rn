@@ -1,4 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 export const BOOTSTRAP_RELAYS = [
   'wss://relay.thibautduchene.fr',
@@ -46,15 +48,26 @@ export type NostrStore = {
   trustedMints: string[];
   walletReadRelays: string[];
   profile: ProfileSnapshot | null;
+  hydrated: boolean;
   setKindTimestamp(kind: number, createdAt: number): void;
   setProfile(profile: ProfileSnapshot): void;
   setFollows(follows: string[]): void;
   setRelayMarkers(relays: RelayMarker[]): void;
-  setMutes(mutes: Partial<Pick<NostrStore, 'mutedPubkeys' | 'mutedHashtags' | 'mutedWords' | 'mutedEventIds'>>): void;
-  setUploadServers(servers: Partial<Pick<NostrStore, 'blossomServers' | 'nip96Servers'>>): void;
+  setMutes(
+    mutes: Partial<
+      Pick<
+        NostrStore,
+        'mutedPubkeys' | 'mutedHashtags' | 'mutedWords' | 'mutedEventIds'
+      >
+    >,
+  ): void;
+  setUploadServers(
+    servers: Partial<Pick<NostrStore, 'blossomServers' | 'nip96Servers'>>,
+  ): void;
   setTrustedMints(mints: string[]): void;
   setWalletReadRelays(relays: string[]): void;
   resetNostrState(): void;
+  setHydrated(value: boolean): void;
 };
 
 const initialState = {
@@ -78,10 +91,14 @@ const initialState = {
   trustedMints: [],
   walletReadRelays: [],
   profile: null,
+  hydrated: false,
 };
 
 function sameStringArray(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function sameRelayMarkers(left: RelayMarker[], right: RelayMarker[]) {
@@ -98,84 +115,123 @@ function sameRelayMarkers(left: RelayMarker[], right: RelayMarker[]) {
   );
 }
 
-export const useNostrStore = create<NostrStore>()(set => ({
-  ...initialState,
-  setKindTimestamp: (kind, createdAt) =>
-    set(current => {
-      const key = `kind${kind}UpdatedAt` as keyof NostrStore;
-      if (typeof current[key] === 'number' && createdAt <= current[key]) return current;
-      return { [key]: createdAt } as Partial<NostrStore>;
+export const useNostrStore = create<NostrStore>()(
+  persist(
+    set => ({
+      ...initialState,
+      setKindTimestamp: (kind, createdAt) =>
+        set(current => {
+          const key = `kind${kind}UpdatedAt` as keyof NostrStore;
+          if (typeof current[key] === 'number' && createdAt <= current[key])
+            return current;
+          return { [key]: createdAt } as Partial<NostrStore>;
+        }),
+      setProfile: profile =>
+        set(current => {
+          if (
+            current.profile &&
+            profile.updatedAt <= current.profile.updatedAt
+          ) {
+            return current;
+          }
+          return { profile };
+        }),
+      setFollows: follows =>
+        set(current =>
+          sameStringArray(current.follows, follows) ? current : { follows },
+        ),
+      setRelayMarkers: relayMarkers =>
+        set(current => {
+          if (sameRelayMarkers(current.relayMarkers, relayMarkers))
+            return current;
+          return {
+            relayMarkers,
+            readRelays: relayMarkers
+              .filter(relay => relay.read)
+              .map(relay => relay.url),
+            writeRelays: relayMarkers
+              .filter(relay => relay.write)
+              .map(relay => relay.url),
+          };
+        }),
+      setMutes: mutes =>
+        set(current => {
+          const next = {
+            mutedPubkeys: mutes.mutedPubkeys ?? current.mutedPubkeys,
+            mutedHashtags: mutes.mutedHashtags ?? current.mutedHashtags,
+            mutedWords: mutes.mutedWords ?? current.mutedWords,
+            mutedEventIds: mutes.mutedEventIds ?? current.mutedEventIds,
+          };
+          if (
+            sameStringArray(current.mutedPubkeys, next.mutedPubkeys) &&
+            sameStringArray(current.mutedHashtags, next.mutedHashtags) &&
+            sameStringArray(current.mutedWords, next.mutedWords) &&
+            sameStringArray(current.mutedEventIds, next.mutedEventIds)
+          ) {
+            return current;
+          }
+          return next;
+        }),
+      setUploadServers: servers =>
+        set(current => {
+          const next = {
+            blossomServers: servers.blossomServers ?? current.blossomServers,
+            nip96Servers: servers.nip96Servers ?? current.nip96Servers,
+          };
+          if (
+            sameStringArray(current.blossomServers, next.blossomServers) &&
+            sameStringArray(current.nip96Servers, next.nip96Servers)
+          ) {
+            return current;
+          }
+          return next;
+        }),
+      setTrustedMints: trustedMints =>
+        set(current =>
+          sameStringArray(current.trustedMints, trustedMints)
+            ? current
+            : { trustedMints },
+        ),
+      setWalletReadRelays: walletReadRelays =>
+        set(current =>
+          sameStringArray(current.walletReadRelays, walletReadRelays)
+            ? current
+            : { walletReadRelays },
+        ),
+      resetNostrState: () => set(initialState),
+      setHydrated: hydrated => set({ hydrated }),
     }),
-  setProfile: profile =>
-    set(current => {
-      if (current.profile && profile.updatedAt <= current.profile.updatedAt) {
-        return current;
-      }
-      return {profile};
-    }),
-  setFollows: follows =>
-    set(current =>
-      sameStringArray(current.follows, follows) ? current : {follows},
-    ),
-  setRelayMarkers: relayMarkers =>
-    set(current => {
-      if (sameRelayMarkers(current.relayMarkers, relayMarkers)) return current;
-      return {
-        relayMarkers,
-        readRelays: relayMarkers
-          .filter(relay => relay.read)
-          .map(relay => relay.url),
-        writeRelays: relayMarkers
-          .filter(relay => relay.write)
-          .map(relay => relay.url),
-      };
-    }),
-  setMutes: mutes =>
-    set(current => {
-      const next = {
-        mutedPubkeys: mutes.mutedPubkeys ?? current.mutedPubkeys,
-        mutedHashtags: mutes.mutedHashtags ?? current.mutedHashtags,
-        mutedWords: mutes.mutedWords ?? current.mutedWords,
-        mutedEventIds: mutes.mutedEventIds ?? current.mutedEventIds,
-      };
-      if (
-        sameStringArray(current.mutedPubkeys, next.mutedPubkeys) &&
-        sameStringArray(current.mutedHashtags, next.mutedHashtags) &&
-        sameStringArray(current.mutedWords, next.mutedWords) &&
-        sameStringArray(current.mutedEventIds, next.mutedEventIds)
-      ) {
-        return current;
-      }
-      return next;
-    }),
-  setUploadServers: servers =>
-    set(current => {
-      const next = {
-        blossomServers: servers.blossomServers ?? current.blossomServers,
-        nip96Servers: servers.nip96Servers ?? current.nip96Servers,
-      };
-      if (
-        sameStringArray(current.blossomServers, next.blossomServers) &&
-        sameStringArray(current.nip96Servers, next.nip96Servers)
-      ) {
-        return current;
-      }
-      return next;
-    }),
-  setTrustedMints: trustedMints =>
-    set(current =>
-      sameStringArray(current.trustedMints, trustedMints)
-        ? current
-        : {trustedMints},
-    ),
-  setWalletReadRelays: walletReadRelays =>
-    set(current =>
-      sameStringArray(current.walletReadRelays, walletReadRelays)
-        ? current
-        : {walletReadRelays},
-    ),
-  resetNostrState: () => set(initialState),
-}));
+    {
+      name: 'nostr',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: state => ({
+        kind0UpdatedAt: state.kind0UpdatedAt,
+        kind3UpdatedAt: state.kind3UpdatedAt,
+        kind10000UpdatedAt: state.kind10000UpdatedAt,
+        kind10002UpdatedAt: state.kind10002UpdatedAt,
+        kind10019UpdatedAt: state.kind10019UpdatedAt,
+        kind10063UpdatedAt: state.kind10063UpdatedAt,
+        kind10096UpdatedAt: state.kind10096UpdatedAt,
+        follows: state.follows,
+        relayMarkers: state.relayMarkers,
+        readRelays: state.readRelays,
+        writeRelays: state.writeRelays,
+        mutedPubkeys: state.mutedPubkeys,
+        mutedHashtags: state.mutedHashtags,
+        mutedWords: state.mutedWords,
+        mutedEventIds: state.mutedEventIds,
+        blossomServers: state.blossomServers,
+        nip96Servers: state.nip96Servers,
+        trustedMints: state.trustedMints,
+        walletReadRelays: state.walletReadRelays,
+        profile: state.profile,
+      }),
+      onRehydrateStorage: () => state => {
+        state?.setHydrated(true);
+      },
+    },
+  ),
+);
 
 export const selectPreferredUploadServer = (state: NostrStore) => {
   if (state.blossomServers.length) {

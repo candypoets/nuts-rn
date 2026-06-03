@@ -5,7 +5,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BlurView } from 'expo-blur';
@@ -34,7 +35,7 @@ import { Feed } from '../components/Feed';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
-import { Infinity, PenLine, Users } from 'lucide-react-native';
+import { Infinity, PenLine, Search, Users } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
   type FeedPackSelection,
@@ -46,7 +47,6 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
-import { useAppTheme } from '../theme';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -63,6 +63,24 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
+
+function exploreFeedDebug(message: string, data?: Record<string, unknown>) {
+  console.log(`[explore-feed] ${message}`, data ?? {});
+}
+
+function authorsForExplorePacks(
+  packs: FeedPackSelection[],
+  follows: string[],
+  hasResolvedFollows: boolean,
+) {
+  const authors = new Set<string>();
+  packs.forEach(pack => {
+    const people =
+      pack.id === 'followlist' && hasResolvedFollows ? follows : pack.people;
+    people.forEach(author => authors.add(author));
+  });
+  return Array.from(authors);
+}
 
 function verifyExploreItemIds(items: ParsedEvent[], feedKey: string) {
   if (typeof __DEV__ === 'undefined' || !__DEV__) return;
@@ -111,6 +129,7 @@ export function ExploreFeed({
   const rootSubIdRef = useRef<string | null>(null);
   const prevPaginationSubIdRef = useRef<string | null>(null);
   const paginationCounterRef = useRef(0);
+  const subscriptionCounterRef = useRef(0);
   const requestCacheRef = useRef(0);
   const itemsBeforePaginationRef = useRef(0);
   const untilRef = useRef<number | undefined>(undefined);
@@ -123,9 +142,9 @@ export function ExploreFeed({
   const paginationCheckTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
-  const authFallbackTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const authFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const commitFrameRef = useRef<ReturnType<
     typeof requestAnimationFrame
   > | null>(null);
@@ -143,15 +162,26 @@ export function ExploreFeed({
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
   const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
+  const feedBuilderHydrated = useFeedBuilderStore(state => state.hydrated);
   const authPubkey = useAuthStore(state => state.pubkey);
   const authResolved = useAuthStore(state => state.authResolved);
   const readRelays = useNostrStore(state => state.readRelays);
+  const follows = useNostrStore(state => state.follows);
+  const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
+  const nostrHydrated = useNostrStore(state => state.hydrated);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const requestKinds = useMemo(
     () => (selectedKinds.length ? selectedKinds : ALL_FEED_KINDS),
     [selectedKinds],
+  );
+  const requestAuthors = useMemo(
+    () =>
+      selectedPacks.length
+        ? authorsForExplorePacks(selectedPacks, follows, kind3UpdatedAt > 0)
+        : selectedAuthors,
+    [follows, kind3UpdatedAt, selectedAuthors, selectedPacks],
   );
   const feedRelays = useMemo(
     () =>
@@ -163,13 +193,16 @@ export function ExploreFeed({
     [authPubkey, readRelays],
   );
   const authReadyForExplore = Boolean(authPubkey) || authResolved;
-  const canStartExplore = authReadyForExplore || allowGuestExplore;
+  const canStartExplore =
+    feedBuilderHydrated &&
+    nostrHydrated &&
+    (authReadyForExplore || allowGuestExplore);
   const feedKey = useMemo(
     () =>
       `${requestKinds.join(',') || 'kind1'}:${
-        selectedAuthors.join(',') || 'global'
+        requestAuthors.join(',') || 'global'
       }:${feedRelays.join(',')}`,
-    [feedRelays, requestKinds, selectedAuthors],
+    [feedRelays, requestAuthors, requestKinds],
   );
   const [itemsVersion, setItemsVersion] = useState(0);
 
@@ -233,7 +266,7 @@ export function ExploreFeed({
       return [
         {
           kinds: requestKinds,
-          authors: selectedAuthors.length ? selectedAuthors : undefined,
+          authors: requestAuthors.length ? requestAuthors : undefined,
           limit: 50,
           since: forPagination
             ? undefined
@@ -244,7 +277,7 @@ export function ExploreFeed({
         },
       ];
     },
-    [feedRelays, requestKinds, selectedAuthors],
+    [feedRelays, requestAuthors, requestKinds],
   );
 
   const shouldIncludeKind = useCallback(
@@ -424,12 +457,7 @@ export function ExploreFeed({
 
       addItem(parsed);
     },
-    [
-      addItem,
-      completeResolvingSubscription,
-      setRelayStatus,
-      shouldIncludeKind,
-    ],
+    [addItem, completeResolvingSubscription, setRelayStatus, shouldIncludeKind],
   );
 
   const initFeed = useCallback(() => {
@@ -467,6 +495,36 @@ export function ExploreFeed({
     feedRelays.forEach(relay => {
       setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED');
     });
+    subscriptionCounterRef.current += 1;
+    exploreFeedDebug('create subscription', {
+      sequence: subscriptionCounterRef.current,
+      type: 'main',
+      subId: rootSubIdRef.current,
+      enabled,
+      visible,
+      canStartExplore,
+      feedBuilderHydrated,
+      nostrHydrated,
+      authPubkey: authPubkey ? `${authPubkey.slice(0, 8)}...` : null,
+      authResolved,
+      allowGuestExplore,
+      feedKeyHash: hashKey(feedKey),
+      requestCache: requestCacheRef.current,
+      kinds: requestKinds,
+      authors: requestAuthors.length,
+      storedAuthors: selectedAuthors.length,
+      follows: follows.length,
+      relays: feedRelays,
+      requests: requests.map(request => ({
+        kinds: request.kinds,
+        authors: request.authors?.length ?? 0,
+        limit: request.limit,
+        since: request.since,
+        until: request.until,
+        noCache: request.noCache,
+        relays: request.relays,
+      })),
+    });
     unsubscribeRef.current = subscribeToNostr(
       rootSubIdRef.current,
       requests,
@@ -488,12 +546,21 @@ export function ExploreFeed({
     }, 1500);
   }, [
     completeResolvingSubscription,
+    allowGuestExplore,
+    authPubkey,
+    authResolved,
     canStartExplore,
     enabled,
+    feedBuilderHydrated,
     feedKey,
     feedRelays,
+    follows.length,
     handleEvents,
+    nostrHydrated,
+    requestAuthors.length,
     requestList,
+    requestKinds,
+    selectedAuthors.length,
     setRelayStatus,
     setSubRelays,
     visible,
@@ -547,6 +614,34 @@ export function ExploreFeed({
     if (requests.length > 0) {
       unsubscribePaginationRef.current?.();
       const pageSubId = `${feedKey}_page_${paginationCounterRef.current}_${untilRef.current}`;
+      subscriptionCounterRef.current += 1;
+      exploreFeedDebug('create subscription', {
+        sequence: subscriptionCounterRef.current,
+        type: 'pagination',
+        subId: pageSubId,
+        previousSubId: prevPaginationSubIdRef.current,
+        enabled,
+        visible,
+        feedKeyHash: hashKey(feedKey),
+        requestCache: requestCacheRef.current,
+        paginationCounter: paginationCounterRef.current,
+        itemsBeforePagination: itemsBeforePaginationRef.current,
+        until: untilRef.current,
+        kinds: requestKinds,
+        authors: requestAuthors.length,
+        storedAuthors: selectedAuthors.length,
+        follows: follows.length,
+        relays: feedRelays,
+        requests: requests.map(request => ({
+          kinds: request.kinds,
+          authors: request.authors?.length ?? 0,
+          limit: request.limit,
+          since: request.since,
+          until: request.until,
+          noCache: request.noCache,
+          relays: request.relays,
+        })),
+      });
       unsubscribePaginationRef.current = subscribeToNostr(
         pageSubId,
         requests,
@@ -571,6 +666,13 @@ export function ExploreFeed({
     hasMore,
     loading,
     requestList,
+    requestKinds,
+    requestAuthors.length,
+    selectedAuthors.length,
+    follows.length,
+    feedRelays,
+    visible,
+    enabled,
   ]);
 
   useEffect(() => {
@@ -707,7 +809,7 @@ export function ExploreFeed({
 
   const empty = (
     <View className="px-6 py-16">
-      <Text className="text-center text-base font-semibold text-slate-700">
+      <Text className="text-center text-base font-semibold text-slate-500">
         Explore feed
       </Text>
       <Text className="mt-2 text-center text-sm text-slate-500">
@@ -743,8 +845,10 @@ export function ExploreFeed({
 function ExploreComposerFooter() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const theme = useAppTheme();
-  const primary = theme.button.primary;
+  const primary = {
+    background: '#17212b',
+    border: '#17212b',
+  };
   const openPost = useCallback(() => navigation.navigate('Post'), [navigation]);
 
   return (
@@ -752,18 +856,18 @@ function ExploreComposerFooter() {
       <Pressable
         hitSlop={8}
         onPress={openPost}
-        style={[styles.composerButton, {borderColor: `${primary.border}66`}]}
+        style={[styles.composerButton, { borderColor: `${primary.border}66` }]}
       >
         <BlurView
           intensity={28}
           tint="light"
           style={[
             styles.composerBlur,
-            {backgroundColor: `${primary.background}2E`},
+            { backgroundColor: `${primary.background}2E` },
           ]}
         >
           <PenLine size={17} color={primary.background} strokeWidth={2.1} />
-          <Text style={[styles.composerText, {color: primary.background}]}>
+          <Text style={[styles.composerText, { color: primary.background }]}>
             What's up?
           </Text>
         </BlurView>
@@ -808,6 +912,7 @@ function ExploreHeader({
             surfaceClassName={surfaceClassName}
           />
           <View className="flex-row items-center gap-2">
+            <HeaderSearchButton surfaceClassName={surfaceClassName} />
             <NotificationBellButton
               className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
             />
@@ -827,6 +932,23 @@ function ExploreHeader({
   );
 }
 
+function HeaderSearchButton({surfaceClassName}: {surfaceClassName: string}) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Search"
+      className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+      hitSlop={12}
+      onPress={() => navigation.navigate('CmdK')}
+    >
+      <Search size={18} color="#17212b" strokeWidth={2.2} />
+    </Pressable>
+  );
+}
+
 function FeedPackHeaderButtons({
   packs,
   surfaceClassName,
@@ -836,6 +958,7 @@ function FeedPackHeaderButtons({
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const iconColor = '#17212b';
   const openFeedBuilder = useCallback(
     () => navigation.navigate('FeedBuilder'),
     [navigation],
@@ -848,7 +971,7 @@ function FeedPackHeaderButtons({
         hitSlop={12}
         onPress={openFeedBuilder}
       >
-        <Infinity size={21} color="#17212b" strokeWidth={2.2} />
+        <Infinity size={21} color={iconColor} strokeWidth={2.2} />
       </Pressable>
     );
   }
@@ -871,11 +994,12 @@ function FeedPackHeaderButtons({
                   ? followListImage
                   : { uri: pack.image ?? '' }
               }
-              className="h-full w-full"
-              resizeMode="cover"
+              style={styles.fill}
+              contentFit="cover"
+              cachePolicy="memory-disk"
             />
           ) : (
-            <Users size={18} color="#17212b" strokeWidth={2.1} />
+            <Users size={18} color={iconColor} strokeWidth={2.1} />
           )}
         </Pressable>
       ))}
@@ -892,6 +1016,10 @@ function hashKey(value: string) {
 }
 
 const styles = StyleSheet.create({
+  fill: {
+    height: '100%',
+    width: '100%',
+  },
   composerButton: {
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,

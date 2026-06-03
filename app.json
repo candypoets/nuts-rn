@@ -38,7 +38,8 @@
             "skipOnboarding": true
           }
         }
-      ]
+      ],
+      "expo-image"
     ]
   }
 }

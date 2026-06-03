@@ -9,9 +9,10 @@ import React, {
 import { Keyboard, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
+import type { ContentBlock, ParsedEvent, WorkerMessage } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
+  asConnectionStatus,
   asKind1,
   asNostrData,
   asParsedEvent,
@@ -20,34 +21,38 @@ import {
 } from '@candypoets/nipworker/utils';
 import { ContentData } from '@candypoets/nipworker';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import {
+  relaysFromKind10002,
+  useEffectiveAuthorRelays,
+} from '../../hooks/useAuthorRelays';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
 import { BOOTSTRAP_RELAYS } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
+import type { RelayStatusSink } from './RelaysList';
 import { wasRecentSwipeGesture } from './press';
 import { neventEncode } from 'nostr-tools/nip19';
 
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
 
-function nostrDataRelays(nostr: ReturnType<typeof asNostrData>) {
-  if (!nostr) return [];
-  return Array.from({ length: nostr.relaysLength() }, (_, index) =>
-    nostr.relays(index),
-  ).filter((relay): relay is string => !!relay);
+function isRelayUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^wss?:\/\//.test(value);
 }
 
-function kind10002WriteRelays(kind10002: ReturnType<typeof isKind10002>) {
-  if (!kind10002) return [];
-  return Array.from({ length: kind10002.relaysLength() }, (_, index) =>
-    kind10002.relays(index),
-  )
-    .filter(relay => relay?.write())
-    .map(relay => relay?.url())
-    .filter((relay): relay is string => !!relay)
-    .slice(0, 3);
+function relayList(values: unknown[]) {
+  return [...new Set(values.filter(isRelayUrl))];
+}
+
+function nostrDataRelays(nostr: ReturnType<typeof asNostrData>) {
+  if (!nostr) return [];
+  return relayList(
+    Array.from({ length: nostr.relaysLength() }, (_, index) =>
+      nostr.relays(index),
+    ),
+  );
 }
 
 function isUserEntity(entity?: string | null) {
@@ -97,6 +102,7 @@ type NoteBodyProps = {
   containerClassName: string;
   depth: number;
   effectiveNote: ParsedEvent;
+  subId: string;
   footer: boolean;
   main: boolean;
   isQuote: boolean;
@@ -108,6 +114,9 @@ type NoteBodyProps = {
   threadConnectors: React.ReactNode;
   visible: boolean;
   onOpen: () => void;
+  relays?: string[];
+  showRelays: boolean;
+  relayStatusSink: RelayStatusSink;
 };
 
 type LoadingNoteBodyProps = {
@@ -158,6 +167,7 @@ const NoteBody = memo(
     containerClassName,
     depth,
     effectiveNote,
+    subId,
     footer,
     main,
     isQuote,
@@ -169,13 +179,24 @@ const NoteBody = memo(
     threadConnectors,
     visible,
     onOpen,
+    relays,
+    showRelays,
+    relayStatusSink,
   }: NoteBodyProps) {
     return (
       <>
         {ancestor}
         <View className={containerClassName}>
           {threadConnectors}
-          <Header note={effectiveNote} depth={depth} main={main} />
+          <Header
+            note={effectiveNote}
+            subId={subId}
+            depth={depth}
+            main={main}
+            relays={relays}
+            showRelays={showRelays}
+            relayStatusSink={relayStatusSink}
+          />
           <Pressable
             className={
               main
@@ -190,7 +211,7 @@ const NoteBody = memo(
             }}
           >
             <View className={isQuote || main ? 'w-0' : 'w-8'} />
-            <View className="min-w-0 flex-1">
+            <View className={depth >= 1 ? 'min-w-0 flex-1 pt-1' : 'min-w-0 flex-1'}>
               <ContentBlocks
                 content={parsedContent}
                 shortContent={shortContent}
@@ -203,7 +224,13 @@ const NoteBody = memo(
             </View>
           </Pressable>
           {footer && depth === 0 ? (
-            <Footer note={effectiveNote} visible={visible} main={main} />
+            <Footer
+              note={effectiveNote}
+              visible={visible}
+              main={main}
+              relays={relays ?? EMPTY_RELAYS}
+              relayStatusSink={relayStatusSink}
+            />
           ) : null}
         </View>
       </>
@@ -215,6 +242,7 @@ const NoteBody = memo(
     previous.depth === next.depth &&
     parsedEventId(previous.effectiveNote) ===
       parsedEventId(next.effectiveNote) &&
+    previous.subId === next.subId &&
     previous.footer === next.footer &&
     previous.main === next.main &&
     previous.isQuote === next.isQuote &&
@@ -225,7 +253,10 @@ const NoteBody = memo(
     previous.showMedia === next.showMedia &&
     previous.threadConnectors === next.threadConnectors &&
     previous.visible === next.visible &&
-    previous.onOpen === next.onOpen,
+    previous.onOpen === next.onOpen &&
+    previous.relays === next.relays &&
+    previous.showRelays === next.showRelays &&
+    previous.relayStatusSink === next.relayStatusSink,
 );
 
 function NoteComponent({
@@ -250,6 +281,9 @@ function NoteComponent({
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const fetchedRef = useRef<ParsedEvent | null>(null);
   const contextRef = useRef<ParsedEvent[]>(context);
+  const relayStatusSink = useRef<((relayUrl: string, status: string) => void) | null>(
+    null,
+  );
   const [contextVersion, setContextVersion] = useState(0);
   const [quoteAuthorRelays, setQuoteAuthorRelays] = useState<
     Record<string, string[]>
@@ -266,18 +300,17 @@ function NoteComponent({
   const effectiveNote = note || contextNote || fetchedNote;
   const effectiveId = noteId || effectiveNote?.id() || '';
   const lookupRelays = useMemo(
-    () => [...new Set([...relays, ...DEFAULT_FEED_RELAYS])],
+    () => relayList([...relays, ...DEFAULT_FEED_RELAYS]),
     [relays],
   );
-  const effectiveRelays = useMemo(() => {
-    const noteRelays =
-      effectiveNote && typeof effectiveNote.relaysLength === 'function'
-        ? Array.from({ length: effectiveNote.relaysLength() }, (_, index) =>
-            effectiveNote.relays(index),
-          ).filter((relay): relay is string => !!relay)
-        : [];
-    return [...new Set([...relays, ...noteRelays, ...DEFAULT_FEED_RELAYS])];
-  }, [effectiveNote, relays]);
+  const headerRelays = useEffectiveAuthorRelays({
+    subId: effectiveId || undefined,
+    pubkey: effectiveNote?.pubkey(),
+    marker: 'read',
+    fallbackRelays: relays,
+  });
+  const noteRelays = headerRelays;
+  const noteRelayKey = noteRelays.join('|');
   const openNote = useCallback(() => {
     if (disableOpen) {
       Keyboard.dismiss();
@@ -288,11 +321,11 @@ function NoteComponent({
       nevent: neventEncode({
         id: effectiveId,
         author: effectiveNote?.pubkey() || undefined,
-        relays: effectiveRelays,
+        relays: noteRelays,
         kind: effectiveNote?.kind() || 1,
       }),
     });
-  }, [disableOpen, effectiveId, effectiveNote, effectiveRelays, navigation]);
+  }, [disableOpen, effectiveId, effectiveNote, navigation, noteRelays]);
 
   useEffect(() => {
     const nextContext = [...contextRef.current];
@@ -317,6 +350,15 @@ function NoteComponent({
     setContextVersion(version => version + 1);
   }, []);
 
+  const handleRelayStatus = useCallback((message: WorkerMessage) => {
+    const status = asConnectionStatus(message);
+    const relayUrl = status?.relayUrl();
+    const statusValue = status?.status();
+    if (!relayUrl || !statusValue) return false;
+    relayStatusSink.current?.(relayUrl, statusValue);
+    return true;
+  }, []);
+
   useEffect(() => {
     if (note || contextNote || fetchedNote || !noteId || !visible)
       return;
@@ -325,6 +367,7 @@ function NoteComponent({
       `note_${noteId}`,
       [{ ids: [noteId], limit: 1, relays: lookupRelays }],
       message => {
+        if (handleRelayStatus(message)) return;
         const parsed = asParsedEvent(message);
         if (!parsed || parsed.id() !== noteId) return;
         fetchedRef.current = parsed;
@@ -336,7 +379,7 @@ function NoteComponent({
     return () => {
       unsubscribe();
     };
-  }, [addContextEvent, contextNote, fetchedNote, lookupRelays, note, noteId, visible]);
+  }, [addContextEvent, contextNote, fetchedNote, handleRelayStatus, lookupRelays, note, noteId, visible]);
 
   const kind1 = useMemo(
     () => (effectiveNote ? asKind1(effectiveNote) : null),
@@ -431,6 +474,12 @@ function NoteComponent({
     !allMentionIds.includes(replyId) &&
     !ancestorIds.includes(replyId)
   );
+  const ancestorRelays = useEffectiveAuthorRelays({
+    subId: shouldRenderAncestor ? replyId : undefined,
+    pubkey: shouldRenderAncestor ? kind1?.reply()?.author() : undefined,
+    marker: 'read',
+    fallbackRelays: noteRelays,
+  });
   const isQuote = depth > 0;
   const hasTopThreadConnector = shouldRenderAncestor || tailing;
   const hasBottomThreadConnector = leading;
@@ -499,11 +548,12 @@ function NoteComponent({
         },
       ],
       message => {
+        if (handleRelayStatus(message)) return;
         const kind10002 = isKind10002(message);
         if (!kind10002) return;
         const author = asParsedEvent(message)?.pubkey();
         if (!author) return;
-        const writeRelays = kind10002WriteRelays(kind10002);
+        const writeRelays = relaysFromKind10002(kind10002, 'write', 3);
         setQuoteAuthorRelays(current =>
           sameStringArray(current[author] ?? [], writeRelays)
             ? current
@@ -520,20 +570,20 @@ function NoteComponent({
       clearTimeout(timeout);
       unsubscribe();
     };
-  }, [effectiveId, quoteAuthorRelays, quoteAuthors, showQuote, visible]);
+  }, [effectiveId, handleRelayStatus, quoteAuthorRelays, quoteAuthors, showQuote, visible]);
 
   useEffect(() => {
     if (!visible || !showQuote || !quoteIds.length) return;
 
     const unsubscribe = subscribeToNostr(
-      `note_quotes_${effectiveId}`,
+      `note_quotes_${effectiveId}_${noteRelayKey}`,
       [
         {
           ids: quoteIds,
           limit: 5 * quoteIds.length,
           relays: [
-            ...new Set([
-              ...effectiveRelays,
+            ...relayList([
+              ...noteRelays,
               ...discoveredQuoteRelays,
               ...contentQuotes.flatMap(quote => quote.relays),
             ]),
@@ -541,6 +591,7 @@ function NoteComponent({
         },
       ],
       message => {
+        if (handleRelayStatus(message)) return;
         const parsed = asParsedEvent(message);
         if (parsed) addContextEvent(parsed);
       },
@@ -553,10 +604,12 @@ function NoteComponent({
   }, [
     addContextEvent,
     effectiveId,
-    effectiveRelays,
+    noteRelayKey,
+    noteRelays,
     discoveredQuoteRelays,
     contentQuotes,
     quoteIds,
+    handleRelayStatus,
     showQuote,
     visible,
   ]);
@@ -582,16 +635,16 @@ function NoteComponent({
         visible={visible}
         depth={quoteDepth}
         relays={[
-          ...new Set([
+          ...relayList([
             ...quoteRelays,
             ...(author ? quoteAuthorRelays[author] ?? [] : []),
-            ...effectiveRelays,
+            ...noteRelays,
           ]),
         ]}
         footer={false}
       />
     ),
-    [effectiveRelays, quoteAuthorRelays, visible],
+    [noteRelays, quoteAuthorRelays, visible],
   );
 
   if (depth > 3) {
@@ -623,7 +676,7 @@ function NoteComponent({
       noteId={replyId}
       context={contextRef.current}
       visible={visible}
-      relays={effectiveRelays}
+      relays={ancestorRelays}
         showQuote={showQuote}
         showMedia={showMedia}
         leading
@@ -638,6 +691,7 @@ function NoteComponent({
       containerClassName={containerClassName}
       depth={depth}
       effectiveNote={effectiveNote}
+      subId={effectiveId}
       footer={footer}
       main={main}
       isQuote={isQuote}
@@ -649,6 +703,9 @@ function NoteComponent({
       threadConnectors={threadConnectors}
       visible={visible}
       onOpen={openNote}
+      relays={noteRelays}
+      showRelays={!!noteRelays.length}
+      relayStatusSink={relayStatusSink}
     />
   );
 }

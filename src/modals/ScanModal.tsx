@@ -7,13 +7,17 @@ import {
   type BarcodeScanningResult,
   useCameraPermissions,
 } from 'expo-camera';
-import {ArrowLeft, Camera, X} from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import {Camera, QrCode, ScanLine} from 'lucide-react-native';
 import {nip19} from 'nostr-tools';
+import QRCode from 'react-native-qrcode-svg';
 
+import {shortPubkey} from '../components/notes/time';
 import type {RootStackParamList} from '../navigation/types';
+import {useAuthStore} from '../stores';
 
 type ScanModalProps = {
-  onClose: () => void;
+  initialMode?: 'share' | 'scan';
 };
 
 type ScanResult =
@@ -36,11 +40,12 @@ function isLnurl(value: string) {
 
 function decodeNostrPubkey(value: string) {
   const nextValue = value.startsWith('nostr:') ? value.slice(6) : value;
-  if (!nextValue.startsWith('npub')) return null;
 
   try {
     const decoded = nip19.decode(nextValue);
-    return decoded.type === 'npub' ? decoded.data : null;
+    if (decoded.type === 'npub') return decoded.data;
+    if (decoded.type === 'nprofile') return decoded.data.pubkey;
+    return null;
   } catch {
     return null;
   }
@@ -68,15 +73,31 @@ function parseScanValue(rawValue: string): ScanResult {
   return {type: 'unknown', value};
 }
 
-export function ScanModal({onClose}: ScanModalProps) {
+export function ScanModal({initialMode}: ScanModalProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const pubkey = useAuthStore(state => state.pubkey);
+  const npub = useAuthStore(state => state.npub);
   const [permission] = useCameraPermissions();
+  const [mode, setMode] = useState<'share' | 'scan'>(() =>
+    initialMode ?? (pubkey ? 'share' : 'scan'),
+  );
+  const [copied, setCopied] = useState(false);
   const [unknownValue, setUnknownValue] = useState<string | null>(null);
   const [cashuToken, setCashuToken] = useState<string | null>(null);
   const lockedRef = useRef(false);
 
   const permissionReady = permission?.granted;
+  const shareValue = useMemo(() => {
+    if (!pubkey) return null;
+    return `nostr:${npub ?? nip19.npubEncode(pubkey)}`;
+  }, [npub, pubkey]);
+  const publicKeyValue = useMemo(() => {
+    if (!pubkey) return null;
+    return npub ?? nip19.npubEncode(pubkey);
+  }, [npub, pubkey]);
+
+  const showScanner = mode === 'scan';
 
   const handleBarcodeScanned = useCallback(
     (result: BarcodeScanningResult) => {
@@ -108,58 +129,135 @@ export function ScanModal({onClose}: ScanModalProps) {
     setCashuToken(null);
   }, []);
 
+  const switchMode = useCallback((nextMode: 'share' | 'scan') => {
+    lockedRef.current = false;
+    setUnknownValue(null);
+    setCashuToken(null);
+    setCopied(false);
+    setMode(nextMode);
+  }, []);
+
+  const copyPublicKey = useCallback(async () => {
+    if (!publicKeyValue) return;
+    await Clipboard.setStringAsync(publicKeyValue);
+    setCopied(true);
+  }, [publicKeyValue]);
+
   const statusText = useMemo(() => {
     if (!permission) return 'Checking camera permission';
-    if (!permission.granted) return 'Camera access is needed to scan payment QR codes';
+    if (!permission.granted)
+      return 'Camera access is needed to scan payment QR codes';
     return 'Point the camera at a Lightning, LNURL, Cashu, or Nostr QR code';
   }, [permission]);
 
   return (
     <View style={styles.root}>
       <View style={styles.cameraFrame}>
-        {permissionReady ? (
+        {showScanner && permissionReady ? (
           <CameraView
             style={StyleSheet.absoluteFill}
             facing="back"
             barcodeScannerSettings={{barcodeTypes: ['qr']}}
             onBarcodeScanned={handleBarcodeScanned}
           />
-        ) : (
+        ) : showScanner ? (
           <View style={styles.permissionBody}>
             <View style={styles.permissionIcon}>
               <Camera size={30} color="#1f7a5a" strokeWidth={2.2} />
             </View>
             <Text style={styles.permissionTitle}>Scan QR codes</Text>
             <Text style={styles.permissionText}>{statusText}</Text>
-            <Pressable style={styles.permissionButton} onPress={() => Linking.openSettings()}>
+            <Pressable
+              style={styles.permissionButton}
+              onPress={() => Linking.openSettings()}
+            >
               <Text style={styles.permissionButtonText}>Allow camera</Text>
             </Pressable>
           </View>
+        ) : (
+          <View style={styles.shareBody}>
+            <Pressable
+              style={styles.shareQrWrap}
+              disabled={!publicKeyValue}
+              onPress={copyPublicKey}
+            >
+              {shareValue ? (
+                <QRCode value={shareValue} size={255} />
+              ) : (
+                <View style={styles.emptyQr}>
+                  <QrCode size={52} color="#94a3b8" strokeWidth={1.8} />
+                </View>
+              )}
+            </Pressable>
+            <Text style={styles.shareTitle}>My contact QR</Text>
+            <Text style={styles.shareText}>
+              {shareValue
+                ? copied
+                  ? 'Copied'
+                  : `${publicKeyValue ?? shortPubkey(pubkey)}`
+                : 'Sign in to share your Nostr public key.'}
+            </Text>
+          </View>
         )}
-        <View style={styles.scrim} pointerEvents="none" />
-        {permissionReady ? (
+        {showScanner ? <View style={styles.scrim} pointerEvents="none" /> : null}
+        {showScanner && permissionReady ? (
           <View style={styles.scanBox} pointerEvents="none" />
         ) : null}
       </View>
 
-      <View style={styles.topBar}>
-        <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
-          <ArrowLeft size={22} color="#ffffff" strokeWidth={2.3} />
+      <View style={styles.modeSwitch}>
+        <Pressable
+          style={[
+            styles.modeButton,
+            mode === 'share' && styles.modeButtonActive,
+          ]}
+          onPress={() => switchMode('share')}
+        >
+          <QrCode
+            size={18}
+            color={mode === 'share' ? '#17212b' : '#ffffff'}
+            strokeWidth={2.3}
+          />
+          <Text
+            style={[
+              styles.modeText,
+              mode === 'share' && styles.modeTextActive,
+            ]}
+          >
+            My QR
+          </Text>
         </Pressable>
-        <Text style={styles.title}>Scan</Text>
-        <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
-          <X size={22} color="#ffffff" strokeWidth={2.3} />
+        <Pressable
+          style={[
+            styles.modeButton,
+            mode === 'scan' && styles.modeButtonActive,
+          ]}
+          onPress={() => switchMode('scan')}
+        >
+          <ScanLine
+            size={18}
+            color={mode === 'scan' ? '#17212b' : '#ffffff'}
+            strokeWidth={2.3}
+          />
+          <Text
+            style={[
+              styles.modeText,
+              mode === 'scan' && styles.modeTextActive,
+            ]}
+          >
+            Scan
+          </Text>
         </Pressable>
       </View>
 
-      {permissionReady ? (
+      {showScanner && permissionReady ? (
         <View style={styles.bottomPanel}>
           <Text style={styles.panelTitle}>QR scanner</Text>
           <Text style={styles.panelText}>{statusText}</Text>
         </View>
       ) : null}
 
-      {unknownValue || cashuToken ? (
+      {showScanner && (unknownValue || cashuToken) ? (
         <View style={styles.resultPanel}>
           <Text style={styles.resultTitle}>
             {cashuToken ? 'Cashu token detected' : 'Unsupported QR code'}
@@ -201,29 +299,81 @@ const styles = StyleSheet.create({
     top: '31%',
     width: 250,
   },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    left: 18,
-    position: 'absolute',
-    right: 18,
-    top: 58,
-  },
-  iconButton: {
-    alignItems: 'center',
+  modeSwitch: {
+    alignSelf: 'center',
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
     borderColor: 'rgba(255, 255, 255, 0.22)',
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 6,
+    padding: 5,
+    position: 'absolute',
+    top: 58,
+  },
+  modeButton: {
+    alignItems: 'center',
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 7,
     height: 40,
     justifyContent: 'center',
-    width: 40,
+    minWidth: 104,
+    paddingHorizontal: 14,
   },
-  title: {
+  modeButtonActive: {
+    backgroundColor: '#ffffff',
+  },
+  modeText: {
     color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  modeTextActive: {
+    color: '#17212b',
+  },
+  shareBody: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    position: 'absolute',
+    top: '24%',
+    width: 315,
+  },
+  shareQrWrap: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 275,
+    justifyContent: 'center',
+    width: 275,
+  },
+  emptyQr: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    height: 255,
+    justifyContent: 'center',
+    width: 255,
+  },
+  shareTitle: {
+    color: '#17212b',
     fontSize: 20,
     fontWeight: '800',
+    marginTop: 16,
+  },
+  shareText: {
+    color: '#52616f',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 7,
+    maxWidth: 255,
+    textAlign: 'center',
   },
   bottomPanel: {
     backgroundColor: '#ffffff',

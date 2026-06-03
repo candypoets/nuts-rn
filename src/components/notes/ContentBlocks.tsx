@@ -1,5 +1,7 @@
 import React, { memo, useRef } from 'react';
 import { Linking, Pressable, Text, View } from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
 import { ContentData } from '@candypoets/nipworker';
 import {
@@ -14,6 +16,7 @@ import {
 import { ImageGrid } from './ImageGrid';
 import { movedTooFar } from './press';
 import { User } from './User';
+import type {RootStackParamList} from '../../navigation/types';
 
 type ContentBlocksProps = {
   content: ContentBlock[];
@@ -109,6 +112,8 @@ function ContentBlocksComponent({
   showMedia = true,
   renderQuote,
 }: ContentBlocksProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const displayContent = shortContent?.length ? shortContent : content;
 
   if (!displayContent.length) {
@@ -144,15 +149,17 @@ function ContentBlocksComponent({
 
     if (block.dataType() === ContentData.HashtagData) {
       const hashtag = asHashtagData(block);
+      const tag = hashtag?.tag?.() || block.text()?.replace(/^#/, '') || '';
       return (
         <Text
           key={blockKey}
           className="text-[15px] font-semibold text-emerald-700"
           onPress={event => {
             event.stopPropagation();
+            if (tag) navigation.navigate('Tags', {tags: [tag]});
           }}
         >
-          {block.text() || `#${hashtag?.tag?.() || ''}`}
+          {block.text() || `#${tag}`}
         </Text>
       );
     }

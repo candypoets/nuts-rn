@@ -130,12 +130,12 @@ const Kind1StickyHeader = memo(function Kind1StickyHeader({
 }: {
   onClose: () => void;
 }) {
-  return (
+    return (
     <View className="h-16 flex-row items-center justify-between px-4">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
-        <ChevronLeft size={22} color="#17212b" />
+      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-200" hitSlop={12} onPress={onClose}>
+        <ChevronLeft size={22} color={"#17212b"} />
       </Pressable>
-      <Text className="text-base font-semibold text-slate-950">Post</Text>
+      <Text className="text-base font-semibold text-slate-900">Post</Text>
       <View className="h-9 w-9" />
     </View>
   );
@@ -152,8 +152,8 @@ const Kind1Header = memo(function Kind1Header({
   return (
     <View>
       <View className="h-20 flex-row items-center justify-between rounded-lg bg-white/90 px-4 shadow-sm">
-        <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
-          <ChevronLeft size={22} color="#17212b" />
+        <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-200" hitSlop={12} onPress={onClose}>
+          <ChevronLeft size={22} color={"#17212b"} />
         </Pressable>
         <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />
       </View>

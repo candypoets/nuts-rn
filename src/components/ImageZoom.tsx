@@ -65,6 +65,7 @@ export function ImageZoom() {
   const imageZoom = useUIStore(state => state.imageZoom);
   const setImageZoom = useUIStore(state => state.setImageZoom);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentImageZoomed, setCurrentImageZoomed] = useState(false);
   const listRef = useRef<FlatList<ZoomLink>>(null);
   const visible = imageZoom.zoomed !== undefined && imageZoom.links.length > 0;
   const links = imageZoom.links;
@@ -85,6 +86,7 @@ export function ImageZoom() {
     if (!visible) return;
     const index = clampIndex(imageZoom.zoomed, links.length);
     setCurrentIndex(index);
+    setCurrentImageZoomed(false);
     translateY.value = 0;
     backgroundOpacity.value = withTiming(1, { duration: 160 });
     requestAnimationFrame(() => {
@@ -118,6 +120,7 @@ export function ImageZoom() {
             keyExtractor={(item, index) => `${item.src}-${index}`}
             horizontal
             pagingEnabled
+            scrollEnabled={!currentImageZoomed}
             bounces={false}
             showsHorizontalScrollIndicator={false}
             getItemLayout={(_, index) => ({
@@ -129,14 +132,20 @@ export function ImageZoom() {
               setCurrentIndex(
                 Math.round(event.nativeEvent.contentOffset.x / width),
               );
+              setCurrentImageZoomed(false);
             }}
-            renderItem={({ item }) => (
+            renderItem={({ item, index }) => (
               <View style={[styles.page, { width, height }]}>
                 <ZoomPage
                   link={item}
                   width={width}
                   height={height}
                   onDismiss={dismiss}
+                  onZoomStateChange={zoomed => {
+                    if (index === currentIndex) {
+                      setCurrentImageZoomed(zoomed);
+                    }
+                  }}
                   overlayTranslateY={translateY}
                   backgroundOpacity={backgroundOpacity}
                 />
@@ -225,6 +234,7 @@ const ZoomPage = memo(function ZoomPage({
   width,
   height,
   onDismiss,
+  onZoomStateChange,
   overlayTranslateY,
   backgroundOpacity,
 }: {
@@ -232,6 +242,7 @@ const ZoomPage = memo(function ZoomPage({
   width: number;
   height: number;
   onDismiss: () => void;
+  onZoomStateChange: (zoomed: boolean) => void;
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
 }) {
@@ -253,6 +264,7 @@ const ZoomPage = memo(function ZoomPage({
       width={width}
       height={height}
       onDismiss={onDismiss}
+      onZoomStateChange={onZoomStateChange}
       overlayTranslateY={overlayTranslateY}
       backgroundOpacity={backgroundOpacity}
     />
@@ -264,6 +276,7 @@ function ZoomImage({
   width,
   height,
   onDismiss,
+  onZoomStateChange,
   overlayTranslateY,
   backgroundOpacity,
 }: {
@@ -271,6 +284,7 @@ function ZoomImage({
   width: number;
   height: number;
   onDismiss: () => void;
+  onZoomStateChange: (zoomed: boolean) => void;
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
 }) {
@@ -280,10 +294,28 @@ function ZoomImage({
   const imageTranslateY = useSharedValue(0);
   const savedX = useSharedValue(0);
   const savedY = useSharedValue(0);
+  const touchStartX = useSharedValue(0);
+  const touchStartY = useSharedValue(0);
+  const zoomState = useSharedValue(false);
+
+  const syncZoomState = useCallback(
+    (zoomed: boolean) => {
+      onZoomStateChange(zoomed);
+    },
+    [onZoomStateChange],
+  );
+
+  const updateZoomState = (zoomed: boolean) => {
+    'worklet';
+    if (zoomState.value === zoomed) return;
+    zoomState.value = zoomed;
+    runOnJS(syncZoomState)(zoomed);
+  };
 
   const pinch = Gesture.Pinch()
     .onUpdate(event => {
       scale.value = Math.min(Math.max(savedScale.value * event.scale, 1), 4);
+      updateZoomState(scale.value > 1.02);
     })
     .onEnd(() => {
       savedScale.value = scale.value;
@@ -294,12 +326,33 @@ function ZoomImage({
         imageTranslateY.value = withSpring(0);
         savedX.value = 0;
         savedY.value = 0;
+        updateZoomState(false);
       }
     });
 
   const pan = Gesture.Pan()
+    .manualActivation(true)
+    .onTouchesDown(event => {
+      const touch = event.allTouches[0];
+      if (!touch) return;
+      touchStartX.value = touch.absoluteX;
+      touchStartY.value = touch.absoluteY;
+    })
+    .onTouchesMove((event, state) => {
+      const touch = event.allTouches[0];
+      if (!touch) return;
+      if (scale.value <= 1.02) {
+        state.fail();
+        return;
+      }
+      const movedX = Math.abs(touch.absoluteX - touchStartX.value);
+      const movedY = Math.abs(touch.absoluteY - touchStartY.value);
+      if (Math.max(movedX, movedY) > 6) {
+        state.activate();
+      }
+    })
     .onUpdate(event => {
-      if (scale.value <= 1) return;
+      if (scale.value <= 1.02) return;
       translateX.value = savedX.value + event.translationX;
       imageTranslateY.value = savedY.value + event.translationY;
     })
@@ -341,6 +394,7 @@ function ZoomImage({
       const nextScale = scale.value > 1 ? 1 : 2.4;
       scale.value = withTiming(nextScale, { duration: 180 });
       savedScale.value = nextScale;
+      updateZoomState(nextScale > 1.02);
       if (nextScale === 1) {
         translateX.value = withTiming(0, { duration: 180 });
         imageTranslateY.value = withTiming(0, { duration: 180 });

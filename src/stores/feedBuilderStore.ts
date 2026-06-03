@@ -1,4 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { type FeedKind } from './appStore';
 
 export const KIND_LABELS: Record<FeedKind, string> = {
@@ -36,6 +38,7 @@ type FeedBuilderStore = {
   selectedKinds: FeedKind[];
   selectedPacks: FeedPackSelection[];
   selectedAuthors: string[];
+  hydrated: boolean;
   applySelection(kinds: FeedKind[], packs: FeedPackSelection[]): void;
   setSelectedKinds(kinds: FeedKind[]): void;
   setFollowListPack(pack: FeedPackSelection): void;
@@ -43,6 +46,7 @@ type FeedBuilderStore = {
   togglePack(pack: FeedPackSelection): void;
   removePack(id: string): void;
   clearPacks(): void;
+  setHydrated(value: boolean): void;
 };
 
 function uniqueAuthors(packs: FeedPackSelection[]) {
@@ -57,82 +61,89 @@ function normalizeKinds(kinds: FeedKind[]) {
   return Array.from(new Set(kinds)).sort((left, right) => left - right);
 }
 
-let selectedAuthorsUpdateToken = 0;
-
-export const useFeedBuilderStore = create<FeedBuilderStore>()(set => {
-  const scheduleSelectedAuthors = (selectedPacks: FeedPackSelection[]) => {
-    const token = ++selectedAuthorsUpdateToken;
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        if (token !== selectedAuthorsUpdateToken) return;
-        set({ selectedAuthors: uniqueAuthors(selectedPacks) });
-      }, 0);
-    });
-  };
-
-  return {
-    selectedKinds: [1],
-    selectedPacks: [],
-    selectedAuthors: [],
-    applySelection: (kinds, packs) =>
-      set({
-        selectedKinds: normalizeKinds(kinds),
-        selectedPacks: packs,
-        selectedAuthors: uniqueAuthors(packs),
+export const useFeedBuilderStore = create<FeedBuilderStore>()(
+  persist(
+    set => ({
+      selectedKinds: [1],
+      selectedPacks: [],
+      selectedAuthors: [],
+      hydrated: false,
+      applySelection: (kinds, packs) =>
+        set({
+          selectedKinds: normalizeKinds(kinds),
+          selectedPacks: packs,
+          selectedAuthors: uniqueAuthors(packs),
+        }),
+      setSelectedKinds: kinds =>
+        set({
+          selectedKinds: normalizeKinds(kinds),
+        }),
+      setFollowListPack: pack =>
+        set(state => {
+          const existingIndex = state.selectedPacks.findIndex(
+            current => current.id === pack.id,
+          );
+          const selectedPacks =
+            existingIndex === -1
+              ? state.selectedPacks.length === 0
+                ? [pack]
+                : state.selectedPacks
+              : [
+                  pack,
+                  ...state.selectedPacks.filter(
+                    current => current.id !== pack.id,
+                  ),
+                ];
+          if (selectedPacks === state.selectedPacks) return state;
+          return {
+            selectedPacks,
+            selectedAuthors: uniqueAuthors(selectedPacks),
+          };
+        }),
+      toggleKind: kind =>
+        set(state => {
+          const selectedKinds = state.selectedKinds.includes(kind)
+            ? state.selectedKinds.filter(current => current !== kind)
+            : [...state.selectedKinds, kind];
+          return { selectedKinds: normalizeKinds(selectedKinds) };
+        }),
+      togglePack: pack =>
+        set(state => {
+          const exists = state.selectedPacks.some(
+            current => current.id === pack.id,
+          );
+          const selectedPacks = exists
+            ? state.selectedPacks.filter(current => current.id !== pack.id)
+            : [...state.selectedPacks, pack];
+          return {
+            selectedPacks,
+            selectedAuthors: uniqueAuthors(selectedPacks),
+          };
+        }),
+      removePack: id =>
+        set(state => {
+          const selectedPacks = state.selectedPacks.filter(
+            pack => pack.id !== id,
+          );
+          return {
+            selectedPacks,
+            selectedAuthors: uniqueAuthors(selectedPacks),
+          };
+        }),
+      clearPacks: () => ({ selectedPacks: [], selectedAuthors: [] }),
+      setHydrated: hydrated => set({ hydrated }),
+    }),
+    {
+      name: 'feed-builder',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: state => ({
+        selectedKinds: state.selectedKinds,
+        selectedPacks: state.selectedPacks,
+        selectedAuthors: state.selectedAuthors,
       }),
-    setSelectedKinds: kinds =>
-      set({
-        selectedKinds: normalizeKinds(kinds),
-      }),
-    setFollowListPack: pack =>
-      set(state => {
-        const existingIndex = state.selectedPacks.findIndex(
-          current => current.id === pack.id,
-        );
-        const selectedPacks =
-          existingIndex === -1
-            ? state.selectedPacks.length === 0
-              ? [pack]
-              : state.selectedPacks
-            : [
-                pack,
-                ...state.selectedPacks.filter(
-                  current => current.id !== pack.id,
-                ),
-              ];
-        if (selectedPacks !== state.selectedPacks)
-          scheduleSelectedAuthors(selectedPacks);
-        return { selectedPacks };
-      }),
-    toggleKind: kind =>
-      set(state => {
-        const selectedKinds = state.selectedKinds.includes(kind)
-          ? state.selectedKinds.filter(current => current !== kind)
-          : [...state.selectedKinds, kind];
-        return { selectedKinds: normalizeKinds(selectedKinds) };
-      }),
-    togglePack: pack =>
-      set(state => {
-        const exists = state.selectedPacks.some(
-          current => current.id === pack.id,
-        );
-        const selectedPacks = exists
-          ? state.selectedPacks.filter(current => current.id !== pack.id)
-          : [...state.selectedPacks, pack];
-        scheduleSelectedAuthors(selectedPacks);
-        return { selectedPacks };
-      }),
-    removePack: id =>
-      set(state => {
-        const selectedPacks = state.selectedPacks.filter(
-          pack => pack.id !== id,
-        );
-        scheduleSelectedAuthors(selectedPacks);
-        return { selectedPacks };
-      }),
-    clearPacks: () => {
-      selectedAuthorsUpdateToken += 1;
-      return { selectedPacks: [], selectedAuthors: [] };
+      onRehydrateStorage: () => state => {
+        state?.setHydrated(true);
+      },
     },
-  };
-});
+  ),
+);

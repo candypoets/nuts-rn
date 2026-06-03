@@ -1,12 +1,13 @@
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Image,
   Pressable,
+  StyleSheet,
   Text,
   View,
   useWindowDimensions,
   type ImageSourcePropType,
 } from 'react-native';
+import {Image} from 'expo-image';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -71,17 +72,28 @@ const Kind0TrackedImage = memo(function Kind0TrackedImage({
 
   if (!source) return null;
 
-  return <Image source={source} className={className} resizeMode="cover" />;
+  return (
+    <View className={className}>
+      <Image source={source} style={styles.trackedImage} contentFit="cover" cachePolicy="memory-disk" />
+    </View>
+  );
+});
+
+const styles = StyleSheet.create({
+  trackedImage: {
+    height: '100%',
+    width: '100%',
+  },
 });
 
 const Kind0StickyHeader = memo(function Kind0StickyHeader({
   onClose,
   pubkey,
 }: Kind0StickyHeaderProps) {
-  return (
+    return (
     <View className="h-16 flex-row items-center justify-between px-4">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-100" hitSlop={12} onPress={onClose}>
-        <ChevronLeft size={22} color="#17212b" />
+      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-200" hitSlop={12} onPress={onClose}>
+        <ChevronLeft size={22} color={"#17212b"} />
       </Pressable>
       <Avatar pubkey={pubkey} size="lg" />
       <View className="h-9 w-9" />
@@ -94,7 +106,7 @@ const Kind0RelayBlock = memo(function Kind0RelayBlock({
 }: Kind0RelayBlockProps) {
   const relayStatuses = useRelayStore(state => state.relayStatuses);
 
-  return <HeaderRelaysList relays={relays} statuses={relayStatuses} />;
+  return <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />;
 });
 
 const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
@@ -112,12 +124,13 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   profileContactsLength,
   pubkey,
 }: Kind0ProfileHeaderProps) {
+    const iconColor = "#17212b";
   const insets = useSafeAreaInsets();
   const {width: screenWidth} = useWindowDimensions();
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
 
   return (
-    <View className="overflow-hidden rounded-lg bg-slate-100">
+    <View className="overflow-hidden rounded-lg bg-slate-200">
       <View
         className="bg-slate-200"
         style={{
@@ -134,7 +147,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
           style={{paddingTop: topInset + 24}}
         >
           <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-white/85" hitSlop={12} onPress={onClose}>
-            <ChevronLeft size={22} color="#17212b" />
+            <ChevronLeft size={22} color={iconColor} />
           </Pressable>
           <View className="h-9 w-9" />
         </View>
@@ -151,29 +164,29 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
           </View>
           <View className="mb-2 flex-row gap-2">
             <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
-              <UserPlus size={19} color="#17212b" />
+              <UserPlus size={19} color={iconColor} />
             </Pressable>
             <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
-              <Zap size={19} color="#17212b" />
+              <Zap size={19} color={iconColor} />
             </Pressable>
             <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
-              <CircleSlash size={19} color="#17212b" />
+              <CircleSlash size={19} color={iconColor} />
             </Pressable>
           </View>
         </View>
 
-        <Text className="text-xl font-bold text-slate-950">{name}</Text>
+        <Text className="text-xl font-bold text-slate-900">{name}</Text>
         <Text className="mt-1 text-sm font-medium text-emerald-700">{nip05 || pubkey.slice(0, 8)}</Text>
         {lnaddress ? <Text className="mt-1 text-sm font-medium text-emerald-700">{lnaddress}</Text> : null}
-        {about ? <Text className="mt-4 text-[15px] leading-5 text-slate-700">{about}</Text> : null}
-        <View className="mt-4 items-start">
+        {about ? <Text className="mt-4 text-[15px] leading-5 text-slate-500">{about}</Text> : null}
+        <View className="mt-3 items-start">
           <Kind0RelayBlock relays={activeRelays} />
         </View>
       </View>
 
       <View className="flex-row border-t border-slate-200 bg-white">
         <Pressable className="flex-1 items-center py-3" onPress={onProfilePress}>
-          <Text className={`text-sm font-semibold ${mode === 'profile' ? 'text-slate-950' : 'text-slate-500'}`}>Posts</Text>
+          <Text className={`text-sm font-semibold ${mode === 'profile' ? 'text-slate-900' : 'text-slate-500'}`}>Posts</Text>
         </Pressable>
         <Pressable
           className="flex-1 items-center py-3"
@@ -182,7 +195,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
         >
           <Text
             className={`text-sm font-semibold ${
-              mode === 'feed' ? 'text-slate-950' : profileContactsLength ? 'text-slate-500' : 'text-slate-300'
+              mode === 'feed' ? 'text-slate-900' : profileContactsLength ? 'text-slate-500' : 'text-slate-300'
             }`}
           >
             Feed

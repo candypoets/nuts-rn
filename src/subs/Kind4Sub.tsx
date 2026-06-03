@@ -1,6 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
@@ -8,13 +7,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, {
-  interpolate,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withTiming,
-} from 'react-native-reanimated';
+import {useReanimatedKeyboardAnimation} from 'react-native-keyboard-controller';
+import Animated, {interpolate, useAnimatedStyle} from 'react-native-reanimated';
 import {
   getManager,
   Kind4ParsedT,
@@ -51,7 +45,6 @@ type Kind4ThreadProps = {
 
 const THREAD_HEADER_HEIGHT = 65;
 const TOP_SAFE_AREA_OFFSET = 8;
-const KEYBOARD_ACCESSORY_SHOW_DELAY_MS = 45;
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -118,9 +111,9 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [eventsVersion, setEventsVersion] = useState(0);
-  const keyboardAccessoryBottom = useSharedValue(0);
-  const keyboardAccessoryProgress = useSharedValue(0);
+  const keyboardAnimation = useReanimatedKeyboardAnimation();
   const insets = useSafeAreaInsets();
+  const iconColor = '#17212b';
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
@@ -236,49 +229,6 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   }, [clearPaginationTimeout, initSubscription, peerPubkey, pubkey, visible]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-
-    const keyboardShow = Keyboard.addListener('keyboardWillChangeFrame', event => {
-      const duration = Math.max(1, event.duration || 250);
-      keyboardAccessoryBottom.value = withDelay(
-        KEYBOARD_ACCESSORY_SHOW_DELAY_MS,
-        withTiming(0, {
-          duration: Math.max(1, duration - KEYBOARD_ACCESSORY_SHOW_DELAY_MS),
-        }),
-      );
-      keyboardAccessoryProgress.value = withDelay(
-        KEYBOARD_ACCESSORY_SHOW_DELAY_MS,
-        withTiming(1, {
-          duration: Math.max(1, duration - KEYBOARD_ACCESSORY_SHOW_DELAY_MS),
-        }),
-      );
-    });
-    const keyboardHide = Keyboard.addListener('keyboardWillHide', event => {
-      keyboardAccessoryBottom.value = withTiming(
-        0,
-        {duration: Math.max(1, event.duration || 250)},
-      );
-      keyboardAccessoryProgress.value = withTiming(0, {
-        duration: Math.max(1, event.duration || 250),
-      });
-    });
-
-    return () => {
-      keyboardShow.remove();
-      keyboardHide.remove();
-    };
-  }, [keyboardAccessoryBottom, keyboardAccessoryProgress]);
-
-  const keyboardAccessoryStyle = useAnimatedStyle(() => ({
-    bottom: keyboardAccessoryBottom.value,
-    paddingBottom: interpolate(
-      keyboardAccessoryProgress.value,
-      [0, 1],
-      [insets.bottom, 0],
-    ),
-  }));
-
-  useEffect(() => {
     if (loading || itemsBeforePaginationRef.current === 0) return;
     const itemsAtCheck = itemsBeforePaginationRef.current;
     clearPaginationTimeout();
@@ -355,27 +305,31 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
 
   const fixedHeader = useCallback(
     () => (
-      <View className="flex-row items-center justify-between border-b border-slate-200 bg-slate-50/95 px-4 py-3">
+      <View className="flex-row items-center justify-between px-4 py-3">
         <Pressable
           className="h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
           hitSlop={12}
           onPress={onClose}
         >
-          <ChevronLeft size={24} color="#17212b" strokeWidth={2.2} />
+          <ChevronLeft size={24} color={iconColor} strokeWidth={2.2} />
         </Pressable>
         <View className="max-w-[70%] flex-row items-center gap-2 rounded-full border border-slate-200 bg-white pr-3">
-          <Avatar pubkey={peerPubkey} size="lg" />
-          <User pubkey={peerPubkey} className="shrink text-base font-semibold text-slate-900" />
+          <Avatar pubkey={peerPubkey} size="lg" link />
+          <User
+            pubkey={peerPubkey}
+            link
+            className="shrink text-base font-semibold text-slate-900"
+          />
         </View>
         <View className="h-10 w-10" />
       </View>
     ),
-    [onClose, peerPubkey],
+    [iconColor, onClose, peerPubkey],
   );
 
   const stickyFooter = useCallback(
     () => (
-      <View className="border-t border-slate-200 bg-slate-50/95 px-4 pb-4 pt-3">
+      <View className="px-4 pb-4 pt-3">
         <View className="flex-row items-end gap-2">
           <TextInput
             className="max-h-28 flex-1 rounded-full border border-slate-200 bg-white px-4 py-3 text-base text-slate-900"
@@ -387,7 +341,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
           />
           <Pressable
             className={`h-11 w-11 items-center justify-center rounded-full ${
-              message.trim() ? 'bg-emerald-700' : 'bg-slate-300'
+              message.trim() ? 'bg-emerald-700' : 'bg-slate-200'
             }`}
             disabled={!message.trim()}
             onPress={handleSubmit}
@@ -401,6 +355,13 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   );
 
   const useKeyboardAccessory = Platform.OS === 'ios';
+  const keyboardAccessoryStyle = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(
+      keyboardAnimation.progress.value,
+      [0, 1],
+      [insets.bottom, 0],
+    ),
+  }));
 
   return (
     <View className="flex-1 bg-slate-50">
@@ -422,13 +383,14 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
             isFirst={index === 0 || String(items[index + 1]?.pubkey?.() || '') !== String(item.pubkey?.() || '')}
             isLast={index === items.length - 1 || String(items[index - 1]?.pubkey?.() || '') !== String(item.pubkey?.() || '')}
             date={index === items.length - 1 || oneDayDiff(item.createdAt(), items[index - 1]?.createdAt())}
+            separated={index === 0 || String(items[index + 1]?.pubkey?.() || '') !== String(item.pubkey?.() || '')}
             sentAt={sendingMapRef.current.get(getNonce(item) || '')}
           />
         )}
         header={() => <View style={{height: THREAD_HEADER_HEIGHT + topInset}} />}
         empty={
           <View className="px-6 py-20">
-            <Text className="text-center text-base font-semibold text-slate-700">
+            <Text className="text-center text-base font-semibold text-slate-500">
               No messages yet
             </Text>
           </View>
@@ -450,6 +412,7 @@ function MessageBubble({
   isFirst,
   isLast,
   date,
+  separated,
   sentAt,
 }: {
   message: ParsedEvent;
@@ -457,6 +420,7 @@ function MessageBubble({
   isFirst: boolean;
   isLast: boolean;
   date: boolean;
+  separated: boolean;
   sentAt?: number;
 }) {
   const kind4 = asKind4(message) as Kind4Parsed | null;
@@ -468,7 +432,7 @@ function MessageBubble({
     : null;
 
   return (
-    <View className={`${isFirst ? 'pt-1.5' : 'pt-0.5'} pb-0.5`}>
+    <View>
       {date ? (
         <View className="my-2 items-center">
           <View className="rounded-full bg-white px-3 py-1">
@@ -478,7 +442,11 @@ function MessageBubble({
           </View>
         </View>
       ) : null}
-      <View className={`w-full flex-row ${incoming ? 'justify-start' : 'justify-end'} px-2`}>
+      <View
+        className={`w-full flex-row ${
+          incoming ? 'justify-start' : 'justify-end'
+        } ${separated ? 'mt-3' : 'mt-1'} px-2`}
+      >
         <View
           className={`relative max-w-[80%] px-4 py-2 ${
             incoming ? 'bg-white' : 'bg-sky-600'
@@ -507,6 +475,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
     zIndex: 30,
   },
 });

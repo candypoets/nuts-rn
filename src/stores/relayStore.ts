@@ -41,6 +41,7 @@ export const useRelayStore = create<RelayStore>()(set => ({
     ),
   setSubRelays: (subId, relays) =>
     set(state =>
+      state.relaySubs[subId] !== undefined &&
       sameStringArray(state.relaySubs[subId] ?? [], relays)
         ? state
         : {relaySubs: {...state.relaySubs, [subId]: relays}},

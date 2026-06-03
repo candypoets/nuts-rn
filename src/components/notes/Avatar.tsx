@@ -1,5 +1,6 @@
 import React, {memo, useCallback, useContext, useMemo} from 'react';
-import { Image, Pressable, View } from 'react-native';
+import {Pressable, StyleSheet, View} from 'react-native';
+import {Image} from 'expo-image';
 import {NavigationContext} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useKind0Value} from '../../hooks/useKind0Value';
@@ -62,8 +63,9 @@ function AvatarComponent({
     <View className={`${sizeClass[size]} overflow-hidden rounded-full border border-slate-200 bg-slate-200`}>
       <Image
         source={imageSource}
-        className="h-full w-full"
-        resizeMode="cover"
+        style={styles.fill}
+        contentFit="cover"
+        cachePolicy="memory-disk"
       />
     </View>
   );
@@ -84,3 +86,10 @@ export const Avatar = memo(AvatarComponent, (previous, next) => (
   (previous.link ?? false) === (next.link ?? false) &&
   previous.onProfileOpen === next.onProfileOpen
 ));
+
+const styles = StyleSheet.create({
+  fill: {
+    height: '100%',
+    width: '100%',
+  },
+});

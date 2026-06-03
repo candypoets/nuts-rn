@@ -1,9 +1,9 @@
 import {VideoView} from 'expo-video';
+import {Image} from 'expo-image';
 import {Volume2, VolumeX} from 'lucide-react-native';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import React, {useEffect, useMemo, useState} from 'react';
 import {
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -189,8 +189,9 @@ function VideoTile({
       {poster && !firstFrameRendered && !failed ? (
         <Image
           source={{uri: poster}}
-          resizeMode={single ? 'contain' : 'cover'}
-          className="absolute inset-0 h-full w-full"
+          contentFit={single ? 'contain' : 'cover'}
+          cachePolicy="memory-disk"
+          style={styles.posterImage}
           onError={() => setFailed(true)}
         />
       ) : null}
@@ -250,6 +251,19 @@ function VideoTile({
 }
 
 const styles = StyleSheet.create({
+  fill: {
+    height: '100%',
+    width: '100%',
+  },
+  posterImage: {
+    bottom: 0,
+    height: '100%',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: '100%',
+  },
   video: {
     height: '100%',
     width: '100%',
@@ -306,7 +320,7 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
   useEffect(() => {
     for (const link of displayLinks) {
       if (link.type === 'video') continue;
-      Image.prefetch(link.src).catch(() => {});
+      Image.prefetch(link.src, 'memory-disk').catch(() => {});
     }
   }, [displayLinks]);
 
@@ -372,8 +386,9 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
             >
               <Image
                 source={{uri: imageUri}}
-                resizeMode={single ? 'contain' : 'cover'}
-                className="h-full w-full"
+                contentFit={single ? 'contain' : 'cover'}
+                cachePolicy="memory-disk"
+                style={styles.fill}
               />
               {remainingCount > 0 && index === displayLinks.length - 1 ? (
                 <View className="absolute inset-0 items-center justify-center bg-black/60">

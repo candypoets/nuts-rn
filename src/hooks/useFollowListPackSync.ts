@@ -1,11 +1,16 @@
-import {useEffect} from 'react';
-import {useFeedBuilderStore, useNostrStore} from '../stores';
+import { useEffect } from 'react';
+import { useFeedBuilderStore, useNostrStore } from '../stores';
 
 export function useFollowListPackSync() {
   const follows = useNostrStore(state => state.follows);
-  const setFollowListPack = useFeedBuilderStore(state => state.setFollowListPack);
+  const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
+  const setFollowListPack = useFeedBuilderStore(
+    state => state.setFollowListPack,
+  );
 
   useEffect(() => {
+    if (kind3UpdatedAt === 0) return;
+
     setFollowListPack({
       id: 'followlist',
       kind: 39089,
@@ -16,5 +21,5 @@ export function useFollowListPackSync() {
       people: follows,
       dTag: 'followlist',
     });
-  }, [follows, setFollowListPack]);
+  }, [follows, kind3UpdatedAt, setFollowListPack]);
 }

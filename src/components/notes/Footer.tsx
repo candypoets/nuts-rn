@@ -33,18 +33,21 @@ import Animated, {
 import { SvgXml } from 'react-native-svg';
 import { kinds, type EventTemplate } from 'nostr-tools';
 import { neventEncode } from 'nostr-tools/nip19';
-import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
 import { IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
+import type { RelayStatusSink } from './RelaysList';
 
 type FooterProps = {
   note: ParsedEvent;
   visible: boolean;
   main?: boolean;
   mode?: 'inline' | 'zoom';
+  relays?: string[];
+  relayStatusSink?: RelayStatusSink;
 };
 
+const EMPTY_RELAYS: string[] = [];
 const tint = '#9b9ea4';
 const primary = '#158777';
 const accent = '#6d28d9';
@@ -259,7 +262,13 @@ function Action({
   );
 }
 
-function ZapAction({ mode = 'inline' }: { mode?: 'inline' | 'zoom' }) {
+function ZapAction({
+  mode = 'inline',
+  onPress,
+}: {
+  mode?: 'inline' | 'zoom';
+  onPress?: () => void;
+}) {
   const [nutscashXml, setNutscashXml] = useState<string | null>(null);
   const progress = useSharedValue(0);
   const style = useAnimatedStyle(() => ({
@@ -302,6 +311,7 @@ function ZapAction({ mode = 'inline' }: { mode?: 'inline' | 'zoom' }) {
       onPressOut={() => {
         progress.value = withTiming(0, { duration: 160 });
       }}
+      onPress={onPress}
     >
       <Animated.View style={style}>
         {nutscashXml ? (
@@ -317,11 +327,12 @@ export function Footer({
   visible,
   main = false,
   mode = 'inline',
+  relays = EMPTY_RELAYS,
+  relayStatusSink,
 }: FooterProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const pubkey = useAuthStore(state => state.pubkey);
-  const readRelays = useNostrStore(state => state.readRelays);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
   const mutedHashtags = useNostrStore(state => state.mutedHashtags);
@@ -335,14 +346,31 @@ export function Footer({
   const pendingActiveRef = useRef<ActiveState>(emptyActive);
   const noteId = note.id() || '';
   const notePubkey = note.pubkey() || '';
-  const relays = useMemo(
-    () => (readRelays.length ? readRelays : DEFAULT_FEED_RELAYS),
-    [readRelays],
-  );
   const relayKey = relays.join(',');
+  const forwardRelayStatus = useCallback(
+    (status: ConnectionStatus) => {
+      const relayUrl = status.relayUrl();
+      const statusValue = status.status();
+      if (!relayUrl || !statusValue) return;
+      relayStatusSink?.current?.(relayUrl, statusValue);
+    },
+    [relayStatusSink],
+  );
   const openReply = useCallback(() => {
     navigation.navigate('Post', {
       reply: neventEncode({
+        id: noteId,
+        author: notePubkey || undefined,
+        kind: note.kind(),
+        relays,
+      }),
+    });
+  }, [navigation, note, noteId, notePubkey, relays]);
+  const openZap = useCallback(() => {
+    if (!notePubkey) return;
+    navigation.navigate('SendEcash', {
+      pubkey: notePubkey,
+      noteId: neventEncode({
         id: noteId,
         author: notePubkey || undefined,
         kind: note.kind(),
@@ -491,7 +519,7 @@ export function Footer({
   }, []);
 
   const sendReaction = useCallback(() => {
-    if (!pubkey || !noteId || !notePubkey || activeRef.current.reacted) return;
+    if (!pubkey || !noteId || !notePubkey || !relays.length || activeRef.current.reacted) return;
 
     const event: EventTemplate = {
       kind: kinds.Reaction,
@@ -532,7 +560,7 @@ export function Footer({
   }, [commitPendingState, noteId, notePubkey, pubkey, relays, updateSendStatus]);
 
   useEffect(() => {
-    if (!visible || !noteId) return;
+    if (!visible || !noteId || !relays.length) return;
 
     let unsubscribe: (() => void) | null = null;
     let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -553,6 +581,7 @@ export function Footer({
           }
           const status = asConnectionStatus(message);
           if (status) {
+            forwardRelayStatus(status);
             tracker.handleMessage(message);
             if (tracker.resolutionRate > 0.5) {
               resolving = false;
@@ -578,16 +607,18 @@ export function Footer({
     };
   }, [
     commitPendingState,
+    forwardRelayStatus,
     mainOptions,
     mainRequest,
     noteId,
+    relays.length,
     relayKey,
     updatePendingMainCount,
     visible,
   ]);
 
   useEffect(() => {
-    if (!visible || !noteId) return;
+    if (!visible || !noteId || !relays.length) return;
 
     let unsubscribe: (() => void) | null = null;
     let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -608,6 +639,7 @@ export function Footer({
           }
           const status = asConnectionStatus(message);
           if (status) {
+            forwardRelayStatus(status);
             tracker.handleMessage(message);
             if (tracker.resolutionRate > 0.5) {
               resolving = false;
@@ -633,9 +665,11 @@ export function Footer({
     };
   }, [
     commitPendingState,
+    forwardRelayStatus,
     noteId,
     quoteOptions,
     quoteRequest,
+    relays.length,
     relayKey,
     updatePendingQuoteCount,
     visible,
@@ -684,7 +718,7 @@ export function Footer({
         />
         <Action kind="share" animation="share" mode={mode} />
       </View>
-      {mode === 'zoom' ? null : <ZapAction />}
+      {mode === 'zoom' ? null : <ZapAction onPress={openZap} />}
     </View>
   );
 }

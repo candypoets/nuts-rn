@@ -4,20 +4,28 @@ import type { Kind0Parsed, ParsedEvent } from '@candypoets/nipworker';
 import { BadgeCheck } from 'lucide-react-native';
 import { useKind0Value } from '../../hooks/useKind0Value';
 import { Avatar } from './Avatar';
-import { RelaysList } from './RelaysList';
+import { RelaysList, type RelayStatusSink } from './RelaysList';
 import { formatTimeShort } from './time';
 import { User } from './User';
 
 type HeaderProps = {
   note: ParsedEvent;
+  subId: string;
   depth?: number;
   main?: boolean;
+  relays?: string[];
+  showRelays?: boolean;
+  relayStatusSink?: RelayStatusSink;
 };
 
 function HeaderComponent({
   note,
+  subId,
   depth = 0,
   main = false,
+  relays,
+  showRelays = true,
+  relayStatusSink,
 }: HeaderProps) {
   const pubkey = note.pubkey() || '';
   const isQuote = depth > 0;
@@ -72,7 +80,15 @@ function HeaderComponent({
               {formatTimeShort(note.createdAt())}
             </Text>
           </View>
-          <RelaysList note={note} />
+          {showRelays ? (
+            <RelaysList
+              note={note}
+              subId={subId}
+              relays={relays}
+              statusSink={relayStatusSink}
+              mini
+            />
+          ) : null}
         </View>
       </View>
     </View>
@@ -83,6 +99,10 @@ export const Header = memo(
   HeaderComponent,
   (previous, next) =>
     previous.note.id() === next.note.id() &&
+    previous.subId === next.subId &&
     (previous.depth ?? 0) === (next.depth ?? 0) &&
-    (previous.main ?? false) === (next.main ?? false),
+    (previous.main ?? false) === (next.main ?? false) &&
+    previous.relays === next.relays &&
+    (previous.showRelays ?? true) === (next.showRelays ?? true) &&
+    previous.relayStatusSink === next.relayStatusSink,
 );

@@ -15,6 +15,7 @@ import {
   type KeyboardEvent,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
   DefaultTheme,
   NavigationContainer,
@@ -32,6 +33,7 @@ import {
 } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { NostrManagerLike } from '@candypoets/nipworker';
+import {MintQuoteState, Wallet as CashuWallet} from '@cashu/cashu-ts';
 import {
   ReactNativeBackend,
   createNostrManager,
@@ -47,22 +49,29 @@ import { useRelayTracking } from './src/hooks/useRelayTracking';
 import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions';
 import {
   FeedBuilderModal,
+  CmdKModal,
   LogoutModal,
+  MintingModal,
   PostModal,
   PrivateKeyLogin,
   ProfileModal,
   ProfileStubModal,
+  ReceiveModal,
+  RelayInfosModal,
   ScanModal,
+  SendEcashModal,
   SendModal,
   SendPlaceholderModal,
   SignupModal,
 } from './src/modals';
-import { Kind0Sub, Kind1Sub, Kind4Sub, NotificationsSub } from './src/subs';
-import { useAuthStore } from './src/stores';
+import { Kind0Sub, Kind1Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
+import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
 import { CarouselAnimator } from './src/components/CarouselAnimator';
 import { ImageZoom } from './src/components/ImageZoom';
 import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
+import {publishProofsBackup} from './src/nostr/proofBackup';
+import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 
 enableScreens(true);
 enableFreeze(true);
@@ -80,6 +89,8 @@ const ROUTES: Array<{ id: RouteId; label: string }> = [
 ];
 
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
+const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
+const MINT_QUOTE_RETRY_DELAY_MS = 1200;
 const navigationTheme = {
   ...DefaultTheme,
   colors: {
@@ -87,6 +98,32 @@ const navigationTheme = {
     background: 'transparent',
   },
 };
+
+function isRetryableMintNetworkError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /cancelled|canceled|network request failed|fetch failed/i.test(message);
+}
+
+async function retryMintNetworkCall<T>(
+  operation: () => Promise<T>,
+  attempts = 3,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableMintNetworkError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      await new Promise<void>(resolve =>
+        setTimeout(resolve, MINT_QUOTE_RETRY_DELAY_MS * (attempt + 1)),
+      );
+    }
+  }
+  throw lastError;
+}
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -109,18 +146,20 @@ function App() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
-        <RootServices manager={manager} />
-        <Animated.View style={[styles.root, keyboardResizeStyle]}>
-          <StatusBar
-            translucent
-            backgroundColor="transparent"
-            barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-          />
-          <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
-          <SendStatuses />
-        </Animated.View>
-      </SafeAreaProvider>
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <RootServices manager={manager} />
+          <Animated.View style={[styles.root, keyboardResizeStyle]}>
+            <StatusBar
+              translucent
+              backgroundColor="transparent"
+              barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+            />
+            <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
+            <SendStatuses />
+          </Animated.View>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
@@ -211,6 +250,11 @@ function RootNavigator({
           options={{ animation: 'slide_from_right' }}
         />
         <NativeStack.Screen
+          name="Tags"
+          component={TagsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
           name="Notifications"
           component={NotificationsScreen}
           options={{ animation: 'slide_from_right' }}
@@ -234,6 +278,11 @@ function RootNavigator({
           )}
         </NativeStack.Screen>
         <NativeStack.Screen
+          name="CmdK"
+          component={CmdKScreen}
+          options={{ presentation: 'formSheet' }}
+        />
+        <NativeStack.Screen
           name="FeedBuilder"
           component={FeedBuilderScreen}
           options={{ presentation: 'modal' }}
@@ -241,6 +290,16 @@ function RootNavigator({
         <NativeStack.Screen
           name="Post"
           component={PostScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <NativeStack.Screen
+          name="Receive"
+          component={ReceiveScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <NativeStack.Screen
+          name="Minting"
+          component={MintingScreen}
           options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
@@ -273,6 +332,16 @@ function RootNavigator({
           component={ProfileStubScreen}
           options={{ presentation: 'modal' }}
         />
+        <NativeStack.Screen
+          name="RelayInfos"
+          component={RelayInfosScreen}
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.66],
+            sheetGrabberVisible: true,
+            sheetInitialDetentIndex: 0,
+          }}
+        />
       </NativeStack.Navigator>
       <ImageZoom />
     </NavigationContainer>
@@ -281,6 +350,17 @@ function RootNavigator({
 
 function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   const setAuth = useAuthStore(state => state.setAuth);
+  const authPubkey = useAuthStore(state => state.pubkey);
+  const walletMintUrls = useWalletStore(state => state.walletMintUrls);
+  const pendingMintQuotes = useWalletStore(state => state.pendingMintQuotes);
+  const loadPendingMintQuotes = useWalletStore(state => state.loadPendingMintQuotes);
+  const deletePendingMintQuote = useWalletStore(state => state.deletePendingMintQuote);
+  const initializeProofWallet = useWalletStore(state => state.initializeProofWallet);
+  const addProofs = useWalletStore(state => state.addProofs);
+  const getUnspentProofsForMint = useWalletStore(state => state.getUnspentProofsForMint);
+  const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
+  const walletReadRelays = useNostrStore(state => state.walletReadRelays);
+  const activeMintQuoteMonitorsRef = useRef(new Map<string, () => void>());
 
   useRootNostrSubscriptions(Boolean(manager));
   useNotificationSubscription(Boolean(manager));
@@ -308,6 +388,131 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
     manager.addEventListener('auth', handleAuth);
     return () => manager.removeEventListener('auth', handleAuth);
   }, [manager, setAuth]);
+
+  useEffect(() => {
+    if (!authPubkey) return;
+    loadPendingMintQuotes(authPubkey).catch(error => {
+      console.error('[minting] failed to load pending mint quotes', error);
+    });
+  }, [authPubkey, loadPendingMintQuotes]);
+
+  useEffect(() => {
+    if (!authPubkey) return;
+    const pendingMintUrls = pendingMintQuotes.map(quote => quote.mintUrl);
+    initializeProofWallet(authPubkey, [...walletMintUrls, ...pendingMintUrls])
+      .then(() => resumePendingTransactions())
+      .catch(error => {
+        console.error('[minting] failed to initialize app-level proof wallet', error);
+      });
+  }, [authPubkey, initializeProofWallet, pendingMintQuotes, walletMintUrls]);
+
+  useEffect(() => {
+    if (!authPubkey) return;
+    const activeMonitors = activeMintQuoteMonitorsRef.current;
+    const pendingIds = new Set(pendingMintQuotes.map(quote => quote.quote));
+
+    for (const [quoteId, cancel] of Array.from(activeMonitors.entries())) {
+      if (!pendingIds.has(quoteId)) {
+        cancel();
+        activeMonitors.delete(quoteId);
+      }
+    }
+
+    for (const quote of pendingMintQuotes) {
+      if (activeMonitors.has(quote.quote)) continue;
+
+      let cancelled = false;
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const cancel = () => {
+        cancelled = true;
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+      };
+      activeMonitors.set(quote.quote, cancel);
+
+      const monitor = async () => {
+        if (cancelled) return;
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (quote.expiry && quote.expiry <= nowSeconds) {
+          console.log('[minting] pending mint quote expired', {
+            mint: quote.mintUrl,
+            quote: quote.quote,
+          });
+          activeMonitors.delete(quote.quote);
+          await deletePendingMintQuote(authPubkey, quote.quote);
+          return;
+        }
+
+        try {
+          const wallet = new CashuWallet(quote.mintUrl);
+          await retryMintNetworkCall(() => wallet.loadMint());
+          const latest = await retryMintNetworkCall(() =>
+            wallet.checkMintQuoteBolt11(quote),
+          );
+          console.log('[minting] pending mint quote status', {
+            mint: quote.mintUrl,
+            quote: quote.quote,
+            state: latest.state,
+          });
+
+          if (latest.state === MintQuoteState.PAID) {
+            console.log('[minting] pending mint quote paid, minting proofs', {
+              mint: quote.mintUrl,
+              quote: quote.quote,
+              amount: quote.amount,
+            });
+            const proofs = await retryMintNetworkCall(
+              () => wallet.mintProofsBolt11(Number(quote.amount), quote),
+              5,
+            );
+            await addProofs(quote.mintUrl, proofs);
+            console.log('[minting] pending mint quote minted proofs', {
+              mint: quote.mintUrl,
+              quote: quote.quote,
+              proofs: proofs.length,
+            });
+            publishProofsBackup(
+              quote.mintUrl,
+              getUnspentProofsForMint(quote.mintUrl),
+              [...new Set(walletReadRelays)],
+            );
+            await verifyAndCleanProofs();
+            activeMonitors.delete(quote.quote);
+            await deletePendingMintQuote(authPubkey, quote.quote);
+            return;
+          }
+
+          if (latest.state === MintQuoteState.ISSUED) {
+            activeMonitors.delete(quote.quote);
+            await deletePendingMintQuote(authPubkey, quote.quote);
+            return;
+          }
+        } catch (error) {
+          console.error('[minting] pending mint quote monitor failed', {
+            mint: quote.mintUrl,
+            quote: quote.quote,
+            error,
+          });
+        }
+
+        if (!cancelled) {
+          timeout = setTimeout(monitor, MINT_QUOTE_MONITOR_INTERVAL_MS);
+        }
+      };
+
+      timeout = setTimeout(monitor, 0);
+    }
+  }, [
+    addProofs,
+    authPubkey,
+    deletePendingMintQuote,
+    getUnspentProofsForMint,
+    pendingMintQuotes,
+    verifyAndCleanProofs,
+    walletReadRelays,
+  ]);
 
   return null;
 }
@@ -435,6 +640,18 @@ function FeedBuilderScreen({
   return <FeedBuilderModal onClose={navigation.goBack} />;
 }
 
+function CmdKScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'CmdK'>) {
+  return (
+    <CmdKModal
+      onClose={navigation.goBack}
+      onSelectProfile={pubkey => navigation.navigate('PublicProfile', {pubkey})}
+      onSelectHashtag={tag => navigation.navigate('Tags', {tags: [tag]})}
+    />
+  );
+}
+
 function NotificationsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, 'Notifications'>) {
@@ -455,23 +672,40 @@ function SendScreen({
   return <SendModal onClose={navigation.goBack} />;
 }
 
+function ReceiveScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Receive'>) {
+  return (
+    <ReceiveModal
+      onClose={navigation.goBack}
+      onMinting={() => navigation.navigate('Minting')}
+    />
+  );
+}
+
+function MintingScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Minting'>) {
+  return <MintingModal onClose={navigation.goBack} />;
+}
+
 function SendEcashScreen({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, 'SendEcash'>) {
   return (
-    <SendPlaceholderModal
-      title="Ecash"
+    <SendEcashModal
       pubkey={route.params.pubkey}
+      noteId={route.params.noteId}
       onClose={navigation.goBack}
     />
   );
 }
 
 function ScanScreen({
-  navigation,
+  route,
 }: NativeStackScreenProps<RootStackParamList, 'Scan'>) {
-  return <ScanModal onClose={navigation.goBack} />;
+  return <ScanModal initialMode={route.params?.mode} />;
 }
 
 function TapcashScreen({
@@ -502,6 +736,20 @@ function ProfileStubScreen({
     <ProfileStubModal
       path={route.params.path}
       auth={auth}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function RelayInfosScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'RelayInfos'>) {
+  return (
+    <RelayInfosModal
+      subId={route.params.subId}
+      relays={route.params.relays}
+      statuses={route.params.statuses}
       onClose={navigation.goBack}
     />
   );
@@ -560,6 +808,20 @@ function Kind1ThreadScreen({
   return (
     <Kind1Sub
       nevent={route.params.nevent}
+      visible={isFocused}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function TagsScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Tags'>) {
+  const isFocused = useIsFocused();
+  return (
+    <TagsSub
+      tags={route.params.tags}
       visible={isFocused}
       onClose={navigation.goBack}
     />

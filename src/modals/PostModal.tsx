@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Image,
   Keyboard,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +9,7 @@ import {
   View,
   type NativeSyntheticEvent,
 } from 'react-native';
+import {Image} from 'expo-image';
 import {
   AlignLeft,
   Bold,
@@ -23,12 +22,10 @@ import {
   Send,
   X,
 } from 'lucide-react-native';
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import {
+  KeyboardStickyView,
+  useKeyboardState,
+} from 'react-native-keyboard-controller';
 import {
   EnrichedTextInput,
   type EnrichedTextInputInstance,
@@ -228,13 +225,13 @@ export function PostModal({ reply, onClose }: Props) {
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [pollEndsAt, setPollEndsAt] = useState<number | null>(null);
   const [replyNote, setReplyNote] = useState<ParsedEvent | null>(null);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionResults, setMentionResults] = useState<ParsedEvent[]>([]);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionFinished, setMentionFinished] = useState(false);
   const [selectedMentions, setSelectedMentions] = useState<SelectedMention[]>([]);
-  const keyboardAccessoryBottom = useSharedValue(0);
+  const keyboardOpen = useKeyboardState(state => state.isVisible);
+  const keyboardHeight = useKeyboardState(state => state.height);
   const replyTarget = useMemo(() => decodeReplyTarget(reply), [reply]);
   const relays = useMemo(
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
@@ -272,7 +269,7 @@ export function PostModal({ reply, onClose }: Props) {
       }),
       query,
       new Set(),
-    ).slice(0, 4);
+    ).slice(0, 10);
   }, [mentionQuery, mentionResults]);
   const showMentionPanel = Boolean(
     mentionQuery?.trim() &&
@@ -301,7 +298,6 @@ export function PostModal({ reply, onClose }: Props) {
     );
 
   const scrollToComposer = useCallback(() => {
-    if (!replyTarget?.id) return;
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
         y: Math.max(0, editorYRef.current - 12),
@@ -309,7 +305,7 @@ export function PostModal({ reply, onClose }: Props) {
       });
       editorRef.current?.focus();
     });
-  }, [replyTarget]);
+  }, []);
 
   const blurComposer = useCallback(() => {
     editorRef.current?.blur();
@@ -327,38 +323,6 @@ export function PostModal({ reply, onClose }: Props) {
     },
     [blurComposer],
   );
-
-  useEffect(() => {
-    const keyboardShowEvent =
-      Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
-    const keyboardHideEvent =
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const keyboardShow = Keyboard.addListener(keyboardShowEvent, event => {
-      const height = Math.max(0, event.endCoordinates.height);
-      setKeyboardOpen(true);
-      keyboardAccessoryBottom.value = withTiming(height, {
-        duration: Math.max(1, event.duration || 250),
-      });
-    });
-    const keyboardHide = Keyboard.addListener(keyboardHideEvent, event => {
-      keyboardAccessoryBottom.value = withTiming(
-        0,
-        {duration: Math.max(1, event.duration || 250)},
-        finished => {
-          if (finished) runOnJS(setKeyboardOpen)(false);
-        },
-      );
-    });
-
-    return () => {
-      keyboardShow.remove();
-      keyboardHide.remove();
-    };
-  }, [keyboardAccessoryBottom]);
-
-  const keyboardAccessoryStyle = useAnimatedStyle(() => ({
-    bottom: keyboardAccessoryBottom.value,
-  }));
 
   useEffect(() => {
     setReplyNote(null);
@@ -474,6 +438,22 @@ export function PostModal({ reply, onClose }: Props) {
     const timeout = setTimeout(scrollToComposer, 120);
     return () => clearTimeout(timeout);
   }, [replyNote, replyTarget, scrollToComposer]);
+
+  useEffect(() => {
+    if (!keyboardOpen) return;
+    const timeout = setTimeout(scrollToComposer, 80);
+    return () => clearTimeout(timeout);
+  }, [keyboardOpen, scrollToComposer]);
+
+  const contentContainerStyle = useMemo(
+    () => [
+      styles.content,
+      keyboardOpen
+        ? { paddingBottom: Math.max(86, keyboardHeight + 86) }
+        : null,
+    ],
+    [keyboardHeight, keyboardOpen],
+  );
 
   const updatePollOption = useCallback((index: number, value: string) => {
     setPollOptions(current =>
@@ -676,9 +656,6 @@ export function PostModal({ reply, onClose }: Props) {
         <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
           <ChevronDown size={23} color="#17212b" strokeWidth={2.3} />
         </Pressable>
-        <Text style={styles.headerTitle}>
-          {reply ? 'Reply' : 'New post'}
-        </Text>
         <Pressable
           style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
           disabled={!canSubmit}
@@ -700,10 +677,7 @@ export function PostModal({ reply, onClose }: Props) {
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          keyboardOpen && styles.contentWithKeyboardAccessory,
-        ]}
+        contentContainerStyle={contentContainerStyle}
         onScroll={event => {
           scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
         }}
@@ -816,11 +790,11 @@ export function PostModal({ reply, onClose }: Props) {
       </ScrollView>
 
       {keyboardOpen ? (
-        <Animated.View
+        <KeyboardStickyView
+          offset={{closed: 0, opened: 0}}
           style={[
             styles.toolbarAccessory,
             styles.keyboardAccessory,
-            keyboardAccessoryStyle,
           ]}
         >
           {showMentionPanel ? (
@@ -856,7 +830,7 @@ export function PostModal({ reply, onClose }: Props) {
             onTogglePoll={togglePoll}
             onDismissKeyboard={blurComposer}
           />
-        </Animated.View>
+        </KeyboardStickyView>
       ) : null}
     </View>
   );
@@ -919,36 +893,43 @@ function MentionSuggestions({
         </View>
       ) : null}
       {candidates.length ? (
-        candidates.map(candidate => {
-          const pubkey = candidate.pubkey() || '';
-          const kind0 = asKind0(candidate);
-          const name = mentionEventName(candidate);
-          const handle = mentionHandle(name);
-          const picture = kind0?.picture?.();
-          return (
-            <Pressable
-              key={pubkey}
-              style={styles.mentionRow}
-              onPress={() => onSelect(candidate)}
-            >
-              <View style={styles.mentionAvatar}>
-                <Image
-                  source={picture ? {uri: picture} : fallbackProfileImage}
-                  style={styles.mentionAvatarImage}
-                  resizeMode="cover"
-                />
-              </View>
-              <View style={styles.mentionTextBlock}>
-                <Text style={styles.mentionName} numberOfLines={1}>
-                  {name}
-                </Text>
-                <Text style={styles.mentionHandle} numberOfLines={1}>
-                  @{handle}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })
+        <ScrollView
+          style={styles.mentionScroll}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
+          {candidates.map(candidate => {
+            const pubkey = candidate.pubkey() || '';
+            const kind0 = asKind0(candidate);
+            const name = mentionEventName(candidate);
+            const handle = mentionHandle(name);
+            const picture = kind0?.picture?.();
+            return (
+              <Pressable
+                key={pubkey}
+                style={styles.mentionRow}
+                onPress={() => onSelect(candidate)}
+              >
+                <View style={styles.mentionAvatar}>
+                  <Image
+                    source={picture ? {uri: picture} : fallbackProfileImage}
+                    style={styles.mentionAvatarImage}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                </View>
+                <View style={styles.mentionTextBlock}>
+                  <Text style={styles.mentionName} numberOfLines={1}>
+                    {name}
+                  </Text>
+                  <Text style={styles.mentionHandle} numberOfLines={1}>
+                    @{handle}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       ) : finished && !loading ? (
         <View style={styles.mentionStateRow}>
           <Text style={styles.mentionStateText}>
@@ -1257,11 +1238,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#17212b',
-  },
   submitButton: {
     minWidth: 82,
     height: 38,
@@ -1340,11 +1316,15 @@ const styles = StyleSheet.create({
     color: '#17212b',
   },
   mentionBox: {
+    maxHeight: 216,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#dbe3ea',
     backgroundColor: '#ffffff',
     overflow: 'hidden',
+  },
+  mentionScroll: {
+    maxHeight: 216,
   },
   mentionRow: {
     minHeight: 54,

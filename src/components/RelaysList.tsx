@@ -1,26 +1,28 @@
 import React from 'react';
-import {Text, View} from 'react-native';
+import {Pressable, ScrollView, Text, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {RootStackParamList} from '../navigation/types';
 
 type RelaysListProps = {
   relays: string[];
   statuses?: Record<string, string>;
   mini?: boolean;
-  limit?: number;
 };
 
 function statusClass(status?: string) {
   switch (status) {
     case 'EOSE':
     case 'OK':
-      return 'bg-emerald-500';
+      return 'bg-emerald-700';
     case 'SUBSCRIBED':
       return 'bg-blue-500';
     case 'FAILED':
       return 'bg-red-500';
     case 'CLOSED':
-      return 'bg-slate-400';
+      return 'bg-slate-200';
     default:
-      return 'bg-slate-300';
+      return 'bg-slate-200';
   }
 }
 
@@ -39,35 +41,51 @@ export function RelaysList({
   relays,
   statuses = {},
   mini = false,
-  limit = mini ? 3 : 6,
 }: RelaysListProps) {
-  const displayRelays = relays.filter(Boolean).slice(0, limit);
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const displayRelays = relays.filter(Boolean);
+  const heightClass = mini ? 'h-6' : 'h-7';
   if (!displayRelays.length) return null;
 
   return (
-    <View className="flex-row flex-wrap justify-end gap-1">
-      {displayRelays.map(relay => {
-        const key = normalizeRelayUrl(relay);
-        const status = statuses[key];
-        return (
-          <View
-            key={key}
-            className={`flex-row items-center gap-1 rounded-full border border-slate-200 bg-white px-2 ${
-              mini ? 'py-0.5' : 'py-1'
-            }`}
-          >
+    <Pressable
+      className={`self-start overflow-hidden ${heightClass}`}
+      hitSlop={10}
+      onPress={event => {
+        event.stopPropagation();
+        navigation.navigate('RelayInfos', {relays, statuses});
+      }}
+    >
+      <ScrollView
+        className={heightClass}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName={`flex-row items-center gap-1 ${mini ? '' : 'px-4'}`}
+      >
+        {displayRelays.map(relay => {
+          const key = normalizeRelayUrl(relay);
+          const status = statuses[key];
+          return (
             <View
-              className={`h-1.5 w-1.5 rounded-full ${statusClass(status)}`}
-            />
-            <Text
-              className={`${mini ? 'text-[10px]' : 'text-[11px]'} text-slate-500`}
-              numberOfLines={1}
+              key={key}
+              className={`flex-row items-center gap-1 rounded-full border border-slate-200 bg-white px-2 ${
+                mini ? 'py-0.5' : 'py-1'
+              }`}
             >
-              {relayLabel(relay)}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
+              <View
+                className={`${mini ? 'h-1 w-1' : 'h-1.5 w-1.5'} rounded-full ${statusClass(status)}`}
+              />
+              <Text
+                className={`${mini ? 'text-[10px]' : 'text-[11px]'} text-slate-500`}
+                numberOfLines={1}
+              >
+                {relayLabel(relay)}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+    </Pressable>
   );
 }

@@ -972,12 +972,14 @@ function WalletHeaderSection({
   return (
     <View className="mt-1">
       {showMintCards ? (
-        <MintCardPicker
-          mintUrls={mintUrls}
-          activeMintUrl={activeMintUrl}
-          balanceByMint={balanceByMint}
-          onSelectMint={onSelectMint}
-        />
+        <View className="pt-3">
+          <MintCardPicker
+            mintUrls={mintUrls}
+            activeMintUrl={activeMintUrl}
+            balanceByMint={balanceByMint}
+            onSelectMint={onSelectMint}
+          />
+        </View>
       ) : null}
       <WalletActions className={showMintCards ? 'mt-4' : undefined} />
     </View>

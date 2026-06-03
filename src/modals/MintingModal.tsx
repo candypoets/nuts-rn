@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   mintStripContent: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     gap: 10,
     paddingHorizontal: 20,
     minHeight: 92,
@@ -615,9 +615,7 @@ function MintSquare({
 
   return (
     <AnimatedPressable
-      className={`items-center justify-center overflow-hidden ${
-        selected ? 'border-2 border-white' : ''
-      }`}
+      className="items-center justify-center overflow-hidden"
       style={[
         {
           backgroundColor: colors.soft,

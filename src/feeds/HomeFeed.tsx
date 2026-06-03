@@ -1075,7 +1075,7 @@ export function MintCardPicker({
         ))}
       </ScrollView>
       <Pressable
-        className="rounded-2xl border border-slate-100 bg-white/55 px-5 pb-5 pt-10"
+        className="rounded-2xl border border-slate-200 bg-white/55 px-5 pb-5 pt-10"
         onPress={() => onSelectMint(activeMint)}
       >
         {onChangeAmount ? (
@@ -1169,9 +1169,7 @@ function MintSquare({
 
   return (
     <AnimatedPressable
-      className={`items-center justify-center overflow-hidden ${
-        selected ? 'border-2 border-white' : ''
-      }`}
+      className="items-center justify-center overflow-hidden"
       style={[
         {
           backgroundColor: colors.soft,
@@ -1537,7 +1535,7 @@ function toText(value: string | Uint8Array) {
 
 const styles = StyleSheet.create({
   mintStripContent: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     gap: 10,
     minHeight: 82,
     paddingHorizontal: 12,

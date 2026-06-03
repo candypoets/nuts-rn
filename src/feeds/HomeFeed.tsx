@@ -45,13 +45,13 @@ import {
 } from '@candypoets/nipworker/utils';
 import type { Proof } from '@cashu/cashu-ts';
 import {
+  ArrowRight,
   CheckCircle2,
-  CirclePlus,
   Eye,
   EyeOff,
+  Plus,
   QrCode,
   ScanLine,
-  Send,
   Wallet,
   Zap,
 } from 'lucide-react-native';
@@ -993,18 +993,18 @@ function WalletActions({ className = '' }: { className?: string }) {
   return (
     <View className={`${className} flex-row items-start gap-5 px-2`}>
       <WalletAction
-        icon={<CirclePlus size={25} color="#ffffff" strokeWidth={2.3} />}
+        icon={<Plus size={32} color="#ffffff" strokeWidth={1.9} />}
         label="Receive"
         onPress={() => navigation.navigate('Receive')}
       />
       <WalletAction
-        icon={<Send size={25} color="#ffffff" strokeWidth={2.3} />}
+        icon={<ArrowRight size={32} color="#ffffff" strokeWidth={1.9} />}
         label="Send"
         onPress={() => navigation.navigate('Send')}
       />
       <WalletAction
         outlined
-        icon={<ScanLine size={25} color={"#1f7a5a"} strokeWidth={2.3} />}
+        icon={<ScanLine size={30} color="#8a8a91" strokeWidth={1.9} />}
         label="Scan"
         onPress={() => navigation.navigate('Scan', { mode: 'scan' })}
       />
@@ -1233,12 +1233,12 @@ function WalletAction({
     >
       <View
         className={`h-14 w-14 items-center justify-center rounded-full ${
-          outlined ? 'border border-emerald-700 bg-white' : 'bg-emerald-700'
+          outlined ? 'border-2 border-[#8a8a91] bg-transparent' : 'bg-[#079b78]'
         }`}
       >
         {icon}
       </View>
-      <Text className="mt-1 text-sm font-semibold text-slate-500">{label}</Text>
+      <Text className="mt-1 text-sm font-bold text-slate-500">{label}</Text>
     </Pressable>
   );
 }

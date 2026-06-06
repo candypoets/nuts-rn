@@ -55,13 +55,16 @@ export function buildZapRequestTemplate({
   noteId?: string;
   createdAt: number;
 }): EventTemplate {
-  const amountMsats = amount * 1000;
+  const amountMsats = Number(amount) * 1000;
   const encodedLnurl = encodeLNURL(lnurl);
   const cleanRelays = relays.map(relay => relay.trim()).filter(Boolean);
 
   if (!HEX_64.test(pubkey)) throw new Error('Zap recipient must be a hex pubkey');
-  if (!Number.isInteger(amountMsats) || amountMsats <= 0) {
-    throw new Error('Zap amount must be a positive integer');
+  if (!Number.isFinite(amountMsats) || amountMsats <= 0 || !Number.isInteger(amountMsats)) {
+    throw new Error('Zap amount must convert to a positive integer millisat value');
+  }
+  if (!encodedLnurl.startsWith('lnurl')) {
+    throw new Error('Zap request lnurl tag must be a bech32 LNURL value');
   }
   if (!cleanRelays.length) throw new Error('Zap request needs receipt relays');
   if (noteId && !HEX_64.test(noteId)) throw new Error('Zap event id must be hex');

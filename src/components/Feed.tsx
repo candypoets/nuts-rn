@@ -24,6 +24,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import {useAppTheme} from '../theme';
 
 type FeedChromeProps = {
   scrollToTop: () => void;
@@ -67,8 +68,20 @@ export type FeedProps<T> = {
 
 const NEAR_BOTTOM_THRESHOLD = 10;
 const TOP_SAFE_AREA_OFFSET = 8;
-const REFRESH_CONTROL_HEADER_OFFSET = 56;
-const SAFE_AREA_FROST = 'rgba(248, 250, 252, 0.72)';
+
+function isDarkHex(hex: string) {
+  const normalized = hex.replace('#', '').slice(0, 6);
+  const value = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(value)) return true;
+  const red = Math.floor(value / 65536) % 256;
+  const green = Math.floor(value / 256) % 256;
+  const blue = value % 256;
+  return (red * 299 + green * 587 + blue * 114) / 1000 < 140;
+}
+
+function getRefreshControlColor(theme: ReturnType<typeof useAppTheme>) {
+  return isDarkHex(theme.colors.base100) ? '#ffffff' : theme.colors.primary;
+}
 
 function defaultGetItemId<T>(item: T, index: number) {
   const maybeItem = item as T & {id?: unknown};
@@ -114,6 +127,7 @@ export function Feed<T>({
   const [down, setDown] = useState(true);
   const listRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
+  const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
   const lastItemsLengthRef = useRef(items.length);
@@ -121,9 +135,8 @@ export function Feed<T>({
   const headerVisible = useSharedValue(0);
   const footerVisible = useSharedValue(1);
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
-  const refreshInset = headerSafeArea
-    ? insets.top + REFRESH_CONTROL_HEADER_OFFSET
-    : 0;
+  const refreshInset = headerSafeArea ? topInset : 0;
+  const refreshColor = getRefreshControlColor(theme);
 
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({offset: 0, animated: true});
@@ -184,10 +197,10 @@ export function Feed<T>({
 
   const stickyHeaderStyle = useAnimatedStyle(() => ({
     opacity: headerVisible.value,
-    backgroundColor: stickyHeaderSafeAreaColor,
+    backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base100,
     paddingTop: topInset,
     transform: [{translateY: (1 - headerVisible.value) * -(72 + topInset)}],
-  }), [stickyHeaderSafeAreaColor, topInset]);
+  }), [stickyHeaderSafeAreaColor, theme.colors.base100, topInset]);
 
   const stickyFooterStyle = useAnimatedStyle(() => ({
     opacity: footerVisible.value,
@@ -251,7 +264,7 @@ export function Feed<T>({
         {headerSafeArea && topInset > 0 ? (
           <View
             pointerEvents="none"
-            style={{height: topInset, backgroundColor: SAFE_AREA_FROST}}
+            style={{height: topInset}}
           />
         ) : null}
         {header({...chromeProps, scrolled: false})}
@@ -263,7 +276,7 @@ export function Feed<T>({
     if (loading) {
       return (
         <View className="px-6 py-14">
-          <Text className="text-center text-base text-slate-500">Loading...</Text>
+          <Text className="text-center text-base text-primary-content">Loading...</Text>
         </View>
       );
     }
@@ -322,8 +335,11 @@ export function Feed<T>({
         refreshControl={
           pullToRefresh && onRefresh ? (
             <RefreshControl
+              colors={[refreshColor]}
               progressViewOffset={refreshInset}
+              progressBackgroundColor={theme.colors.base200}
               refreshing={refreshing}
+              tintColor={refreshColor}
               onRefresh={onRefresh}
             />
           ) : undefined

@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {Check} from 'lucide-react-native';
 import {useRelayStore} from '../stores';
+import {type AppTheme, useAppTheme} from '../theme';
 
 type RelayInfosModalProps = {
   subId?: string;
@@ -49,6 +50,8 @@ export function RelayInfosModal({
   statuses = {},
   onClose: _onClose,
 }: RelayInfosModalProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createRelayInfosStyles(theme), [theme]);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const relayInfos = useRelayStore(state => state.relayInfos);
   const storeRelays = useRelayStore(state =>
@@ -171,15 +174,16 @@ export function RelayInfosModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createRelayInfosStyles(theme: AppTheme) {
+  return StyleSheet.create({
   modalBody: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
   },
   modalSheet: {
     flex: 1,
     position: 'relative',
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
     paddingBottom: 24,
   },
   modalHeader: {
@@ -192,14 +196,14 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingHorizontal: 18,
     paddingBottom: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
     flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   title: {
-    color: '#17212b',
+    color: theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a',
     fontSize: 18,
     fontWeight: '700',
   },
@@ -215,16 +219,16 @@ const styles = StyleSheet.create({
   row: {
     minHeight: 54,
     borderRadius: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   selectedRow: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     borderWidth: 1,
-    borderColor: '#99f6e4',
+    borderColor: theme.colors.primary,
   },
   selectionBox: {
     width: 18,
@@ -234,12 +238,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectionBoxSelected: {
-    backgroundColor: '#158777',
+    backgroundColor: theme.colors.primary,
   },
   selectionBoxIdle: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
   },
   statusDot: {
     width: 8,
@@ -251,24 +255,25 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   relayName: {
-    color: '#17212b',
+    color: theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a',
     fontSize: 14,
     fontWeight: '700',
   },
   relayUrl: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 12,
     marginTop: 2,
   },
   statusText: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'lowercase',
   },
   empty: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     textAlign: 'center',
     padding: 24,
   },
-});
+  });
+}

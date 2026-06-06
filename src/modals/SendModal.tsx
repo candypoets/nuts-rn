@@ -12,6 +12,7 @@ import {shortPubkey} from '../components/notes/time';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import type {RootStackParamList} from '../navigation/types';
 import {useNostrStore} from '../stores';
+import {useAppTheme} from '../theme';
 
 type ContactProfile = {
   pubkey: string;
@@ -45,6 +46,8 @@ function contactKey(pubkey: string) {
 export function SendModal({onClose}: SendModalProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const theme = useAppTheme();
+  const iconColor = theme.colors.primaryContent;
   const follows = useNostrStore(state => state.follows);
   const readRelays = useNostrStore(state => state.readRelays);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
@@ -145,64 +148,64 @@ export function SendModal({onClose}: SendModalProps) {
 
   const renderHeader = useCallback(
     () => (
-      <View className="bg-slate-50 px-4 pt-4">
+      <View className="bg-base-100 px-4 pt-4">
         <View className="h-14 flex-row items-center justify-between">
           <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
+            className="h-10 w-10 items-center justify-center rounded-full border border-base-200 bg-base-300"
             hitSlop={12}
             onPress={onClose}
           >
-            <ChevronDown size={22} color="#17212b" strokeWidth={2.3} />
+            <ChevronDown size={22} color={iconColor} strokeWidth={2.3} />
           </Pressable>
           <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
+            className="h-10 w-10 items-center justify-center rounded-full border border-base-200 bg-base-300"
             hitSlop={12}
             onPress={() => navigation.navigate('Scan')}
           >
-            <ScanLine size={21} color="#17212b" strokeWidth={2.3} />
+            <ScanLine size={21} color={iconColor} strokeWidth={2.3} />
           </Pressable>
         </View>
-        <Text className="mt-4 text-2xl font-bold text-slate-950">Send Money</Text>
-        <View className="mt-4 flex-row items-center rounded-lg border border-slate-200 bg-white px-3">
-          <Search size={18} color="#8794a0" strokeWidth={2.2} />
+        <Text className="mt-4 text-2xl font-bold text-base-content">Send Money</Text>
+        <View className="mt-4 flex-row items-center rounded-lg border border-base-200 bg-base-300 px-3">
+          <Search size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
-            className="min-h-12 flex-1 px-3 text-base text-slate-950"
+            className="min-h-12 flex-1 px-3 text-base text-base-content"
             placeholder="Search contacts"
-            placeholderTextColor="#8794a0"
+            placeholderTextColor={theme.colors.primaryContent}
             value={search}
             onChangeText={setSearch}
           />
           {search ? (
             <Pressable hitSlop={8} onPress={() => setSearch('')}>
-              <X size={18} color="#8794a0" strokeWidth={2.2} />
+              <X size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
             </Pressable>
           ) : null}
         </View>
-        <View className="my-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <View className="my-4 overflow-hidden rounded-lg border border-base-200 bg-base-300">
           <SendOption
             disabled
-            icon={<Zap size={23} color="#8794a0" strokeWidth={2.2} />}
+            icon={<Zap size={23} color={theme.colors.primaryContent} strokeWidth={2.2} />}
             title="Tap cash"
             subtitle="Offline instant payment"
             onPress={() => navigation.navigate('Tapcash')}
           />
           <SendOption
-            icon={<Zap size={23} color="#1f7a5a" strokeWidth={2.2} />}
+            icon={<Zap size={23} color={theme.colors.primary} strokeWidth={2.2} />}
             title="Pay an invoice"
             subtitle="Pay out with lightning"
             onPress={() => navigation.navigate('Lightning')}
           />
         </View>
-        <Text className="mb-2 text-lg font-bold text-slate-950">Contacts</Text>
+        <Text className="mb-2 text-lg font-bold text-base-content">Contacts</Text>
       </View>
     ),
-    [navigation, onClose, search],
+    [iconColor, navigation, onClose, search, theme],
   );
 
   return (
-    <View style={styles.modalBody}>
+    <View style={[styles.modalBody, {backgroundColor: theme.colors.base100}]}>
       <Feed
         items={contactRows}
         getItemId={item => item.pubkey}
@@ -237,18 +240,19 @@ function SendOption({
   subtitle: string;
   onPress: () => void;
 }) {
+  const theme = useAppTheme();
   return (
     <Pressable
-      className={`min-h-16 flex-row items-center border-b border-slate-100 px-4 ${disabled ? 'opacity-45' : ''}`}
+      className={`min-h-16 flex-row items-center border-b border-base-200 px-4 ${disabled ? 'opacity-45' : ''}`}
       disabled={disabled}
       onPress={onPress}
     >
       <View className="w-12 items-start">{icon}</View>
       <View className="min-w-0 flex-1">
-        <Text className="text-base font-bold text-slate-950">{title}</Text>
-        <Text className="mt-0.5 text-xs text-slate-500">{subtitle}</Text>
+        <Text className="text-base font-bold text-base-content">{title}</Text>
+        <Text className="mt-0.5 text-xs text-primary-content">{subtitle}</Text>
       </View>
-      <ChevronRight size={21} color="#8794a0" strokeWidth={2.2} />
+      <ChevronRight size={21} color={theme.colors.primaryContent} strokeWidth={2.2} />
     </Pressable>
   );
 }
@@ -266,6 +270,7 @@ function ContactRow({
   searching: boolean;
   onPress: () => void;
 }) {
+  const theme = useAppTheme();
   const firstLetter = contact.name.trim().slice(0, 1).toUpperCase() || '#';
   const previousLetter = previous?.name.trim().slice(0, 1).toUpperCase();
   const nextLetter = next?.name.trim().slice(0, 1).toUpperCase();
@@ -275,15 +280,15 @@ function ContactRow({
   return (
     <View>
       {isFirst && !searching ? (
-        <Text className="px-6 pb-1 pt-3 text-sm font-bold text-slate-500">
+        <Text className="px-6 pb-1 pt-3 text-sm font-bold text-primary-content">
           {firstLetter}
         </Text>
       ) : null}
       <Pressable
-        className={`mx-3 flex-row items-center border border-slate-200 bg-white px-3 py-3 ${isFirst ? 'rounded-t-lg' : 'border-t-0'} ${isLast ? 'rounded-b-lg' : 'border-b-0'} ${searching ? 'mt-1 rounded-lg border-t' : ''}`}
+        className={`mx-3 flex-row items-center border border-base-200 bg-base-300 px-3 py-3 ${isFirst ? 'rounded-t-lg' : 'border-t-0'} ${isLast ? 'rounded-b-lg' : 'border-b-0'} ${searching ? 'mt-1 rounded-lg border-t' : ''}`}
         onPress={onPress}
       >
-        <View className="h-10 w-10 overflow-hidden rounded-full border border-slate-200 bg-slate-200">
+        <View className="h-10 w-10 overflow-hidden rounded-full border border-base-200 bg-base-200">
           <Image
             source={contact.picture ? {uri: contact.picture} : fallbackProfileImage}
             className="h-full w-full"
@@ -291,30 +296,31 @@ function ContactRow({
           />
         </View>
         <View className="ml-3 min-w-0 flex-1">
-          <Text className="text-base font-semibold text-slate-950" numberOfLines={1}>
+          <Text className="text-base font-semibold text-base-content" numberOfLines={1}>
             {contact.name}
           </Text>
-          <Text className="mt-0.5 text-xs text-slate-500" numberOfLines={1}>
+          <Text className="mt-0.5 text-xs text-primary-content" numberOfLines={1}>
             {shortPubkey(contact.pubkey)}
           </Text>
         </View>
-        <ChevronRight size={20} color="#8794a0" strokeWidth={2.1} />
+        <ChevronRight size={20} color={theme.colors.primaryContent} strokeWidth={2.1} />
       </Pressable>
     </View>
   );
 }
 
 function EmptyContacts({hasContacts}: {hasContacts: boolean}) {
+  const theme = useAppTheme();
   return (
-    <View className="mx-3 rounded-lg border border-slate-200 bg-white px-5 py-6">
+    <View className="mx-3 rounded-lg border border-base-200 bg-base-300 px-5 py-6">
       <View className="items-center">
-        <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
-          <CreditCard size={25} color="#1f7a5a" strokeWidth={2.2} />
+        <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-base-200">
+          <CreditCard size={25} color={theme.colors.primary} strokeWidth={2.2} />
         </View>
-        <Text className="text-center text-lg font-bold text-slate-950">
+        <Text className="text-center text-lg font-bold text-base-content">
           {hasContacts ? 'No matching contacts' : 'No contacts yet'}
         </Text>
-        <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
+        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
           {hasContacts
             ? 'Try searching by display name or public key.'
             : 'Your Nostr follow list will appear here once it is loaded.'}
@@ -335,17 +341,23 @@ export function SendPlaceholderModal({
   invoice?: string;
   onClose: () => void;
 }) {
+  const theme = useAppTheme();
+  const themedStyles = useMemo(
+    () => createSendModalStyles(theme),
+    [theme],
+  );
+
   return (
-    <View style={styles.modalBody}>
-      <View style={styles.placeholderSheet}>
-        <View style={styles.modalHandle} />
-        <View style={styles.placeholderHeader}>
-          <Text style={styles.placeholderTitle}>{title}</Text>
+    <View style={themedStyles.modalBody}>
+      <View style={themedStyles.placeholderSheet}>
+        <View style={themedStyles.modalHandle} />
+        <View style={themedStyles.placeholderHeader}>
+          <Text style={themedStyles.placeholderTitle}>{title}</Text>
           <Pressable hitSlop={12} onPress={onClose}>
-            <X size={22} color="#52616f" strokeWidth={2.2} />
+            <X size={22} color={theme.colors.primaryContent} strokeWidth={2.2} />
           </Pressable>
         </View>
-        <Text style={styles.placeholderBody}>
+        <Text style={themedStyles.placeholderBody}>
           {invoice
             ? `Scanned invoice/LNURL: ${invoice}`
             : pubkey
@@ -357,13 +369,14 @@ export function SendPlaceholderModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createSendModalStyles(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
   modalBody: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
     flex: 1,
   },
   placeholderSheet: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: 'auto',
@@ -373,7 +386,7 @@ const styles = StyleSheet.create({
   },
   modalHandle: {
     alignSelf: 'center',
-    backgroundColor: '#cbd5e1',
+    backgroundColor: theme.colors.primaryContent,
     borderRadius: 2,
     height: 4,
     marginBottom: 14,
@@ -386,13 +399,20 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   placeholderTitle: {
-    color: '#17212b',
+    color: theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a',
     fontSize: 22,
     fontWeight: '800',
   },
   placeholderBody: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontSize: 15,
     lineHeight: 22,
+  },
+  });
+}
+
+const styles = StyleSheet.create({
+  modalBody: {
+    flex: 1,
   },
 });

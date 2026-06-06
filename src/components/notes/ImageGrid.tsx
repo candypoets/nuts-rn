@@ -354,7 +354,7 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
             return (
               <View
                 key={`${link.src}-${index}`}
-                className={['relative overflow-hidden bg-slate-100', rounded].join(' ')}
+                className={['relative overflow-hidden', rounded].join(' ')}
                 style={{width: tileWidth, height}}
               >
                 <VideoTile
@@ -377,7 +377,7 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
           return (
             <Pressable
               key={`${link.src}-${index}`}
-              className={['relative overflow-hidden bg-slate-100', rounded].join(' ')}
+              className={['relative overflow-hidden', rounded].join(' ')}
               style={{width: tileWidth, height}}
               onPress={event => {
                 event.stopPropagation();

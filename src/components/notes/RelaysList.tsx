@@ -33,9 +33,9 @@ function statusClass(status?: string) {
     case 'FAILED':
       return 'bg-red-500';
     case 'CLOSED':
-      return 'bg-slate-200';
+      return 'bg-base-200';
     default:
-      return 'bg-slate-200';
+      return 'bg-base-200';
   }
 }
 

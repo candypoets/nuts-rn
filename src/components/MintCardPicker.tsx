@@ -58,11 +58,11 @@ export function MintCardPicker({
 
   if (stripOnly) {
     return (
-      <View className="h-[92px]">
+      <View className="h-[64px]">
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          className="-mx-3 h-[92px]"
+          className="-mx-3 h-[64px]"
           contentContainerStyle={styles.mintStripContent}
         >
           {mintUrls.map(mintUrl => (
@@ -83,7 +83,7 @@ export function MintCardPicker({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        className="-mx-3 -mb-8 h-[82px] z-10"
+        className="-mx-3 -mb-7 h-[64px] z-10"
         contentContainerStyle={styles.mintStripContent}
       >
         {mintUrls.map(mintUrl => (
@@ -96,35 +96,35 @@ export function MintCardPicker({
         ))}
       </ScrollView>
       <Pressable
-        className="rounded-2xl border border-slate-200 bg-white/55 px-5 pb-5 pt-10"
+        className="rounded-2xl border border-base-200 bg-base-300/55 px-5 pb-5 pt-9"
         onPress={() => onSelectMint(activeMint)}
       >
         {onChangeAmount ? (
           <>
-            <Text className="text-sm font-semibold uppercase text-slate-500">
+            <Text className="text-sm font-semibold uppercase text-primary-content">
               amount
             </Text>
             <View className="mt-1 flex-row items-end">
               <TextInput
                 keyboardType="number-pad"
-                className="min-h-16 flex-1 font-mono text-5xl font-semibold text-slate-900"
+                className="min-h-16 flex-1 font-mono text-5xl font-semibold text-base-content"
                 value={amount}
                 onChangeText={onChangeAmount}
                 placeholder="0"
                 placeholderTextColor="#cbd5e1"
               />
-              <Text className="pb-3 text-base font-bold text-slate-500">sats</Text>
+              <Text className="pb-3 text-base font-bold text-primary-content">sats</Text>
             </View>
-            <Text className="text-xs font-semibold text-slate-500">
+            <Text className="text-xs font-semibold text-primary-content">
               max {maxAmount} sats
             </Text>
           </>
         ) : (
           <>
-            <Text className="text-sm font-semibold uppercase text-slate-500">
+            <Text className="text-sm font-semibold uppercase text-primary-content">
               current balance
             </Text>
-            <Text className="mt-1 font-mono text-3xl font-semibold text-slate-900">
+            <Text className="mt-1 font-mono text-3xl font-semibold text-base-content">
               {activeBalance} <Text className="text-2xl font-bold">丰</Text>
             </Text>
           </>
@@ -172,28 +172,20 @@ function MintSquare({
   const initial = (mint.name || displayMintName(mintUrl)).trim().charAt(0).toUpperCase();
   const tileSize = sizeProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [58, 82],
+    outputRange: [38, 54],
   });
   const tileRadius = sizeProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [12, 18],
+    outputRange: [11, 16],
   });
-  const iconSize = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [34, 48],
-  });
-  const iconRadius = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [12, 16],
-  });
-  const initialClassName = selected ? 'text-3xl' : 'text-xl';
+  const initialClassName = selected ? 'text-2xl' : 'text-lg';
 
   return (
     <AnimatedPressable
       className="items-center justify-center overflow-hidden"
       style={[
         {
-          backgroundColor: colors.soft,
+          backgroundColor: mint.iconUrl ? 'transparent' : colors.base,
           borderRadius: tileRadius,
           height: tileSize,
           width: tileSize,
@@ -208,9 +200,9 @@ function MintSquare({
           cachePolicy="memory-disk"
           source={{uri: mint.iconUrl}}
           style={{
-            borderRadius: iconRadius,
-            height: iconSize,
-            width: iconSize,
+            borderRadius: tileRadius,
+            height: tileSize,
+            width: tileSize,
           }}
         />
       ) : (
@@ -218,9 +210,9 @@ function MintSquare({
           className="items-center justify-center"
           style={{
             backgroundColor: colors.base,
-            borderRadius: iconRadius,
-            height: iconSize,
-            width: iconSize,
+            borderRadius: tileRadius,
+            height: tileSize,
+            width: tileSize,
           }}
         >
           <Text className={`${initialClassName} font-black text-white`}>
@@ -283,8 +275,8 @@ function mintColors(value: string) {
 const styles = StyleSheet.create({
   mintStripContent: {
     alignItems: 'flex-start',
-    gap: 10,
-    minHeight: 82,
+    gap: 12,
+    minHeight: 64,
     paddingHorizontal: 12,
   },
   mintSquare: {

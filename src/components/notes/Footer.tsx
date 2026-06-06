@@ -35,7 +35,7 @@ import { kinds, type EventTemplate } from 'nostr-tools';
 import { neventEncode } from 'nostr-tools/nip19';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
-import { IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
+import { IconComment, IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
 import type { RelayStatusSink } from './RelaysList';
 
 type FooterProps = {
@@ -57,9 +57,10 @@ const nutscashUri = Image.resolveAssetSource(nutscashIcon).uri;
 let nutscashXmlCache: string | null = null;
 let nutscashXmlPromise: Promise<string> | null = null;
 
-type ActionKind = 'reply' | 'repost' | 'like' | 'share';
+type ActionKind = 'reply' | 'comment' | 'repost' | 'like' | 'share';
 type Counts = {
   replies: number;
+  comments: number;
   reposts: number;
   quotes: number;
   reactions: number;
@@ -67,6 +68,7 @@ type Counts = {
 
 const emptyCounts: Counts = {
   replies: 0,
+  comments: 0,
   reposts: 0,
   quotes: 0,
   reactions: 0,
@@ -139,6 +141,8 @@ function renderActionIcon(kind: ActionKind, color: string, animated: boolean) {
   switch (kind) {
     case 'reply':
       return <IconReply width={20} height={20} color={color} />;
+    case 'comment':
+      return <IconComment width={20} height={20} color={color} />;
     case 'repost':
       return <IconRepost width={20} height={20} color={color} />;
     case 'like':
@@ -346,6 +350,7 @@ export function Footer({
   const pendingActiveRef = useRef<ActiveState>(emptyActive);
   const noteId = note.id() || '';
   const notePubkey = note.pubkey() || '';
+  const supportsKind1111 = note.kind() !== 1 && note.kind() !== 6;
   const relayKey = relays.join(',');
   const forwardRelayStatus = useCallback(
     (status: ConnectionStatus) => {
@@ -366,6 +371,26 @@ export function Footer({
       }),
     });
   }, [navigation, note, noteId, notePubkey, relays]);
+  const openComments = useCallback(() => {
+    navigation.navigate('Kind1111Comments', {
+      nevent: neventEncode({
+        id: noteId,
+        author: notePubkey || undefined,
+        kind: note.kind(),
+        relays,
+      }),
+    });
+  }, [navigation, note, noteId, notePubkey, relays]);
+  const openQuote = useCallback(() => {
+    navigation.navigate('Post', {
+      quote: neventEncode({
+        id: noteId,
+        author: notePubkey || undefined,
+        kind: note.kind(),
+        relays,
+      }),
+    });
+  }, [navigation, note, noteId, notePubkey, relays]);
   const openZap = useCallback(() => {
     if (!notePubkey) return;
     navigation.navigate('SendEcash', {
@@ -379,15 +404,24 @@ export function Footer({
     });
   }, [navigation, note, noteId, notePubkey, relays]);
   const mainRequest = useMemo<RequestObject[]>(
-    () => [
-      {
-        kinds: [1, 6, 7],
+    () => {
+      const reactionRequest: RequestObject = {
+        kinds: supportsKind1111 ? [6, 7] : [1, 6, 7],
         tags: { '#e': [noteId] },
         noContext: true,
         relays,
-      },
-    ],
-    [noteId, relays],
+      };
+      const commentRequest: RequestObject = {
+        kinds: [1111],
+        tags: { '#E': [noteId] },
+        noContext: true,
+        relays,
+      };
+      return supportsKind1111
+        ? [reactionRequest, commentRequest]
+        : [reactionRequest];
+    },
+    [noteId, relays, supportsKind1111],
   );
   const quoteRequest = useMemo<RequestObject[]>(
     () => [
@@ -403,19 +437,20 @@ export function Footer({
   const mainOptions = useMemo(
     () =>
       createCounterOptions(
-        [1, 6, 7],
+        supportsKind1111 ? [6, 7, 1111] : [1, 6, 7],
         mutedPubkeys,
         mutedHashtags,
         mutedWords,
         mutedEventIds,
-        pubkey || '',
-      ),
+      pubkey || '',
+    ),
     [
       mutedEventIds,
       mutedHashtags,
       mutedPubkeys,
       mutedWords,
       pubkey,
+      supportsKind1111,
     ],
   );
   const quoteOptions = useMemo(
@@ -453,6 +488,7 @@ export function Footer({
     setCounts(current => {
       if (
         current.replies === pendingCounts.replies &&
+        current.comments === pendingCounts.comments &&
         current.reposts === pendingCounts.reposts &&
         current.quotes === pendingCounts.quotes &&
         current.reactions === pendingCounts.reactions
@@ -487,6 +523,9 @@ export function Footer({
       case 1:
         nextCounts.replies = count.count();
         if (count.you()) nextActive.replied = true;
+        break;
+      case 1111:
+        nextCounts.comments = count.count();
         break;
       case 6:
         nextCounts.reposts = count.count();
@@ -692,14 +731,24 @@ export function Footer({
             : 'flex-1 flex-row items-center gap-2'
         }
       >
-        <Action
-          kind="reply"
-          label={countLabel(counts.replies)}
-          activeColor={accent}
-          activeState={active.replied}
-          mode={mode}
-          onPress={openReply}
-        />
+        {supportsKind1111 ? (
+          <Action
+            kind="comment"
+            label={countLabel(counts.comments)}
+            activeColor={accent}
+            mode={mode}
+            onPress={openComments}
+          />
+        ) : (
+          <Action
+            kind="reply"
+            label={countLabel(counts.replies)}
+            activeColor={accent}
+            activeState={active.replied}
+            mode={mode}
+            onPress={openReply}
+          />
+        )}
         <Action
           kind="repost"
           label={countLabel(counts.reposts + counts.quotes)}
@@ -707,6 +756,7 @@ export function Footer({
           activeState={active.reposted}
           animation="repost"
           mode={mode}
+          onPress={openQuote}
         />
         <Action
           kind="like"

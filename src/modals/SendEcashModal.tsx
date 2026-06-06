@@ -18,6 +18,7 @@ import {
 } from '@candypoets/nipworker/hooks';
 import {
   asKind0,
+  asKind10002,
   asKind10019,
   asParsedEvent,
   fbArray,
@@ -32,6 +33,7 @@ import {shortPubkey} from '../components/notes/time';
 import {MintCardPicker} from '../components/MintCardPicker';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {useNostrStore, useWalletStore} from '../stores';
+import {useAppTheme} from '../theme';
 import {
   completeTransaction,
   failTransaction,
@@ -56,6 +58,22 @@ type SendState = 'idle' | 'loading' | 'sending' | 'sent' | 'error';
 
 function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
+}
+
+function normalizeRelayUrl(url: string) {
+  return url.trim().replace(/\/$/, '');
+}
+
+function uniqueRelays(relays: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  relays.forEach(relay => {
+    const normalized = relay ? normalizeRelayUrl(relay) : '';
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    result.push(normalized);
+  });
+  return result;
 }
 
 function profileName(kind0: Kind0Parsed | null, pubkey: string) {
@@ -98,6 +116,7 @@ function signEvent(template: EventTemplate) {
 }
 
 export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
+  const theme = useAppTheme();
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
@@ -120,6 +139,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
   const [recipientMint, setRecipientMint] = useState<string | null>(null);
   const [recipientMints, setRecipientMints] = useState<string[]>([]);
   const [recipientP2pk, setRecipientP2pk] = useState<string | null>(null);
+  const [recipientWriteRelays, setRecipientWriteRelays] = useState<string[]>([]);
   const [state, setState] = useState<SendState>('loading');
   const [message, setMessage] = useState('');
   const [fees, setFees] = useState<number | null>(null);
@@ -130,6 +150,17 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     const resolved = [...new Set([...walletReadRelays, ...readRelays, ...writeRelays])];
     return resolved.length ? resolved : DEFAULT_FEED_RELAYS;
   }, [readRelays, walletReadRelays, writeRelays]);
+
+  const zapReceiptRelays = useMemo(
+    () =>
+      uniqueRelays([
+        ...recipientWriteRelays,
+        ...readRelays,
+        ...walletReadRelays,
+        ...DEFAULT_FEED_RELAYS,
+      ]),
+    [readRelays, recipientWriteRelays, walletReadRelays],
+  );
 
   const mints = useMemo(
     () =>
@@ -161,6 +192,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     setRecipientMint(null);
     setRecipientMints([]);
     setRecipientP2pk(null);
+    setRecipientWriteRelays([]);
     setState('loading');
     setMessage('');
 
@@ -168,6 +200,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
       `send_ecash_${pubkey}_${relayHash(relays)}`,
       [
         {kinds: [0], authors: [pubkey], limit: 1, cacheFirst: true, relays},
+        {kinds: [10002], authors: [pubkey], limit: 1, cacheFirst: true, relays},
         {kinds: [10019], authors: [pubkey], limit: 1, cacheFirst: true, relays},
       ],
       (workerMessage: WorkerMessage) => {
@@ -176,6 +209,17 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         if (parsed.kind() === 0) {
           const profile = asKind0(parsed);
           setKind0(profile);
+        }
+        if (parsed.kind() === 10002) {
+          const relayList = asKind10002(parsed);
+          if (!relayList) return;
+          setRecipientWriteRelays(
+            uniqueRelays(
+              fbArray(relayList, 'relays')
+                .filter(relay => relay.write())
+                .map(relay => relay.url() ?? ''),
+            ),
+          );
         }
         if (parsed.kind() === 10019) {
           const wallet = asKind10019(parsed) as Kind10019Parsed | null;
@@ -258,8 +302,8 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
               pubkey,
               amount: numericAmount,
               lnurl,
-              relays: writeRelays.length ? writeRelays : relays,
-              content: memo.trim(),
+              relays: zapReceiptRelays,
+              content: memo,
               noteId: hexNoteId || undefined,
               createdAt: Math.floor(Date.now() / 1000),
             });
@@ -293,7 +337,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     recipientMints,
     recipientP2pk,
     relays,
-    writeRelays,
+    zapReceiptRelays,
   ]);
 
   const sendEcash = useCallback(async () => {
@@ -339,7 +383,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
               memo,
               noteId: hexNoteId || undefined,
               p2pkPubkey: recipientP2pk,
-              receiptRelays: writeRelays.length ? writeRelays : relays,
+              receiptRelays: zapReceiptRelays,
             },
             selectedProofs,
           );
@@ -379,7 +423,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
 
           const event: EventTemplate = {
             kind: 9321,
-            content: memo.trim(),
+            content: memo,
             created_at: Math.floor(Date.now() / 1000),
             tags: [
               ...lockedProofs.map((proof: Proof) => ['proof', JSON.stringify(proof)]),
@@ -393,7 +437,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
           setMessage('Publishing nutzap...');
           const published = await publishWithRetry(
             event,
-            writeRelays.length ? writeRelays : relays,
+            zapReceiptRelays,
           );
           if (published) await markPublished(txId);
           else await completeTransaction(txId, true);
@@ -424,7 +468,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
             memo,
             noteId: hexNoteId || undefined,
             p2pkPubkey: recipientP2pk,
-            receiptRelays: writeRelays.length ? writeRelays : relays,
+            receiptRelays: zapReceiptRelays,
           },
           selectedProofs,
         );
@@ -438,7 +482,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
 
         const event: EventTemplate = {
           kind: 9321,
-          content: memo.trim(),
+          content: memo,
           created_at: Math.floor(Date.now() / 1000),
           tags: [
             ...lockedProofs.map((proof: Proof) => ['proof', JSON.stringify(proof)]),
@@ -453,7 +497,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         await setProofsForMint(fromMint, keep);
         const published = await publishWithRetry(
           event,
-          writeRelays.length ? writeRelays : relays,
+          zapReceiptRelays,
         );
         if (published) await markPublished(txId);
         else await completeTransaction(txId, true);
@@ -469,8 +513,8 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         pubkey,
         amount: numericAmount,
         lnurl,
-        relays: writeRelays.length ? writeRelays : relays,
-        content: memo.trim(),
+        relays: zapReceiptRelays,
+        content: memo,
         noteId: hexNoteId || undefined,
         createdAt: Math.floor(Date.now() / 1000),
       });
@@ -499,7 +543,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
           memo,
           noteId: hexNoteId || undefined,
           lnurl,
-          receiptRelays: writeRelays.length ? writeRelays : relays,
+          receiptRelays: zapReceiptRelays,
         },
         selectedProofs,
       );
@@ -558,25 +602,37 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     relays,
     setProofsForMint,
     verifyAndCleanProofs,
-    writeRelays,
+    zapReceiptRelays,
   ]);
 
   return (
-    <View style={styles.modalBody}>
+    <View style={[styles.modalBody, {backgroundColor: theme.colors.base100}]}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
       >
         <View style={styles.header}>
           <Pressable
-            style={styles.iconButton}
+            style={[
+              styles.iconButton,
+              {
+                backgroundColor: theme.colors.base300,
+                borderColor: theme.colors.base200,
+              },
+            ]}
             hitSlop={12}
             onPress={onClose}
           >
-            <ChevronDown size={23} color="#17212b" strokeWidth={2.3} />
+            <ChevronDown size={23} color={theme.colors.primaryContent} strokeWidth={2.3} />
           </Pressable>
           <Pressable
-            style={[styles.submitButton, (!canSend || state === 'sent') && styles.submitDisabled]}
+            style={[
+              styles.submitButton,
+              {backgroundColor: theme.colors.primary},
+              (!canSend || state === 'sent') && {
+                backgroundColor: theme.colors.base200,
+              },
+            ]}
             disabled={!canSend || state === 'sent'}
             onPress={sendEcash}
           >
@@ -598,14 +654,14 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
           />
         </View>
 
-        <Text className="mt-6 text-center text-4xl font-light text-slate-300">↓</Text>
+        <Text className="mt-6 text-center text-4xl font-light text-primary-content/50">↓</Text>
 
         <View className="mt-3 items-center">
           {hasNip61Wallet ? (
             <View className="w-full max-w-[340px] items-center">
-              <View className="mb-3 flex-row items-center rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+              <View className="mb-3 flex-row items-center rounded-full border border-base-200 bg-base-300 px-4 py-2 shadow-sm">
                 <Avatar pubkey={pubkey} size="xl" />
-                <Text className="ml-2 max-w-[180px] text-lg font-semibold text-slate-700" numberOfLines={1}>
+                <Text className="ml-2 max-w-[180px] text-lg font-semibold text-primary-content" numberOfLines={1}>
                   {name}
                 </Text>
               </View>
@@ -620,16 +676,16 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
               />
             </View>
           ) : (
-            <View className="flex-row items-center rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+            <View className="flex-row items-center rounded-full border border-base-200 bg-base-300 px-4 py-2 shadow-sm">
               <Avatar pubkey={pubkey} size="xl" />
-              <Text className="ml-2 max-w-[180px] text-lg font-semibold text-slate-700" numberOfLines={1}>
+              <Text className="ml-2 max-w-[180px] text-lg font-semibold text-primary-content" numberOfLines={1}>
                 {name}
               </Text>
             </View>
           )}
         </View>
 
-        <Text className="mt-8 px-4 text-center text-sm leading-5 text-slate-500">
+        <Text className="mt-8 px-4 text-center text-sm leading-5 text-primary-content">
           {feeLoading
             ? 'Calculating fees...'
             : typeof fees === 'number'
@@ -644,7 +700,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         </Text>
 
         <TextInput
-          className="mx-4 mt-7 min-h-16 rounded-xl border border-slate-200 bg-white px-5 text-xl font-semibold text-slate-900"
+          className="mx-4 mt-7 min-h-16 rounded-xl border border-base-200 bg-base-300 px-5 text-xl font-semibold text-base-content"
           value={memo}
           onChangeText={setMemo}
           placeholder="Add a memo"
@@ -657,8 +713,8 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
               state === 'error'
                 ? 'text-red-600'
                 : state === 'sent'
-                ? 'text-emerald-700'
-                : 'text-slate-500'
+                ? 'text-primary'
+                : 'text-primary-content'
             }`}
           >
             {message}

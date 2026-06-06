@@ -6,16 +6,10 @@ import React, {
   useState,
 } from 'react';
 import {
-  Animated,
-  Easing,
   Pressable,
-  ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import {Image} from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { neventEncode } from 'nostr-tools/nip19';
@@ -56,6 +50,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { Feed } from '../components/Feed';
+import { MintCardPicker } from '../components/MintCardPicker';
 import { Avatar } from '../components/notes/Avatar';
 import { User } from '../components/notes/User';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
@@ -68,9 +63,7 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedImage = Animated.createAnimatedComponent(Image);
+import { useAppTheme } from '../theme';
 
 type HomeFeedProps = {
   enabled: boolean;
@@ -89,28 +82,6 @@ type WalletActivity = {
   zappedEventId: string | null;
   zappedRelays: string[];
   redeemed?: boolean;
-};
-
-type MintInfo = {
-  name: string;
-  url: string;
-  iconUrl?: string;
-  state?: string;
-  n_errors?: number;
-  n_mints?: number;
-  n_melts?: number;
-};
-
-type MintInfoResponse = {
-  name?: string;
-  icon_url?: string;
-};
-
-type MintAuditResponse = {
-  state?: string;
-  n_errors?: number;
-  n_mints?: number;
-  n_melts?: number;
 };
 
 export function HomeFeed({ enabled, visible }: HomeFeedProps) {
@@ -831,7 +802,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         items={[]}
         header={renderHeader}
         stickyHeader={renderStickyHeader}
-        stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
         renderItem={() => null}
         empty={<LoggedOutHome />}
         contentContainerClassName="pb-28"
@@ -846,7 +816,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
       pullToRefresh
       header={renderHeader}
       stickyHeader={renderStickyHeader}
-      stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
       renderItem={({ item }) => (
         <WalletActivityRow activity={item} currentPubkey={authPubkey} />
       )}
@@ -886,21 +855,22 @@ function HomeHeader({
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-    const iconColor = "#17212b";
+    const theme = useAppTheme();
+  const iconColor = theme.colors.primaryContent;
 
   return (
     <View
       className={`${
-        compact ? 'border-b border-slate-200 bg-slate-50/95' : 'bg-slate-50'
+        compact ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'
       }`}
     >
       <View
         className={`${
-          compact ? '' : 'rounded-lg bg-white/90 px-3 py-3 shadow-sm'
+          compact ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'
         }`}
       >
         <View className="h-14 flex-row items-center justify-between">
-          <Text className="text-2xl font-semibold text-slate-900">Home</Text>
+          <Text className="text-2xl font-semibold text-base-content">Home</Text>
           <View className="flex-row items-center gap-2">
             <HeaderIconButton onPress={onToggleView}>
               {viewHidden ? (
@@ -949,20 +919,22 @@ function WalletHeaderSection({
   onSelectMint: (mintUrl: string | null) => void;
   showMintCards?: boolean;
 }) {
-    if (showMintCards && !mintUrls.length) {
+  const theme = useAppTheme();
+
+  if (showMintCards && !mintUrls.length) {
     return (
-      <View className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
+      <View className="mt-3 rounded-lg border border-base-200 bg-base-100 px-4 py-4">
         <View className="flex-row items-center justify-between gap-3">
           <View className="min-w-0 flex-1">
-            <Text className="text-base font-semibold text-slate-900">
+            <Text className="text-base font-semibold text-base-content">
               Setup Your Wallet
             </Text>
-            <Text className="mt-1 text-sm text-slate-500">
+            <Text className="mt-1 text-sm text-primary-content">
               No Cashu wallet event was found yet.
             </Text>
           </View>
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-slate-200">
-            <Wallet size={20} color={"#1f7a5a"} strokeWidth={2.2} />
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-base-200">
+            <Wallet size={20} color={theme.colors.primary} strokeWidth={2.2} />
           </View>
         </View>
       </View>
@@ -989,6 +961,7 @@ function WalletHeaderSection({
 function WalletActions({ className = '' }: { className?: string }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const theme = useAppTheme();
 
   return (
     <View className={`${className} flex-row items-start gap-5 px-2`}>
@@ -1004,212 +977,11 @@ function WalletActions({ className = '' }: { className?: string }) {
       />
       <WalletAction
         outlined
-        icon={<ScanLine size={30} color="#8a8a91" strokeWidth={1.9} />}
+        icon={<ScanLine size={30} color={theme.colors.primary} strokeWidth={1.9} />}
         label="Scan"
         onPress={() => navigation.navigate('Scan', { mode: 'scan' })}
       />
     </View>
-  );
-}
-
-export function MintCardPicker({
-  mintUrls,
-  activeMintUrl,
-  balanceByMint,
-  amount,
-  onChangeAmount,
-  stripOnly = false,
-  onSelectMint,
-}: {
-  mintUrls: string[];
-  activeMintUrl: string | null;
-  balanceByMint: Record<string, number>;
-  amount?: string;
-  onChangeAmount?: (amount: string) => void;
-  stripOnly?: boolean;
-  onSelectMint: (mintUrl: string | null) => void;
-}) {
-  const activeMint =
-    activeMintUrl && mintUrls.includes(activeMintUrl)
-      ? activeMintUrl
-      : mintUrls[0];
-  const activeBalance = activeMint ? balanceByMint[activeMint] ?? 0 : 0;
-
-  if (!activeMint) return null;
-
-  if (stripOnly) {
-    return (
-      <View className="h-[92px]">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          className="-mx-3 h-[92px]"
-          contentContainerStyle={styles.mintStripContent}
-        >
-          {mintUrls.map(mintUrl => (
-            <MintSquare
-              key={mintUrl}
-              mintUrl={mintUrl}
-              selected={mintUrl === activeMint}
-              onPress={() => onSelectMint(mintUrl)}
-            />
-          ))}
-        </ScrollView>
-      </View>
-    );
-  }
-
-  return (
-    <View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        className="-mx-3 -mb-8 h-[82px] z-10"
-        contentContainerStyle={styles.mintStripContent}
-      >
-        {mintUrls.map(mintUrl => (
-          <MintSquare
-            key={mintUrl}
-            mintUrl={mintUrl}
-            selected={mintUrl === activeMint}
-            onPress={() => onSelectMint(mintUrl)}
-          />
-        ))}
-      </ScrollView>
-      <Pressable
-        className="rounded-2xl border border-slate-200 bg-white/55 px-5 pb-5 pt-10"
-        onPress={() => onSelectMint(activeMint)}
-      >
-        {onChangeAmount ? (
-          <>
-            <Text className="text-sm font-semibold uppercase text-slate-500">
-              amount
-            </Text>
-            <View className="mt-1 flex-row items-end">
-              <TextInput
-                keyboardType="number-pad"
-                className="min-h-16 flex-1 font-mono text-5xl font-semibold text-slate-900"
-                value={amount}
-                onChangeText={onChangeAmount}
-                placeholder="0"
-                placeholderTextColor="#cbd5e1"
-              />
-              <Text className="pb-3 text-base font-bold text-slate-500">sats</Text>
-            </View>
-          </>
-        ) : (
-          <>
-            <Text className="text-sm font-semibold uppercase text-slate-500">
-              current balance
-            </Text>
-            <Text className="mt-1 font-mono text-3xl font-semibold text-slate-900">
-              {activeBalance} <Text className="text-2xl font-bold">丰</Text>
-            </Text>
-          </>
-        )}
-      </Pressable>
-    </View>
-  );
-}
-
-function MintSquare({
-  mintUrl,
-  selected,
-  onPress,
-}: {
-  mintUrl: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const [mint, setMint] = useState<MintInfo>(() => ({
-    name: displayMintName(mintUrl),
-    url: mintUrl,
-  }));
-  const sizeProgress = useRef(new Animated.Value(selected ? 1 : 0)).current;
-
-  useEffect(() => {
-    let alive = true;
-    fetchMintData(mintUrl).then(nextMint => {
-      if (alive) setMint(nextMint);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [mintUrl]);
-
-  useEffect(() => {
-    Animated.timing(sizeProgress, {
-      toValue: selected ? 1 : 0,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [selected, sizeProgress]);
-
-  const colors = mintColors(mint.name || mintUrl);
-  const initial = (mint.name || displayMintName(mintUrl))
-    .trim()
-    .charAt(0)
-    .toUpperCase();
-  const tileSize = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [58, 82],
-  });
-  const tileRadius = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [12, 18],
-  });
-  const iconSize = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [34, 48],
-  });
-  const iconRadius = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [12, 16],
-  });
-  const initialClassName = selected ? 'text-3xl' : 'text-xl';
-
-  return (
-    <AnimatedPressable
-      className="items-center justify-center overflow-hidden"
-      style={[
-        {
-          backgroundColor: colors.soft,
-          borderRadius: tileRadius,
-          height: tileSize,
-          width: tileSize,
-        },
-        selected ? styles.selectedMintSquare : styles.mintSquare,
-      ]}
-      onPress={onPress}
-    >
-      {mint.iconUrl ? (
-        <AnimatedImage
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          source={{uri: mint.iconUrl}}
-          style={{
-            borderRadius: iconRadius,
-            height: iconSize,
-            width: iconSize,
-          }}
-        />
-      ) : (
-        <Animated.View
-          className="items-center justify-center"
-          style={{
-            backgroundColor: colors.base,
-            borderRadius: iconRadius,
-            height: iconSize,
-            width: iconSize,
-          }}
-        >
-          <Text className={`${initialClassName} font-black text-white`}>
-            {initial}
-          </Text>
-        </Animated.View>
-      )}
-    </AnimatedPressable>
   );
 }
 
@@ -1233,12 +1005,12 @@ function WalletAction({
     >
       <View
         className={`h-14 w-14 items-center justify-center rounded-full ${
-          outlined ? 'border-2 border-[#8a8a91] bg-transparent' : 'bg-[#079b78]'
+          outlined ? 'border-2 border-primary bg-transparent' : 'bg-primary'
         }`}
       >
         {icon}
       </View>
-      <Text className="mt-1 text-sm font-bold text-slate-500">{label}</Text>
+      <Text className="mt-1 text-sm font-bold text-primary-content">{label}</Text>
     </Pressable>
   );
 }
@@ -1252,7 +1024,7 @@ function HeaderIconButton({
 }) {
   return (
     <Pressable
-      className="h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50"
+      className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
       hitSlop={12}
       onPress={onPress}
     >
@@ -1270,7 +1042,8 @@ function WalletActivityRow({
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-    const isSender =
+  const theme = useAppTheme();
+  const isSender =
     activity.sender === currentPubkey ||
     activity.event.pubkey() === currentPubkey;
   const otherPubkey = isSender
@@ -1306,7 +1079,7 @@ function WalletActivityRow({
 
   return (
     <Pressable
-      className="mt-1 rounded-lg border border-slate-200 bg-white/95 px-4 py-4 shadow-sm"
+      className="mt-1 rounded-lg border border-base-200 bg-base-300/95 px-4 py-4 shadow-sm"
       onPress={openActivity}
     >
       <View className="flex-row items-center justify-between gap-3">
@@ -1318,7 +1091,7 @@ function WalletActivityRow({
               query={!!otherPubkey}
             />
             <View
-              className="absolute bottom-0 right-0 h-5 w-5 translate-x-1 items-center justify-center rounded-full border-2 border-white"
+              className="absolute bottom-0 right-0 h-5 w-5 translate-x-1 items-center justify-center rounded-full border-2 border-base-100"
               style={{ backgroundColor: kindColor }}
             >
               {activity.kind === 9321 ? (
@@ -1337,7 +1110,7 @@ function WalletActivityRow({
             <View className="flex-row flex-wrap items-center gap-1">
               {isSender ? (
                 <>
-                  <Text className="text-sm font-semibold text-slate-900">
+                  <Text className="text-sm font-semibold text-base-content">
                     You zapped
                   </Text>
                   {otherPubkey ? <User pubkey={otherPubkey} /> : null}
@@ -1345,27 +1118,27 @@ function WalletActivityRow({
               ) : (
                 <>
                   {otherPubkey ? <User pubkey={otherPubkey} /> : null}
-                  <Text className="text-sm font-semibold text-slate-900">
+                  <Text className="text-sm font-semibold text-base-content">
                     zapped you
                   </Text>
                 </>
               )}
             </View>
-            <Text className="mt-1 text-xs text-slate-500">
+            <Text className="mt-1 text-xs text-primary-content">
               {formatActivityDate(activity.createdAt)} · NIP-
               {activity.kind === 9321 ? '61' : '57'}
             </Text>
           </View>
         </View>
         <View className="shrink-0 flex-row items-center gap-1">
-          <CheckCircle2 size={16} color={"#1f7a5a"} strokeWidth={2.2} />
-          <Text className="text-sm font-bold text-emerald-700">
+          <CheckCircle2 size={16} color={theme.colors.primary} strokeWidth={2.2} />
+          <Text className="text-sm font-bold text-primary">
             {activity.amount} sats
           </Text>
         </View>
       </View>
       {activity.comment ? (
-        <Text className="ml-13 mt-3 text-sm text-slate-500">
+        <Text className="ml-13 mt-3 text-sm text-primary-content">
           "{activity.comment}"
         </Text>
       ) : null}
@@ -1376,22 +1149,23 @@ function WalletActivityRow({
 function LoggedOutHome() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const theme = useAppTheme();
 
   return (
-    <View className="rounded-lg border border-slate-200 bg-white/95 px-5 py-6 shadow-sm">
+    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
       <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-slate-200">
-          <Wallet size={30} color={"#1f7a5a"} strokeWidth={2.2} />
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
+          <Wallet size={30} color={theme.colors.primary} strokeWidth={2.2} />
         </View>
-        <Text className="text-center text-xl font-semibold text-slate-900">
+        <Text className="text-center text-xl font-semibold text-base-content">
           Sign in to load your wallet feed
         </Text>
-        <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
+        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
           Home shows your NIP-61 NutsZap and NIP-57 zap activity once a Nostr
           key is available.
         </Text>
         <Pressable
-          className="mt-5 rounded-full bg-emerald-700 px-5 py-3"
+          className="mt-5 rounded-full bg-primary px-5 py-3"
           onPress={() => navigation.navigate('Login')}
         >
           <Text className="text-sm font-semibold text-white">
@@ -1404,16 +1178,18 @@ function LoggedOutHome() {
 }
 
 function EmptyWalletStub() {
-    return (
-    <View className="rounded-lg border border-slate-200 bg-white/95 px-5 py-6 shadow-sm">
+  const theme = useAppTheme();
+
+  return (
+    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
       <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-slate-200">
-          <Wallet size={30} color={"#1f7a5a"} strokeWidth={2.2} />
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
+          <Wallet size={30} color={theme.colors.primary} strokeWidth={2.2} />
         </View>
-        <Text className="text-center text-xl font-semibold text-slate-900">
+        <Text className="text-center text-xl font-semibold text-base-content">
           No wallet activity yet
         </Text>
-        <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
+        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
           Cashu wallet loading is stubbed for now. Activity will appear here
           when NIP-61 or NIP-57 events are found.
         </Text>
@@ -1535,77 +1311,6 @@ function toText(value: string | Uint8Array) {
   return text;
 }
 
-const styles = StyleSheet.create({
-  mintStripContent: {
-    alignItems: 'flex-start',
-    gap: 10,
-    minHeight: 82,
-    paddingHorizontal: 12,
-  },
-  mintSquare: {
-    shadowColor: '#0f172a',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-  },
-  selectedMintSquare: {
-    shadowColor: '#0f172a',
-    shadowOffset: {width: 0, height: 5},
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    zIndex: 2,
-  },
-});
-
-const mintInfoCache = new Map<string, MintInfo>();
-
-async function fetchMintData(mintUrl: string): Promise<MintInfo> {
-  const normalizedUrl = normalizeMintUrl(mintUrl);
-  const cached = mintInfoCache.get(normalizedUrl);
-  if (cached) return cached;
-
-  try {
-    const [info, audit] = await Promise.all([
-      fetch(`${normalizedUrl}/v1/info`)
-        .then(response => {
-          if (!response.ok) throw new Error('Mint info request failed');
-          return response.json() as Promise<MintInfoResponse>;
-        })
-        .catch(() => null),
-      fetch(
-        `https://api.audit.8333.space/mints/url/?url=${encodeURIComponent(
-          normalizedUrl,
-        )}`,
-      )
-        .then(response =>
-          response.ok ? (response.json() as Promise<MintAuditResponse>) : null,
-        )
-        .catch(() => null),
-    ]);
-
-    if (!info) throw new Error('Mint info request failed');
-
-    const mint = {
-      name: info.name || displayMintName(normalizedUrl),
-      url: normalizedUrl,
-      iconUrl: info.icon_url,
-      state: audit?.state || 'OK',
-      n_errors: audit?.n_errors,
-      n_mints: audit?.n_mints,
-      n_melts: audit?.n_melts,
-    };
-    mintInfoCache.set(normalizedUrl, mint);
-    return mint;
-  } catch {
-    const fallback = {
-      name: displayMintName(normalizedUrl),
-      url: normalizedUrl,
-    };
-    mintInfoCache.set(normalizedUrl, fallback);
-    return fallback;
-  }
-}
-
 function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
@@ -1615,24 +1320,6 @@ function sameStringArray(left: string[], right: string[]) {
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
-}
-
-function displayMintName(url: string) {
-  return normalizeMintUrl(url)
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '');
-}
-
-function mintColors(value: string) {
-  const hash = value
-    .replace(/cash/gi, '')
-    .split('')
-    .reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 2147483647, 0);
-  const hue = Math.abs(hash % 320) + 20;
-  return {
-    base: `hsl(${hue}, 72%, 34%)`,
-    soft: `hsl(${hue}, 42%, 90%)`,
-  };
 }
 
 function hashKey(value: string) {

@@ -15,16 +15,16 @@ function relayHash(relays: string[]) {
 
 export function useNotificationSubscription(enabled: boolean) {
   const pubkey = useAuthStore(state => state.pubkey);
-  const writeRelays = useNostrStore(state => state.writeRelays);
+  const readRelays = useNostrStore(state => state.readRelays);
   const lastNotificationView = useAppStore(state => state.lastNotificationView);
   const setMissedNotifications = useAppStore(state => state.setMissedNotifications);
   const viewedAtRef = useRef(lastNotificationView);
   const seenEventIdsRef = useRef(new Set<string>());
 
   const relays = useMemo(() => {
-    const source = writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS;
+    const source = readRelays.length ? readRelays : DEFAULT_FEED_RELAYS;
     return [...new Set(source)];
-  }, [writeRelays]);
+  }, [readRelays]);
   const relaysKey = relays.join(',');
 
   useEffect(() => {

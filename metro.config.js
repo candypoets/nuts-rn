@@ -9,13 +9,14 @@ const { withNativeWind } = require('nativewind/metro');
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
-const nipworkerRoot = path.resolve(__dirname, '../nipworker');
+const nipworkerRealRoot = path.resolve(__dirname, '../nipworker');
+const nipworkerRoot = path.resolve(__dirname, 'node_modules/@candypoets/nipworker');
 
 const config = getDefaultConfig(__dirname);
 
 config.watchFolders = [
 	...(config.watchFolders ?? []),
-	nipworkerRoot,
+	nipworkerRealRoot,
 ];
 const defaultResolveRequest = config.resolver.resolveRequest;
 const sourceExtensions = ['.ts', '.tsx', '.js', '.jsx'];

@@ -1,0 +1,13 @@
+diff --git a/node_modules/metro-transform-worker/src/index.js b/node_modules/metro-transform-worker/src/index.js
+index 8dbd3d5..0772749 100644
+--- a/node_modules/metro-transform-worker/src/index.js
++++ b/node_modules/metro-transform-worker/src/index.js
+@@ -300,7 +300,7 @@ async function transformJS(file, { config, options, projectRoot }) {
+     },
+     file.code,
+   );
+-  let map = result.rawMappings
++  let map = Array.isArray(result.rawMappings)
+     ? result.rawMappings.map(_metroSourceMap.toSegmentTuple)
+     : [];
+   let code = result.code;

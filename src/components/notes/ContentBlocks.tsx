@@ -1,5 +1,5 @@
-import React, { memo, useRef } from 'react';
-import { Linking, Pressable, Text, View } from 'react-native';
+import React, { memo, useRef, useState } from 'react';
+import {Linking, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
@@ -26,6 +26,7 @@ type ContentBlocksProps = {
   depth?: number;
   showQuote?: boolean;
   showMedia?: boolean;
+  forceFullContent?: boolean;
   renderQuote?: (quote: {
     id: string;
     author?: string;
@@ -48,7 +49,7 @@ function InlineLink({ text, url }: { text: string; url: string }) {
 
   return (
     <Text
-      className="text-emerald-700"
+      className="text-primary"
       onPress={event => {
         event.stopPropagation();
       }}
@@ -103,6 +104,10 @@ function isInlineContentBlock(block: ContentBlock) {
   return false;
 }
 
+function isLastTextBlock(index: number, blocks: ContentBlock[]) {
+  return !blocks.slice(index + 1).some(block => block.type() === 'text');
+}
+
 function ContentBlocksComponent({
   content,
   shortContent,
@@ -110,14 +115,18 @@ function ContentBlocksComponent({
   depth = 0,
   showQuote = true,
   showMedia = true,
+  forceFullContent = false,
   renderQuote,
 }: ContentBlocksProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const displayContent = shortContent?.length ? shortContent : content;
+  const [showFull, setShowFull] = useState(false);
+  const hasShortContent = !!shortContent?.length;
+  const canToggleFullContent = hasShortContent && !forceFullContent;
+  const displayContent = canToggleFullContent && !showFull ? shortContent : content;
 
   if (!displayContent.length) {
-    return <Text className="text-sm text-slate-500">No text content.</Text>;
+    return <Text className="text-sm text-primary-content">No text content.</Text>;
   }
 
   const renderInlineBlock = (
@@ -137,6 +146,17 @@ function ContentBlocksComponent({
             : index === displayContent.length - 1
             ? displayText.trimEnd()
             : displayText}
+          {canToggleFullContent && isLastTextBlock(index, displayContent) ? (
+            <Text
+              className="text-primary"
+              onPress={event => {
+                event.stopPropagation();
+                setShowFull(value => !value);
+              }}
+            >
+              {` ${showFull ? 'See less' : 'See more'}`}
+            </Text>
+          ) : null}
         </Text>
       );
     }
@@ -153,7 +173,7 @@ function ContentBlocksComponent({
       return (
         <Text
           key={blockKey}
-          className="text-[15px] font-semibold text-emerald-700"
+          className="text-[15px] font-semibold text-primary"
           onPress={event => {
             event.stopPropagation();
             if (tag) navigation.navigate('Tags', {tags: [tag]});
@@ -172,7 +192,7 @@ function ContentBlocksComponent({
           key={blockKey}
           pubkey={author}
           link
-          className="text-[15px] font-semibold text-emerald-700"
+          className="text-[15px] font-semibold text-primary"
         />
       );
     }
@@ -222,7 +242,7 @@ function ContentBlocksComponent({
         renderedBlocks.push(
           <Text
             key={`inline-${blockKey}`}
-            className="text-[15px] leading-5 text-slate-900"
+            className="text-[15px] leading-5 text-base-content"
           >
             {inlineChildren}
           </Text>,
@@ -252,7 +272,7 @@ function ContentBlocksComponent({
         );
       } else {
         renderedBlocks.push(
-          <Text key={blockKey} className="text-[15px] text-emerald-700">
+          <Text key={blockKey} className="text-[15px] text-primary">
             {entity || id || block.text()}
           </Text>,
         );
@@ -272,12 +292,7 @@ function ContentBlocksComponent({
         continue;
       }
       renderedBlocks.push(
-        <Pressable
-          key={blockKey}
-          onPress={event => {
-            event.stopPropagation();
-          }}
-        >
+        <React.Fragment key={blockKey}>
           <ImageGrid
             note={note}
             links={[
@@ -288,7 +303,7 @@ function ContentBlocksComponent({
               },
             ]}
           />
-        </Pressable>,
+        </React.Fragment>,
       );
       index += 1;
       continue;
@@ -305,12 +320,7 @@ function ContentBlocksComponent({
         continue;
       }
       renderedBlocks.push(
-        <Pressable
-          key={blockKey}
-          onPress={event => {
-            event.stopPropagation();
-          }}
-        >
+        <React.Fragment key={blockKey}>
           <ImageGrid
             note={note}
             links={[
@@ -322,7 +332,7 @@ function ContentBlocksComponent({
               },
             ]}
           />
-        </Pressable>,
+        </React.Fragment>,
       );
       index += 1;
       continue;
@@ -351,12 +361,7 @@ function ContentBlocksComponent({
         continue;
       }
       renderedBlocks.push(
-        <Pressable
-          key={blockKey}
-          onPress={event => {
-            event.stopPropagation();
-          }}
-        >
+        <React.Fragment key={blockKey}>
           <ImageGrid
             note={note}
             links={
@@ -380,14 +385,14 @@ function ContentBlocksComponent({
                 : []
             }
           />
-        </Pressable>,
+        </React.Fragment>,
       );
       index += 1;
       continue;
     }
 
     renderedBlocks.push(
-      <Text key={blockKey} className="text-sm text-slate-500">
+      <Text key={blockKey} className="text-sm text-primary-content">
         {block.text() || `Unsupported content block ${block.dataType()}`}
       </Text>,
     );

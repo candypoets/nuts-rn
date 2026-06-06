@@ -20,6 +20,7 @@ import {Note} from '../components/notes';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {useNostrStore, useRelayStore} from '../stores';
+import {useAppTheme} from '../theme';
 
 const PAGE_LIMIT = 50;
 const REPLY_BYTES_PER_EVENT = 96 * 1024;
@@ -130,12 +131,13 @@ const Kind1StickyHeader = memo(function Kind1StickyHeader({
 }: {
   onClose: () => void;
 }) {
+  const theme = useAppTheme();
     return (
     <View className="h-16 flex-row items-center justify-between px-4">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-200" hitSlop={12} onPress={onClose}>
-        <ChevronLeft size={22} color={"#17212b"} />
+      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
+        <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>
-      <Text className="text-base font-semibold text-slate-900">Post</Text>
+      <Text className="text-base font-semibold text-base-content">Post</Text>
       <View className="h-9 w-9" />
     </View>
   );
@@ -147,13 +149,14 @@ const Kind1Header = memo(function Kind1Header({
   relays,
   visible,
 }: Kind1HeaderProps) {
+  const theme = useAppTheme();
   const relayStatuses = useRelayStore(state => state.relayStatuses);
 
   return (
     <View>
-      <View className="h-20 flex-row items-center justify-between rounded-lg bg-white/90 px-4 shadow-sm">
-        <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-200" hitSlop={12} onPress={onClose}>
-          <ChevronLeft size={22} color={"#17212b"} />
+      <View className="h-20 flex-row items-center justify-between rounded-lg bg-base-300/90 px-4 shadow-sm">
+        <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
+          <ChevronLeft size={22} color={theme.colors.primaryContent} />
         </Pressable>
         <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />
       </View>
@@ -984,7 +987,7 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
       removeClippedSubviews={false}
       empty={headerItem ? (
         <View className="px-6 py-12">
-          <Text className="text-center text-sm text-slate-500">
+          <Text className="text-center text-sm text-primary-content">
             No replies found.
           </Text>
         </View>

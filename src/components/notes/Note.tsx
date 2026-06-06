@@ -6,7 +6,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Keyboard, Pressable, Text, View } from 'react-native';
+import { Keyboard, Pressable, Text, View, type ViewStyle } from 'react-native';
+import { CloudOff, RefreshCw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ContentBlock, ParsedEvent, WorkerMessage } from '@candypoets/nipworker';
@@ -14,6 +15,7 @@ import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks
 import {
   asConnectionStatus,
   asKind1,
+  asKind6,
   asNostrData,
   asParsedEvent,
   fbArray,
@@ -27,16 +29,32 @@ import {
 } from '../../hooks/useAuthorRelays';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
-import { BOOTSTRAP_RELAYS } from '../../stores';
+import {useAppTheme} from '../../theme';
+import { BOOTSTRAP_RELAYS, useNostrStore, useRelayStore } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
+import { Avatar } from './Avatar';
+import { Kind20Content } from './Kind20Content';
+import { Kind1068Content } from './Kind1068Content';
+import { Kind30023Content } from './Kind30023Content';
+import { KindPreGenericContent } from './KindPreGenericContent';
+import { ZapSummary } from './ZapSummary';
+import {eventTags, tagValue} from './kindHelpers';
 import type { RelayStatusSink } from './RelaysList';
 import { wasRecentSwipeGesture } from './press';
-import { neventEncode } from 'nostr-tools/nip19';
+import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
+const NOTE_SEARCH_TIMEOUT_MS = 2500;
+const NOTE_FALLBACK_RELAYS = [
+  'wss://nostr.wine',
+  'wss://relay.snort.social',
+  'wss://relay.damus.io',
+  'wss://relay.primal.net',
+  'wss://nos.lol',
+];
 
 function isRelayUrl(value: unknown): value is string {
   return typeof value === 'string' && /^wss?:\/\//.test(value);
@@ -100,6 +118,7 @@ type RenderQuote = (quote: {
 type NoteBodyProps = {
   ancestor?: React.ReactNode;
   containerClassName: string;
+  cardStyle?: ViewStyle;
   depth: number;
   effectiveNote: ParsedEvent;
   subId: string;
@@ -117,44 +136,106 @@ type NoteBodyProps = {
   relays?: string[];
   showRelays: boolean;
   relayStatusSink: RelayStatusSink;
+  reposterPubkey?: string;
+  contentOverride?: React.ReactNode;
+  fullBleedContent?: boolean;
 };
 
 type LoadingNoteBodyProps = {
   containerClassName: string;
+  cardStyle?: ViewStyle;
   effectiveId: string;
   threadConnectors: React.ReactNode;
 };
 
+type NotFoundNoteBodyProps = LoadingNoteBodyProps & {
+  onRetry: () => void;
+  retrying: boolean;
+};
+
 type UnsupportedNoteBodyProps = {
   containerClassName: string;
+  cardStyle?: ViewStyle;
   effectiveNote: ParsedEvent;
   threadConnectors: React.ReactNode;
 };
 
 const LoadingNoteBody = memo(function LoadingNoteBody({
+  cardStyle,
   containerClassName,
   effectiveId,
   threadConnectors,
 }: LoadingNoteBodyProps) {
   return (
-    <View className={containerClassName}>
+    <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      <Text className="text-xs text-slate-500">
+      <Text className="text-xs text-primary-content">
         Loading note {effectiveId ? `${effectiveId.slice(0, 12)}...` : ''}
       </Text>
     </View>
   );
 });
 
+const NotFoundNoteBody = memo(function NotFoundNoteBody({
+  cardStyle,
+  containerClassName,
+  effectiveId,
+  onRetry,
+  retrying,
+  threadConnectors,
+}: NotFoundNoteBodyProps) {
+  const theme = useAppTheme();
+  return (
+    <View className={containerClassName} style={cardStyle}>
+      {threadConnectors}
+      <View className="flex-row items-center gap-2">
+        <CloudOff
+          size={16}
+          color={theme.colors.primaryContent}
+          opacity={0.55}
+        />
+        <View className="min-w-0 flex-1">
+          <Text className="text-xs text-primary-content opacity-70">
+            Not found
+          </Text>
+          {effectiveId ? (
+            <Text className="font-mono text-[10px] text-primary-content opacity-45">
+              {effectiveId.slice(0, 12)}...
+            </Text>
+          ) : null}
+        </View>
+        <Pressable
+          className="flex-row items-center gap-1 rounded-md border px-2 py-1"
+          hitSlop={8}
+          onPress={event => {
+            event.stopPropagation();
+            onRetry();
+          }}
+          style={{
+            backgroundColor: theme.colors.base200,
+            borderColor: theme.colors.base200,
+          }}
+        >
+          <RefreshCw size={14} color={theme.colors.primaryContent} />
+          <Text className="text-xs font-semibold text-primary-content">
+            {retrying ? 'Searching' : 'Deep search'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
 const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
+  cardStyle,
   containerClassName,
   effectiveNote,
   threadConnectors,
 }: UnsupportedNoteBodyProps) {
   return (
-    <View className={containerClassName}>
+    <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      <Text className="text-sm text-slate-500">
+      <Text className="text-sm text-primary-content">
         Kind {effectiveNote.kind()} is not supported yet.
       </Text>
     </View>
@@ -164,6 +245,7 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
 const NoteBody = memo(
   function NoteBody({
     ancestor,
+    cardStyle,
     containerClassName,
     depth,
     effectiveNote,
@@ -182,11 +264,14 @@ const NoteBody = memo(
     relays,
     showRelays,
     relayStatusSink,
+    reposterPubkey,
+    contentOverride,
+    fullBleedContent,
   }: NoteBodyProps) {
     return (
       <>
         {ancestor}
-        <View className={containerClassName}>
+        <View className={containerClassName} style={cardStyle}>
           {threadConnectors}
           <Header
             note={effectiveNote}
@@ -203,31 +288,57 @@ const NoteBody = memo(
                 ? 'mt-1 flex-row gap-0'
                 : isQuote
                   ? '-mt-1 flex-row gap-0'
-                  : '-mt-4 flex-row gap-2'
+                  : fullBleedContent
+                    ? 'mt-2 flex-row gap-0'
+                    : '-mt-4 flex-row gap-2'
             }
             onPress={event => {
               event.stopPropagation();
               if (!wasRecentSwipeGesture()) onOpen();
             }}
           >
-            <View className={isQuote || main ? 'w-0' : 'w-8'} />
-            <View className={depth >= 1 ? 'min-w-0 flex-1 pt-1' : 'min-w-0 flex-1'}>
-              <ContentBlocks
-                content={parsedContent}
-                shortContent={shortContent}
-                note={effectiveNote}
-                depth={depth}
-                showQuote={showQuote}
-                showMedia={showMedia}
-                renderQuote={renderQuote}
-              />
+            <View className={isQuote || main || fullBleedContent ? 'w-0' : 'w-8'} />
+            <View
+              className={[
+                depth >= 1 ? 'min-w-0 flex-1 pt-1' : 'min-w-0 flex-1',
+                fullBleedContent && !isQuote && !main ? '-mx-3' : '',
+              ].join(' ')}
+            >
+              {contentOverride ?? (
+                <ContentBlocks
+                  content={parsedContent}
+                  shortContent={shortContent}
+                  note={effectiveNote}
+                  depth={depth}
+                  showQuote={showQuote}
+                  showMedia={showMedia}
+                  forceFullContent={main}
+                  renderQuote={renderQuote}
+                />
+              )}
             </View>
           </Pressable>
+          {depth === 0 ? (
+            <ZapSummary
+              note={effectiveNote}
+              visible={visible}
+              relays={relays}
+              className={[
+                'mt-2 -mb-2 w-full px-2',
+                main || fullBleedContent ? 'pl-2' : 'pl-10',
+              ].join(' ')}
+              leading={
+                reposterPubkey ? (
+                  <Avatar pubkey={reposterPubkey} size="sm" link />
+                ) : null
+              }
+            />
+          ) : null}
           {footer && depth === 0 ? (
             <Footer
               note={effectiveNote}
               visible={visible}
-              main={main}
+              main={main || fullBleedContent}
               relays={relays ?? EMPTY_RELAYS}
               relayStatusSink={relayStatusSink}
             />
@@ -238,6 +349,7 @@ const NoteBody = memo(
   },
   (previous, next) =>
     previous.ancestor === next.ancestor &&
+    previous.cardStyle === next.cardStyle &&
     previous.containerClassName === next.containerClassName &&
     previous.depth === next.depth &&
     parsedEventId(previous.effectiveNote) ===
@@ -256,7 +368,10 @@ const NoteBody = memo(
     previous.onOpen === next.onOpen &&
     previous.relays === next.relays &&
     previous.showRelays === next.showRelays &&
-    previous.relayStatusSink === next.relayStatusSink,
+    previous.relayStatusSink === next.relayStatusSink &&
+    previous.reposterPubkey === next.reposterPubkey &&
+    previous.contentOverride === next.contentOverride &&
+    previous.fullBleedContent === next.fullBleedContent,
 );
 
 function NoteComponent({
@@ -277,6 +392,7 @@ function NoteComponent({
   tailing = false,
   ancestorIds = [],
 }: NoteProps) {
+  const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const fetchedRef = useRef<ParsedEvent | null>(null);
@@ -288,6 +404,13 @@ function NoteComponent({
   const [quoteAuthorRelays, setQuoteAuthorRelays] = useState<
     Record<string, string[]>
   >({});
+  const readRelays = useNostrStore(state => state.readRelays);
+  const relayStatuses = useRelayStore(state => state.relayStatuses);
+  const [extraSearchRelays, setExtraSearchRelays] = useState<string[]>([]);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [missingSearchState, setMissingSearchState] = useState<
+    'loading' | 'not-found'
+  >('loading');
   const contextNote = useMemo(
     () =>
       noteId ? context.find(event => event?.id?.() === noteId) ?? null : null,
@@ -299,13 +422,24 @@ function NoteComponent({
       : null;
   const effectiveNote = note || contextNote || fetchedNote;
   const effectiveId = noteId || effectiveNote?.id() || '';
-  const lookupRelays = useMemo(
-    () => relayList([...relays, ...DEFAULT_FEED_RELAYS]),
-    [relays],
+  const kind6 = useMemo(
+    () => (effectiveNote ? asKind6(effectiveNote) : null),
+    [effectiveNote],
   );
+  const isRepost = !!kind6?.repostedEvent?.();
+  const displayNote = isRepost
+    ? kind6?.repostedEvent?.() ?? effectiveNote
+    : effectiveNote;
+  const displayId = displayNote?.id() || effectiveId;
+  const reposterPubkey = isRepost ? effectiveNote?.pubkey() || undefined : undefined;
+  const lookupRelays = useMemo(
+    () => relayList([...relays, ...extraSearchRelays, ...DEFAULT_FEED_RELAYS]),
+    [extraSearchRelays, relays],
+  );
+  const lookupRelayKey = lookupRelays.join('|');
   const headerRelays = useEffectiveAuthorRelays({
-    subId: effectiveId || undefined,
-    pubkey: effectiveNote?.pubkey(),
+    subId: displayId || undefined,
+    pubkey: displayNote?.pubkey(),
     marker: 'read',
     fallbackRelays: relays,
   });
@@ -317,15 +451,43 @@ function NoteComponent({
       return;
     }
     if (!effectiveId) return;
-    pushDistinct(navigation, 'Kind1Thread', {
-      nevent: neventEncode({
-        id: effectiveId,
-        author: effectiveNote?.pubkey() || undefined,
-        relays: noteRelays,
-        kind: effectiveNote?.kind() || 1,
-      }),
+    if (displayNote?.kind() === 20) return;
+    const kind = displayNote?.kind() || 1;
+    const nevent = neventEncode({
+      id: displayId,
+      author: displayNote?.pubkey() || undefined,
+      relays: noteRelays,
+      kind,
     });
-  }, [disableOpen, effectiveId, effectiveNote, navigation, noteRelays]);
+    if (kind === 30023) {
+      const pubkey = displayNote?.pubkey() || '';
+      const identifier = displayNote ? tagValue(eventTags(displayNote), 'd') : '';
+      console.log('[kind30023] open article', {
+        articleId: displayId,
+        pubkey: pubkey ? `${pubkey.slice(0, 12)}...` : null,
+        identifier,
+        relays: noteRelays,
+      });
+      if (!pubkey || !identifier) {
+        console.warn('[kind30023] cannot open article without pubkey and d tag', {
+          articleId: displayId,
+          hasPubkey: !!pubkey,
+          identifier,
+        });
+        return;
+      }
+      pushDistinct(navigation, 'Kind30023Thread', {
+        naddr: naddrEncode({
+          kind,
+          pubkey,
+          identifier,
+          relays: noteRelays,
+        }),
+      });
+      return;
+    }
+    pushDistinct(navigation, 'Kind1Thread', {nevent});
+  }, [disableOpen, displayId, displayNote, effectiveId, navigation, noteRelays]);
 
   useEffect(() => {
     const nextContext = [...contextRef.current];
@@ -360,11 +522,45 @@ function NoteComponent({
   }, []);
 
   useEffect(() => {
+    if (!noteId || effectiveNote || !visible) return;
+    setMissingSearchState('loading');
+    const timeout = setTimeout(() => {
+      setMissingSearchState(current =>
+        fetchedRef.current?.id?.() === noteId ? current : 'not-found',
+      );
+    }, NOTE_SEARCH_TIMEOUT_MS);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [effectiveNote, lookupRelayKey, noteId, retryNonce, visible]);
+
+  const retryWithFallbackRelays = useCallback(() => {
+    const workingRelays = Object.entries(relayStatuses)
+      .filter(([, status]) => status !== 'FAILED' && status !== 'CLOSED')
+      .map(([url]) => url);
+    const nextRelays = relayList([
+      ...extraSearchRelays,
+      ...workingRelays,
+      ...readRelays,
+      ...BOOTSTRAP_RELAYS,
+      ...DEFAULT_FEED_RELAYS,
+      ...NOTE_FALLBACK_RELAYS,
+    ]);
+
+    setExtraSearchRelays(current =>
+      sameStringArray(current, nextRelays) ? current : nextRelays,
+    );
+    setMissingSearchState('loading');
+    setRetryNonce(nonce => nonce + 1);
+  }, [extraSearchRelays, readRelays, relayStatuses]);
+
+  useEffect(() => {
     if (note || contextNote || fetchedNote || !noteId || !visible)
       return;
 
     const unsubscribe = subscribeToNostr(
-      `note_${noteId}`,
+      `note_${noteId}_${retryNonce}_${lookupRelayKey}`,
       [{ ids: [noteId], limit: 1, relays: lookupRelays }],
       message => {
         if (handleRelayStatus(message)) return;
@@ -379,12 +575,40 @@ function NoteComponent({
     return () => {
       unsubscribe();
     };
-  }, [addContextEvent, contextNote, fetchedNote, handleRelayStatus, lookupRelays, note, noteId, visible]);
+  }, [
+    addContextEvent,
+    contextNote,
+    fetchedNote,
+    handleRelayStatus,
+    lookupRelayKey,
+    lookupRelays,
+    note,
+    noteId,
+    retryNonce,
+    visible,
+  ]);
 
   const kind1 = useMemo(
-    () => (effectiveNote ? asKind1(effectiveNote) : null),
-    [effectiveNote],
+    () => (displayNote ? asKind1(displayNote) : null),
+    [displayNote],
   );
+  const contentOverride = useMemo(() => {
+    if (!displayNote) return null;
+    if (displayNote.kind() === 20) {
+      return <Kind20Content note={displayNote} />;
+    }
+    if (displayNote.kind() === 1068) {
+      return <Kind1068Content note={displayNote} visible={visible} />;
+    }
+    if (displayNote.kind() === 30023) {
+      return <Kind30023Content note={displayNote} />;
+    }
+    if (displayNote.kind() === 30311 || displayNote.kind() === 34235) {
+      return <KindPreGenericContent note={displayNote} />;
+    }
+    return null;
+  }, [displayNote, visible]);
+  const isKind20 = displayNote?.kind() === 20;
   const replyId = kind1?.reply()?.id();
   const allMentionIds = useMemo(() => {
     if (!kind1 || typeof kind1.mentionsLength !== 'function') {
@@ -462,14 +686,14 @@ function NoteComponent({
       ...new Set([...mentionQuotes, ...contentQuotes].map(quote => quote.id)),
     ].filter(
       id =>
-        id !== effectiveId &&
+        id !== displayId &&
         !contextRef.current.some(event => event?.id?.() === id),
     );
-  }, [contentQuotes, contextVersion, effectiveId, mentionQuotes, showQuote]);
+  }, [contentQuotes, contextVersion, displayId, mentionQuotes, showQuote]);
   const shouldRenderAncestor = !!(
     showRoot &&
     replyId &&
-    replyId !== effectiveId &&
+    replyId !== displayId &&
     depth === 0 &&
     !allMentionIds.includes(replyId) &&
     !ancestorIds.includes(replyId)
@@ -485,7 +709,7 @@ function NoteComponent({
   const hasBottomThreadConnector = leading;
   const containerClassName = threadCard
     ? [
-        'relative rounded-xl border border-slate-200 bg-white/95 px-3 py-3',
+        'relative rounded-xl border border-base-200 bg-base-300/95 px-3 py-3',
         hasTopThreadConnector || hasBottomThreadConnector ? 'shadow-none' : 'shadow-sm',
         hasTopThreadConnector ? '-mt-px rounded-t-none border-t-0' : '',
         hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
@@ -494,8 +718,8 @@ function NoteComponent({
         main
           ? 'relative px-0 py-1'
           : isQuote
-          ? 'relative rounded-lg border-l border-t border-slate-200 bg-white/95 px-2 py-2'
-          : 'relative rounded-lg border border-slate-200 bg-white/95 px-3 py-3',
+          ? 'relative rounded-lg border-l border-t border-base-200 bg-base-300/95 px-2 py-2'
+          : 'relative rounded-lg border border-base-200 bg-base-300/95 px-3 py-3',
         hasTopThreadConnector || hasBottomThreadConnector
           ? 'shadow-none'
           : main || isQuote
@@ -505,13 +729,34 @@ function NoteComponent({
         hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
         hasTopThreadConnector ? 'rounded-t-none' : '',
       ].join(' ');
+  const cardStyle = useMemo<ViewStyle | undefined>(() => {
+    if (main || isQuote) return undefined;
+    if (theme.colors.base100 !== '#333333') return undefined;
+    return {
+      shadowColor: '#000000',
+      shadowOffset: {width: 0, height: 3},
+      shadowOpacity: 0.36,
+      shadowRadius: 8,
+      elevation: 3,
+    };
+  }, [isQuote, main, theme.colors.base100]);
   const threadConnectors = (
     <>
       {hasBottomThreadConnector ? (
-        <View className="absolute bottom-0 left-7 top-8 w-0.5 bg-slate-200" />
+        <View
+          className={[
+            'absolute bottom-0 left-7 top-8 w-0.5 bg-base-200',
+            isKind20 ? 'hidden' : '',
+          ].join(' ')}
+        />
       ) : null}
       {hasTopThreadConnector ? (
-        <View className="absolute left-7 top-0 h-8 w-0.5 bg-slate-200" />
+        <View
+          className={[
+            'absolute left-7 top-0 h-8 w-0.5 bg-base-200',
+            isKind20 ? 'hidden' : '',
+          ].join(' ')}
+        />
       ) : null}
     </>
   );
@@ -537,7 +782,7 @@ function NoteComponent({
     }, 1000);
 
     const unsubscribe = subscribeToNostr(
-      `quote_relays_${effectiveId}`,
+      `quote_relays_${displayId}`,
       [
         {
           kinds: [10002],
@@ -570,13 +815,13 @@ function NoteComponent({
       clearTimeout(timeout);
       unsubscribe();
     };
-  }, [effectiveId, handleRelayStatus, quoteAuthorRelays, quoteAuthors, showQuote, visible]);
+  }, [displayId, handleRelayStatus, quoteAuthorRelays, quoteAuthors, showQuote, visible]);
 
   useEffect(() => {
     if (!visible || !showQuote || !quoteIds.length) return;
 
     const unsubscribe = subscribeToNostr(
-      `note_quotes_${effectiveId}_${noteRelayKey}`,
+      `note_quotes_${displayId}_${noteRelayKey}`,
       [
         {
           ids: quoteIds,
@@ -603,7 +848,7 @@ function NoteComponent({
     };
   }, [
     addContextEvent,
-    effectiveId,
+    displayId,
     noteRelayKey,
     noteRelays,
     discoveredQuoteRelays,
@@ -652,8 +897,22 @@ function NoteComponent({
   }
 
   if (!effectiveNote) {
+    if (missingSearchState === 'not-found') {
+      return (
+        <NotFoundNoteBody
+          cardStyle={cardStyle}
+          containerClassName={containerClassName}
+          effectiveId={effectiveId}
+          onRetry={retryWithFallbackRelays}
+          retrying={retryNonce > 0}
+          threadConnectors={threadConnectors}
+        />
+      );
+    }
+
     return (
       <LoadingNoteBody
+        cardStyle={cardStyle}
         containerClassName={containerClassName}
         effectiveId={effectiveId}
         threadConnectors={threadConnectors}
@@ -661,11 +920,12 @@ function NoteComponent({
     );
   }
 
-  if (effectiveNote.kind() !== 1 || !kind1) {
+  if (!displayNote || (!contentOverride && (displayNote.kind() !== 1 || !kind1))) {
     return (
       <UnsupportedNoteBody
+        cardStyle={cardStyle}
         containerClassName={containerClassName}
-        effectiveNote={effectiveNote}
+        effectiveNote={displayNote ?? effectiveNote}
         threadConnectors={threadConnectors}
       />
     );
@@ -681,17 +941,18 @@ function NoteComponent({
         showMedia={showMedia}
         leading
       depth={depth}
-      ancestorIds={effectiveId ? [...ancestorIds, effectiveId] : ancestorIds}
+      ancestorIds={displayId ? [...ancestorIds, displayId] : ancestorIds}
     />
   ) : null;
 
   return (
     <NoteBody
       ancestor={ancestor}
+      cardStyle={cardStyle}
       containerClassName={containerClassName}
       depth={depth}
-      effectiveNote={effectiveNote}
-      subId={effectiveId}
+      effectiveNote={displayNote}
+      subId={displayId}
       footer={footer}
       main={main}
       isQuote={isQuote}
@@ -706,6 +967,9 @@ function NoteComponent({
       relays={noteRelays}
       showRelays={!!noteRelays.length}
       relayStatusSink={relayStatusSink}
+      reposterPubkey={reposterPubkey}
+      contentOverride={contentOverride}
+      fullBleedContent={isKind20}
     />
   );
 }

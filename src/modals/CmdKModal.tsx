@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -20,6 +20,7 @@ import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asKind0, asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
 import {Hash, Search, User} from 'lucide-react-native';
 import {SEARCH_RELAYS} from '../stores';
+import {type AppTheme, useAppTheme} from '../theme';
 
 const HASHTAG_HISTORY_KEY = 'cmdk_hashtag_history';
 const SEARCH_DEBOUNCE_MS = 450;
@@ -32,11 +33,23 @@ type CmdKModalProps = {
   onSelectHashtag: (tag: string) => void;
 };
 
+type CmdKStyles = ReturnType<typeof createCmdKStyles>;
+const CmdKStylesContext = createContext<CmdKStyles | null>(null);
+
+function useCmdKStyles() {
+  const styles = useContext(CmdKStylesContext);
+  if (!styles) throw new Error('CmdK styles missing');
+  return styles;
+}
+
 export function CmdKModal({
   onClose,
   onSelectProfile,
   onSelectHashtag,
 }: CmdKModalProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createCmdKStyles(theme), [theme]);
+  const iconColor = theme.colors.primaryContent;
   const inputRef = useRef<TextInput>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const [mode, setMode] = useState<CmdKMode>('profiles');
@@ -240,14 +253,15 @@ export function CmdKModal({
   }, [cleanQuery, loading, mode]);
 
   return (
+    <CmdKStylesContext.Provider value={styles}>
     <View style={styles.screen}>
       <View style={styles.panel}>
         <View style={styles.handle} />
         <View style={styles.inputRow}>
           {mode === 'hashtags' ? (
-            <Hash size={21} color="#64748b" strokeWidth={2.2} />
+            <Hash size={21} color={iconColor} strokeWidth={2.2} />
           ) : (
-            <Search size={21} color="#64748b" strokeWidth={2.2} />
+            <Search size={21} color={iconColor} strokeWidth={2.2} />
           )}
           <TextInput
             ref={inputRef}
@@ -261,7 +275,7 @@ export function CmdKModal({
               }
             }}
             placeholder={mode === 'hashtags' ? 'Enter hashtag...' : 'Search...'}
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={theme.colors.primaryContent}
             returnKeyType={mode === 'hashtags' ? 'go' : 'search'}
             autoCapitalize="none"
             autoCorrect={false}
@@ -297,7 +311,7 @@ export function CmdKModal({
                 onPress={() => submitHashtag(item)}
               >
                 <View style={styles.resultIcon}>
-                  <Hash size={18} color="#17212b" strokeWidth={2.2} />
+                  <Hash size={18} color={iconColor} strokeWidth={2.2} />
                 </View>
                 <View style={styles.resultText}>
                   <Text style={styles.resultTitle}>#{item}</Text>
@@ -330,6 +344,7 @@ export function CmdKModal({
         )}
       </View>
     </View>
+    </CmdKStylesContext.Provider>
   );
 }
 
@@ -342,6 +357,7 @@ function ModeButton({
   label: string;
   onPress: () => void;
 }) {
+  const styles = useCmdKStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -357,9 +373,11 @@ function ModeButton({
 }
 
 function EmptyState({loading, text}: {loading: boolean; text: string}) {
+  const styles = useCmdKStyles();
+  const theme = useAppTheme();
   return (
     <View style={styles.emptyState}>
-      {loading ? <ActivityIndicator color="#17212b" /> : null}
+      {loading ? <ActivityIndicator color={theme.colors.primaryContent} /> : null}
       <Text style={styles.emptyText}>{text}</Text>
     </View>
   );
@@ -374,6 +392,8 @@ function ProfileRow({
   item: ParsedEvent;
   onPress: () => void;
 }) {
+  const styles = useCmdKStyles();
+  const theme = useAppTheme();
   const kind0 = asKind0(item);
   const name = kind0?.displayName() || kind0?.name() || 'unnamed';
   const username = kind0?.name();
@@ -390,7 +410,7 @@ function ProfileRow({
         {picture ? (
           <Image source={{uri: picture}} style={styles.fill} contentFit="cover" />
         ) : (
-          <User size={18} color="#64748b" strokeWidth={2.2} />
+          <User size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
         )}
       </View>
       <View style={styles.resultText}>
@@ -405,17 +425,23 @@ function ProfileRow({
   );
 }
 
-const styles = StyleSheet.create({
+function readableContentColor(theme: AppTheme) {
+  return theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
+}
+
+function createCmdKStyles(theme: AppTheme) {
+  const contentColor = readableContentColor(theme);
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f5f7f8',
+    backgroundColor: theme.colors.base100,
     justifyContent: 'flex-start',
     paddingHorizontal: 12,
     paddingTop: 18,
   },
   panel: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     borderRadius: 12,
     overflow: 'hidden',
     shadowColor: '#0f172a',
@@ -428,7 +454,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 5,
     borderRadius: 999,
-    backgroundColor: '#cbd5e1',
+    backgroundColor: theme.colors.base200,
     marginTop: 8,
     marginBottom: 8,
   },
@@ -439,13 +465,13 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#dbe3eb',
-    backgroundColor: '#f8fafc',
+    borderBottomColor: theme.colors.base200,
+    backgroundColor: theme.colors.base100,
   },
   input: {
     flex: 1,
     minHeight: 48,
-    color: '#0f172a',
+    color: contentColor,
     fontSize: 19,
     fontWeight: '500',
   },
@@ -455,20 +481,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#dbe3eb',
-    backgroundColor: '#ffffff',
+    borderBottomColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
   },
   modeButton: {
     borderRadius: 999,
     paddingHorizontal: 13,
     paddingVertical: 7,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: theme.colors.base200,
   },
   modeButtonActive: {
-    backgroundColor: '#17212b',
+    backgroundColor: theme.colors.primary,
   },
   modeText: {
-    color: '#475569',
+    color: theme.colors.primaryContent,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -482,11 +508,11 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderBottomColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
   },
   activeRow: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: theme.colors.base200,
   },
   resultIcon: {
     width: 38,
@@ -494,7 +520,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e2e8f0',
+    backgroundColor: theme.colors.base200,
   },
   avatar: {
     width: 38,
@@ -503,7 +529,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#e2e8f0',
+    backgroundColor: theme.colors.base200,
   },
   fill: {
     height: '100%',
@@ -514,13 +540,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   resultTitle: {
-    color: '#0f172a',
+    color: contentColor,
     fontSize: 16,
     fontWeight: '700',
   },
   resultSubtitle: {
     marginTop: 2,
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 13,
     fontWeight: '500',
   },
@@ -532,9 +558,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   emptyText: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
   },
-});
+  });
+}

@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
   Keyboard,
   Pressable,
   ScrollView,
@@ -10,22 +12,19 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import {Image} from 'expo-image';
+import {BlurView} from 'expo-blur';
 import {
-  AlignLeft,
-  Bold,
+  Camera,
   ChevronDown,
+  Film,
   Image as ImageIcon,
-  Italic,
-  List,
   ListChecks,
   Plus,
+  Search,
   Send,
   X,
 } from 'lucide-react-native';
-import {
-  KeyboardStickyView,
-  useKeyboardState,
-} from 'react-native-keyboard-controller';
+import {KeyboardStickyView, useKeyboardState} from 'react-native-keyboard-controller';
 import {
   EnrichedTextInput,
   type EnrichedTextInputInstance,
@@ -51,7 +50,7 @@ import type {
   WorkerMessage,
 } from '@candypoets/nipworker';
 import type { EventTemplate } from 'nostr-tools';
-import { decode, nprofileEncode } from 'nostr-tools/nip19';
+import { decode, neventEncode, nprofileEncode } from 'nostr-tools/nip19';
 
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { prepareEvent } from '../nostr/prepareEvent';
@@ -69,21 +68,33 @@ import {
 } from '../stores';
 import { Note } from '../components/notes/Note';
 import { useKind0Value } from '../hooks/useKind0Value';
+import {type AppTheme, useAppTheme} from '../theme';
 
 type Props = {
   reply?: string;
+  quote?: string;
   onClose: () => void;
 };
 
+type PostModalStyles = ReturnType<typeof createPostModalStyles>;
+const PostModalStylesContext = createContext<PostModalStyles | null>(null);
+
+function usePostModalStyles() {
+  const styles = useContext(PostModalStylesContext);
+  if (!styles) throw new Error('PostModal styles missing');
+  return styles;
+}
+
 type PollType = 'singlechoice' | 'multiplechoice';
-type StyleState = {
-  bold?: { isActive: boolean; isBlocking: boolean };
-  italic?: { isActive: boolean; isBlocking: boolean };
-  strikeThrough?: { isActive: boolean; isBlocking: boolean };
-  inlineCode?: { isActive: boolean; isBlocking: boolean };
-  unorderedList?: { isActive: boolean; isBlocking: boolean };
-  orderedList?: { isActive: boolean; isBlocking: boolean };
-  blockQuote?: { isActive: boolean; isBlocking: boolean };
+type ComposerPanel = 'gif';
+type TenorGif = {
+  id: string;
+  content_description?: string;
+  media_formats: {
+    gif?: {url: string; dims?: [number, number]};
+    mediumgif?: {url: string; dims?: [number, number]};
+    tinygif?: {url: string; dims?: [number, number]};
+  };
 };
 type SelectedImage = LocalUploadAsset & {
   uploadUrl?: string;
@@ -99,6 +110,8 @@ type SelectedMention = {
 
 const now = () => Math.floor(Date.now() / 1000);
 const fallbackProfileImage = require('../../assets/miss-profile.png');
+const TENOR_API_KEY = 'AIzaSyB692q5nvoGphnMusHRvm1D_98a-DSQJRA';
+const TENOR_LIMIT = 24;
 
 function mentionHandle(value: string) {
   return value.replace(/\s+/g, '');
@@ -201,11 +214,15 @@ function decodeReplyTarget(reply?: string) {
   return { id: reply, relays: [] as string[] };
 }
 
-export function PostModal({ reply, onClose }: Props) {
+export function PostModal({ reply, quote, onClose }: Props) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createPostModalStyles(theme), [theme]);
+  const iconColor = theme.colors.primaryContent;
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const scrollRef = useRef<ScrollView>(null);
   const editorYRef = useRef(0);
   const editorHeightRef = useRef(0);
+  const editorWidthRef = useRef(0);
   const scrollOffsetRef = useRef(0);
   const mentionSearchUnsubscribeRef = useRef<(() => void) | null>(null);
   const pubkey = useAuthStore(state => state.pubkey);
@@ -219,7 +236,6 @@ export function PostModal({ reply, onClose }: Props) {
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [styleState, setStyleState] = useState<StyleState>({});
   const [pollEnabled, setPollEnabled] = useState(false);
   const [pollType, setPollType] = useState<PollType>('singlechoice');
   const [pollOptions, setPollOptions] = useState(['', '']);
@@ -232,7 +248,11 @@ export function PostModal({ reply, onClose }: Props) {
   const [selectedMentions, setSelectedMentions] = useState<SelectedMention[]>([]);
   const keyboardOpen = useKeyboardState(state => state.isVisible);
   const keyboardHeight = useKeyboardState(state => state.height);
+  const [lastKeyboardHeight, setLastKeyboardHeight] = useState(320);
+  const [activePanel, setActivePanel] = useState<ComposerPanel | null>(null);
   const replyTarget = useMemo(() => decodeReplyTarget(reply), [reply]);
+  const quoteTarget = useMemo(() => decodeReplyTarget(quote), [quote]);
+  const noteTarget = replyTarget ?? quoteTarget;
   const relays = useMemo(
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
@@ -240,13 +260,13 @@ export function PostModal({ reply, onClose }: Props) {
   const lookupRelays = useMemo(
     () => [
       ...new Set([
-        ...(replyTarget?.relays ?? []),
+        ...(noteTarget?.relays ?? []),
         ...readRelays,
         ...writeRelays,
         ...DEFAULT_FEED_RELAYS,
       ]),
     ],
-    [readRelays, replyTarget, writeRelays],
+    [readRelays, noteTarget, writeRelays],
   );
   const mediaServerType = uploadPreference?.type || 'blossom';
   const mediaServer = uploadPreference?.servers[0] || DEFAULT_UPLOAD_SERVER;
@@ -288,11 +308,14 @@ export function PostModal({ reply, onClose }: Props) {
     fallback: replyAuthorFallback,
     selector: selectReplyAuthorName,
   });
+  const quoteReady = !quoteTarget?.id || Boolean(replyNote);
   const canSubmit =
     Boolean(pubkey && hasSigner) &&
     !isSubmitting &&
+    quoteReady &&
     Boolean(
       text.trim() ||
+        quoteTarget?.id ||
         selectedImages.length ||
         (pollEnabled && validPollOptions.length >= 2),
     );
@@ -312,6 +335,25 @@ export function PostModal({ reply, onClose }: Props) {
     Keyboard.dismiss();
   }, []);
 
+  const openComposerPanel = useCallback(
+    (panel: ComposerPanel) => {
+      if (activePanel === panel) {
+        setActivePanel(null);
+        editorRef.current?.focus();
+        return;
+      }
+      setActivePanel(panel);
+      editorRef.current?.focus();
+    },
+    [activePanel],
+  );
+
+  const refocusComposer = useCallback(() => {
+    requestAnimationFrame(() => {
+      editorRef.current?.focus();
+    });
+  }, []);
+
   const blurComposerWhenTouchingOutsideEditor = useCallback(
     (event: NativeSyntheticEvent<{ locationY: number }>) => {
       const touchY = event.nativeEvent.locationY + scrollOffsetRef.current;
@@ -326,11 +368,11 @@ export function PostModal({ reply, onClose }: Props) {
 
   useEffect(() => {
     setReplyNote(null);
-    if (!replyTarget?.id) return undefined;
+    if (!noteTarget?.id) return undefined;
 
     const request: RequestObject[] = [
       {
-        ids: [replyTarget.id],
+        ids: [noteTarget.id],
         limit: 1,
         relays: lookupRelays,
         cacheFirst: true,
@@ -338,16 +380,16 @@ export function PostModal({ reply, onClose }: Props) {
     ];
 
     return subscribeToNostr(
-      `post_${replyTarget.id}_${lookupRelays.join('|')}`,
+      `post_${noteTarget.id}_${lookupRelays.join('|')}`,
       request,
       (message: WorkerMessage) => {
         const event = asParsedEvent(message);
-        if (event?.id() === replyTarget.id) {
+        if (event?.id() === noteTarget.id) {
           setReplyNote(event);
         }
       },
     );
-  }, [lookupRelays, replyTarget]);
+  }, [lookupRelays, noteTarget]);
 
   useEffect(() => {
     const query = mentionQuery?.trim();
@@ -434,25 +476,31 @@ export function PostModal({ reply, onClose }: Props) {
   }, [mentionQuery]);
 
   useEffect(() => {
-    if (!replyTarget?.id) return;
+    if (!noteTarget?.id) return;
     const timeout = setTimeout(scrollToComposer, 120);
     return () => clearTimeout(timeout);
-  }, [replyNote, replyTarget, scrollToComposer]);
+  }, [replyNote, noteTarget, scrollToComposer]);
 
   useEffect(() => {
     if (!keyboardOpen) return;
+    if (keyboardHeight > 0) setLastKeyboardHeight(keyboardHeight);
     const timeout = setTimeout(scrollToComposer, 80);
     return () => clearTimeout(timeout);
-  }, [keyboardOpen, scrollToComposer]);
+  }, [keyboardHeight, keyboardOpen, scrollToComposer]);
 
   const contentContainerStyle = useMemo(
     () => [
       styles.content,
-      keyboardOpen
-        ? { paddingBottom: Math.max(86, keyboardHeight + 86) }
+      keyboardOpen || activePanel
+        ? {
+            paddingBottom: Math.max(
+              86,
+              (keyboardOpen ? keyboardHeight : lastKeyboardHeight) + 86,
+            ),
+          }
         : null,
     ],
-    [keyboardHeight, keyboardOpen],
+    [activePanel, keyboardHeight, keyboardOpen, lastKeyboardHeight],
   );
 
   const updatePollOption = useCallback((index: number, value: string) => {
@@ -565,9 +613,19 @@ export function PostModal({ reply, onClose }: Props) {
           fbArray(tag, 'items').map(item => String(item)),
         );
       }
+      const quoteLink =
+        quoteTarget?.id && replyNote
+          ? `nostr:${neventEncode({
+              id: quoteTarget.id,
+              author: replyNote.pubkey() || quoteTarget.author,
+              kind: replyNote.kind() || quoteTarget.kind,
+              relays: quoteTarget.relays,
+            })}`
+          : '';
       const content = [
         textWithNostrMentions(text.trim(), selectedMentions),
         ...uploadedImages.map(image => image.uploadUrl).filter(Boolean),
+        quoteLink,
       ]
         .filter(Boolean)
         .join('\n\n');
@@ -583,6 +641,18 @@ export function PostModal({ reply, onClose }: Props) {
 
       event = prepareEvent(event);
 
+      if (quoteTarget?.id && replyNote) {
+        const relayHint = quoteTarget.relays[0] || '';
+        const quoteAuthor = replyNote.pubkey() || quoteTarget.author || '';
+        event.tags = [
+          ...event.tags.filter(
+            tag => !(tag[0] === 'q' && tag[1] === quoteTarget.id),
+          ),
+          ['q', quoteTarget.id, relayHint, quoteAuthor],
+          ...(quoteAuthor ? [['p', quoteAuthor]] : []),
+        ];
+      }
+
       if (pollEnabled) {
         event.tags = [
           ...event.tags,
@@ -596,7 +666,9 @@ export function PostModal({ reply, onClose }: Props) {
         ];
       }
 
-      const sendId = `${pollEnabled ? 'poll' : reply ? 'reply' : 'post'}_${Date.now()}`;
+      const sendId = `${
+        pollEnabled ? 'poll' : reply ? 'reply' : quote ? 'quote' : 'post'
+      }_${Date.now()}`;
       const sendStatus: Record<string, ConnectionStatus> = {};
 
       publishToNostr(
@@ -612,8 +684,8 @@ export function PostModal({ reply, onClose }: Props) {
         {
           defaultRelays: relays,
           trackStatus: true,
-          subId: replyTarget?.id
-            ? [`f_${replyTarget.id}`, `replies_${replyTarget.id}`]
+          subId: noteTarget?.id
+            ? [`f_${noteTarget.id}`, `replies_${noteTarget.id}`]
             : undefined,
         },
       );
@@ -623,6 +695,7 @@ export function PostModal({ reply, onClose }: Props) {
       setSelectedMentions([]);
       setSelectedImages([]);
       setSubmitStatus(null);
+      setActivePanel(null);
       setPollEnabled(false);
       setPollOptions(['', '']);
       setPollType('singlechoice');
@@ -637,8 +710,11 @@ export function PostModal({ reply, onClose }: Props) {
     pollEnabled,
     pollEndsAt,
     pollType,
+    quote,
     reply,
     replyNote,
+    quoteTarget,
+    noteTarget,
     replyTarget,
     relays,
     text,
@@ -650,29 +726,158 @@ export function PostModal({ reply, onClose }: Props) {
     mediaServerType,
   ]);
 
+  const insertImage = useCallback(
+    (
+      uri: string,
+      width: number,
+      height: number,
+      mimeType?: string | null,
+      fileName?: string | null,
+    ) => {
+      const maxInlineWidth = Math.max(120, editorWidthRef.current - 28);
+      const maxInlineHeight = 120;
+      const scale = Math.min(
+        1,
+        maxInlineWidth / Math.max(1, width),
+        maxInlineHeight / Math.max(1, height),
+      );
+      editorRef.current?.setImage(
+        uri,
+        Math.max(1, Math.round(width * scale)),
+        Math.max(1, Math.round(height * scale)),
+      );
+      setSelectedImages(current =>
+        current.some(image => image.uri === uri)
+          ? current
+          : [
+              ...current,
+              {
+                uri,
+                width,
+                height,
+                mimeType,
+                fileName,
+                status: 'waiting',
+              },
+            ],
+      );
+    },
+    [],
+  );
+
+  const insertRemoteImage = useCallback(
+    (uri: string, width: number, height: number) => {
+      const maxInlineWidth = Math.max(120, editorWidthRef.current - 28);
+      const maxInlineHeight = 120;
+      const scale = Math.min(
+        1,
+        maxInlineWidth / Math.max(1, width),
+        maxInlineHeight / Math.max(1, height),
+      );
+      editorRef.current?.setImage(
+        uri,
+        Math.max(1, Math.round(width * scale)),
+        Math.max(1, Math.round(height * scale)),
+      );
+    },
+    [],
+  );
+
+  const selectGif = useCallback(
+    (gif: TenorGif) => {
+      const media = gif.media_formats.gif || gif.media_formats.mediumgif || gif.media_formats.tinygif;
+      if (!media?.url) return;
+      const [width, height] = media.dims || [320, 240];
+      insertRemoteImage(media.url, width, height);
+      setActivePanel(null);
+      refocusComposer();
+    },
+    [insertRemoteImage, refocusComposer],
+  );
+
+  const openNativeMediaPicker = useCallback(async () => {
+    setActivePanel(null);
+    editorRef.current?.focus();
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      refocusComposer();
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: true,
+      mediaTypes: ['images'],
+      quality: 0.92,
+    });
+
+    if (!result.canceled) {
+      for (const asset of result.assets) {
+        if (!asset.uri) continue;
+        insertImage(
+          asset.uri,
+          Math.max(1, Math.round(asset.width || 320)),
+          Math.max(1, Math.round(asset.height || 240)),
+          asset.mimeType,
+          asset.fileName,
+        );
+      }
+    }
+
+    refocusComposer();
+  }, [insertImage, refocusComposer]);
+
+  const showComposerAccessory = activePanel !== 'gif';
+
+  const composerAccessory = (
+    <>
+      {showMentionPanel ? (
+        <MentionSuggestions
+          candidates={mentionSuggestions}
+          loading={mentionLoading}
+          finished={mentionFinished}
+          onSelect={selectMention}
+        />
+      ) : null}
+        <ComposerToolbar
+          activePanel={activePanel}
+          onInsertImage={insertImage}
+          pollEnabled={pollEnabled}
+          onMediaPress={openNativeMediaPicker}
+        onGifPress={() => openComposerPanel('gif')}
+        onTogglePoll={togglePoll}
+      />
+    </>
+  );
+
   return (
-    <View style={styles.root}>
-      <View style={styles.header}>
-        <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
-          <ChevronDown size={23} color="#17212b" strokeWidth={2.3} />
-        </Pressable>
-        <Pressable
-          style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
-          disabled={!canSubmit}
-          onPress={submit}
-        >
-          <Text style={styles.submitText}>
-            {isSubmitting
-              ? 'Signing'
-              : pollEnabled
-                ? 'Poll'
-                : reply
-                  ? 'Reply'
-                  : 'Post'}
-          </Text>
-          <Send size={16} color="#ffffff" strokeWidth={2.4} />
-        </Pressable>
-      </View>
+    <PostModalStylesContext.Provider value={styles}>
+      <View style={styles.root}>
+      {activePanel !== 'gif' ? (
+        <View style={styles.header}>
+          <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
+            <ChevronDown size={23} color={iconColor} strokeWidth={2.3} />
+          </Pressable>
+          <Pressable
+            style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
+            disabled={!canSubmit}
+            onPress={submit}
+          >
+            <Text style={styles.submitText}>
+              {isSubmitting
+                ? 'Signing'
+                : pollEnabled
+                  ? 'Poll'
+                  : reply
+                    ? 'Reply'
+                    : quote
+                      ? 'Quote'
+                    : 'Post'}
+            </Text>
+            <Send size={16} color="#ffffff" strokeWidth={2.4} />
+          </Pressable>
+        </View>
+      ) : null}
 
       <ScrollView
         ref={scrollRef}
@@ -692,7 +897,7 @@ export function PostModal({ reply, onClose }: Props) {
           </View>
         ) : null}
 
-        {replyTarget?.id ? (
+        {noteTarget?.id ? (
           replyNote ? (
             <Note
               note={replyNote}
@@ -714,10 +919,11 @@ export function PostModal({ reply, onClose }: Props) {
         ) : null}
 
         <View
-          style={[styles.editorShell, reply && styles.replyEditorShell]}
+          style={[styles.editorShell, noteTarget && styles.replyEditorShell]}
           onLayout={event => {
             editorYRef.current = event.nativeEvent.layout.y;
             editorHeightRef.current = event.nativeEvent.layout.height;
+            editorWidthRef.current = event.nativeEvent.layout.width;
           }}
         >
           <EnrichedTextInput
@@ -730,17 +936,16 @@ export function PostModal({ reply, onClose }: Props) {
                 ? replyNote
                   ? `Reply to ${replyAuthorName}`
                   : 'Write your reply...'
+                : quote
+                  ? 'Add a quote?'
                 : "What's up?"
             }
-            placeholderTextColor="#8794a0"
-            selectionColor="#158777"
-            cursorColor="#158777"
+            placeholderTextColor={theme.colors.primaryContent}
+            selectionColor={theme.colors.primary}
+            cursorColor={theme.colors.primary}
             linkRegex={/(https?:\/\/|nostr:)[^\s]+/}
             onChangeText={(event: NativeSyntheticEvent<{ value: string }>) =>
               setText(event.nativeEvent.value)
-            }
-            onChangeState={(event: NativeSyntheticEvent<StyleState>) =>
-              setStyleState(event.nativeEvent)
             }
             onStartMention={indicator => {
               if (indicator === '@') setMentionQuery('');
@@ -755,7 +960,7 @@ export function PostModal({ reply, onClose }: Props) {
               console.log('[post] pasted images', event.nativeEvent);
             }}
             htmlStyle={editorHtmlStyle}
-            style={reply ? styles.replyEditor : styles.editor}
+            style={noteTarget ? styles.replyEditor : styles.editor}
           />
         </View>
 
@@ -789,7 +994,7 @@ export function PostModal({ reply, onClose }: Props) {
 
       </ScrollView>
 
-      {keyboardOpen ? (
+      {showComposerAccessory && keyboardOpen ? (
         <KeyboardStickyView
           offset={{closed: 0, opened: 0}}
           style={[
@@ -797,42 +1002,35 @@ export function PostModal({ reply, onClose }: Props) {
             styles.keyboardAccessory,
           ]}
         >
-          {showMentionPanel ? (
-            <MentionSuggestions
-              candidates={mentionSuggestions}
-              loading={mentionLoading}
-              finished={mentionFinished}
-              onSelect={selectMention}
-            />
-          ) : null}
-          <ComposerToolbar
-            editorRef={editorRef}
-            onInsertImage={(uri, width, height, mimeType, fileName) => {
-              editorRef.current?.setImage(uri, width, height);
-              setSelectedImages(current =>
-                current.some(image => image.uri === uri)
-                  ? current
-                  : [
-                      ...current,
-                      {
-                        uri,
-                        width,
-                        height,
-                        mimeType,
-                        fileName,
-                        status: 'waiting',
-                      },
-                    ],
-              );
-            }}
-            styleState={styleState}
-            pollEnabled={pollEnabled}
-            onTogglePoll={togglePoll}
-            onDismissKeyboard={blurComposer}
-          />
+          {composerAccessory}
         </KeyboardStickyView>
+      ) : showComposerAccessory && activePanel ? (
+        <View style={[styles.toolbarAccessory, styles.keyboardAccessory]}>
+          {composerAccessory}
+        </View>
+      ) : null}
+
+      {activePanel === 'gif' ? (
+        <View
+          style={[
+            styles.gifModal,
+            {
+              top: 0,
+              bottom: Math.max(0, (keyboardOpen ? keyboardHeight : 0) - 18),
+            },
+          ]}
+        >
+          <GifPicker
+            onSelect={selectGif}
+            onDone={() => {
+              setActivePanel(null);
+              refocusComposer();
+            }}
+          />
+        </View>
       ) : null}
     </View>
+    </PostModalStylesContext.Provider>
   );
 }
 
@@ -847,6 +1045,7 @@ function UploadStatus({
   mediaServerType: 'blossom' | 'nip96';
   submitStatus: string | null;
 }) {
+  const styles = usePostModalStyles();
   return (
     <View style={styles.uploadBox}>
       <Text style={styles.uploadTitle}>Media server</Text>
@@ -885,6 +1084,7 @@ function MentionSuggestions({
   finished: boolean;
   onSelect: (candidate: ParsedEvent) => void;
 }) {
+  const styles = usePostModalStyles();
   return (
     <View style={styles.mentionBox}>
       {loading ? (
@@ -942,14 +1142,14 @@ function MentionSuggestions({
 }
 
 function ComposerToolbar({
-  editorRef,
+  activePanel,
   onInsertImage,
-  styleState,
   pollEnabled,
+  onMediaPress,
+  onGifPress,
   onTogglePoll,
-  onDismissKeyboard,
 }: {
-  editorRef: React.RefObject<EnrichedTextInputInstance | null>;
+  activePanel: ComposerPanel | null;
   onInsertImage: (
     uri: string,
     width: number,
@@ -957,110 +1157,243 @@ function ComposerToolbar({
     mimeType?: string | null,
     fileName?: string | null,
   ) => void;
-  styleState: StyleState;
   pollEnabled: boolean;
+  onMediaPress: () => void;
+  onGifPress: () => void;
   onTogglePoll: () => void;
-  onDismissKeyboard: () => void;
 }) {
-  const pickImage = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const styles = usePostModalStyles();
+  const theme = useAppTheme();
+  const inactiveIconColor = theme.colors.primaryContent;
+  const activeIconColor = '#ffffff';
+  const insertAsset = useCallback(
+    (asset: ImagePicker.ImagePickerAsset) => {
+      if (!asset.uri) return;
+      const width = Math.max(1, Math.round(asset.width || 320));
+      const height = Math.max(1, Math.round(asset.height || 240));
+      onInsertImage(asset.uri, width, height, asset.mimeType, asset.fileName);
+    },
+    [onInsertImage],
+  );
+  const takePhoto = useCallback(async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsMultipleSelection: true,
+    const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       quality: 0.92,
     });
 
     if (result.canceled) return;
-
-    for (const asset of result.assets) {
-      if (!asset.uri) continue;
-      const width = Math.max(1, Math.round(asset.width || 320));
-      const height = Math.max(1, Math.round(asset.height || 240));
-      onInsertImage(asset.uri, width, height, asset.mimeType, asset.fileName);
-    }
-  }, [onInsertImage]);
+    const [asset] = result.assets;
+    if (asset) insertAsset(asset);
+  }, [insertAsset]);
 
   return (
     <View style={styles.toolbar}>
       <ToolbarButton
-        icon={<ImageIcon size={19} color="#52616f" />}
-        onPress={pickImage}
+        accessibilityLabel="Add media"
+        icon={<ImageIcon size={19} color={inactiveIconColor} />}
+        onPress={onMediaPress}
       />
       <ToolbarButton
+        accessibilityLabel="Open camera"
+        icon={<Camera size={19} color={inactiveIconColor} />}
+        onPress={takePhoto}
+      />
+      <ToolbarButton
+        accessibilityLabel="Add GIF"
+        active={activePanel === 'gif'}
+        icon={
+          <Film
+            size={19}
+            color={activePanel === 'gif' ? activeIconColor : inactiveIconColor}
+          />
+        }
+        onPress={onGifPress}
+      />
+      <ToolbarButton
+        accessibilityLabel="Create poll"
         active={pollEnabled}
         icon={
-          <ListChecks size={18} color={pollEnabled ? '#ffffff' : '#52616f'} />
+          <ListChecks size={18} color={pollEnabled ? activeIconColor : inactiveIconColor} />
         }
         onPress={onTogglePoll}
-      />
-      <ToolbarDivider />
-      <ToolbarButton
-        active={styleState.bold?.isActive}
-        disabled={styleState.bold?.isBlocking}
-        icon={
-          <Bold
-            size={19}
-            color={styleState.bold?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleBold()}
-      />
-      <ToolbarButton
-        active={styleState.italic?.isActive}
-        disabled={styleState.italic?.isBlocking}
-        icon={
-          <Italic
-            size={19}
-            color={styleState.italic?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleItalic()}
-      />
-      <ToolbarDivider />
-      <ToolbarButton
-        active={styleState.unorderedList?.isActive}
-        disabled={styleState.unorderedList?.isBlocking}
-        icon={
-          <List
-            size={19}
-            color={styleState.unorderedList?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleUnorderedList()}
-      />
-      <ToolbarButton
-        active={styleState.blockQuote?.isActive}
-        disabled={styleState.blockQuote?.isBlocking}
-        icon={
-          <AlignLeft
-            size={18}
-            color={styleState.blockQuote?.isActive ? '#ffffff' : '#52616f'}
-          />
-        }
-        onPress={() => editorRef.current?.toggleBlockQuote()}
-      />
-      <ToolbarDivider />
-      <ToolbarButton
-        icon={<ChevronDown size={20} color="#52616f" strokeWidth={2.3} />}
-        onPress={onDismissKeyboard}
       />
     </View>
   );
 }
 
+function GifPicker({
+  onSelect,
+  onDone,
+}: {
+  onSelect: (gif: TenorGif) => void;
+  onDone: () => void;
+}) {
+  const styles = usePostModalStyles();
+  const theme = useAppTheme();
+  const [query, setQuery] = useState('');
+  const [gifs, setGifs] = useState<TenorGif[]>([]);
+  const [featuredGifs, setFeaturedGifs] = useState<TenorGif[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const requestIdRef = useRef(0);
+
+  const fetchTenorGifs = useCallback(
+    async (endpoint: 'featured' | 'search', params: Record<string, string> = {}) => {
+      const requestId = ++requestIdRef.current;
+      setLoading(true);
+      setError(null);
+
+      try {
+        const searchParams = new URLSearchParams({
+          key: TENOR_API_KEY,
+          limit: String(TENOR_LIMIT),
+          media_filter: 'gif,tinygif,mediumgif',
+          ...params,
+        });
+        const response = await fetch(
+          `https://tenor.googleapis.com/v2/${endpoint}?${searchParams}`,
+        );
+
+        if (!response.ok) {
+          throw new Error(`Tenor request failed with status ${response.status}`);
+        }
+
+        const data = (await response.json()) as {results?: TenorGif[]};
+        if (requestId !== requestIdRef.current) return;
+        const results = data.results || [];
+        setGifs(results);
+        if (endpoint === 'featured') setFeaturedGifs(results);
+      } catch (err) {
+        if (requestId !== requestIdRef.current) return;
+        setError(err instanceof Error ? err.message : 'Could not load GIFs');
+      } finally {
+        if (requestId === requestIdRef.current) setLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    fetchTenorGifs('featured');
+  }, [fetchTenorGifs]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 80);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    const timeout = setTimeout(() => {
+      if (!trimmed) {
+        setGifs(featuredGifs);
+        return;
+      }
+      fetchTenorGifs('search', {q: trimmed});
+    }, trimmed ? 450 : 0);
+
+    return () => clearTimeout(timeout);
+  }, [featuredGifs, fetchTenorGifs, query]);
+
+  const renderGif = useCallback(
+    ({item}: {item: TenorGif}) => {
+      const thumb = item.media_formats.tinygif || item.media_formats.mediumgif || item.media_formats.gif;
+      if (!thumb?.url) return null;
+
+      return (
+        <Pressable
+          style={styles.gifTile}
+          accessibilityRole="button"
+          accessibilityLabel={item.content_description || 'Select GIF'}
+          onPress={() => onSelect(item)}
+        >
+          <Image
+            source={{uri: thumb.url}}
+            style={styles.gifTileImage}
+            contentFit="cover"
+          />
+        </Pressable>
+      );
+    },
+    [onSelect, styles],
+  );
+
+  return (
+    <View style={styles.panel}>
+      <View style={styles.gifStickyHeader}>
+        <BlurView intensity={42} tint="systemMaterial" style={styles.gifSearchBox}>
+          <Search size={16} color={theme.colors.primaryContent} />
+          <TextInput
+            ref={searchInputRef}
+            value={query}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Search GIFs"
+            placeholderTextColor={theme.colors.primaryContent}
+            style={styles.gifSearchInput}
+            returnKeyType="search"
+            onChangeText={setQuery}
+            onSubmitEditing={() => {
+              const trimmed = query.trim();
+              if (trimmed) fetchTenorGifs('search', {q: trimmed});
+            }}
+          />
+        </BlurView>
+        <Pressable style={styles.gifDoneButton} onPress={onDone}>
+          <Text style={styles.panelDoneText}>OK</Text>
+        </Pressable>
+      </View>
+      {loading && gifs.length === 0 ? (
+        <View style={styles.panelEmpty}>
+          <ActivityIndicator color={theme.colors.primary} />
+        </View>
+      ) : error ? (
+        <View style={styles.panelEmpty}>
+          <Film size={30} color={theme.colors.primaryContent} />
+          <Text style={styles.panelEmptyTitle}>Could not load GIFs</Text>
+          <Text style={styles.panelEmptyText}>{error}</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={gifs}
+          keyExtractor={item => item.id}
+          numColumns={2}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.gifGridContent}
+          columnWrapperStyle={styles.gifGridRow}
+          renderItem={renderGif}
+          ListEmptyComponent={
+            <View style={styles.panelEmpty}>
+              <Text style={styles.panelEmptyTitle}>No GIFs found</Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
 function ToolbarButton({
+  accessibilityLabel,
   active = false,
   disabled = false,
   icon,
   onPress,
 }: {
+  accessibilityLabel: string;
   active?: boolean;
   disabled?: boolean;
   icon: React.ReactNode;
   onPress: () => void;
 }) {
+  const styles = usePostModalStyles();
   return (
     <Pressable
       style={[
@@ -1068,6 +1401,8 @@ function ToolbarButton({
         active && styles.toolbarButtonActive,
         disabled && styles.toolbarButtonDisabled,
       ]}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       hitSlop={6}
       onPress={onPress}
@@ -1075,10 +1410,6 @@ function ToolbarButton({
       {icon}
     </Pressable>
   );
-}
-
-function ToolbarDivider() {
-  return <View style={styles.toolbarDivider} />;
 }
 
 function PollComposer({
@@ -1100,6 +1431,8 @@ function PollComposer({
   removeOption: (index: number) => void;
   updateOption: (index: number, value: string) => void;
 }) {
+  const styles = usePostModalStyles();
+  const theme = useAppTheme();
   const setDuration = useCallback(
     (days: number) => setEndsAt(now() + days * 24 * 60 * 60),
     [setEndsAt],
@@ -1147,7 +1480,7 @@ function PollComposer({
           <TextInput
             style={styles.pollInput}
             placeholder={`Option ${index + 1}`}
-            placeholderTextColor="#8794a0"
+            placeholderTextColor={theme.colors.primaryContent}
             value={option}
             onChangeText={value => updateOption(index, value)}
           />
@@ -1157,7 +1490,7 @@ function PollComposer({
               hitSlop={8}
               onPress={() => removeOption(index)}
             >
-              <X size={17} color="#8794a0" strokeWidth={2.2} />
+              <X size={17} color={theme.colors.primaryContent} strokeWidth={2.2} />
             </Pressable>
           ) : null}
         </View>
@@ -1166,7 +1499,7 @@ function PollComposer({
       <View style={styles.pollFooter}>
         {options.length < 10 ? (
           <Pressable style={styles.addOption} onPress={addOption}>
-            <Plus size={16} color="#52616f" strokeWidth={2.3} />
+            <Plus size={16} color={theme.colors.primaryContent} strokeWidth={2.3} />
             <Text style={styles.addOptionText}>Add option</Text>
           </Pressable>
         ) : (
@@ -1192,7 +1525,7 @@ function PollComposer({
               style={styles.durationButton}
               onPress={() => setEndsAt(null)}
             >
-              <X size={14} color="#52616f" strokeWidth={2.2} />
+              <X size={14} color={theme.colors.primaryContent} strokeWidth={2.2} />
             </Pressable>
           ) : null}
         </View>
@@ -1212,10 +1545,16 @@ const editorHtmlStyle = {
   blockquote: { borderColor: '#94a3b8', borderWidth: 3, gapWidth: 10 },
 };
 
-const styles = StyleSheet.create({
+function readableContentColor(theme: AppTheme) {
+  return theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
+}
+
+function createPostModalStyles(theme: AppTheme) {
+  const contentColor = readableContentColor(theme);
+  return StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
   },
   header: {
     minHeight: 72,
@@ -1223,7 +1562,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#cbd5e1',
+    borderBottomColor: theme.colors.base200,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1233,8 +1572,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1243,14 +1582,14 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 19,
     paddingHorizontal: 14,
-    backgroundColor: '#158777',
+    backgroundColor: theme.colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
   },
   submitDisabled: {
-    backgroundColor: '#cbd5e1',
+    backgroundColor: theme.colors.base200,
   },
   submitText: {
     color: '#ffffff',
@@ -1279,13 +1618,13 @@ const styles = StyleSheet.create({
     minHeight: 96,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
     alignItems: 'center',
     justifyContent: 'center',
   },
   replyLoadingText: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -1293,8 +1632,8 @@ const styles = StyleSheet.create({
     minHeight: 190,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
     overflow: 'hidden',
   },
   replyEditorShell: {
@@ -1305,7 +1644,7 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 17,
     lineHeight: 24,
-    color: '#17212b',
+    color: contentColor,
   },
   replyEditor: {
     minHeight: 104,
@@ -1313,14 +1652,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     lineHeight: 22,
-    color: '#17212b',
+    color: contentColor,
   },
   mentionBox: {
     maxHeight: 216,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#dbe3ea',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
     overflow: 'hidden',
   },
   mentionScroll: {
@@ -1333,7 +1672,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: theme.colors.base200,
   },
   mentionStateRow: {
     minHeight: 48,
@@ -1342,7 +1681,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mentionStateText: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -1350,7 +1689,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#ccfbf1',
+    backgroundColor: theme.colors.base200,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1364,28 +1703,28 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   mentionName: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 14,
     fontWeight: '700',
   },
   mentionHandle: {
-    color: '#64748b',
+    color: theme.colors.primaryContent,
     fontSize: 12,
     marginTop: 2,
   },
   toolbar: {
     minHeight: 54,
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
     paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     gap: 6,
   },
   toolbarAccessory: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#cbd5e1',
-    backgroundColor: '#f8fafc',
+    borderTopColor: theme.colors.base200,
+    backgroundColor: theme.colors.base100,
     paddingHorizontal: 8,
     paddingTop: 8,
   },
@@ -1396,6 +1735,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 20,
   },
+  gifModal: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 30,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: {width: 0, height: 8},
+    elevation: 8,
+  },
   toolbarButton: {
     width: 40,
     height: 40,
@@ -1404,37 +1756,252 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toolbarButtonActive: {
-    backgroundColor: '#158777',
+    backgroundColor: theme.colors.primary,
   },
   toolbarButtonDisabled: {
     opacity: 0.35,
   },
-  toolbarDivider: {
-    width: StyleSheet.hairlineWidth,
+  panel: {
+    flex: 1,
+    backgroundColor: theme.colors.base100,
+    paddingHorizontal: 12,
+  },
+  panelHeader: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  panelTitle: {
+    color: contentColor,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  panelAction: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.base300,
+  },
+  panelActionText: {
+    color: theme.colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  panelActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  panelDone: {
+    minHeight: 34,
+    minWidth: 48,
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primary,
+  },
+  panelDoneText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  panelEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingBottom: 28,
+  },
+  panelEmptyTitle: {
+    marginTop: 10,
+    color: contentColor,
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  panelEmptyText: {
+    marginTop: 5,
+    color: theme.colors.primaryContent,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  gifStickyHeader: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    zIndex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gifSearchBox: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 21,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.34)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  gifSearchInput: {
+    flex: 1,
+    minWidth: 0,
+    color: contentColor,
+    fontSize: 15,
+    paddingVertical: 8,
+  },
+  gifDoneButton: {
+    minHeight: 42,
+    minWidth: 50,
+    borderRadius: 21,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primary,
+  },
+  gifGridContent: {
+    paddingTop: 64,
+    paddingBottom: 12,
+  },
+  gifGridRow: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  gifTile: {
+    flex: 1,
+    aspectRatio: 4 / 3,
+    borderRadius: 8,
+    backgroundColor: theme.colors.base200,
+    overflow: 'hidden',
+  },
+  gifTileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  panelPrimaryAction: {
+    minHeight: 36,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    marginTop: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primary,
+  },
+  panelPrimaryActionText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  mediaListContent: {
+    paddingBottom: 18,
+  },
+  mediaAsset: {
+    aspectRatio: 1,
+    margin: 3,
+    borderRadius: 8,
+    backgroundColor: theme.colors.base200,
+    overflow: 'hidden',
+  },
+  mediaAssetImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaTypeBadge: {
+    position: 'absolute',
+    left: 5,
+    bottom: 5,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+  },
+  mediaTypeBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  mediaSelectBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 22,
     height: 22,
-    backgroundColor: '#cbd5e1',
-    marginHorizontal: 4,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    backgroundColor: 'rgba(15, 23, 42, 0.38)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaSelectBadgeActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  mediaSelectBadgeText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 16,
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingBottom: 18,
+  },
+  mediaTile: {
+    width: 82,
+    height: 82,
+    borderRadius: 8,
+    backgroundColor: theme.colors.base200,
+    overflow: 'hidden',
+  },
+  mediaTileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaRemove: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   uploadBox: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#dbe3ea',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
     padding: 12,
     gap: 4,
   },
   uploadTitle: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 13,
     fontWeight: '700',
   },
   uploadServer: {
-    color: '#158777',
+    color: theme.colors.primary,
     fontSize: 13,
     fontWeight: '600',
   },
   uploadLine: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -1444,15 +2011,15 @@ const styles = StyleSheet.create({
   pollBox: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#dbe3ea',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
     padding: 12,
     gap: 10,
   },
   segmented: {
     height: 36,
     borderRadius: 8,
-    backgroundColor: '#eef2f7',
+    backgroundColor: theme.colors.base200,
     padding: 3,
     flexDirection: 'row',
   },
@@ -1463,22 +2030,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
   },
   segmentText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontWeight: '700',
     fontSize: 13,
   },
   segmentTextActive: {
-    color: '#17212b',
+    color: contentColor,
   },
   pollOptionRow: {
     minHeight: 44,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#f8fafc',
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base100,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 12,
@@ -1486,7 +2053,7 @@ const styles = StyleSheet.create({
   pollInput: {
     flex: 1,
     minHeight: 42,
-    color: '#17212b',
+    color: contentColor,
     fontSize: 15,
   },
   pollRemove: {
@@ -1508,7 +2075,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   addOptionText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -1521,15 +2088,15 @@ const styles = StyleSheet.create({
     minWidth: 34,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#eef2f7',
+    backgroundColor: theme.colors.base200,
     alignItems: 'center',
     justifyContent: 'center',
   },
   durationButtonActive: {
-    backgroundColor: '#ccfbf1',
+    backgroundColor: theme.colors.base200,
   },
   durationText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontWeight: '700',
     fontSize: 12,
   },
@@ -1537,4 +2104,5 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 11,
   },
-});
+  });
+}

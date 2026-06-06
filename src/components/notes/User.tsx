@@ -29,7 +29,7 @@ function UserComponent({
   pubkey,
   query = true,
   link = false,
-  className = 'text-sm font-semibold text-slate-900',
+  className = 'text-sm font-semibold text-base-content',
   onProfileOpen,
 }: UserProps) {
   const navigation = useContext(NavigationContext) as
@@ -74,7 +74,7 @@ export const User = memo(UserComponent, (previous, next) => (
   previous.pubkey === next.pubkey &&
   (previous.query ?? true) === (next.query ?? true) &&
   (previous.link ?? false) === (next.link ?? false) &&
-  (previous.className ?? 'text-sm font-semibold text-slate-900') ===
-    (next.className ?? 'text-sm font-semibold text-slate-900') &&
+  (previous.className ?? 'text-sm font-semibold text-base-content') ===
+    (next.className ?? 'text-sm font-semibold text-base-content') &&
   previous.onProfileOpen === next.onProfileOpen
 ));

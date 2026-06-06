@@ -47,6 +47,7 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
+import {useAppTheme} from '../theme';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -213,7 +214,7 @@ export function ExploreFeed({
         relays={feedRelays}
         relayStatuses={relayStatuses}
         selectedPacks={selectedPacks}
-        surfaceClassName="bg-slate-50"
+        surfaceClassName="bg-base-100"
       />
     ),
     [authPubkey, feedRelays, relayStatuses, selectedPacks],
@@ -226,7 +227,7 @@ export function ExploreFeed({
         relays={feedRelays}
         relayStatuses={relayStatuses}
         selectedPacks={selectedPacks}
-        surfaceClassName="bg-slate-50"
+        surfaceClassName="bg-base-100"
       />
     ),
     [authPubkey, feedRelays, relayStatuses, selectedPacks],
@@ -809,10 +810,10 @@ export function ExploreFeed({
 
   const empty = (
     <View className="px-6 py-16">
-      <Text className="text-center text-base font-semibold text-slate-500">
+      <Text className="text-center text-base font-semibold text-primary-content">
         Explore feed
       </Text>
-      <Text className="mt-2 text-center text-sm text-slate-500">
+      <Text className="mt-2 text-center text-sm text-primary-content">
         Loading explore notes...
       </Text>
     </View>
@@ -826,7 +827,6 @@ export function ExploreFeed({
         header={listHeader}
         pullToRefresh
         stickyHeader={stickyHeader ?? defaultStickyHeader}
-        stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
         fixedHeader={renderNewNotesBanner}
         stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
@@ -892,12 +892,12 @@ function ExploreHeader({
   surfaceClassName: string;
 }) {
   return (
-    <View className={mini ? 'border-b border-slate-200 bg-slate-50/95' : ''}>
+    <View className={mini ? 'border-b border-base-200 bg-base-100/95' : ''}>
       <View
         className={
           mini
             ? 'h-12 flex-row items-center justify-between'
-            : 'rounded-lg bg-white/90 px-3 py-3 shadow-sm'
+            : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'
         }
       >
         <View
@@ -914,11 +914,11 @@ function ExploreHeader({
           <View className="flex-row items-center gap-2">
             <HeaderSearchButton surfaceClassName={surfaceClassName} />
             <NotificationBellButton
-              className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+              className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
             />
             <HeaderProfileButton
               pubkey={pubkey}
-              className={`h-9 w-9 border-slate-200 ${surfaceClassName}`}
+              className={`h-9 w-9 border-base-200 ${surfaceClassName}`}
             />
           </View>
         </View>
@@ -933,6 +933,7 @@ function ExploreHeader({
 }
 
 function HeaderSearchButton({surfaceClassName}: {surfaceClassName: string}) {
+  const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -940,11 +941,11 @@ function HeaderSearchButton({surfaceClassName}: {surfaceClassName: string}) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Search"
-      className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+      className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
       hitSlop={12}
       onPress={() => navigation.navigate('CmdK')}
     >
-      <Search size={18} color="#17212b" strokeWidth={2.2} />
+      <Search size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
     </Pressable>
   );
 }
@@ -956,9 +957,10 @@ function FeedPackHeaderButtons({
   packs: FeedPackSelection[];
   surfaceClassName: string;
 }) {
+  const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const iconColor = '#17212b';
+  const iconColor = theme.colors.primaryContent;
   const openFeedBuilder = useCallback(
     () => navigation.navigate('FeedBuilder'),
     [navigation],
@@ -967,7 +969,7 @@ function FeedPackHeaderButtons({
   if (!packs.length) {
     return (
       <Pressable
-        className={`h-9 w-9 items-center justify-center rounded-full border border-slate-200 ${surfaceClassName}`}
+        className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
         hitSlop={12}
         onPress={openFeedBuilder}
       >
@@ -983,7 +985,7 @@ function FeedPackHeaderButtons({
           key={pack.id}
           accessibilityRole="button"
           accessibilityLabel={pack.title}
-          className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-slate-200 ${surfaceClassName}`}
+          className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-base-200 ${surfaceClassName}`}
           hitSlop={12}
           onPress={openFeedBuilder}
         >

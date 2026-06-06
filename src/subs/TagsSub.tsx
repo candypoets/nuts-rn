@@ -260,8 +260,8 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
   );
   const empty = (
     <View className="px-6 py-16">
-      <Text className="text-center text-base font-semibold text-slate-500">{title || 'Hashtag feed'}</Text>
-      <Text className="mt-2 text-center text-sm text-slate-500">No notes found yet.</Text>
+      <Text className="text-center text-base font-semibold text-primary-content">{title || 'Hashtag feed'}</Text>
+      <Text className="mt-2 text-center text-sm text-primary-content">No notes found yet.</Text>
     </View>
   );
 
@@ -272,7 +272,6 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
       renderItem={renderItem}
       header={renderHeader}
       stickyHeader={renderHeader}
-      stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
       loading={loading}
       onNearBottom={handleNearBottom}
       empty={empty}
@@ -305,15 +304,15 @@ function TagsHeader({
   );
 
   return (
-    <View className="min-h-16 flex-row items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+    <View className="min-h-16 flex-row items-center gap-3 border-b border-base-200 bg-base-100 px-4 py-3">
       <Pressable
         hitSlop={10}
-        className="h-9 w-9 items-center justify-center rounded-full bg-white"
+        className="h-9 w-9 items-center justify-center rounded-full bg-base-300"
         onPress={onClose}
       >
         <ArrowLeft size={20} color="#0f172a" />
       </Pressable>
-      <Text className="min-w-0 flex-1 text-lg font-semibold text-emerald-700" numberOfLines={1}>
+      <Text className="min-w-0 flex-1 text-lg font-semibold text-primary" numberOfLines={1}>
         {title}
       </Text>
       <View className="max-w-[45%]">

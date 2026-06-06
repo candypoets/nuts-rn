@@ -1,0 +1,131 @@
+diff --git a/node_modules/react-native-enriched/android/src/main/java/com/swmansion/enriched/textinput/styles/ParametrizedStyles.kt b/node_modules/react-native-enriched/android/src/main/java/com/swmansion/enriched/textinput/styles/ParametrizedStyles.kt
+index ce3d3bf..ea87710 100644
+--- a/node_modules/react-native-enriched/android/src/main/java/com/swmansion/enriched/textinput/styles/ParametrizedStyles.kt
++++ b/node_modules/react-native-enriched/android/src/main/java/com/swmansion/enriched/textinput/styles/ParametrizedStyles.kt
+@@ -305,23 +305,29 @@ class ParametrizedStyles(
+     if (view.selection == null) return
+     val spannable = view.text as SpannableStringBuilder
+     val (start, originalEnd) = view.selection.getInlineSelection()
++    val needsLeadingBreak = start > 0 && spannable[start - 1] != '\n'
++    val needsTrailingBreak = originalEnd >= spannable.length || spannable[originalEnd] != '\n'
++    val replacement =
++      "${if (needsLeadingBreak) "\n" else ""}${EnrichedConstants.ORC_STRING}${if (needsTrailingBreak) "\n" else ""}"
++    val imageStart = start + if (needsLeadingBreak) 1 else 0
+ 
+     if (start == originalEnd) {
+-      spannable.insert(start, EnrichedConstants.ORC_STRING)
++      spannable.insert(start, replacement)
+     } else {
+       val spans = spannable.getSpans(start, originalEnd, EnrichedInputImageSpan::class.java)
+       for (s in spans) {
+         spannable.removeSpan(s)
+       }
+ 
+-      spannable.replace(start, originalEnd, EnrichedConstants.ORC_STRING)
++      spannable.replace(start, originalEnd, replacement)
+     }
+ 
+-    val (imageStart, imageEnd) = spannable.getSafeSpanBoundaries(start, start + 1)
++    val (safeImageStart, imageEnd) = spannable.getSafeSpanBoundaries(imageStart, imageStart + 1)
+     val span = EnrichedInputImageSpan.createEnrichedImageSpan(src, width.toInt(), height.toInt())
+     span.observeAsyncDrawableLoaded(view.text)
+ 
+-    spannable.setSpan(span, imageStart, imageEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
++    spannable.setSpan(span, safeImageStart, imageEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
++    view.post { view.setSelection(start) }
+   }
+ 
+   fun startMention(indicator: String) {
+diff --git a/node_modules/react-native-enriched/ios/EnrichedTextInputView.mm b/node_modules/react-native-enriched/ios/EnrichedTextInputView.mm
+index f788909..f0682b9 100644
+--- a/node_modules/react-native-enriched/ios/EnrichedTextInputView.mm
++++ b/node_modules/react-native-enriched/ios/EnrichedTextInputView.mm
+@@ -1500,11 +1500,21 @@ - (void)addImage:(NSString *)uri width:(float)width height:(float)height {
+     return;
+   }
+ 
++  NSRange selectionBeforeImage = textView.selectedRange;
+   if ([StyleUtils handleStyleBlocksAndConflicts:[ImageStyle getType]
+                                           range:textView.selectedRange
+                                         forHost:self]) {
+     [imageStyleClass addImage:uri width:width height:height];
+     [self anyTextMayHaveBeenModified];
++    dispatch_async(dispatch_get_main_queue(), ^{
++      if (![self->textView isFirstResponder]) {
++        [self->textView reactFocus];
++      }
++      NSUInteger caretLocation =
++          MIN(selectionBeforeImage.location,
++              self->textView.textStorage.string.length);
++      self->textView.selectedRange = NSMakeRange(caretLocation, 0);
++    });
+   }
+ }
+ 
+diff --git a/node_modules/react-native-enriched/ios/styles/ImageStyle.mm b/node_modules/react-native-enriched/ios/styles/ImageStyle.mm
+index add15b4..1d65d8b 100644
+--- a/node_modules/react-native-enriched/ios/styles/ImageStyle.mm
++++ b/node_modules/react-native-enriched/ios/styles/ImageStyle.mm
+@@ -1,7 +1,7 @@
+ #import "EnrichedTextInputView.h"
+ #import "ImageAttachment.h"
+ #import "StyleHeaders.h"
+-#import "TextInsertionUtils.h"
++#import "UIView+React.h"
+ 
+ // custom NSAttributedStringKey to differentiate the image
+ static NSString *const ImageAttributeName = @"EnrichedImage";
+@@ -115,22 +115,42 @@ - (void)addImageAtRange:(NSRange)range
+   // This tells TextKit "something non-text goes here".
+   NSString *placeholderChar = @"\uFFFC";
+ 
++  UITextView *textView = self.host.textView;
++  NSString *text = textView.textStorage.string ?: @"";
++  NSUInteger rangeEnd = NSMaxRange(range);
++  BOOL needsLeadingBreak =
++      range.location > 0 &&
++      [text characterAtIndex:range.location - 1] != '\n';
++  BOOL needsTrailingBreak =
++      rangeEnd >= text.length || [text characterAtIndex:rangeEnd] != '\n';
++
++  NSString *leadingBreak = needsLeadingBreak ? @"\n" : @"";
++  NSString *trailingBreak = needsTrailingBreak ? @"\n" : @"";
++  NSString *replacement = [NSString stringWithFormat:@"%@%@%@",
++                                                     leadingBreak,
++                                                     placeholderChar,
++                                                     trailingBreak];
++
++  NSMutableDictionary<NSAttributedStringKey, id> *typingAttributes =
++      [textView.typingAttributes mutableCopy];
++  NSMutableAttributedString *replacementString =
++      [[NSMutableAttributedString alloc] initWithString:replacement
++                                            attributes:typingAttributes];
++  NSUInteger imageLocation = leadingBreak.length;
++  [replacementString addAttributes:attributes
++                             range:NSMakeRange(imageLocation, 1)];
++
+   if (range.length == 0) {
+-    [TextInsertionUtils insertText:placeholderChar
+-                                at:range.location
+-              additionalAttributes:attributes
+-                              host:self.host
+-                     withSelection:withSelection];
++    [textView.textStorage insertAttributedString:replacementString
++                                         atIndex:range.location];
+   } else {
+-    [TextInsertionUtils replaceText:placeholderChar
+-                                 at:range
+-               additionalAttributes:attributes
+-                               host:self.host
+-                      withSelection:withSelection];
++    [textView.textStorage replaceCharactersInRange:range
++                              withAttributedString:replacementString];
+   }
+ 
+   if (withDirtyRange) {
+-    NSRange insertedImageRange = NSMakeRange(range.location, 1);
++    NSRange insertedImageRange =
++        NSMakeRange(range.location + leadingBreak.length, 1);
+     [self.host.attributesManager addDirtyRange:insertedImageRange];
+   }
+ }

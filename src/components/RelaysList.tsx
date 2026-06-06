@@ -20,9 +20,9 @@ function statusClass(status?: string) {
     case 'FAILED':
       return 'bg-red-500';
     case 'CLOSED':
-      return 'bg-slate-200';
+      return 'bg-base-200';
     default:
-      return 'bg-slate-200';
+      return 'bg-base-200';
   }
 }
 
@@ -69,7 +69,7 @@ export function RelaysList({
           return (
             <View
               key={key}
-              className={`flex-row items-center gap-1 rounded-full border border-slate-200 bg-white px-2 ${
+              className={`flex-row items-center gap-1 rounded-full border border-base-200 bg-base-300 px-2 ${
                 mini ? 'py-0.5' : 'py-1'
               }`}
             >
@@ -77,7 +77,7 @@ export function RelaysList({
                 className={`${mini ? 'h-1 w-1' : 'h-1.5 w-1.5'} rounded-full ${statusClass(status)}`}
               />
               <Text
-                className={`${mini ? 'text-[10px]' : 'text-[11px]'} text-slate-500`}
+                className={`${mini ? 'text-[10px]' : 'text-[11px]'} text-primary-content`}
                 numberOfLines={1}
               >
                 {relayLabel(relay)}

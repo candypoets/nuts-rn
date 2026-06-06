@@ -21,6 +21,7 @@ import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {RootStackParamList} from '../navigation/types';
 import {useAuthStore, useNostrStore, useRelayStore} from '../stores';
+import {useAppTheme} from '../theme';
 
 type ChatListTab = 'messages' | 'requests';
 
@@ -351,10 +352,10 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
 
   const empty = (
     <View className="px-3 py-16">
-      <Text className="text-center text-base font-semibold text-slate-700">
+      <Text className="text-center text-base font-semibold text-primary-content">
         {pubkey ? 'No chats yet' : 'Sign in to see chats'}
       </Text>
-      <Text className="mt-2 text-center text-sm text-slate-500">
+      <Text className="mt-2 text-center text-sm text-primary-content">
         {pubkey
           ? 'Kind 4 subscriptions are ready; conversations appear here once messages arrive.'
           : 'Chat uses your account pubkey to load direct-message conversations.'}
@@ -369,7 +370,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       pullToRefresh
       header={header}
       stickyHeader={stickyHeader}
-      stickyHeaderSafeAreaColor="rgba(248, 250, 252, 0.95)"
+      stickyHeaderSafeAreaColor="transparent"
       renderItem={({item}) => (
         <ChatRow
           conversation={item}
@@ -402,22 +403,24 @@ function ChatHeader({
   onSelectTab: (tab: ChatListTab) => void;
   sticky?: boolean;
 }) {
+  const theme = useAppTheme();
+  const iconColor = theme.colors.primaryContent;
   return (
-    <View className={`${sticky ? 'border-b border-slate-200 bg-slate-50/95' : 'bg-slate-50'}`}>
-      <View className={`${sticky ? '' : 'rounded-lg bg-white/90 px-3 py-3 shadow-sm'}`}>
+    <View className={`${sticky ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}`}>
+      <View className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}>
         <View className="h-14 flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
-            <Text className="text-2xl font-bold text-slate-900">BM</Text>
-            <Pressable className="h-8 w-8 items-center justify-center rounded-full bg-slate-100">
-              <Info size={17} color="#52616f" strokeWidth={2.2} />
+            <Text className="text-2xl font-bold text-base-content">BM</Text>
+            <Pressable className="h-8 w-8 items-center justify-center rounded-full bg-base-200">
+              <Info size={17} color={iconColor} strokeWidth={2.2} />
             </Pressable>
           </View>
-          <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-emerald-600 bg-white">
-            <MessageCirclePlus size={19} color="#1f7a5a" strokeWidth={2.2} />
+          <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-primary bg-base-300">
+            <MessageCirclePlus size={19} color={theme.colors.primary} strokeWidth={2.2} />
           </Pressable>
         </View>
         {!sticky ? <RelaysList relays={relays} statuses={statuses} /> : null}
-        <View className="mt-3 flex-row rounded-lg bg-slate-100 p-1">
+        <View className="mt-3 flex-row rounded-lg bg-base-200 p-1">
           <ChatTab
             active={activeTab === 'messages'}
             label="messages"
@@ -447,17 +450,22 @@ function ChatTab({
   count: number;
   onPress: () => void;
 }) {
+  const theme = useAppTheme();
   return (
     <Pressable
       className="min-h-10 flex-1 flex-row items-center justify-center gap-2 rounded-md px-3"
-      style={active ? styles.chatTabActive : null}
+      style={
+        active
+          ? [styles.chatTabActive, {backgroundColor: theme.colors.base300}]
+          : null
+      }
       onPress={onPress}
     >
-      <Text className={`text-sm font-semibold ${active ? 'text-slate-900' : 'text-slate-500'}`}>
+      <Text className={`text-sm font-semibold ${active ? 'text-base-content' : 'text-primary-content'}`}>
         {label}
       </Text>
-      <View className={`${active ? 'bg-emerald-700' : 'bg-slate-300'} min-w-5 rounded-full px-1.5 py-0.5`}>
-        <Text className={`text-center text-[11px] font-bold ${active ? 'text-white' : 'text-slate-700'}`}>
+      <View className={`${active ? 'bg-primary' : 'bg-base-200'} min-w-5 rounded-full px-1.5 py-0.5`}>
+        <Text className={`text-center text-[11px] font-bold ${active ? 'text-white' : 'text-primary-content'}`}>
           {count}
         </Text>
       </View>
@@ -470,7 +478,6 @@ const styles = StyleSheet.create({
   // can emit an upgrade warning for Pressable shadows, and that warning
   // stringifier trips React Navigation's default context getters in dev.
   chatTabActive: {
-    backgroundColor: '#ffffff',
     elevation: 1,
     shadowColor: '#0f172a',
     shadowOffset: {width: 0, height: 1},
@@ -494,7 +501,7 @@ function ChatRow({
 
   return (
     <Pressable
-      className="mt-1 min-h-24 flex-row gap-3 overflow-hidden rounded-lg bg-white/90 px-3 py-4 shadow-sm"
+      className="mt-1 min-h-24 flex-row gap-3 overflow-hidden rounded-lg bg-base-300/90 px-3 py-4 shadow-sm"
       onPress={event => {
         event.stopPropagation();
         if (!wasRecentSwipeGesture()) {
@@ -509,15 +516,15 @@ function ChatRow({
         <View className="flex-row items-center justify-between gap-2">
           <User
             pubkey={conversation.peerPubkey}
-            className="shrink text-base font-semibold text-slate-900"
+            className="shrink text-base font-semibold text-base-content"
           />
-          <Text className="shrink-0 text-xs text-slate-500">
+          <Text className="shrink-0 text-xs text-primary-content">
             {formatRelativeTime(conversation.latest.createdAt())}
           </Text>
         </View>
         <View className="mt-1 max-h-10 overflow-hidden">
           {outgoing ? (
-            <Text className="text-sm font-semibold text-emerald-700">you:</Text>
+            <Text className="text-sm font-semibold text-primary">you:</Text>
           ) : null}
           <ContentBlocks content={parsedContent} showQuote={false} />
         </View>

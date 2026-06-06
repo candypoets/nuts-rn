@@ -76,28 +76,28 @@ export function MintSelector({
 
   if (!selected) {
     return (
-      <View className="rounded-lg border border-slate-200 bg-white p-4">
-        <Text className="text-xs font-bold uppercase text-slate-500">{label}</Text>
-        <Text className="mt-2 text-sm font-semibold text-slate-900">{emptyText}</Text>
+      <View className="rounded-lg border border-base-200 bg-base-300 p-4">
+        <Text className="text-xs font-bold uppercase text-primary-content">{label}</Text>
+        <Text className="mt-2 text-sm font-semibold text-base-content">{emptyText}</Text>
       </View>
     );
   }
 
   return (
-    <View className="rounded-lg border border-slate-200 bg-white p-4">
-      <Text className="text-xs font-bold uppercase text-slate-500">{label}</Text>
+    <View className="rounded-lg border border-base-200 bg-base-300 p-4">
+      <Text className="text-xs font-bold uppercase text-primary-content">{label}</Text>
       {onChangeAmount ? (
         <View className="mt-3">
           <View className="flex-row items-center">
             <TextInput
               keyboardType="number-pad"
-              className="min-h-20 flex-1 text-6xl font-light text-slate-900"
+              className="min-h-20 flex-1 text-6xl font-light text-base-content"
               value={amount}
               onChangeText={onChangeAmount}
               placeholder="0"
               placeholderTextColor="#cbd5e1"
             />
-            <Text className="pb-3 text-base font-bold text-slate-500">{amountLabel}</Text>
+            <Text className="pb-3 text-base font-bold text-primary-content">{amountLabel}</Text>
             <View className="ml-2 pb-3">
               {chevron === 'right' ? (
                 <ChevronRight size={18} color="#94a3b8" strokeWidth={2.2} />
@@ -106,7 +106,7 @@ export function MintSelector({
               )}
             </View>
           </View>
-          <Text className="text-xs font-semibold text-slate-500">
+          <Text className="text-xs font-semibold text-primary-content">
             {balanceByMint[selected] || 0} sats available
           </Text>
         </View>
@@ -180,16 +180,16 @@ function MintPill({
   return (
     <Pressable
       className={`flex-row items-center rounded-full border ${
-        selected ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-slate-50'
+        selected ? 'border-primary bg-base-200' : 'border-base-200 bg-base-100'
       } ${compact ? 'px-2 py-2' : 'min-w-0 flex-1 px-3 py-2'}`}
       onPress={handlePress}
     >
-      <View className="h-8 w-8 overflow-hidden rounded-full bg-slate-200">
+      <View className="h-8 w-8 overflow-hidden rounded-full bg-base-200">
         {info.iconUrl ? (
           <Image source={{uri: info.iconUrl}} className="h-full w-full" resizeMode="cover" />
         ) : (
           <View className="h-full w-full items-center justify-center">
-            <Text className="text-xs font-extrabold text-slate-600">
+            <Text className="text-xs font-extrabold text-primary-content">
               {info.name.slice(0, 1).toUpperCase()}
             </Text>
           </View>
@@ -197,15 +197,15 @@ function MintPill({
       </View>
       <View className="ml-2 min-w-0">
         <Text
-          className={`${compact ? 'max-w-[112px]' : 'max-w-[190px]'} text-sm font-bold text-slate-950`}
+          className={`${compact ? 'max-w-[112px]' : 'max-w-[190px]'} text-sm font-bold text-base-content`}
           numberOfLines={1}
         >
           {info.name}
         </Text>
         {typeof balance === 'number' ? (
-          <Text className="text-xs font-semibold text-slate-500">{balance} sats</Text>
+          <Text className="text-xs font-semibold text-primary-content">{balance} sats</Text>
         ) : (
-          <Text className="text-xs font-semibold text-slate-500" numberOfLines={1}>
+          <Text className="text-xs font-semibold text-primary-content" numberOfLines={1}>
             {displayMintName(mintUrl)}
           </Text>
         )}

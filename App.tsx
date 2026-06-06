@@ -49,6 +49,7 @@ import { useRelayTracking } from './src/hooks/useRelayTracking';
 import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions';
 import {
   FeedBuilderModal,
+  Kind1111CommentsModal,
   CmdKModal,
   LogoutModal,
   MintingModal,
@@ -64,7 +65,7 @@ import {
   SendPlaceholderModal,
   SignupModal,
 } from './src/modals';
-import { Kind0Sub, Kind1Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
+import { Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
 import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
 import { CarouselAnimator } from './src/components/CarouselAnimator';
 import { ImageZoom } from './src/components/ImageZoom';
@@ -72,6 +73,7 @@ import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
 import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
+import { getAppThemeVars, useAppTheme } from './src/theme';
 
 enableScreens(true);
 enableFreeze(true);
@@ -127,6 +129,8 @@ async function retryMintNetworkCall<T>(
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
+  const theme = useAppTheme();
+  const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const [manager, setManagerInstance] = useState<NostrManagerLike | null>(null);
   const keyboardResizeStyle = useKeyboardResizeStyle();
 
@@ -145,19 +149,35 @@ function App() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <GestureHandlerRootView
+      style={[styles.root, { backgroundColor: theme.colors.base100 }]}
+    >
       <KeyboardProvider>
         <SafeAreaProvider>
-          <RootServices manager={manager} />
-          <Animated.View style={[styles.root, keyboardResizeStyle]}>
-            <StatusBar
-              translucent
-              backgroundColor="transparent"
-              barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-            />
-            <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
-            <SendStatuses />
-          </Animated.View>
+          <View
+            style={[
+              styles.root,
+              themeVars,
+              { backgroundColor: theme.colors.base100 },
+            ]}
+          >
+            <RootServices manager={manager} />
+            <Animated.View
+              style={[
+                styles.root,
+                { backgroundColor: theme.colors.base100 },
+                keyboardResizeStyle,
+              ]}
+            >
+              <StatusBar
+                translucent
+                backgroundColor="transparent"
+                barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+              />
+              <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
+              <SendStatuses />
+            </Animated.View>
+          </View>
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
@@ -219,12 +239,18 @@ function RootNavigator({
   manager: NostrManagerLike | null;
   nostrEnabled: boolean;
 }) {
+  const theme = useAppTheme();
+  const contentStyle = useMemo(
+    () => [styles.root, { backgroundColor: theme.colors.base100 }],
+    [theme],
+  );
+
   return (
     <NavigationContainer theme={navigationTheme}>
       <NativeStack.Navigator
         initialRouteName="Main"
         screenOptions={{
-          contentStyle: styles.root,
+          contentStyle,
           freezeOnBlur: true,
           fullScreenGestureEnabled: true,
           animationMatchesGesture: true,
@@ -248,6 +274,22 @@ function RootNavigator({
           name="Kind1Thread"
           component={Kind1ThreadScreen}
           options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
+          name="Kind30023Thread"
+          component={Kind30023ThreadScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
+          name="Kind1111Comments"
+          component={Kind1111CommentsScreen}
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.66, 0.92],
+            sheetExpandsWhenScrolledToEdge: false,
+            sheetGrabberVisible: true,
+            sheetInitialDetentIndex: 0,
+          }}
         />
         <NativeStack.Screen
           name="Tags"
@@ -518,6 +560,8 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
 }
 
 function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
+  const theme = useAppTheme();
+  const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('explore');
   const [activatedRoutes, setActivatedRoutes] = useState<
     Record<RouteId, boolean>
@@ -554,7 +598,13 @@ function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
   }, []);
 
   return (
-    <View style={styles.navigator}>
+    <View
+      style={[
+        styles.navigator,
+        themeVars,
+        { backgroundColor: theme.colors.base100 },
+      ]}
+    >
       <CarouselAnimator
         activeIndex={activeRouteIndex}
         pageCount={ROUTES.length}
@@ -565,7 +615,12 @@ function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
         stackPresentation="flat"
         onIndexChange={changeRouteIndex}
         renderPage={({ index, width }) => (
-          <FeedPage key={ROUTES[index].id} width={width}>
+          <FeedPage
+            key={ROUTES[index].id}
+            backgroundColor={theme.colors.base100}
+            themeVars={themeVars}
+            width={width}
+          >
             {ROUTES[index].id === 'home' ? (
               <HomeFeed enabled={nostrEnabled} visible={activatedRoutes.home} />
             ) : ROUTES[index].id === 'explore' ? (
@@ -663,7 +718,13 @@ function PostScreen({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, 'Post'>) {
-  return <PostModal reply={route.params?.reply} onClose={navigation.goBack} />;
+  return (
+    <PostModal
+      reply={route.params?.reply}
+      quote={route.params?.quote}
+      onClose={navigation.goBack}
+    />
+  );
 }
 
 function SendScreen({
@@ -814,6 +875,33 @@ function Kind1ThreadScreen({
   );
 }
 
+function Kind30023ThreadScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Kind30023Thread'>) {
+  const isFocused = useIsFocused();
+
+  return (
+    <Kind30023Sub
+      naddr={route.params.naddr}
+      visible={isFocused}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function Kind1111CommentsScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Kind1111Comments'>) {
+  return (
+    <Kind1111CommentsModal
+      nevent={route.params.nevent}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
 function TagsScreen({
   navigation,
   route,
@@ -829,14 +917,21 @@ function TagsScreen({
 }
 
 function FeedPage({
+  backgroundColor,
   children,
+  themeVars,
   width,
 }: {
+  backgroundColor: string;
   children: React.ReactNode;
+  themeVars: ReturnType<typeof getAppThemeVars>;
   width: number;
 }) {
   return (
-    <View pointerEvents="box-none" style={[styles.page, { width }]}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.page, themeVars, { backgroundColor, width }]}
+    >
       {children}
     </View>
   );

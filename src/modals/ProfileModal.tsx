@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -11,6 +11,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { NostrManagerLike } from '@candypoets/nipworker';
 import {
+  Check,
   ChevronRight,
   KeyRound,
   LogOut,
@@ -27,6 +28,16 @@ import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { pushDistinct } from '../navigation/pushDistinct';
 import type { RootStackParamList } from '../navigation/types';
 import { useAuthStore, useWalletStore, type AuthState } from '../stores';
+import {
+  appThemeIds,
+  appThemes,
+  defaultTheme,
+  type AppTheme,
+  type AppThemeId,
+  type AppThemeColors,
+  useAppTheme,
+} from '../theme';
+import { useUIStore } from '../stores/uiStore';
 
 type ProfileModalTarget =
   | { type: 'login' }
@@ -69,6 +80,10 @@ function decodePrivateKey(input: string) {
 }
 
 export function ProfileModal({ auth, onClose }: ProfileModalProps) {
+  const styles = useProfileModalStyles();
+  const theme = useAppTheme();
+  const iconColor = theme.colors.primaryContent;
+  const mutedIconColor = theme.colors.primaryContent;
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const navigate = useCallback(
@@ -97,7 +112,7 @@ export function ProfileModal({ auth, onClose }: ProfileModalProps) {
         <View style={styles.modalHeader}>
           <Text style={styles.stackTitle}>Profile</Text>
           <Pressable hitSlop={12} onPress={onClose}>
-            <X size={22} color="#52616f" strokeWidth={2.2} />
+            <X size={22} color={mutedIconColor} strokeWidth={2.2} />
           </Pressable>
         </View>
         <ScrollView showsVerticalScrollIndicator={false}>
@@ -105,27 +120,27 @@ export function ProfileModal({ auth, onClose }: ProfileModalProps) {
             {auth.pubkey ? (
               <HeaderProfileButton
                 pubkey={auth.pubkey}
-                className="h-14 w-14 border-emerald-600 bg-white"
+                className="h-14 w-14 border-primary bg-base-300"
               />
             ) : null}
             <Pressable
               style={styles.addAccountButton}
               onPress={() => navigate({ type: 'login' })}
             >
-              <Plus size={22} color="#17212b" strokeWidth={2.4} />
+              <Plus size={22} color={iconColor} strokeWidth={2.4} />
             </Pressable>
           </View>
 
           <View style={styles.menuGroup}>
             {auth.pubkey ? (
               <ProfileMenuRow
-                icon={<LogOut size={21} color="#17212b" strokeWidth={2.1} />}
+                icon={<LogOut size={21} color={iconColor} strokeWidth={2.1} />}
                 label="Log out"
                 onPress={() => navigate({ type: 'logout' })}
               />
             ) : (
               <ProfileMenuRow
-                icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
+                icon={<KeyRound size={21} color={iconColor} strokeWidth={2.1} />}
                 label="Sign in"
                 onPress={() => navigate({ type: 'login' })}
               />
@@ -143,31 +158,31 @@ export function ProfileModal({ auth, onClose }: ProfileModalProps) {
           <Text style={styles.sectionTitle}>Profile</Text>
           <View style={styles.menuGroup}>
             <ProfileMenuRow
-              icon={<User size={21} color="#17212b" strokeWidth={2.1} />}
+              icon={<User size={21} color={iconColor} strokeWidth={2.1} />}
               label="My Profile"
               onPress={() =>
                 navigate({ type: 'profileStub', path: 'nprofile' })
               }
             />
             <ProfileMenuRow
-              icon={<KeyRound size={21} color="#17212b" strokeWidth={2.1} />}
+              icon={<KeyRound size={21} color={iconColor} strokeWidth={2.1} />}
               label="Keys"
               onPress={() => navigate({ type: 'login' })}
             />
             <ProfileMenuRow
-              icon={<Radio size={21} color="#17212b" strokeWidth={2.1} />}
+              icon={<Radio size={21} color={iconColor} strokeWidth={2.1} />}
               label="Relays"
               detail="Your relay preferences"
               onPress={() => navigate({ type: 'profileStub', path: 'relays' })}
             />
             <ProfileMenuRow
-              icon={<Wallet size={21} color="#17212b" strokeWidth={2.1} />}
+              icon={<Wallet size={21} color={iconColor} strokeWidth={2.1} />}
               label="Wallet"
               detail="Wallet preferences"
               onPress={() => navigate({ type: 'profileStub', path: 'wallet' })}
             />
             <ProfileMenuRow
-              icon={<Palette size={21} color="#17212b" strokeWidth={2.1} />}
+              icon={<Palette size={21} color={iconColor} strokeWidth={2.1} />}
               label="Theme"
               detail="Appearance settings"
               onPress={() => navigate({ type: 'profileStub', path: 'theme' })}
@@ -193,6 +208,9 @@ function ProfileMenuRow({
   onPress: () => void;
   last?: boolean;
 }) {
+  const styles = useProfileModalStyles();
+  const theme = useAppTheme();
+  const mutedIconColor = theme.colors.primaryContent;
   return (
     <Pressable
       style={[styles.menuRow, last ? styles.menuRowLast : null]}
@@ -203,7 +221,7 @@ function ProfileMenuRow({
         <Text style={styles.menuLabel}>{label}</Text>
         {detail ? <Text style={styles.meta}>{detail}</Text> : null}
       </View>
-      <ChevronRight size={21} color="#8794a0" strokeWidth={2.1} />
+      <ChevronRight size={21} color={mutedIconColor} strokeWidth={2.1} />
     </Pressable>
   );
 }
@@ -219,6 +237,9 @@ export function PrivateKeyLogin({
   onDone: () => void;
   onSignup?: () => void;
 }) {
+  const styles = useProfileModalStyles();
+  const theme = useAppTheme();
+  const mutedIconColor = theme.colors.primaryContent;
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const setAuth = useAuthStore(state => state.setAuth);
@@ -253,7 +274,7 @@ export function PrivateKeyLogin({
         <View style={styles.modalHeader}>
           <Text style={styles.stackTitle}>Authenticate</Text>
           <Pressable hitSlop={12} onPress={onDone}>
-            <X size={22} color="#52616f" strokeWidth={2.2} />
+            <X size={22} color={mutedIconColor} strokeWidth={2.2} />
           </Pressable>
         </View>
         <View style={styles.loginContent}>
@@ -267,7 +288,7 @@ export function PrivateKeyLogin({
               autoCapitalize="none"
               autoCorrect={false}
               placeholder="nsec1... or hex private key"
-              placeholderTextColor="#8794a0"
+              placeholderTextColor={theme.colors.primaryContent}
               secureTextEntry
               style={styles.input}
               value={privateKey}
@@ -315,6 +336,9 @@ export function LogoutModal({
   manager: NostrManagerLike | null;
   onDone: () => void;
 }) {
+  const styles = useProfileModalStyles();
+  const theme = useAppTheme();
+  const mutedIconColor = theme.colors.primaryContent;
   const clearAuth = useAuthStore(state => state.clearAuth);
   const setWalletMnemonic = useWalletStore(state => state.setWalletMnemonic);
   const setWalletPassphrase = useWalletStore(
@@ -337,7 +361,7 @@ export function LogoutModal({
         <View style={styles.modalHeader}>
           <Text style={styles.stackTitle}>Log out</Text>
           <Pressable hitSlop={12} onPress={onDone}>
-            <X size={22} color="#52616f" strokeWidth={2.2} />
+            <X size={22} color={mutedIconColor} strokeWidth={2.2} />
           </Pressable>
         </View>
         <View style={styles.warningBox}>
@@ -362,12 +386,26 @@ export function ProfileStubModal({
   auth: Pick<AuthState, 'pubkey' | 'hasSigner'>;
   onClose: () => void;
 }) {
+  const styles = useProfileModalStyles();
+  const theme = useAppTheme();
+  const mutedIconColor = theme.colors.primaryContent;
+  const selectedThemeId = useUIStore(state => state.themeId);
+  const setThemeId = useUIStore(state => state.setThemeId);
+  const activeThemeId = selectedThemeId && selectedThemeId in appThemes
+    ? (selectedThemeId as AppThemeId)
+    : defaultTheme.id;
   const titles = {
     relays: 'Relays',
     wallet: 'Wallet',
     theme: 'Theme',
     nprofile: 'My Profile',
   };
+  const selectTheme = useCallback(
+    (themeId: AppThemeId) => {
+      setThemeId(themeId);
+    },
+    [setThemeId],
+  );
 
   return (
     <View style={styles.modalBody}>
@@ -376,33 +414,127 @@ export function ProfileStubModal({
         <View style={styles.modalHeader}>
           <Text style={styles.stackTitle}>{titles[path]}</Text>
           <Pressable hitSlop={12} onPress={onClose}>
-            <X size={22} color="#52616f" strokeWidth={2.2} />
+            <X size={22} color={mutedIconColor} strokeWidth={2.2} />
           </Pressable>
         </View>
-        <Text style={styles.stackBody}>
-          {auth.pubkey
-            ? `${titles[path]} settings for ${auth.pubkey.slice(0, 16)}...`
-            : 'Sign in to manage this section.'}
-        </Text>
+        {path === 'theme' ? (
+          <ThemeSettings
+            activeThemeId={activeThemeId}
+            onSelectTheme={selectTheme}
+          />
+        ) : (
+          <Text style={styles.stackBody}>
+            {auth.pubkey
+              ? `${titles[path]} settings for ${auth.pubkey.slice(0, 16)}...`
+              : 'Sign in to manage this section.'}
+          </Text>
+        )}
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function ThemeSettings({
+  activeThemeId,
+  onSelectTheme,
+}: {
+  activeThemeId: AppThemeId;
+  onSelectTheme: (themeId: AppThemeId) => void;
+}) {
+  const styles = useProfileModalStyles();
+  return (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <Text style={styles.stackBody}>Choose your preferred theme.</Text>
+      <View style={styles.themeList}>
+        {appThemeIds.map(themeId => {
+          const theme = appThemes[themeId];
+          return (
+            <ThemeRow
+              key={theme.id}
+              active={theme.id === activeThemeId}
+              theme={theme}
+              onPress={() => onSelectTheme(theme.id)}
+            />
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+function ThemeRow({
+  active,
+  theme,
+  onPress,
+}: {
+  active: boolean;
+  theme: AppTheme;
+  onPress: () => void;
+}) {
+  const styles = useProfileModalStyles();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={[styles.themeRow, active && styles.themeRowActive]}
+      onPress={onPress}
+    >
+      <View style={styles.themeSwatches}>
+        <View
+          style={[
+            styles.themeSwatch,
+            { backgroundColor: theme.colors.primary },
+          ]}
+        />
+        <View
+          style={[
+            styles.themeSwatch,
+            { backgroundColor: theme.colors.base100 },
+          ]}
+        />
+        <View
+          style={[
+            styles.themeSwatch,
+            { backgroundColor: theme.colors.accent },
+          ]}
+        />
+      </View>
+      <View style={styles.themeText}>
+        <Text style={styles.menuLabel}>{theme.name}</Text>
+        <Text style={styles.meta}>{theme.id}</Text>
+      </View>
+      {active ? (
+        <View style={styles.themeCheck}>
+          <Check size={17} color="#ffffff" strokeWidth={2.5} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function useProfileModalStyles() {
+  const theme = useAppTheme();
+  return useMemo(() => createProfileModalStyles(theme.colors), [theme]);
+}
+
+const styles = createProfileModalStyles(defaultTheme.colors);
+
+function createProfileModalStyles(colors: AppThemeColors) {
+  const contentColor = readableContentColor(colors.base100);
+  return StyleSheet.create({
   modalBody: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   profileSheet: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.base100,
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 28,
   },
   modalSheet: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.base300,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 18,
@@ -410,7 +542,7 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
   fullModalSheet: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.base300,
     flex: 1,
     paddingHorizontal: 18,
     paddingTop: 10,
@@ -418,7 +550,7 @@ const styles = StyleSheet.create({
   },
   modalHandle: {
     alignSelf: 'center',
-    backgroundColor: '#cbd5e1',
+    backgroundColor: colors.primaryContent,
     borderRadius: 2,
     height: 4,
     marginBottom: 14,
@@ -431,12 +563,12 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   stackTitle: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 22,
     fontWeight: '800',
   },
   stackBody: {
-    color: '#52616f',
+    color: colors.primaryContent,
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 16,
@@ -455,8 +587,8 @@ const styles = StyleSheet.create({
   },
   addAccountButton: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: '#dce3e8',
+    backgroundColor: colors.base300,
+    borderColor: colors.base200,
     borderRadius: 28,
     borderWidth: StyleSheet.hairlineWidth,
     height: 56,
@@ -464,7 +596,7 @@ const styles = StyleSheet.create({
     width: 56,
   },
   sectionTitle: {
-    color: '#8794a0',
+    color: colors.primaryContent,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0,
@@ -473,8 +605,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   menuGroup: {
-    backgroundColor: '#ffffff',
-    borderColor: '#dce3e8',
+    backgroundColor: colors.base300,
+    borderColor: colors.base200,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: 16,
@@ -482,7 +614,7 @@ const styles = StyleSheet.create({
   },
   menuRow: {
     alignItems: 'center',
-    borderBottomColor: '#edf2f7',
+    borderBottomColor: colors.base200,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     minHeight: 58,
@@ -502,21 +634,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuLabel: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 16,
     fontWeight: '700',
   },
   meta: {
-    color: '#8794a0',
+    color: colors.primaryContent,
     fontSize: 13,
     marginTop: 2,
   },
   input: {
-    backgroundColor: '#f8fafc',
-    borderColor: '#dce3e8',
+    backgroundColor: colors.base100,
+    borderColor: colors.base200,
     borderRadius: 10,
     borderWidth: 1,
-    color: '#17212b',
+    color: contentColor,
     fontSize: 15,
     minHeight: 48,
     paddingHorizontal: 12,
@@ -529,10 +661,10 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   loginAction: {
-    backgroundColor: '#17212b',
+    backgroundColor: colors.primary,
   },
   disabledAction: {
-    backgroundColor: '#cbd5e1',
+    backgroundColor: colors.base200,
   },
   actionText: {
     color: '#ffffff',
@@ -546,30 +678,83 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   secondaryActionText: {
-    color: '#52616f',
+    color: colors.primaryContent,
     fontSize: 15,
     fontWeight: '700',
   },
   errorText: {
-    color: '#b42318',
+    color: colors.error,
     fontSize: 13,
     marginTop: 8,
   },
   successText: {
-    color: '#1f7a5a',
+    color: colors.primary,
     fontSize: 13,
     marginTop: 8,
   },
   warningBox: {
-    backgroundColor: '#fff7ed',
-    borderColor: '#fed7aa',
+    backgroundColor: colors.base300,
+    borderColor: colors.warning,
     borderRadius: 10,
     borderWidth: 1,
     padding: 12,
   },
   warningText: {
-    color: '#9a3412',
+    color: colors.warning,
     fontSize: 14,
     lineHeight: 20,
   },
-});
+  themeList: {
+    gap: 10,
+    paddingBottom: 16,
+  },
+  themeRow: {
+    alignItems: 'center',
+    backgroundColor: colors.base100,
+    borderColor: colors.base200,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 64,
+    paddingHorizontal: 12,
+  },
+  themeRowActive: {
+    borderColor: colors.primary,
+  },
+  themeSwatches: {
+    flexDirection: 'row',
+    marginRight: 12,
+  },
+  themeSwatch: {
+    borderColor: colors.base200,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 28,
+    marginLeft: -6,
+    width: 28,
+  },
+  themeText: {
+    flex: 1,
+  },
+  themeCheck: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  });
+}
+
+function readableContentColor(hex: string) {
+  const normalized = hex.replace('#', '').slice(0, 6);
+  const value = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(value)) return '#ffffff';
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return (red * 299 + green * 587 + blue * 114) / 1000 < 140
+    ? '#ffffff'
+    : '#1a1a1a';
+}

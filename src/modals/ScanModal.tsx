@@ -15,6 +15,7 @@ import QRCode from 'react-native-qrcode-svg';
 import {shortPubkey} from '../components/notes/time';
 import type {RootStackParamList} from '../navigation/types';
 import {useAuthStore} from '../stores';
+import {type AppTheme, useAppTheme} from '../theme';
 
 type ScanModalProps = {
   initialMode?: 'share' | 'scan';
@@ -74,6 +75,9 @@ function parseScanValue(rawValue: string): ScanResult {
 }
 
 export function ScanModal({initialMode}: ScanModalProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createScanStyles(theme), [theme]);
+  const contentColor = theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const pubkey = useAuthStore(state => state.pubkey);
@@ -163,7 +167,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
         ) : showScanner ? (
           <View style={styles.permissionBody}>
             <View style={styles.permissionIcon}>
-              <Camera size={30} color="#1f7a5a" strokeWidth={2.2} />
+              <Camera size={30} color={theme.colors.primary} strokeWidth={2.2} />
             </View>
             <Text style={styles.permissionTitle}>Scan QR codes</Text>
             <Text style={styles.permissionText}>{statusText}</Text>
@@ -185,7 +189,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
                 <QRCode value={shareValue} size={255} />
               ) : (
                 <View style={styles.emptyQr}>
-                  <QrCode size={52} color="#94a3b8" strokeWidth={1.8} />
+                  <QrCode size={52} color={theme.colors.primaryContent} strokeWidth={1.8} />
                 </View>
               )}
             </Pressable>
@@ -215,7 +219,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
         >
           <QrCode
             size={18}
-            color={mode === 'share' ? '#17212b' : '#ffffff'}
+            color={mode === 'share' ? contentColor : '#ffffff'}
             strokeWidth={2.3}
           />
           <Text
@@ -236,7 +240,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
         >
           <ScanLine
             size={18}
-            color={mode === 'scan' ? '#17212b' : '#ffffff'}
+            color={mode === 'scan' ? contentColor : '#ffffff'}
             strokeWidth={2.3}
           />
           <Text
@@ -276,7 +280,9 @@ export function ScanModal({initialMode}: ScanModalProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createScanStyles(theme: AppTheme) {
+  const contentColor = theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
+  return StyleSheet.create({
   root: {
     backgroundColor: '#020617',
     flex: 1,
@@ -322,7 +328,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   modeButtonActive: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
   },
   modeText: {
     color: '#ffffff',
@@ -330,12 +336,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   modeTextActive: {
-    color: '#17212b',
+    color: contentColor,
   },
   shareBody: {
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     borderRadius: 24,
     paddingHorizontal: 20,
     paddingVertical: 22,
@@ -345,8 +351,8 @@ const styles = StyleSheet.create({
   },
   shareQrWrap: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: '#e2e8f0',
+    backgroundColor: theme.colors.base300,
+    borderColor: theme.colors.base200,
     borderRadius: 18,
     borderWidth: 1,
     height: 275,
@@ -355,20 +361,20 @@ const styles = StyleSheet.create({
   },
   emptyQr: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.colors.base100,
     borderRadius: 14,
     height: 255,
     justifyContent: 'center',
     width: 255,
   },
   shareTitle: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 20,
     fontWeight: '800',
     marginTop: 16,
   },
   shareText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontSize: 13,
     lineHeight: 18,
     marginTop: 7,
@@ -376,7 +382,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   bottomPanel: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     bottom: 0,
@@ -388,12 +394,12 @@ const styles = StyleSheet.create({
     right: 0,
   },
   panelTitle: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 18,
     fontWeight: '800',
   },
   panelText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 6,
@@ -401,7 +407,7 @@ const styles = StyleSheet.create({
   permissionBody: {
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: 'rgba(248, 250, 252, 0.94)',
+    backgroundColor: theme.colors.base300,
     borderColor: 'rgba(255, 255, 255, 0.72)',
     borderRadius: 22,
     borderWidth: 1,
@@ -414,7 +420,7 @@ const styles = StyleSheet.create({
   },
   permissionIcon: {
     alignItems: 'center',
-    backgroundColor: '#ecfdf5',
+    backgroundColor: theme.colors.base200,
     borderRadius: 32,
     height: 58,
     justifyContent: 'center',
@@ -422,12 +428,12 @@ const styles = StyleSheet.create({
     width: 58,
   },
   permissionTitle: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 20,
     fontWeight: '800',
   },
   permissionText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 8,
@@ -435,7 +441,7 @@ const styles = StyleSheet.create({
   },
   permissionButton: {
     alignItems: 'center',
-    backgroundColor: '#1f7a5a',
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
     justifyContent: 'center',
     marginTop: 16,
@@ -448,7 +454,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   resultPanel: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.base300,
     borderRadius: 16,
     left: 18,
     padding: 16,
@@ -457,19 +463,19 @@ const styles = StyleSheet.create({
     top: '42%',
   },
   resultTitle: {
-    color: '#17212b',
+    color: contentColor,
     fontSize: 18,
     fontWeight: '800',
   },
   resultText: {
-    color: '#52616f',
+    color: theme.colors.primaryContent,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 6,
   },
   scanAgainButton: {
     alignItems: 'center',
-    backgroundColor: '#17212b',
+    backgroundColor: theme.colors.primary,
     borderRadius: 10,
     justifyContent: 'center',
     marginTop: 14,
@@ -480,4 +486,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
-});
+  });
+}

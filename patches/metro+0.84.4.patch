@@ -1,0 +1,23 @@
+diff --git a/node_modules/metro/src/DeltaBundler/Serializers/helpers/getSourceMapInfo.js b/node_modules/metro/src/DeltaBundler/Serializers/helpers/getSourceMapInfo.js
+index 3efa960..40d86df 100644
+--- a/node_modules/metro/src/DeltaBundler/Serializers/helpers/getSourceMapInfo.js
++++ b/node_modules/metro/src/DeltaBundler/Serializers/helpers/getSourceMapInfo.js
+@@ -6,8 +6,17 @@ Object.defineProperty(exports, "__esModule", {
+ exports.default = getSourceMapInfo;
+ var _js = require("./js");
+ function getSourceMapInfo(module, options) {
++  const data = (0, _js.getJsOutput)(module).data;
++  const { functionMap, map, ...rest } = data;
++  const isPackedFunctionMap =
++    map != null &&
++    !Array.isArray(map) &&
++    typeof map === "object" &&
++    Object.prototype.hasOwnProperty.call(map, "__packed");
+   return {
+-    ...(0, _js.getJsOutput)(module).data,
++    ...rest,
++    functionMap: functionMap ?? (isPackedFunctionMap ? map : null),
++    map: isPackedFunctionMap ? [] : map,
+     isIgnored: options.shouldAddToIgnoreList(module),
+     path: options?.getSourceUrl?.(module) ?? module.path,
+     source: options.excludeSource ? "" : getModuleSource(module),

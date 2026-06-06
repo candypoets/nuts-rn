@@ -5,7 +5,7 @@ export type RootStackParamList = {
   Logout: undefined;
   CmdK: undefined;
   FeedBuilder: undefined;
-  Post: { reply?: string } | undefined;
+  Post: { reply?: string; quote?: string } | undefined;
   Receive: undefined;
   Minting: undefined;
   Send: undefined;
@@ -17,6 +17,8 @@ export type RootStackParamList = {
   RelayInfos: { subId?: string; relays: string[]; statuses?: Record<string, string> };
   PublicProfile: { pubkey: string };
   Kind1Thread: { nevent: string };
+  Kind30023Thread: { naddr: string };
+  Kind1111Comments: { nevent: string };
   Tags: { tags: string[] };
   ChatThread: { peerPubkey: string };
   Notifications: undefined;

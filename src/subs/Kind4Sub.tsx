@@ -36,6 +36,7 @@ import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {useAuthStore, useNostrStore} from '../stores';
+import {useAppTheme} from '../theme';
 
 type Kind4ThreadProps = {
   peerPubkey: string;
@@ -98,6 +99,7 @@ function formatRelativeTime(timestamp: number) {
 }
 
 export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
+  const theme = useAppTheme();
   const rawEventsRef = useRef<ParsedEvent[]>([]);
   const sendingMapRef = useRef(new Map<string, number>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -113,7 +115,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const [eventsVersion, setEventsVersion] = useState(0);
   const keyboardAnimation = useReanimatedKeyboardAnimation();
   const insets = useSafeAreaInsets();
-  const iconColor = '#17212b';
+  const iconColor = theme.colors.primaryContent;
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
@@ -307,18 +309,18 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
     () => (
       <View className="flex-row items-center justify-between px-4 py-3">
         <Pressable
-          className="h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
+          className="h-10 w-10 items-center justify-center rounded-full border border-base-200 bg-base-300"
           hitSlop={12}
           onPress={onClose}
         >
           <ChevronLeft size={24} color={iconColor} strokeWidth={2.2} />
         </Pressable>
-        <View className="max-w-[70%] flex-row items-center gap-2 rounded-full border border-slate-200 bg-white pr-3">
+        <View className="max-w-[70%] flex-row items-center gap-2 rounded-full border border-base-200 bg-base-300 pr-3">
           <Avatar pubkey={peerPubkey} size="lg" link />
           <User
             pubkey={peerPubkey}
             link
-            className="shrink text-base font-semibold text-slate-900"
+            className="shrink text-base font-semibold text-base-content"
           />
         </View>
         <View className="h-10 w-10" />
@@ -332,16 +334,16 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
       <View className="px-4 pb-4 pt-3">
         <View className="flex-row items-end gap-2">
           <TextInput
-            className="max-h-28 flex-1 rounded-full border border-slate-200 bg-white px-4 py-3 text-base text-slate-900"
+            className="max-h-28 flex-1 rounded-full border border-base-200 bg-base-300 px-4 py-3 text-base text-base-content"
             multiline
             placeholder="Aa"
-            placeholderTextColor="#8794a0"
+            placeholderTextColor={theme.colors.primaryContent}
             value={message}
             onChangeText={setMessage}
           />
           <Pressable
             className={`h-11 w-11 items-center justify-center rounded-full ${
-              message.trim() ? 'bg-emerald-700' : 'bg-slate-200'
+              message.trim() ? 'bg-primary' : 'bg-base-200'
             }`}
             disabled={!message.trim()}
             onPress={handleSubmit}
@@ -364,7 +366,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   }));
 
   return (
-    <View className="flex-1 bg-slate-50">
+    <View className="flex-1 bg-base-100">
       <Feed
         items={items}
         getItemId={item => String(item.id() || '')}
@@ -390,7 +392,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         header={() => <View style={{height: THREAD_HEADER_HEIGHT + topInset}} />}
         empty={
           <View className="px-6 py-20">
-            <Text className="text-center text-base font-semibold text-slate-500">
+            <Text className="text-center text-base font-semibold text-primary-content">
               No messages yet
             </Text>
           </View>
@@ -435,8 +437,8 @@ function MessageBubble({
     <View>
       {date ? (
         <View className="my-2 items-center">
-          <View className="rounded-full bg-white px-3 py-1">
-            <Text className="text-xs text-slate-500">
+          <View className="rounded-full bg-base-300 px-3 py-1">
+            <Text className="text-xs text-primary-content">
               {formatRelativeTime(message.createdAt())}
             </Text>
           </View>
@@ -449,7 +451,7 @@ function MessageBubble({
       >
         <View
           className={`relative max-w-[80%] px-4 py-2 ${
-            incoming ? 'bg-white' : 'bg-sky-600'
+            incoming ? 'bg-base-300' : 'bg-sky-600'
           } ${
             isFirst && isLast
               ? 'rounded-2xl'
@@ -460,7 +462,7 @@ function MessageBubble({
         >
           <ContentBlocks content={content} showQuote={false} />
           {!incoming && sendingState ? (
-            <Text className="absolute -left-9 bottom-1 text-xs text-slate-500">
+            <Text className="absolute -left-9 bottom-1 text-xs text-primary-content">
               {sendingState === 'failed' ? 'x' : '...'}
             </Text>
           ) : null}

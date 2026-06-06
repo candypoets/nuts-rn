@@ -41,6 +41,7 @@ import {
   type LocalUploadAsset,
 } from '../nostr/upload';
 import { AppButton } from '../components/AppButton';
+import {useAppTheme} from '../theme';
 import {
   buildFollowListRequests,
   includePack,
@@ -108,6 +109,7 @@ function publishWithStatus(
 }
 
 export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) {
+  const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const setAuth = useAuthStore(state => state.setAuth);
   const setProfile = useNostrStore(state => state.setProfile);
@@ -383,7 +385,7 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        contentStyle: {backgroundColor: '#f8fafc'},
+        contentStyle: {backgroundColor: theme.colors.base100},
       }}
     >
       <SignupStack.Screen name="SignupProfile">
@@ -456,6 +458,7 @@ function SignupProfileStep({
   onNameChange: (value: string) => void;
   onPickAvatar: () => void;
 }) {
+  const theme = useAppTheme();
   const focused = useIsFocused();
 
   useEffect(() => {
@@ -463,39 +466,39 @@ function SignupProfileStep({
   }, [focused, onFocus]);
 
   return (
-    <View className="h-full bg-slate-50">
+    <View className="h-full bg-base-100">
       <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
         <View className="h-full px-4 pt-4">
           <SignupHeader title="Create account" onBack={onBack} />
           <View className="mt-6 items-center">
             <Pressable
-              className="h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm"
+              className="h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-base-300 shadow-sm"
               onPress={onPickAvatar}
             >
               {avatar ? (
                 <Image source={{uri: avatar.previewUri}} className="h-full w-full" resizeMode="cover" />
               ) : (
-                <Camera size={30} color="#52616f" strokeWidth={2.1} />
+                <Camera size={30} color={theme.colors.primaryContent} strokeWidth={2.1} />
               )}
             </Pressable>
           </View>
           <View className="w-full" style={styles.profileForm}>
-            <Text className="mb-2 mt-8 text-sm font-semibold text-slate-700">Name</Text>
+            <Text className="mb-2 mt-8 text-sm font-semibold text-primary-content">Name</Text>
             <TextInput
-              className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
+              className="rounded-lg border border-base-200 bg-base-300 px-3 py-3 text-base text-base-content"
               placeholder="Your name"
-              placeholderTextColor="#8794a0"
+              placeholderTextColor={theme.colors.primaryContent}
               returnKeyType="done"
               value={name}
               onChangeText={onNameChange}
               onSubmitEditing={Keyboard.dismiss}
             />
-            <Text className="mb-2 mt-4 text-sm font-semibold text-slate-700">Bio</Text>
+            <Text className="mb-2 mt-4 text-sm font-semibold text-primary-content">Bio</Text>
             <TextInput
-              className="min-h-28 rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
+              className="min-h-28 rounded-lg border border-base-200 bg-base-300 px-3 py-3 text-base text-base-content"
               multiline
               placeholder="A short bio"
-              placeholderTextColor="#8794a0"
+              placeholderTextColor={theme.colors.primaryContent}
               blurOnSubmit
               textAlignVertical="top"
               returnKeyType="done"
@@ -503,7 +506,7 @@ function SignupProfileStep({
               onChangeText={onBioChange}
               onSubmitEditing={Keyboard.dismiss}
             />
-            {status ? <Text className="mt-3 text-sm text-slate-500">{status}</Text> : null}
+            {status ? <Text className="mt-3 text-sm text-primary-content">{status}</Text> : null}
           </View>
           <View
             className="mt-auto w-full"
@@ -551,14 +554,14 @@ function SignupPacksStep({
   }, [focused, onFocus]);
 
   return (
-    <View className="h-full bg-slate-50">
+    <View className="h-full bg-base-100">
       <View className="px-4 pt-4">
         <SignupHeader title="Choose what to see" onBack={onBack} />
-        <Text className="mt-2 text-sm leading-5 text-slate-600">
+        <Text className="mt-2 text-sm leading-5 text-primary-content">
           Select follow packs. We will create your follow list from the people inside them.
         </Text>
         <SearchBox value={search} onChangeText={onSearchChange} />
-        <Text className="mb-2 text-xs font-semibold text-slate-500">
+        <Text className="mb-2 text-xs font-semibold text-primary-content">
           {selectedPacksCount} selected
         </Text>
       </View>
@@ -577,13 +580,13 @@ function SignupPacksStep({
         )}
         ItemSeparatorComponent={() => <View className="h-3" />}
         ListEmptyComponent={
-          <Text className="px-4 py-10 text-center text-sm text-slate-500">
+          <Text className="px-4 py-10 text-center text-sm text-primary-content">
             Waiting for follow packs.
           </Text>
         }
       />
       <View
-        className="border-t border-slate-200 bg-white px-4 pt-4"
+        className="border-t border-base-200 bg-base-300 px-4 pt-4"
         style={{paddingBottom: footerPaddingBottom}}
       >
         <AppButton title="Finish" onPress={onFinish} />
@@ -593,12 +596,13 @@ function SignupPacksStep({
 }
 
 function SignupHeader({title, onBack}: {title: string; onBack: () => void}) {
+  const theme = useAppTheme();
   return (
     <View className="h-12 flex-row items-center justify-between">
-      <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-white" hitSlop={12} onPress={onBack}>
-        <ChevronLeft size={22} color="#17212b" strokeWidth={2.2} />
+      <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-base-300" hitSlop={12} onPress={onBack}>
+        <ChevronLeft size={22} color={theme.colors.primaryContent} strokeWidth={2.2} />
       </Pressable>
-      <Text className="text-lg font-bold text-slate-900">{title}</Text>
+      <Text className="text-lg font-bold text-base-content">{title}</Text>
       <View className="h-10 w-10" />
     </View>
   );
@@ -611,21 +615,22 @@ function SearchBox({
   onChangeText: (value: string) => void;
   value: string;
 }) {
+  const theme = useAppTheme();
   return (
-    <View className="mb-3 mt-4 h-11 flex-row items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
-      <Search size={17} color="#8794a0" strokeWidth={2.1} />
+    <View className="mb-3 mt-4 h-11 flex-row items-center gap-2 rounded-lg border border-base-200 bg-base-300 px-3">
+      <Search size={17} color={theme.colors.primaryContent} strokeWidth={2.1} />
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
-        className="flex-1 text-base text-slate-900"
+        className="flex-1 text-base text-base-content"
         placeholder="Search follow packs..."
-        placeholderTextColor="#8794a0"
+        placeholderTextColor={theme.colors.primaryContent}
         value={value}
         onChangeText={onChangeText}
       />
       {value ? (
         <Pressable hitSlop={10} onPress={() => onChangeText('')}>
-          <X size={17} color="#52616f" strokeWidth={2.2} />
+          <X size={17} color={theme.colors.primaryContent} strokeWidth={2.2} />
         </Pressable>
       ) : null}
     </View>
@@ -648,6 +653,7 @@ const SignupPackItem = memo(function SignupPackItem({
   selected: boolean;
   onToggle: (selection: FeedPackSelection) => void;
 }) {
+  const theme = useAppTheme();
   const selection = useMemo(() => packSelectionFromEvent(item), [item]);
   const handlePress = useCallback(() => {
     if (selection) onToggle(selection);
@@ -656,31 +662,31 @@ const SignupPackItem = memo(function SignupPackItem({
   const hasImage = selection.image && !selection.image.startsWith('data:');
 
   return (
-    <Pressable className="overflow-hidden rounded-lg border border-slate-200 bg-white" onPress={handlePress}>
-      <View className="h-28 bg-slate-200">
+    <Pressable className="overflow-hidden rounded-lg border border-base-200 bg-base-300" onPress={handlePress}>
+      <View className="h-28 bg-base-200">
         {hasImage ? (
           <Image className="h-full w-full" resizeMode="cover" source={{uri: selection.image ?? undefined}} />
         ) : (
-          <View className="h-full w-full items-center justify-center bg-slate-200">
-            <UserPlus size={34} color="#8794a0" strokeWidth={1.8} />
+          <View className="h-full w-full items-center justify-center bg-base-200">
+            <UserPlus size={34} color={theme.colors.primaryContent} strokeWidth={1.8} />
           </View>
         )}
         {selected ? (
-          <View className="absolute right-3 top-3 h-8 w-8 items-center justify-center rounded-full bg-emerald-700">
+          <View className="absolute right-3 top-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
             <Check size={18} color="#ffffff" strokeWidth={2.4} />
           </View>
         ) : null}
       </View>
       <View className="px-3 py-3">
-        <Text className="text-base font-bold text-slate-900" numberOfLines={1}>
+        <Text className="text-base font-bold text-base-content" numberOfLines={1}>
           {selection.title}
         </Text>
         {selection.description ? (
-          <Text className="mt-1 text-sm leading-5 text-slate-600" numberOfLines={2}>
+          <Text className="mt-1 text-sm leading-5 text-primary-content" numberOfLines={2}>
             {selection.description}
           </Text>
         ) : null}
-        <Text className="mt-2 text-xs font-semibold text-slate-500">
+        <Text className="mt-2 text-xs font-semibold text-primary-content">
           {selection.people.length} people
         </Text>
       </View>

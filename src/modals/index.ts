@@ -1,5 +1,6 @@
 export { CmdKModal } from './CmdKModal';
 export { FeedBuilderModal } from './FeedBuilderModal';
+export { Kind1111CommentsModal } from './Kind1111CommentsModal';
 export { PostModal } from './PostModal';
 export { SignupModal } from './SignupModal';
 export {

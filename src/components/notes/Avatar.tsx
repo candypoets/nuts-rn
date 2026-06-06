@@ -7,7 +7,7 @@ import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type {RootStackParamList} from '../../navigation/types';
 
-type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+type AvatarSize = 'xs' | 's' | 'sm' | 'md' | 'lg' | 'xl';
 
 type AvatarProps = {
   pubkey: string;
@@ -19,6 +19,7 @@ type AvatarProps = {
 
 const sizeClass: Record<AvatarSize, string> = {
   xs: 'h-4 w-4',
+  s: 'h-7 w-7',
   sm: 'h-8 w-8',
   md: 'h-10 w-10',
   lg: 'h-12 w-12',
@@ -61,7 +62,7 @@ function AvatarComponent({
   }, [navigation, onProfileOpen, pubkey]);
 
   const content = (
-    <View className={`${sizeClass[size]} overflow-hidden rounded-full border border-slate-200 bg-slate-200`}>
+    <View className={`${sizeClass[size]} overflow-hidden rounded-full border border-base-200 bg-base-200`}>
       <Image
         source={imageSource}
         style={styles.fill}

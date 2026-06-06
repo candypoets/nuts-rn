@@ -26,6 +26,13 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow NutsRn to show recent photos and videos in the post composer.",
+          "savePhotosPermission": "Allow NutsRn to save media to your library."
+        }
+      ],
+      [
         "expo-dev-client",
         {
           "launchMode": "most-recent",

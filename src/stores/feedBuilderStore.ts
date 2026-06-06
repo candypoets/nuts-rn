@@ -64,7 +64,7 @@ function normalizeKinds(kinds: FeedKind[]) {
 export const useFeedBuilderStore = create<FeedBuilderStore>()(
   persist(
     set => ({
-      selectedKinds: [1],
+      selectedKinds: [],
       selectedPacks: [],
       selectedAuthors: [],
       hydrated: false,

@@ -1,5 +1,6 @@
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -14,15 +15,17 @@ import {
   asConnectionStatus,
   asKind1,
   asParsedEvent,
+  parseContent,
 } from '@candypoets/nipworker/utils';
 import {ChevronLeft, CircleSlash, UserPlus, Zap} from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {Feed} from '../components/Feed';
-import {Avatar, Note} from '../components/notes';
+import {Avatar, Note, User} from '../components/notes';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
 import {ALL_FEED_KINDS, useRelayStore} from '../stores';
 import {useKind0ProfileData} from '../hooks/useKind0ProfileData';
+import {useAppTheme} from '../theme';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 const TOP_SAFE_AREA_OFFSET = 8;
@@ -31,6 +34,7 @@ type Kind0HeaderMode = 'profile' | 'feed';
 
 type Kind0ProfileHeaderProps = {
   about: string;
+  aboutContent: ParsedAboutBlock[];
   activeRelays: string[];
   banner: string | null;
   lnaddress: string;
@@ -59,6 +63,87 @@ type Kind0ImageProps = {
 type Kind0RelayBlockProps = {
   relays: string[];
 };
+
+type ParsedAboutBlock = {
+  type: string | Uint8Array | null;
+  text: string | Uint8Array | null;
+  data?: {
+    id?: string | Uint8Array | null;
+    author?: string | Uint8Array | null;
+  } | null;
+};
+
+function blockString(value: string | Uint8Array | null | undefined) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return new TextDecoder().decode(value);
+}
+
+function Kind0ProfileAbout({content}: {content: ParsedAboutBlock[]}) {
+  if (!content.length) return null;
+
+  return (
+    <Text className="text-[15px] leading-5 text-primary-content">
+      {content.map((block, index) => {
+        const type = blockString(block.type);
+        const text = blockString(block.text);
+        const displayText =
+          index === 0
+            ? text.trimStart()
+            : index === content.length - 1
+            ? text.trimEnd()
+            : text;
+        const key = `${type || 'block'}-${index}-${text}`;
+
+        if (type === 'text') {
+          return <Text key={key}>{displayText}</Text>;
+        }
+
+        if (type === 'link') {
+          return (
+            <Text
+              key={key}
+              className="text-primary"
+              onPress={event => {
+                event.stopPropagation();
+                if (text) {
+                  Linking.openURL(text).catch(() => {});
+                }
+              }}
+            >
+              {displayText}
+            </Text>
+          );
+        }
+
+        if (type === 'hashtag') {
+          return (
+            <Text key={key} className="font-semibold text-primary">
+              {displayText}
+            </Text>
+          );
+        }
+
+        if (type === 'npub' || type === 'nprofile' || type === 'naddr') {
+          const data = block.data && 'author' in block.data ? block.data : null;
+          const pubkey = blockString(data?.author) || blockString(data?.id);
+          if (pubkey) {
+            return (
+              <User
+                key={key}
+                pubkey={pubkey}
+                link
+                className="text-[15px] font-semibold text-primary"
+              />
+            );
+          }
+        }
+
+        return displayText ? <Text key={key}>{displayText}</Text> : null;
+      })}
+    </Text>
+  );
+}
 
 const Kind0TrackedImage = memo(function Kind0TrackedImage({
   className,
@@ -90,10 +175,11 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
   onClose,
   pubkey,
 }: Kind0StickyHeaderProps) {
+  const theme = useAppTheme();
     return (
     <View className="h-16 flex-row items-center justify-between px-4">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-slate-200" hitSlop={12} onPress={onClose}>
-        <ChevronLeft size={22} color={"#17212b"} />
+      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
+        <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>
       <Avatar pubkey={pubkey} size="lg" />
       <View className="h-9 w-9" />
@@ -111,6 +197,7 @@ const Kind0RelayBlock = memo(function Kind0RelayBlock({
 
 const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   about,
+  aboutContent,
   activeRelays,
   banner,
   lnaddress,
@@ -124,15 +211,16 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   profileContactsLength,
   pubkey,
 }: Kind0ProfileHeaderProps) {
-    const iconColor = "#17212b";
+  const theme = useAppTheme();
+  const iconColor = theme.colors.primaryContent;
   const insets = useSafeAreaInsets();
   const {width: screenWidth} = useWindowDimensions();
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
 
   return (
-    <View className="overflow-hidden rounded-lg bg-slate-200">
+    <View className="overflow-hidden rounded-lg bg-base-200">
       <View
-        className="bg-slate-200"
+        className="bg-base-200"
         style={{
           height: 208 + topInset,
           width: screenWidth,
@@ -146,7 +234,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
           className="absolute left-0 right-0 top-0 h-20 flex-row items-center justify-between px-4"
           style={{paddingTop: topInset + 24}}
         >
-          <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-white/85" hitSlop={12} onPress={onClose}>
+          <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-300/85" hitSlop={12} onPress={onClose}>
             <ChevronLeft size={22} color={iconColor} />
           </Pressable>
           <View className="h-9 w-9" />
@@ -155,7 +243,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
 
       <View className="px-4 pb-4">
         <View className="-mt-16 mb-4 flex-row items-end gap-3">
-          <View className="h-32 w-32 overflow-hidden rounded-full border border-white bg-slate-200">
+          <View className="h-32 w-32 overflow-hidden rounded-full border border-white bg-base-200">
             <Kind0TrackedImage
               uri={picture}
               fallback={fallbackProfileImage}
@@ -163,30 +251,34 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
             />
           </View>
           <View className="mb-2 flex-row gap-2">
-            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-base-300/90">
               <UserPlus size={19} color={iconColor} />
             </Pressable>
-            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-base-300/90">
               <Zap size={19} color={iconColor} />
             </Pressable>
-            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-white/90">
+            <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-white bg-base-300/90">
               <CircleSlash size={19} color={iconColor} />
             </Pressable>
           </View>
         </View>
 
-        <Text className="text-xl font-bold text-slate-900">{name}</Text>
-        <Text className="mt-1 text-sm font-medium text-emerald-700">{nip05 || pubkey.slice(0, 8)}</Text>
-        {lnaddress ? <Text className="mt-1 text-sm font-medium text-emerald-700">{lnaddress}</Text> : null}
-        {about ? <Text className="mt-4 text-[15px] leading-5 text-slate-500">{about}</Text> : null}
+        <Text className="text-xl font-bold text-base-content">{name}</Text>
+        <Text className="mt-1 text-sm font-medium text-primary">{nip05 || pubkey.slice(0, 8)}</Text>
+        {lnaddress ? <Text className="mt-1 text-sm font-medium text-primary">{lnaddress}</Text> : null}
+        {about ? (
+          <View className="mt-4">
+            <Kind0ProfileAbout content={aboutContent} />
+          </View>
+        ) : null}
         <View className="mt-3 items-start">
           <Kind0RelayBlock relays={activeRelays} />
         </View>
       </View>
 
-      <View className="flex-row border-t border-slate-200 bg-white">
+      <View className="flex-row border-t border-base-200 bg-base-300">
         <Pressable className="flex-1 items-center py-3" onPress={onProfilePress}>
-          <Text className={`text-sm font-semibold ${mode === 'profile' ? 'text-slate-900' : 'text-slate-500'}`}>Posts</Text>
+          <Text className={`text-sm font-semibold ${mode === 'profile' ? 'text-base-content' : 'text-primary-content'}`}>Posts</Text>
         </Pressable>
         <Pressable
           className="flex-1 items-center py-3"
@@ -195,7 +287,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
         >
           <Text
             className={`text-sm font-semibold ${
-              mode === 'feed' ? 'text-slate-900' : profileContactsLength ? 'text-slate-500' : 'text-slate-300'
+              mode === 'feed' ? 'text-base-content' : profileContactsLength ? 'text-primary-content' : 'text-primary-content/50'
             }`}
           >
             Feed
@@ -237,6 +329,7 @@ export function Kind0Sub({
   const [feedPosts, setFeedPosts] = useState<ParsedEvent[]>([]);
   const [mode, setMode] = useState<'profile' | 'feed'>('profile');
   const [loading, setLoading] = useState(false);
+  const [aboutContent, setAboutContent] = useState<ParsedAboutBlock[]>([]);
   const [hasMoreProfile, setHasMoreProfile] = useState(true);
   const [hasMoreFeed, setHasMoreFeed] = useState(true);
   const profilePostsRef = useRef<ParsedEvent[]>([]);
@@ -413,6 +506,28 @@ export function Kind0Sub({
   const lnaddress = profile?.lud16?.()?.trim() || profile?.lud06?.()?.trim() || '';
   const items = mode === 'profile' ? profilePosts : feedPosts;
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!about) {
+      setAboutContent([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    parseContent(about)
+      .then(content => {
+        if (!cancelled) setAboutContent(content as ParsedAboutBlock[]);
+      })
+      .catch(() => {
+        if (!cancelled) setAboutContent([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [about]);
+
   const handleNearBottom = useCallback(() => {
     if (loading || !items.length) return;
     const currentRelays = activeRelays;
@@ -500,6 +615,7 @@ export function Kind0Sub({
   const header = useCallback(() => (
     <Kind0ProfileHeader
       about={about}
+      aboutContent={aboutContent}
       activeRelays={activeRelays}
       banner={banner}
       lnaddress={lnaddress}
@@ -515,6 +631,7 @@ export function Kind0Sub({
     />
   ), [
     about,
+    aboutContent,
     activeRelays,
     banner,
     handleFeedModePress,
@@ -544,7 +661,7 @@ export function Kind0Sub({
       removeClippedSubviews={false}
       empty={
         <View className="px-6 py-12">
-          <Text className="text-center text-sm text-slate-500">
+          <Text className="text-center text-sm text-primary-content">
             {mode === 'profile'
               ? 'Loading posts...'
               : profileContacts.length

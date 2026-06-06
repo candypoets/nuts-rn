@@ -18,9 +18,15 @@ import type {
   ListParsed,
   ParsedEvent,
   RequestObject,
+  WorkerMessage,
 } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
-import { asNip51, asParsedEvent, fbArray } from '@candypoets/nipworker/utils';
+import {
+  asEoce,
+  asNip51,
+  asParsedEvent,
+  fbArray,
+} from '@candypoets/nipworker/utils';
 import {
   Check,
   ChevronDown,
@@ -40,6 +46,7 @@ import {
   useFeedBuilderStore,
   useNostrStore,
 } from '../stores';
+import {useAppTheme} from '../theme';
 
 type FeedBuilderModalProps = {
   onClose: () => void;
@@ -60,6 +67,10 @@ export type PackItem = ParsedEvent | { selection: FeedPackSelection };
 type FeedBuilderListItem = PackItem | FeedKind;
 
 const followListImage = require('../../assets/followlist.png');
+
+function feedBuilderDebug(message: string, data?: Record<string, unknown>) {
+  console.log(`[feed-builder] ${message}`, data ?? {});
+}
 
 export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   const pubkey = useAuthStore(state => state.pubkey);
@@ -85,6 +96,17 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   const draftPacksRef = useRef(draftPacks);
   const draftKindsRef = useRef(draftKinds);
   const committedRef = useRef(false);
+  const unsubscribePaginationRef = useRef<(() => void) | null>(null);
+  const paginationCounterRef = useRef(0);
+  const prevPaginationSubIdRef = useRef<string | null>(null);
+  const followSetsUntilRef = useRef<number | undefined>(undefined);
+  const publicPacksUntilRef = useRef<number | undefined>(undefined);
+  const rawPageEventsRef = useRef(0);
+  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const [loadingMorePacks, setLoadingMorePacks] = useState(false);
+  const [hasMorePacks, setHasMorePacks] = useState(true);
 
   useEffect(() => {
     draftPacksRef.current = draftPacks;
@@ -115,6 +137,23 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     },
     [applySelection],
   );
+
+  const packEventCount = useCallback(
+    () => followSetsRef.current.length + publicPacksRef.current.length,
+    [],
+  );
+
+  const clearPaginationTimeout = useCallback(() => {
+    if (paginationTimeoutRef.current) {
+      clearTimeout(paginationTimeoutRef.current);
+      paginationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const completePagination = useCallback(() => {
+    clearPaginationTimeout();
+    setLoadingMorePacks(false);
+  }, [clearPaginationTimeout]);
 
   const updateList = useCallback(
     (parsedEvent: ParsedEvent, list: ListParsed) => {
@@ -149,6 +188,46 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     [],
   );
 
+  const handleFollowListMessage = useCallback(
+    (message: WorkerMessage, forPagination = false) => {
+      if (asEoce(message)) {
+        if (forPagination && rawPageEventsRef.current === 0) {
+          setHasMorePacks(false);
+        }
+        if (forPagination) completePagination();
+        return;
+      }
+
+      const parsedEvent = asParsedEvent(message);
+      if (!parsedEvent) return;
+      const list = asNip51(parsedEvent);
+      if (!list?.title()) return;
+      if (forPagination) {
+        rawPageEventsRef.current += 1;
+        const nextUntil = parsedEvent.createdAt() - 1;
+        if (parsedEvent.kind() === 30000) {
+          followSetsUntilRef.current =
+            followSetsUntilRef.current === undefined
+              ? nextUntil
+              : Math.min(followSetsUntilRef.current, nextUntil);
+        } else if (parsedEvent.kind() === 39089) {
+          publicPacksUntilRef.current =
+            publicPacksUntilRef.current === undefined
+              ? nextUntil
+              : Math.min(publicPacksUntilRef.current, nextUntil);
+        }
+        feedBuilderDebug('page event', {
+          id: parsedEvent.id(),
+          kind: parsedEvent.kind(),
+          createdAt: parsedEvent.createdAt(),
+          d: list.d(),
+        });
+      }
+      updateList(parsedEvent, list);
+    },
+    [completePagination, updateList],
+  );
+
   useEffect(() => {
     const seenFollowSets = seenFollowSetsRef.current;
     const seenPublicPacks = seenPublicPacksRef.current;
@@ -157,30 +236,39 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     publicPacksRef.current = [];
     seenFollowSets.clear();
     seenPublicPacks.clear();
+    unsubscribePaginationRef.current?.();
+    unsubscribePaginationRef.current = null;
+    paginationCounterRef.current = 0;
+    prevPaginationSubIdRef.current = null;
+    followSetsUntilRef.current = undefined;
+    publicPacksUntilRef.current = undefined;
+    rawPageEventsRef.current = 0;
+    clearPaginationTimeout();
+    setLoadingMorePacks(false);
+    setHasMorePacks(true);
     setRevision(current => current + 1);
 
     const requests = buildFollowListRequests(pubkey);
+    const subId = `followlists_${pubkey ?? 'public'}`;
     const unsubscribe = subscribeToNostr(
-      `followlists_${pubkey ?? 'public'}`,
+      subId,
       requests,
-      message => {
-        const parsedEvent = asParsedEvent(message);
-        if (!parsedEvent) return;
-        const list = asNip51(parsedEvent);
-        if (!list?.title()) return;
-        updateList(parsedEvent, list);
-      },
+      message => handleFollowListMessage(message),
       { closeOnEose: false },
     );
+    prevPaginationSubIdRef.current = subId;
 
     return () => {
       followSetsRef.current = [];
       publicPacksRef.current = [];
       seenFollowSets.clear();
       seenPublicPacks.clear();
+      unsubscribePaginationRef.current?.();
+      unsubscribePaginationRef.current = null;
+      clearPaginationTimeout();
       unsubscribe();
     };
-  }, [pubkey, updateList]);
+  }, [clearPaginationTimeout, handleFollowListMessage, pubkey]);
 
   const packItems = useMemo(
     () => {
@@ -261,6 +349,78 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     setDraftKinds(current => current.filter(kind => kind !== selection.kind));
   }, []);
 
+  const handleEndReached = useCallback(() => {
+    if (tab !== 'packs' || loadingMorePacks || !hasMorePacks) return;
+    if (packEventCount() === 0) return;
+
+    const lastFollowSet =
+      followSetsRef.current[followSetsRef.current.length - 1];
+    const lastPublicPack =
+      publicPacksRef.current[publicPacksRef.current.length - 1];
+    if (followSetsUntilRef.current === undefined) {
+      followSetsUntilRef.current = lastFollowSet?.createdAt()
+        ? lastFollowSet.createdAt() - 1
+        : undefined;
+    }
+    if (publicPacksUntilRef.current === undefined) {
+      publicPacksUntilRef.current = lastPublicPack?.createdAt()
+        ? lastPublicPack.createdAt() - 1
+        : undefined;
+    }
+
+    const requests = buildFollowListRequests(pubkey, {
+      followSetsUntil: followSetsUntilRef.current,
+      publicPacksUntil: publicPacksUntilRef.current,
+    });
+    if (requests.length === 0) {
+      setHasMorePacks(false);
+      return;
+    }
+
+    setLoadingMorePacks(true);
+    rawPageEventsRef.current = 0;
+    paginationCounterRef.current += 1;
+    unsubscribePaginationRef.current?.();
+    const pageSubId = [
+      `followlists_${pubkey ?? 'public'}_page`,
+      paginationCounterRef.current,
+      followSetsUntilRef.current ?? 'none',
+      publicPacksUntilRef.current ?? 'none',
+    ].join('_');
+    feedBuilderDebug('create page subscription', {
+      subId: pageSubId,
+      previousSubId: prevPaginationSubIdRef.current,
+      followSetsUntil: followSetsUntilRef.current,
+      publicPacksUntil: publicPacksUntilRef.current,
+      requests: requests.map(request => ({
+        kinds: request.kinds,
+        authors: request.authors?.length ?? 0,
+        until: request.until,
+        limit: request.limit,
+        relays: request.relays,
+      })),
+    });
+    unsubscribePaginationRef.current = subscribeToNostr(
+      pageSubId,
+      requests,
+      message => handleFollowListMessage(message, true),
+      {
+        closeOnEose: false,
+        pagination: prevPaginationSubIdRef.current,
+      },
+    );
+    prevPaginationSubIdRef.current = pageSubId;
+    paginationTimeoutRef.current = setTimeout(completePagination, 10000);
+  }, [
+    completePagination,
+    hasMorePacks,
+    loadingMorePacks,
+    packEventCount,
+    pubkey,
+    tab,
+    handleFollowListMessage,
+  ]);
+
   const renderHeader = useCallback(
     () => (
       <FeedBuilderHeader
@@ -287,7 +447,7 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
 
   const empty = (
     <View className="px-2 py-10">
-      <Text className="text-center text-sm text-slate-500">
+      <Text className="text-center text-sm text-primary-content">
         {tab === 'packs'
           ? 'Waiting for follow packs.'
           : 'No content types found.'}
@@ -331,7 +491,7 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   );
 
   return (
-    <View className="h-full bg-slate-50">
+    <View className="h-full bg-base-100">
       <FlatList
         className="flex-1"
         contentContainerClassName="px-3 pb-10"
@@ -343,6 +503,8 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
         ListEmptyComponent={empty}
         ListHeaderComponent={renderHeader}
         maxToRenderPerBatch={5}
+        onEndReached={tab === 'packs' ? handleEndReached : undefined}
+        onEndReachedThreshold={0.4}
         removeClippedSubviews
         renderItem={renderItem}
         ItemSeparatorComponent={FeedBuilderItemSeparator}
@@ -400,25 +562,38 @@ const KindListItem = memo(function KindListItem({
   return <KindCard kind={kind} selected={selected} onPress={handlePress} />;
 });
 
-export function buildFollowListRequests(pubkey: string | null): RequestObject[] {
+export function buildFollowListRequests(
+  pubkey: string | null,
+  cursors?: {
+    followSetsUntil?: number;
+    publicPacksUntil?: number;
+  },
+): RequestObject[] {
+  const forPagination = !!cursors;
   return [
-    ...(pubkey
+    ...(pubkey && (!forPagination || cursors?.followSetsUntil !== undefined)
       ? [
           {
             kinds: [30000],
             authors: [pubkey],
             limit: 50,
+            until: cursors?.followSetsUntil,
             noCache: true,
             relays: DEFAULT_FEED_RELAYS,
           },
         ]
       : []),
-    {
-      kinds: [39089],
-      limit: 50,
-      noCache: true,
-      relays: DEFAULT_FEED_RELAYS,
-    },
+    ...(!forPagination || cursors?.publicPacksUntil !== undefined
+      ? [
+          {
+            kinds: [39089],
+            limit: 50,
+            until: cursors?.publicPacksUntil,
+            noCache: true,
+            relays: DEFAULT_FEED_RELAYS,
+          },
+        ]
+      : []),
   ];
 }
 
@@ -510,21 +685,22 @@ function FeedBuilderHeader({
   selections: UnifiedSelection[];
   tab: Tab;
 }) {
+  const theme = useAppTheme();
   return (
-    <View className="bg-slate-50 px-1 pt-4">
+    <View className="bg-base-100 px-1 pt-4">
       <View className="h-14 flex-row items-center justify-between px-2">
         <Pressable
           accessibilityRole="button"
-          className="h-10 w-10 items-center justify-center rounded-full bg-white"
+          className="h-10 w-10 items-center justify-center rounded-full bg-base-300"
           hitSlop={12}
           onPress={onClose}
         >
-          <ChevronDown size={22} color="#17212b" strokeWidth={2.2} />
+          <ChevronDown size={22} color={theme.colors.primaryContent} strokeWidth={2.2} />
         </Pressable>
-        <Text className="text-lg font-bold text-slate-900">Feed Builder</Text>
+        <Text className="text-lg font-bold text-base-content">Feed Builder</Text>
         <View className="h-10 w-10" />
       </View>
-      <View className="mt-2 flex-row rounded-lg bg-slate-200/80 p-1">
+      <View className="mt-2 flex-row rounded-lg bg-base-200/80 p-1">
         <TabButton
           active={tab === 'packs'}
           label="Follow Packs"
@@ -562,13 +738,13 @@ function TabButton({
   return (
     <Pressable
       className={`flex-1 items-center rounded-md px-3 py-2 ${
-        active ? 'bg-white shadow-sm' : ''
+        active ? 'bg-base-300 shadow-sm' : ''
       }`}
       onPress={onPress}
     >
       <Text
         className={`text-sm font-semibold ${
-          active ? 'text-slate-900' : 'text-slate-500'
+          active ? 'text-base-content' : 'text-primary-content'
         }`}
       >
         {label}
@@ -595,7 +771,7 @@ function SelectionChips({
           key={
             selection.type === 'pack' ? selection.id : `kind_${selection.kind}`
           }
-          className="flex-row items-center gap-1 rounded-full bg-emerald-700 px-3 py-1.5"
+          className="flex-row items-center gap-1 rounded-full bg-primary px-3 py-1.5"
           onPress={() => onRemove(selection)}
         >
           <Text className="max-w-[180px] text-xs font-semibold text-white">
@@ -617,21 +793,22 @@ function SearchBox({
   placeholder: string;
   value: string;
 }) {
+  const theme = useAppTheme();
   return (
-    <View className="mx-1 mb-3 mt-3 h-11 flex-row items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
-      <Search size={17} color="#8794a0" strokeWidth={2.1} />
+    <View className="mx-1 mb-3 mt-3 h-11 flex-row items-center gap-2 rounded-lg border border-base-200 bg-base-300 px-3">
+      <Search size={17} color={theme.colors.primaryContent} strokeWidth={2.1} />
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
-        className="flex-1 text-base text-slate-900"
+        className="flex-1 text-base text-base-content"
         placeholder={placeholder}
-        placeholderTextColor="#8794a0"
+        placeholderTextColor={theme.colors.primaryContent}
         value={value}
         onChangeText={onChangeText}
       />
       {value ? (
         <Pressable hitSlop={10} onPress={() => onChangeText('')}>
-          <X size={17} color="#52616f" strokeWidth={2.2} />
+          <X size={17} color={theme.colors.primaryContent} strokeWidth={2.2} />
         </Pressable>
       ) : null}
     </View>
@@ -649,6 +826,7 @@ function PackCard({
   selected: boolean;
   selection: FeedPackSelection;
 }) {
+  const theme = useAppTheme();
   const hasImage = selection.image && !selection.image.startsWith('data:');
   const hasLocalImage = selection.localImage === 'followlist';
   const isFollowList = selection.id === 'followlist';
@@ -657,11 +835,11 @@ function PackCard({
   return (
     <Pressable className="px-1 py-2" onPress={onPress}>
       <View
-        className={`overflow-hidden rounded-lg border bg-white ${
-          selected ? 'border-emerald-600' : 'border-slate-200'
+        className={`overflow-hidden rounded-lg border bg-base-300 ${
+          selected ? 'border-primary' : 'border-base-200'
         }`}
       >
-        <View className="h-32 bg-slate-200">
+        <View className="h-32 bg-base-200">
           {hasLocalImage || hasImage ? (
             <Image
               className="h-full w-full"
@@ -673,8 +851,8 @@ function PackCard({
               }
             />
           ) : (
-            <View className="h-full w-full items-center justify-center bg-slate-200">
-              <Users size={36} color="#8794a0" strokeWidth={1.8} />
+            <View className="h-full w-full items-center justify-center bg-base-200">
+              <Users size={36} color={theme.colors.primaryContent} strokeWidth={1.8} />
             </View>
           )}
           <View className="absolute bottom-0 left-0 right-0 bg-black/55 px-3 py-2">
@@ -683,7 +861,7 @@ function PackCard({
             </Text>
           </View>
           {selected ? (
-            <View className="absolute right-3 top-3 h-8 w-8 items-center justify-center rounded-full bg-emerald-700">
+            <View className="absolute right-3 top-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
               <Check size={18} color="#ffffff" strokeWidth={2.4} />
             </View>
           ) : null}
@@ -691,17 +869,17 @@ function PackCard({
         <View className="gap-2 px-3 py-3">
           {selection.description ? (
             <Text
-              className="text-sm leading-5 text-slate-600"
+              className="text-sm leading-5 text-primary-content"
               numberOfLines={2}
             >
               {selection.description}
             </Text>
           ) : null}
           <View className="flex-row items-center justify-between">
-            <Text className="text-xs font-semibold text-slate-500">
+            <Text className="text-xs font-semibold text-primary-content">
               {selection.people.length} people
             </Text>
-            <Text className="text-xs font-semibold text-slate-500">
+            <Text className="text-xs font-semibold text-primary-content">
               {isFollowList
                 ? 'Your follows'
                 : isFollowSet
@@ -724,22 +902,23 @@ function KindCard({
   onPress: () => void;
   selected: boolean;
 }) {
+  const theme = useAppTheme();
   return (
     <Pressable
-      className={`rounded-lg border bg-white p-4 ${
-        selected ? 'border-emerald-600' : 'border-slate-200'
+      className={`rounded-lg border bg-base-300 p-4 ${
+        selected ? 'border-primary' : 'border-base-200'
       }`}
       onPress={onPress}
     >
       <View className="flex-row items-center gap-3">
-        <View className="h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
-          <FileText size={24} color="#17212b" strokeWidth={2.1} />
+        <View className="h-12 w-12 items-center justify-center rounded-lg bg-base-200">
+          <FileText size={24} color={theme.colors.primaryContent} strokeWidth={2.1} />
         </View>
         <View className="flex-1">
-          <Text className="text-base font-bold text-slate-900">
+          <Text className="text-base font-bold text-base-content">
             {KIND_LABELS[kind]}
           </Text>
-          <Text className="mt-1 text-sm text-slate-500">
+          <Text className="mt-1 text-sm text-primary-content">
             {KIND_DESCRIPTIONS[kind]}
           </Text>
         </View>

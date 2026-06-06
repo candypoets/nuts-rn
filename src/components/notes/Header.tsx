@@ -56,8 +56,8 @@ function HeaderComponent({
               link
               className={
                 main
-                  ? 'text-base font-semibold text-slate-900'
-                  : 'text-sm font-semibold text-slate-900'
+                  ? 'text-base font-semibold text-base-content'
+                  : 'text-sm font-semibold text-base-content'
               }
             />
             {nip05 ? (
@@ -68,7 +68,7 @@ function HeaderComponent({
                   strokeWidth={2.4}
                 />
                 <Text
-                  className="min-w-0 flex-shrink text-xs text-slate-500"
+                  className="min-w-0 flex-shrink text-xs text-primary-content"
                   ellipsizeMode="middle"
                   numberOfLines={1}
                 >
@@ -76,7 +76,7 @@ function HeaderComponent({
                 </Text>
               </View>
             ) : null}
-            <Text className="text-xs text-slate-500">
+            <Text className="text-xs text-primary-content">
               {formatTimeShort(note.createdAt())}
             </Text>
           </View>

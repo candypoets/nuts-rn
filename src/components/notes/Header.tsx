@@ -39,8 +39,63 @@ function HeaderComponent({
     selector: selectNip05,
   });
 
+  if (main && !isQuote) {
+    return (
+      <View className="flex-row gap-2">
+        <View className="w-10 items-center">
+          <Avatar pubkey={pubkey} size="md" link />
+        </View>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-start justify-between gap-2">
+            <View className="min-w-0 flex-1">
+              <User
+                pubkey={pubkey}
+                link
+                className="text-base font-semibold text-base-content"
+              />
+              <View className="mt-0.5 min-w-0 flex-row items-center gap-2">
+                {nip05 ? (
+                  <View className="min-w-0 flex-shrink flex-row items-center gap-1">
+                    <BadgeCheck
+                      size={14}
+                      color="#158777"
+                      strokeWidth={2.4}
+                    />
+                    <Text
+                      className="min-w-0 flex-shrink text-xs text-primary-content"
+                      ellipsizeMode="middle"
+                      numberOfLines={1}
+                    >
+                      {nip05}
+                    </Text>
+                  </View>
+                ) : null}
+                <Text className="text-xs text-primary-content">
+                  {formatTimeShort(note.createdAt())}
+                </Text>
+              </View>
+            </View>
+            {showRelays ? (
+              <RelaysList
+                note={note}
+                subId={subId}
+                relays={relays}
+                statusSink={relayStatusSink}
+                mini
+              />
+            ) : null}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View className={isQuote ? 'flex-row gap-1' : '-ml-1 flex-row gap-1'}>
+    <View
+      className={
+        isQuote || main ? 'flex-row gap-1' : '-ml-1 flex-row gap-1'
+      }
+    >
       <View className={isQuote ? 'w-4 items-center' : 'w-10 items-center'}>
         <Avatar
           pubkey={pubkey}

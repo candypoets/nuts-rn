@@ -225,11 +225,7 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
           </View>
         )
       }
-      renderItem={({item}) => (
-        <View className="px-1 pb-1.5">
-          <Kind30023Article note={item} />
-        </View>
-      )}
+      renderItem={({item}) => <Kind30023Article note={item} />}
     />
   );
 }

@@ -609,6 +609,8 @@ function NoteComponent({
     return null;
   }, [displayNote, visible]);
   const isKind20 = displayNote?.kind() === 20;
+  const isKind30023 = displayNote?.kind() === 30023;
+  const effectiveMain = main || ((isKind20 || isKind30023) && depth === 0);
   const replyId = kind1?.reply()?.id();
   const allMentionIds = useMemo(() => {
     if (!kind1 || typeof kind1.mentionsLength !== 'function') {
@@ -715,14 +717,14 @@ function NoteComponent({
         hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
       ].join(' ')
     : [
-        main
+        effectiveMain
           ? 'relative px-0 py-1'
           : isQuote
           ? 'relative rounded-lg border-l border-t border-base-200 bg-base-300/95 px-2 py-2'
           : 'relative rounded-lg border border-base-200 bg-base-300/95 px-3 py-3',
         hasTopThreadConnector || hasBottomThreadConnector
           ? 'shadow-none'
-          : main || isQuote
+          : effectiveMain || isQuote
           ? 'shadow-none'
           : 'shadow-sm',
         hasTopThreadConnector ? '-mt-px border-t-0' : 'mt-1',
@@ -730,7 +732,7 @@ function NoteComponent({
         hasTopThreadConnector ? 'rounded-t-none' : '',
       ].join(' ');
   const cardStyle = useMemo<ViewStyle | undefined>(() => {
-    if (main || isQuote) return undefined;
+    if (effectiveMain || isQuote) return undefined;
     if (theme.colors.base100 !== '#333333') return undefined;
     return {
       shadowColor: '#000000',
@@ -739,7 +741,7 @@ function NoteComponent({
       shadowRadius: 8,
       elevation: 3,
     };
-  }, [isQuote, main, theme.colors.base100]);
+  }, [effectiveMain, isQuote, theme.colors.base100]);
   const threadConnectors = (
     <>
       {hasBottomThreadConnector ? (
@@ -954,7 +956,7 @@ function NoteComponent({
       effectiveNote={displayNote}
       subId={displayId}
       footer={footer}
-      main={main}
+      main={effectiveMain}
       isQuote={isQuote}
       parsedContent={parsedContent}
       renderQuote={renderQuote}

@@ -353,8 +353,8 @@ function Kind30023ArticleComponent({note}: Kind30023ArticleProps) {
   );
 
   return (
-    <View className="gap-4 px-1 pb-8 pt-2">
-      <View className="rounded-lg bg-base-300/90 p-5">
+    <View className="bg-base-300/90 pb-8">
+      <View className="p-5">
         <View className="mb-4 flex-row items-center gap-3">
           <Avatar pubkey={note.pubkey() || ''} size="md" link />
           <View className="min-w-0 flex-1">
@@ -395,7 +395,7 @@ function Kind30023ArticleComponent({note}: Kind30023ArticleProps) {
       </View>
 
       {image ? (
-        <View className="overflow-hidden rounded-lg bg-base-200">
+        <View className="bg-base-200">
           <Image
             source={{uri: image}}
             contentFit="cover"
@@ -405,7 +405,7 @@ function Kind30023ArticleComponent({note}: Kind30023ArticleProps) {
         </View>
       ) : null}
 
-      <View className="rounded-lg bg-base-300/90 p-5">
+      <View className="p-5">
         {articleBlocks.length ? (
           <ArticleBlocks blocks={articleBlocks} navigation={navigation} />
         ) : (

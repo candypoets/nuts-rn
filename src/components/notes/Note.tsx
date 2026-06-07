@@ -427,6 +427,10 @@ function NoteComponent({
     [effectiveNote],
   );
   const isRepost = !!kind6?.repostedEvent?.();
+  const noteFallbackRelays = useMemo(
+    () => relayList([...readRelays, ...relays]),
+    [readRelays, relays],
+  );
   const displayNote = isRepost
     ? kind6?.repostedEvent?.() ?? effectiveNote
     : effectiveNote;
@@ -441,7 +445,7 @@ function NoteComponent({
     subId: displayId || undefined,
     pubkey: displayNote?.pubkey(),
     marker: 'read',
-    fallbackRelays: relays,
+    fallbackRelays: noteFallbackRelays,
   });
   const noteRelays = headerRelays;
   const noteRelayKey = noteRelays.join('|');

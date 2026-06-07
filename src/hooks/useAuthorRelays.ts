@@ -10,6 +10,7 @@ export type RelayMarkerType = 'read' | 'write';
 
 type CacheEntry = {
   relays?: Record<RelayMarkerType, string[]>;
+  timedOut?: boolean;
   listeners: Set<() => void>;
   unsubscribe?: () => void;
   timeout?: ReturnType<typeof setTimeout>;
@@ -73,10 +74,9 @@ function resolveAuthorRelays(pubkey: string, discoveryRelays: string[]) {
 
   entry.timeout = setTimeout(() => {
     const current = cache.get(key);
-    if (!current || current.relays !== undefined) return;
-    current.relays = {read: EMPTY_RELAYS, write: EMPTY_RELAYS};
-    current.unsubscribe?.();
-    current.unsubscribe = undefined;
+    if (!current || current.relays !== undefined || current.timedOut) return;
+    current.timedOut = true;
+    current.timeout = undefined;
     notify(current);
   }, 1000);
 
@@ -133,7 +133,7 @@ export function useAuthorRelays(
 ) {
   const normalizedFallback = useMemo(() => relayList(fallbackRelays), [fallbackRelays]);
   const normalizedDiscovery = useMemo(() => relayList(discoveryRelays), [discoveryRelays]);
-  const [, setVersion] = useState(0);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     if (!pubkey) return undefined;
@@ -152,7 +152,7 @@ export function useAuthorRelays(
     const entry = cache.get(cacheKey(pubkey, normalizedDiscovery));
     const resolved = entry?.relays?.[marker];
     return resolved && resolved.length ? resolved : normalizedFallback;
-  }, [marker, normalizedDiscovery, normalizedFallback, pubkey]);
+  }, [marker, normalizedDiscovery, normalizedFallback, pubkey, version]);
 }
 
 export function useResolvedAuthorRelays(
@@ -161,7 +161,7 @@ export function useResolvedAuthorRelays(
   discoveryRelays: string[] = BOOTSTRAP_RELAYS,
 ) {
   const normalizedDiscovery = useMemo(() => relayList(discoveryRelays), [discoveryRelays]);
-  const [, setVersion] = useState(0);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     if (!pubkey) return undefined;
@@ -178,7 +178,32 @@ export function useResolvedAuthorRelays(
   return useMemo(() => {
     if (!pubkey) return undefined;
     return cache.get(cacheKey(pubkey, normalizedDiscovery))?.relays?.[marker];
-  }, [marker, normalizedDiscovery, pubkey]);
+  }, [marker, normalizedDiscovery, pubkey, version]);
+}
+
+function useAuthorRelayEntry(
+  pubkey: string | undefined | null,
+  discoveryRelays: string[] = BOOTSTRAP_RELAYS,
+) {
+  const normalizedDiscovery = useMemo(() => relayList(discoveryRelays), [discoveryRelays]);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    if (!pubkey) return undefined;
+
+    const entry = resolveAuthorRelays(pubkey, normalizedDiscovery);
+    const listener = () => setVersion(version => version + 1);
+    entry.listeners.add(listener);
+
+    return () => {
+      entry.listeners.delete(listener);
+    };
+  }, [normalizedDiscovery, pubkey]);
+
+  return useMemo(() => {
+    if (!pubkey) return undefined;
+    return cache.get(cacheKey(pubkey, normalizedDiscovery));
+  }, [normalizedDiscovery, pubkey, version]);
 }
 
 export function useEffectiveAuthorRelays({
@@ -204,13 +229,40 @@ export function useEffectiveAuthorRelays({
     () => relayList(fallbackRelays),
     [fallbackRelays],
   );
-  const authorRelays = useResolvedAuthorRelays(
-    hasOverride ? undefined : pubkey,
+  const authorRelayEntry = useAuthorRelayEntry(hasOverride ? undefined : pubkey);
+  const authorRelays = authorRelayEntry?.relays?.[marker];
+  const hasAuthorRelays = authorRelayEntry?.relays !== undefined;
+  const timedOut = authorRelayEntry?.timedOut ?? false;
+
+  useEffect(() => {
+    if (!timedOut || hasOverride || hasAuthorRelays || normalizedFallback.length) {
+      return;
+    }
+    console.warn('[author-relays] timeout with empty fallback', {
+      subId,
+      pubkey: pubkey ? pubkey.slice(0, 12) : null,
+      marker,
+    });
+  }, [
+    hasAuthorRelays,
+    hasOverride,
     marker,
-  );
+    normalizedFallback.length,
+    pubkey,
+    subId,
+    timedOut,
+  ]);
 
   return useMemo(() => {
     if (hasOverride) return normalizedOverride ?? EMPTY_RELAYS;
-    return authorRelays && authorRelays.length ? authorRelays : normalizedFallback;
-  }, [authorRelays, hasOverride, normalizedFallback, normalizedOverride]);
+    if (hasAuthorRelays) return authorRelays ?? EMPTY_RELAYS;
+    return timedOut ? normalizedFallback : EMPTY_RELAYS;
+  }, [
+    authorRelays,
+    hasAuthorRelays,
+    hasOverride,
+    normalizedFallback,
+    normalizedOverride,
+    timedOut,
+  ]);
 }

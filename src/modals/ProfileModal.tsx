@@ -42,7 +42,8 @@ import { useUIStore } from '../stores/uiStore';
 type ProfileModalTarget =
   | { type: 'login' }
   | { type: 'logout' }
-  | { type: 'profileStub'; path: 'relays' | 'wallet' | 'theme' | 'nprofile' };
+  | { type: 'theme' }
+  | { type: 'profileStub'; path: 'relays' | 'wallet' | 'nprofile' };
 
 type ProfileModalProps = {
   auth: Pick<AuthState, 'pubkey' | 'hasSigner' | 'nsec'>;
@@ -94,6 +95,10 @@ export function ProfileModal({ auth, onClose }: ProfileModalProps) {
       }
       if (item.type === 'logout') {
         navigation.navigate('Logout');
+        return;
+      }
+      if (item.type === 'theme') {
+        navigation.navigate('Theme');
         return;
       }
       if (item.path === 'nprofile' && auth.pubkey) {
@@ -185,7 +190,7 @@ export function ProfileModal({ auth, onClose }: ProfileModalProps) {
               icon={<Palette size={21} color={iconColor} strokeWidth={2.1} />}
               label="Theme"
               detail="Appearance settings"
-              onPress={() => navigate({ type: 'profileStub', path: 'theme' })}
+              onPress={() => navigate({ type: 'theme' })}
               last
             />
           </View>
@@ -382,30 +387,18 @@ export function ProfileStubModal({
   auth,
   onClose,
 }: {
-  path: 'relays' | 'wallet' | 'theme' | 'nprofile';
+  path: 'relays' | 'wallet' | 'nprofile';
   auth: Pick<AuthState, 'pubkey' | 'hasSigner'>;
   onClose: () => void;
 }) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const mutedIconColor = theme.colors.primaryContent;
-  const selectedThemeId = useUIStore(state => state.themeId);
-  const setThemeId = useUIStore(state => state.setThemeId);
-  const activeThemeId = selectedThemeId && selectedThemeId in appThemes
-    ? (selectedThemeId as AppThemeId)
-    : defaultTheme.id;
   const titles = {
     relays: 'Relays',
     wallet: 'Wallet',
-    theme: 'Theme',
     nprofile: 'My Profile',
   };
-  const selectTheme = useCallback(
-    (themeId: AppThemeId) => {
-      setThemeId(themeId);
-    },
-    [setThemeId],
-  );
 
   return (
     <View style={styles.modalBody}>
@@ -417,18 +410,42 @@ export function ProfileStubModal({
             <X size={22} color={mutedIconColor} strokeWidth={2.2} />
           </Pressable>
         </View>
-        {path === 'theme' ? (
-          <ThemeSettings
-            activeThemeId={activeThemeId}
-            onSelectTheme={selectTheme}
-          />
-        ) : (
-          <Text style={styles.stackBody}>
-            {auth.pubkey
-              ? `${titles[path]} settings for ${auth.pubkey.slice(0, 16)}...`
-              : 'Sign in to manage this section.'}
-          </Text>
-        )}
+        <Text style={styles.stackBody}>
+          {auth.pubkey
+            ? `${titles[path]} settings for ${auth.pubkey.slice(0, 16)}...`
+            : 'Sign in to manage this section.'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+export function ThemeModal() {
+  const styles = useProfileModalStyles();
+  const selectedThemeId = useUIStore(state => state.themeId);
+  const setThemeId = useUIStore(state => state.setThemeId);
+  const activeThemeId =
+    selectedThemeId && selectedThemeId in appThemes
+      ? (selectedThemeId as AppThemeId)
+      : defaultTheme.id;
+  const selectTheme = useCallback(
+    (themeId: AppThemeId) => {
+      setThemeId(themeId);
+    },
+    [setThemeId],
+  );
+
+  return (
+    <View style={styles.modalBody}>
+      <View style={styles.fullModalSheet}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.stackTitle}>Theme</Text>
+        </View>
+        <ThemeSettings
+          activeThemeId={activeThemeId}
+          onSelectTheme={selectTheme}
+        />
       </View>
     </View>
   );
@@ -516,8 +533,6 @@ function useProfileModalStyles() {
   const theme = useAppTheme();
   return useMemo(() => createProfileModalStyles(theme.colors), [theme]);
 }
-
-const styles = createProfileModalStyles(defaultTheme.colors);
 
 function createProfileModalStyles(colors: AppThemeColors) {
   const contentColor = readableContentColor(colors.base100);

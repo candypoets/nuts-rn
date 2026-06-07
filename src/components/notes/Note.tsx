@@ -34,7 +34,6 @@ import { BOOTSTRAP_RELAYS, useNostrStore, useRelayStore } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
-import { Avatar } from './Avatar';
 import { Kind20Content } from './Kind20Content';
 import { Kind1068Content } from './Kind1068Content';
 import { Kind30023Content } from './Kind30023Content';
@@ -281,6 +280,7 @@ const NoteBody = memo(
             relays={relays}
             showRelays={showRelays}
             relayStatusSink={relayStatusSink}
+            reposterPubkey={reposterPubkey}
           />
           <Pressable
             className={
@@ -324,14 +324,9 @@ const NoteBody = memo(
               visible={visible}
               relays={relays}
               className={[
-                'mt-2 -mb-2 w-full px-2',
+                '-mb-3 w-full px-2',
                 main || fullBleedContent ? 'pl-2' : 'pl-10',
               ].join(' ')}
-              leading={
-                reposterPubkey ? (
-                  <Avatar pubkey={reposterPubkey} size="sm" link />
-                ) : null
-              }
             />
           ) : null}
           {footer && depth === 0 ? (
@@ -427,10 +422,6 @@ function NoteComponent({
     [effectiveNote],
   );
   const isRepost = !!kind6?.repostedEvent?.();
-  const noteFallbackRelays = useMemo(
-    () => relayList([...readRelays, ...relays]),
-    [readRelays, relays],
-  );
   const displayNote = isRepost
     ? kind6?.repostedEvent?.() ?? effectiveNote
     : effectiveNote;
@@ -441,6 +432,10 @@ function NoteComponent({
     [extraSearchRelays, relays],
   );
   const lookupRelayKey = lookupRelays.join('|');
+  const noteFallbackRelays = useMemo(
+    () => relayList([...readRelays, ...relays]),
+    [readRelays, relays],
+  );
   const headerRelays = useEffectiveAuthorRelays({
     subId: displayId || undefined,
     pubkey: displayNote?.pubkey(),

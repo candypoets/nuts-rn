@@ -13,7 +13,8 @@ export type RootStackParamList = {
   Scan: { mode?: 'share' | 'scan' } | undefined;
   Tapcash: undefined;
   Lightning: { invoice?: string } | undefined;
-  ProfileStub: { path: 'relays' | 'wallet' | 'theme' | 'nprofile' };
+  Theme: undefined;
+  ProfileStub: { path: 'relays' | 'wallet' | 'nprofile' };
   RelayInfos: { subId?: string; relays: string[]; statuses?: Record<string, string> };
   PublicProfile: { pubkey: string };
   Kind1Thread: { nevent: string };

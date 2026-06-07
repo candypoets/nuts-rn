@@ -64,6 +64,7 @@ import {
   SendModal,
   SendPlaceholderModal,
   SignupModal,
+  ThemeModal,
 } from './src/modals';
 import { Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
 import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
@@ -367,6 +368,11 @@ function RootNavigator({
         <NativeStack.Screen
           name="Lightning"
           component={LightningScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <NativeStack.Screen
+          name="Theme"
+          component={ThemeScreen}
           options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
@@ -800,6 +806,10 @@ function ProfileStubScreen({
       onClose={navigation.goBack}
     />
   );
+}
+
+function ThemeScreen() {
+  return <ThemeModal />;
 }
 
 function RelayInfosScreen({

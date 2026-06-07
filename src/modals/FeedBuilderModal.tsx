@@ -30,7 +30,6 @@ import {
 import {
   Check,
   ChevronDown,
-  FileText,
   Search,
   Users,
   X,
@@ -47,6 +46,7 @@ import {
   useNostrStore,
 } from '../stores';
 import {useAppTheme} from '../theme';
+import { FeedKindIcon } from '../components/FeedKindIcon';
 
 type FeedBuilderModalProps = {
   onClose: () => void;
@@ -905,14 +905,19 @@ function KindCard({
   const theme = useAppTheme();
   return (
     <Pressable
-      className={`rounded-lg border bg-base-300 p-4 ${
+      className={`relative rounded-lg border bg-base-300 p-4 ${
         selected ? 'border-primary' : 'border-base-200'
       }`}
       onPress={onPress}
     >
       <View className="flex-row items-center gap-3">
         <View className="h-12 w-12 items-center justify-center rounded-lg bg-base-200">
-          <FileText size={24} color={theme.colors.primaryContent} strokeWidth={2.1} />
+          <FeedKindIcon
+            kind={kind}
+            size={24}
+            color={theme.colors.primaryContent}
+            strokeWidth={2.1}
+          />
         </View>
         <View className="flex-1">
           <Text className="text-base font-bold text-base-content">
@@ -922,10 +927,12 @@ function KindCard({
             {KIND_DESCRIPTIONS[kind]}
           </Text>
         </View>
-        {selected ? (
-          <Check size={20} color="#047857" strokeWidth={2.4} />
-        ) : null}
       </View>
+      {selected ? (
+        <View className="absolute right-3 top-3 h-6 w-6 items-center justify-center rounded-full bg-base-100">
+          <Check size={16} color="#047857" strokeWidth={2.4} />
+        </View>
+      ) : null}
     </Pressable>
   );
 }

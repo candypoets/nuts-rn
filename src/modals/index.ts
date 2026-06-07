@@ -8,6 +8,7 @@ export {
   PrivateKeyLogin,
   ProfileModal,
   ProfileStubModal,
+  ThemeModal,
 } from './ProfileModal';
 export { ScanModal } from './ScanModal';
 export { SendModal, SendPlaceholderModal } from './SendModal';

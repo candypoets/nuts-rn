@@ -7,7 +7,7 @@ import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type {RootStackParamList} from '../../navigation/types';
 
-type AvatarSize = 'xs' | 's' | 'sm' | 'md' | 'lg' | 'xl';
+type AvatarSize = 'xxs' | 'xs' | 's' | 'sm' | 'md' | 'lg' | 'xl';
 
 type AvatarProps = {
   pubkey: string;
@@ -18,6 +18,7 @@ type AvatarProps = {
 };
 
 const sizeClass: Record<AvatarSize, string> = {
+  xxs: 'h-5 w-5',
   xs: 'h-4 w-4',
   s: 'h-7 w-7',
   sm: 'h-8 w-8',

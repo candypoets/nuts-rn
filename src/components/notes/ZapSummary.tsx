@@ -9,7 +9,6 @@ import type {
 import {ParsedData} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asKind9321, asKind9735, asParsedEvent} from '@candypoets/nipworker/utils';
-import {Zap} from 'lucide-react-native';
 import {DEFAULT_FEED_RELAYS} from '../../nostr/relays';
 import {Avatar} from './Avatar';
 
@@ -18,7 +17,6 @@ type ZapSummaryProps = {
   visible: boolean;
   relays?: string[];
   className?: string;
-  leading?: React.ReactNode;
 };
 
 type ZapItem = {
@@ -75,7 +73,6 @@ function ZapSummaryComponent({
   visible,
   relays = EMPTY_RELAYS,
   className,
-  leading,
 }: ZapSummaryProps) {
   const [zaps, setZaps] = useState<ZapItem[]>([]);
   const noteId = note.id() || '';
@@ -127,26 +124,16 @@ function ZapSummaryComponent({
   }, [note, noteId, subscriptionRelays, visible]);
 
   if (!zaps.length) {
-    if (!leading) return null;
-    return (
-      <View className="-mb-1 -ml-1 mt-0 h-8 w-10 items-center">
-        {leading}
-      </View>
-    );
+    return null;
   }
 
   return (
-    <View className={['relative mb-1 flex-row items-center justify-between pl-10', className || ''].join(' ')}>
-      {leading ? (
-        <View className="absolute w-10 items-center" style={{left: -4, top: 4}}>
-          {leading}
-        </View>
-      ) : null}
+    <View className={['relative flex-row items-center justify-between pl-10', className || ''].join(' ')}>
       <View className="min-w-0 flex-1 flex-row items-center gap-1">
         {zaps.length ? (
           <>
-            <View className="flex-row items-center gap-1">
-              <Zap size={16} color="#b7791f" fill="#b7791f" />
+            <View className="flex-row items-center">
+              <Text className="text-xs font-semibold text-white">⚡</Text>
               <Text className="text-xs font-semibold text-base-content">
                 {totalAmount.toLocaleString()}
               </Text>

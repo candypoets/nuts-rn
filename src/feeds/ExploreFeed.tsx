@@ -38,6 +38,8 @@ import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { Infinity, PenLine, Search, Users } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
+  KIND_LABELS,
+  type FeedKind,
   type FeedPackSelection,
   useAuthStore,
   useFeedBuilderStore,
@@ -48,6 +50,7 @@ import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
 import {useAppTheme} from '../theme';
+import { FeedKindIcon } from '../components/FeedKindIcon';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -213,11 +216,12 @@ export function ExploreFeed({
         pubkey={authPubkey}
         relays={feedRelays}
         relayStatuses={relayStatuses}
+        selectedKinds={selectedKinds}
         selectedPacks={selectedPacks}
         surfaceClassName="bg-base-100"
       />
     ),
-    [authPubkey, feedRelays, relayStatuses, selectedPacks],
+    [authPubkey, feedRelays, relayStatuses, selectedKinds, selectedPacks],
   );
 
   const defaultStickyHeader = useCallback(
@@ -226,11 +230,12 @@ export function ExploreFeed({
         pubkey={authPubkey}
         relays={feedRelays}
         relayStatuses={relayStatuses}
+        selectedKinds={selectedKinds}
         selectedPacks={selectedPacks}
         surfaceClassName="bg-base-100"
       />
     ),
-    [authPubkey, feedRelays, relayStatuses, selectedPacks],
+    [authPubkey, feedRelays, relayStatuses, selectedKinds, selectedPacks],
   );
 
   const defaultStickyFooter = useCallback(() => <ExploreComposerFooter />, []);
@@ -881,6 +886,7 @@ function ExploreHeader({
   pubkey,
   relayStatuses,
   relays,
+  selectedKinds,
   selectedPacks,
   surfaceClassName,
 }: {
@@ -888,9 +894,15 @@ function ExploreHeader({
   pubkey: string | null;
   relayStatuses: Record<string, string>;
   relays: string[];
+  selectedKinds: FeedKind[];
   selectedPacks: FeedPackSelection[];
   surfaceClassName: string;
 }) {
+  const visibleKinds =
+    selectedKinds.length > 0 && selectedKinds.length < ALL_FEED_KINDS.length
+      ? selectedKinds
+      : [];
+
   return (
     <View className={mini ? 'border-b border-base-200 bg-base-100/95' : ''}>
       <View
@@ -907,10 +919,16 @@ function ExploreHeader({
               : 'h-14 flex-row items-center justify-between'
           }
         >
-          <FeedPackHeaderButtons
-            packs={selectedPacks}
-            surfaceClassName={surfaceClassName}
-          />
+          <View className="min-w-0 flex-1 flex-row items-center gap-1">
+            <FeedPackHeaderButtons
+              packs={selectedPacks}
+              surfaceClassName={surfaceClassName}
+            />
+            <FeedKindHeaderButtons
+              kinds={visibleKinds}
+              surfaceClassName={surfaceClassName}
+            />
+          </View>
           <View className="flex-row items-center gap-2">
             <HeaderSearchButton surfaceClassName={surfaceClassName} />
             <NotificationBellButton
@@ -929,6 +947,45 @@ function ExploreHeader({
         />
       </View>
     </View>
+  );
+}
+
+function FeedKindHeaderButtons({
+  kinds,
+  surfaceClassName,
+}: {
+  kinds: FeedKind[];
+  surfaceClassName: string;
+}) {
+  const theme = useAppTheme();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  const openFeedBuilder = useCallback(() => {
+    navigation.navigate('FeedBuilder');
+  }, [navigation]);
+
+  if (!kinds.length) return null;
+
+  return (
+    <>
+      {kinds.map(kind => (
+        <Pressable
+          key={kind}
+          accessibilityRole="button"
+          accessibilityLabel={`Filter: ${KIND_LABELS[kind]}`}
+          className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
+          onPress={openFeedBuilder}
+        >
+          <FeedKindIcon
+            kind={kind}
+            size={16}
+            color={theme.colors.primaryContent}
+            strokeWidth={2.1}
+          />
+        </Pressable>
+      ))}
+    </>
   );
 }
 

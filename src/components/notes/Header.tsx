@@ -1,5 +1,5 @@
 import React, { memo, useCallback } from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { Kind0Parsed, ParsedEvent } from '@candypoets/nipworker';
 import { BadgeCheck } from 'lucide-react-native';
 import { useKind0Value } from '../../hooks/useKind0Value';
@@ -16,6 +16,7 @@ type HeaderProps = {
   relays?: string[];
   showRelays?: boolean;
   relayStatusSink?: RelayStatusSink;
+  reposterPubkey?: string;
 };
 
 function HeaderComponent({
@@ -26,6 +27,7 @@ function HeaderComponent({
   relays,
   showRelays = true,
   relayStatusSink,
+  reposterPubkey,
 }: HeaderProps) {
   const pubkey = note.pubkey() || '';
   const isQuote = depth > 0;
@@ -43,7 +45,7 @@ function HeaderComponent({
     return (
       <View className="flex-row gap-2">
         <View className="w-10 items-center">
-          <Avatar pubkey={pubkey} size="md" link />
+          <StackedAvatar pubkey={pubkey} reposterPubkey={reposterPubkey} />
         </View>
         <View className="min-w-0 flex-1">
           <View className="flex-row items-start justify-between gap-2">
@@ -97,11 +99,11 @@ function HeaderComponent({
       }
     >
       <View className={isQuote ? 'w-4 items-center' : 'w-10 items-center'}>
-        <Avatar
-          pubkey={pubkey}
-          size={isQuote ? 'xs' : 'md'}
-          link
-        />
+        {isQuote ? (
+          <Avatar pubkey={pubkey} size="xs" link />
+        ) : (
+          <StackedAvatar pubkey={pubkey} reposterPubkey={reposterPubkey} />
+        )}
       </View>
       <View className="min-w-0 flex-1">
         <View className="flex-row items-start justify-between gap-2">
@@ -159,5 +161,35 @@ export const Header = memo(
     (previous.main ?? false) === (next.main ?? false) &&
     previous.relays === next.relays &&
     (previous.showRelays ?? true) === (next.showRelays ?? true) &&
-    previous.relayStatusSink === next.relayStatusSink,
+    previous.relayStatusSink === next.relayStatusSink &&
+    previous.reposterPubkey === next.reposterPubkey,
 );
+
+function StackedAvatar({
+  pubkey,
+  reposterPubkey,
+}: {
+  pubkey: string;
+  reposterPubkey?: string;
+}) {
+  return (
+    <View className="relative h-10 w-10 items-center">
+      <Avatar pubkey={pubkey} size="md" link />
+      {reposterPubkey ? (
+        <View
+          className="absolute rounded-full border border-base-100 bg-base-100"
+          style={styles.reposterAvatar}
+        >
+          <Avatar pubkey={reposterPubkey} size="xxs" link />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  reposterAvatar: {
+    bottom: -6,
+    right: -1,
+  },
+});

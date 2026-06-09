@@ -425,7 +425,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       pullToRefresh
       header={header}
       stickyHeader={stickyHeader}
-      stickyHeaderSafeAreaColor="transparent"
       renderItem={({item}) => (
         <ChatRow
           conversation={item}

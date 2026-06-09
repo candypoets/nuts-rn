@@ -24,7 +24,7 @@ import {
   ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
-import {Info, MessageCirclePlus} from 'lucide-react-native';
+import {MessageCirclePlus} from 'lucide-react-native';
 import {AppButton} from '../components/AppButton';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
@@ -458,17 +458,11 @@ function ChatHeader({
   sticky?: boolean;
 }) {
   const theme = useAppTheme();
-  const iconColor = theme.colors.primaryContent;
   return (
     <View className={`${sticky ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}`}>
       <View className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}>
         <View className="h-14 flex-row items-center justify-between">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-2xl font-bold text-base-content">Messages</Text>
-            <Pressable className="h-8 w-8 items-center justify-center rounded-full bg-base-200">
-              <Info size={17} color={iconColor} strokeWidth={2.2} />
-            </Pressable>
-          </View>
+          <Text className="text-2xl font-bold text-base-content">Messages</Text>
           <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-primary bg-base-300">
             <MessageCirclePlus size={19} color={theme.colors.primary} strokeWidth={2.2} />
           </Pressable>

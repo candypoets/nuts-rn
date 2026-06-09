@@ -458,9 +458,9 @@ export function PrivateKeyLogin({
             </Pressable>
             {qrText ? (
               <View style={styles.qrPanel}>
-                <View style={styles.qrCodeBox}>
-                  <QRCode value={qrText} size={230} />
-                </View>
+                <Pressable style={styles.qrCodeBox} onPress={copyQrText}>
+                  <QRCode value={qrText} size={230} quietZone={8} ecl="L" />
+                </Pressable>
                 <Text style={styles.qrHelpText}>
                   Scan this code with your signing app.
                 </Text>

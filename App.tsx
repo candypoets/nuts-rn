@@ -320,7 +320,7 @@ function RootNavigator({
             />
           )}
         </NativeStack.Screen>
-        <NativeStack.Screen name="Logout" options={{ presentation: 'modal' }}>
+        <NativeStack.Screen name="Logout" options={{ presentation: 'formSheet' }}>
           {({ navigation }) => (
             <LogoutScreen manager={manager} onClose={navigation.goBack} />
           )}

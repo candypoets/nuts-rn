@@ -403,25 +403,18 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     <View className="px-3 py-16">
       {pubkey && hasSigner === false ? (
         <ReadOnlyChatStub />
+      ) : !pubkey ? (
+        <LoggedOutChatStub onSignIn={openLogin} />
       ) : (
         <>
           <Text className="text-center text-base font-semibold text-primary-content">
-            {pubkey ? 'No chats yet' : 'Sign in to see chats'}
+            No chats yet
           </Text>
           <Text className="mt-2 text-center text-sm text-primary-content">
-            {pubkey
-              ? 'Conversations appear here once messages arrive.'
-              : 'Chat uses your account pubkey to load direct-message conversations.'}
+            Conversations appear here once messages arrive.
           </Text>
         </>
       )}
-      {!pubkey ? (
-        <AppButton
-          title="Sign in"
-          className="mx-auto mt-5 min-w-36 px-6"
-          onPress={openLogin}
-        />
-      ) : null}
     </View>
   );
 
@@ -496,6 +489,31 @@ function ChatHeader({
             onPress={() => onSelectTab('requests')}
           />
         </View>
+      </View>
+    </View>
+  );
+}
+
+function LoggedOutChatStub({onSignIn}: {onSignIn: () => void}) {
+  const theme = useAppTheme();
+
+  return (
+    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
+      <View className="items-center">
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
+          <MessageCirclePlus size={30} color={theme.colors.primary} strokeWidth={2.2} />
+        </View>
+        <Text className="text-center text-xl font-semibold text-base-content">
+          Chats require an account
+        </Text>
+        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
+          Sign in to load your direct-message conversations.
+        </Text>
+        <AppButton
+          title="Sign in"
+          className="mx-auto mt-5 min-w-36 px-6"
+          onPress={onSignIn}
+        />
       </View>
     </View>
   );

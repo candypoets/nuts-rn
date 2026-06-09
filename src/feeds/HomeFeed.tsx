@@ -1061,32 +1061,37 @@ function LoggedOutHome() {
 
   return (
     <View className="px-3 py-16">
-      <Text className="text-center text-base font-semibold text-primary-content">
-        Sign in to load your wallet feed
-      </Text>
-      <Text className="mt-2 text-center text-sm text-primary-content">
-        Home shows your wallet activity once you are signed in.
-      </Text>
-      <Pressable
-        accessibilityRole="button"
-        className="mx-auto mt-5 min-w-40 rounded-xl border border-primary px-5 py-3"
-        onPress={() => navigation.navigate('Login')}
-        style={({ pressed }) => ({
-          backgroundColor: pressed ? `${theme.colors.primary}14` : 'transparent',
-          borderColor: theme.colors.primary,
-          opacity: pressed ? 0.82 : 1,
-          transform: [{ translateY: pressed ? 1 : 0 }],
-        })}
-      >
-        <View className="flex-row items-center justify-center gap-2">
-          <Text
-            className="text-base font-extrabold text-base-content"
-          >
-            Sign in
+      <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
+        <View className="items-center">
+          <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
+            <Wallet size={30} color={theme.colors.primary} strokeWidth={2.2} />
+          </View>
+          <Text className="text-center text-xl font-semibold text-base-content">
+            Sign in to load your wallet feed
           </Text>
-          <ArrowRight size={17} color={theme.colors.primaryContent} strokeWidth={2.5} />
+          <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
+            Home shows your wallet activity once you are signed in.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            className="mx-auto mt-5 min-w-40 rounded-xl border border-primary px-5 py-3"
+            onPress={() => navigation.navigate('Login')}
+            style={({ pressed }) => ({
+              backgroundColor: pressed ? `${theme.colors.primary}14` : 'transparent',
+              borderColor: theme.colors.primary,
+              opacity: pressed ? 0.82 : 1,
+              transform: [{ translateY: pressed ? 1 : 0 }],
+            })}
+          >
+            <View className="flex-row items-center justify-center gap-2">
+              <Text className="text-base font-extrabold text-base-content">
+                Sign in
+              </Text>
+              <ArrowRight size={17} color={theme.colors.primaryContent} strokeWidth={2.5} />
+            </View>
+          </Pressable>
         </View>
-      </Pressable>
+      </View>
     </View>
   );
 }

@@ -228,25 +228,6 @@ export function useEffectiveAuthorRelays({
   const hasAuthorRelays = authorRelayEntry?.relays !== undefined;
   const timedOut = authorRelayEntry?.timedOut ?? false;
 
-  useEffect(() => {
-    if (!timedOut || hasOverride || hasAuthorRelays || normalizedFallback.length) {
-      return;
-    }
-    console.warn('[author-relays] timeout with empty fallback', {
-      subId,
-      pubkey: pubkey ? pubkey.slice(0, 12) : null,
-      marker,
-    });
-  }, [
-    hasAuthorRelays,
-    hasOverride,
-    marker,
-    normalizedFallback.length,
-    pubkey,
-    subId,
-    timedOut,
-  ]);
-
   return useMemo(() => {
     if (hasOverride) return normalizedOverride ?? EMPTY_RELAYS;
     if (hasAuthorRelays) return authorRelays ?? EMPTY_RELAYS;

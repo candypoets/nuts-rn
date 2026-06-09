@@ -15,6 +15,11 @@ import {
 } from '../stores';
 
 const WALLET_FALLBACK_RELAYS = ['wss://relay.nuts.cash'];
+const latestWalletEventCreatedAtByPubkey = new Map<string, number>();
+
+function walletDebug(label: string, data?: Record<string, unknown>) {
+  console.log(`[home-wallet] ${label}`, data ?? {});
+}
 
 function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
@@ -60,6 +65,11 @@ export function handleWalletSubscriptionMessage(message: WorkerMessage) {
   if (status) {
     const relayUrl = status.relayUrl();
     const relayStatus = status.status()?.toString();
+    walletDebug('status', {
+      relay: relayUrl ? normalizeRelayUrl(relayUrl) : null,
+      status: relayStatus ?? null,
+      message: status.message?.(),
+    });
     if (relayUrl && relayStatus) {
       useRelayStore.getState().setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
     }
@@ -68,8 +78,36 @@ export function handleWalletSubscriptionMessage(message: WorkerMessage) {
 
   const parsed = asParsedEvent(message);
   if (!parsed || parsed.kind() !== 17375) return;
+  walletDebug('event', {
+    id: parsed.id()?.slice(0, 12),
+    kind: parsed.kind(),
+    pubkey: parsed.pubkey()?.slice(0, 12),
+    createdAt: parsed.createdAt(),
+    parsedType:
+      typeof parsed.parsedType === 'function' ? parsed.parsedType() : 'unknown',
+  });
   const wallet = asKind17375(parsed);
+  walletDebug('kind17375 parse', {
+    ok: !!wallet,
+    mints: wallet ? wallet.mintsLength() : 0,
+    hasPrivateKey: !!wallet?.p2pkPrivKey?.(),
+    hasPublicKey: !!wallet?.p2pkPubKey?.(),
+  });
   if (!wallet) return;
+
+  const pubkey = parsed.pubkey() || '';
+  const createdAt = parsed.createdAt();
+  const latestCreatedAt = latestWalletEventCreatedAtByPubkey.get(pubkey) ?? 0;
+  if (createdAt < latestCreatedAt) {
+    walletDebug('ignored older kind17375', {
+      id: parsed.id()?.slice(0, 12),
+      pubkey: pubkey.slice(0, 12),
+      createdAt,
+      latestCreatedAt,
+    });
+    return;
+  }
+  latestWalletEventCreatedAtByPubkey.set(pubkey, createdAt);
 
   const mintUrls = Array.from(
     {length: wallet.mintsLength()},
@@ -120,14 +158,56 @@ export function useWalletSubscription({
 
   useEffect(() => {
     setFallbackReady(false);
-    if (!enabled || !pubkey || kind10019UpdatedAt > 0) return;
-    const timeout = setTimeout(() => setFallbackReady(true), 1000);
+    if (!enabled || !pubkey || kind10019UpdatedAt > 0) {
+      walletDebug('fallback skip', {
+        enabled,
+        hasPubkey: !!pubkey,
+        kind10019UpdatedAt,
+      });
+      return;
+    }
+    walletDebug('fallback timer start', {
+      pubkey: pubkey.slice(0, 12),
+      delayMs: 1000,
+    });
+    const timeout = setTimeout(() => {
+      walletDebug('fallback ready', {
+        pubkey: pubkey.slice(0, 12),
+      });
+      setFallbackReady(true);
+    }, 1000);
     return () => clearTimeout(timeout);
   }, [enabled, kind10019UpdatedAt, pubkey]);
 
+  useEffect(() => {
+    walletDebug('state', {
+      enabled,
+      pubkey: pubkey?.slice(0, 12) ?? null,
+      kind10019UpdatedAt,
+      fallbackReady,
+      relaysResolved,
+      relays,
+    });
+  }, [enabled, fallbackReady, kind10019UpdatedAt, pubkey, relays, relaysResolved]);
+
   const subscribe = useCallback(() => {
-    if (!enabled || !pubkey || !relaysResolved || !relays.length) return undefined;
+    if (!enabled || !pubkey || !relaysResolved || !relays.length) {
+      walletDebug('subscribe skipped', {
+        enabled,
+        hasPubkey: !!pubkey,
+        relaysResolved,
+        relays,
+      });
+      return undefined;
+    }
     const subId = walletSubscriptionId(pubkey, relays, cacheKey);
+    walletDebug('subscribe', {
+      subId,
+      pubkey: pubkey.slice(0, 12),
+      cacheKey,
+      noCache: !!cacheKey,
+      relays,
+    });
     return subscribeToNostr(
       subId,
       [
@@ -145,13 +225,9 @@ export function useWalletSubscription({
   }, [
     cacheKey,
     enabled,
-    fallbackReady,
-    kind10019UpdatedAt,
     pubkey,
-    readRelays,
     relays,
     relaysResolved,
-    walletReadRelays,
   ]);
 
   useEffect(() => subscribe(), [subscribe]);

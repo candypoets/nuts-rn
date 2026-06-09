@@ -539,7 +539,7 @@ export function LogoutModal({
 
   return (
     <View style={styles.modalBody}>
-      <View style={styles.modalSheet}>
+      <View style={styles.logoutSheet}>
         <View style={styles.modalHandle} />
         <View style={styles.modalHeader}>
           <Text style={styles.stackTitle}>Log out</Text>
@@ -1670,6 +1670,11 @@ function createProfileModalStyles(colors: AppThemeColors) {
     backgroundColor: colors.base300,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  logoutSheet: {
     paddingHorizontal: 18,
     paddingTop: 10,
     paddingBottom: 28,

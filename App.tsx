@@ -107,6 +107,20 @@ const navigationTheme = {
   },
 };
 
+function scheduleNostrCleanup(manager: NostrManagerLike | null, delay = 1000) {
+  if (!manager) return () => {};
+
+  const timeout = setTimeout(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        manager.cleanup();
+      });
+    });
+  }, delay);
+
+  return () => clearTimeout(timeout);
+}
+
 function isRetryableMintNetworkError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /cancelled|canceled|network request failed|fetch failed/i.test(message);
@@ -254,13 +268,32 @@ function RootNavigator({
   nostrEnabled: boolean;
 }) {
   const theme = useAppTheme();
+  const cleanupCancelRef = useRef<(() => void) | null>(null);
   const contentStyle = useMemo(
     () => [styles.root, { backgroundColor: theme.colors.base100 }],
     [theme],
   );
+  const scheduleCleanup = useCallback(
+    (delay = 1000) => {
+      cleanupCancelRef.current?.();
+      cleanupCancelRef.current = scheduleNostrCleanup(manager, delay);
+    },
+    [manager],
+  );
+
+  useEffect(
+    () => () => {
+      cleanupCancelRef.current?.();
+      cleanupCancelRef.current = null;
+    },
+    [],
+  );
 
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer
+      theme={navigationTheme}
+      onStateChange={() => scheduleCleanup()}
+    >
       <NativeStack.Navigator
         initialRouteName="Main"
         screenOptions={{
@@ -272,7 +305,7 @@ function RootNavigator({
         }}
       >
         <NativeStack.Screen name="Main" options={{ freezeOnBlur: false }}>
-          {() => <MainTabs nostrEnabled={nostrEnabled} />}
+          {() => <MainTabs manager={manager} nostrEnabled={nostrEnabled} />}
         </NativeStack.Screen>
         <NativeStack.Screen
           name="PublicProfile"
@@ -317,9 +350,12 @@ function RootNavigator({
         />
         <NativeStack.Screen
           name="Profile"
-          component={ProfileScreen}
           options={{ presentation: 'modal' }}
-        />
+        >
+          {props => (
+            <ProfileScreen {...props} manager={manager} />
+          )}
+        </NativeStack.Screen>
         <NativeStack.Screen name="Login" options={{ presentation: 'modal' }}>
           {({ navigation }) => (
             <LoginScreen
@@ -509,13 +545,17 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   }, [manager, resetNostrState, resetWalletSession, setAuth]);
 
   useEffect(() => {
-    if (activeNostrPubkeyRef.current === authPubkey) return;
+    const previousPubkey = activeNostrPubkeyRef.current;
+    if (previousPubkey === authPubkey) return;
     activeNostrPubkeyRef.current = authPubkey;
     if (authPubkey) {
       resetNostrState();
       resetWalletSession();
     }
-  }, [authPubkey, resetNostrState, resetWalletSession]);
+    if (previousPubkey !== undefined) {
+      return scheduleNostrCleanup(manager, 0);
+    }
+  }, [authPubkey, manager, resetNostrState, resetWalletSession]);
 
   useEffect(() => {
     if (!authPubkey) return;
@@ -645,7 +685,13 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   return null;
 }
 
-function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
+function MainTabs({
+  manager,
+  nostrEnabled,
+}: {
+  manager: NostrManagerLike | null;
+  nostrEnabled: boolean;
+}) {
   const theme = useAppTheme();
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('explore');
@@ -678,6 +724,8 @@ function MainTabs({ nostrEnabled }: { nostrEnabled: boolean }) {
           },
     );
   }, [activeRoute.id]);
+
+  useEffect(() => scheduleNostrCleanup(manager), [activeRoute.id, manager]);
 
   const changeRouteIndex = useCallback((index: number) => {
     setActiveRouteId(ROUTES[index]?.id ?? 'explore');
@@ -731,10 +779,13 @@ function useAuthValue() {
 }
 
 function ProfileScreen({
+  manager,
   navigation,
-}: NativeStackScreenProps<RootStackParamList, 'Profile'>) {
+}: NativeStackScreenProps<RootStackParamList, 'Profile'> & {
+  manager: NostrManagerLike | null;
+}) {
   const auth = useAuthValue();
-  return <ProfileModal auth={auth} onClose={navigation.goBack} />;
+  return <ProfileModal auth={auth} manager={manager} onClose={navigation.goBack} />;
 }
 
 function LoginScreen({

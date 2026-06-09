@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -69,6 +71,8 @@ import {
 } from '../theme';
 import { useUIStore } from '../stores/uiStore';
 
+const fallbackProfileImage = require('../../assets/miss-profile.png');
+
 type ProfileModalTarget =
   | { type: 'login' }
   | { type: 'logout' }
@@ -79,6 +83,7 @@ type ProfileModalTarget =
 
 type ProfileModalProps = {
   auth: Pick<AuthState, 'pubkey' | 'hasSigner' | 'nsec'>;
+  manager: NostrManagerLike | null;
   onClose: () => void;
 };
 
@@ -129,17 +134,32 @@ function decodePublicKey(input: string) {
   return value.toLowerCase();
 }
 
-export function ProfileModal({ auth }: ProfileModalProps) {
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+export function ProfileModal({ auth, manager }: ProfileModalProps) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const iconColor = theme.colors.primaryContent;
-  const loginMethod = auth.pubkey
-    ? auth.nsec
-      ? 'key'
-      : auth.hasSigner
-        ? 'remote'
-        : 'readonly'
-    : null;
+  const accounts = useAuthStore(state => state.accounts);
+  const setAuth = useAuthStore(state => state.setAuth);
+  const [pendingSelectedPubkey, setPendingSelectedPubkey] = useState<string | null>(null);
+  const switchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedPubkey = pendingSelectedPubkey ?? auth.pubkey;
+  const accountEntries = useMemo(() => {
+    const entries = Object.entries(accounts);
+    if (auth.pubkey && !entries.some(([pubkey]) => pubkey === auth.pubkey)) {
+      entries.unshift([
+        auth.pubkey,
+        {
+          npub: null,
+          privkey: null,
+          nsec: auth.nsec ?? null,
+          hasSigner: auth.hasSigner,
+        },
+      ]);
+    }
+    return entries;
+  }, [accounts, auth.hasSigner, auth.nsec, auth.pubkey]);
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const navigate = useCallback(
@@ -180,6 +200,48 @@ export function ProfileModal({ auth }: ProfileModalProps) {
     },
     [auth.pubkey, navigation],
   );
+  const switchAccount = useCallback(
+    (pubkey: string) => {
+      if (pubkey === selectedPubkey) return;
+      const account = accounts[pubkey];
+      const managerAccount = manager?.getAccounts?.()[pubkey];
+      setPendingSelectedPubkey(pubkey);
+      if (switchTimeoutRef.current) {
+        clearTimeout(switchTimeoutRef.current);
+      }
+      switchTimeoutRef.current = setTimeout(() => {
+        if (manager) {
+          if (account?.privkey) {
+            manager.setSigner('privkey', account.privkey);
+          } else if (managerAccount) {
+            manager.switchAccount(pubkey);
+          } else {
+            manager.setPubkey(pubkey);
+          }
+        }
+        setAuth({
+          pubkey,
+          npub: account?.npub ?? nip19.npubEncode(pubkey),
+          privkey: account?.privkey ?? null,
+          nsec: account?.nsec ?? null,
+          hasSigner: account?.hasSigner ?? Boolean(managerAccount),
+        });
+      }, 190);
+    },
+    [accounts, manager, selectedPubkey, setAuth],
+  );
+
+  useEffect(() => {
+    if (pendingSelectedPubkey && pendingSelectedPubkey === auth.pubkey) {
+      setPendingSelectedPubkey(null);
+    }
+  }, [auth.pubkey, pendingSelectedPubkey]);
+
+  useEffect(() => {
+    return () => {
+      if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
+    };
+  }, []);
 
   return (
     <View style={styles.modalBody}>
@@ -189,33 +251,33 @@ export function ProfileModal({ auth }: ProfileModalProps) {
           <Text style={styles.stackTitle}>Profile</Text>
         </View>
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.accountButtons}>
-            {auth.pubkey ? (
-              <View style={styles.profileAvatarWrap}>
-                <HeaderProfileButton
-                  pubkey={auth.pubkey}
-                  className="h-14 w-14 border-primary bg-base-300"
-                />
-                {loginMethod ? (
-                  <View style={styles.loginMethodBadge}>
-                    {loginMethod === 'readonly' ? (
-                      <Binoculars size={15} color="#ffffff" strokeWidth={2.4} />
-                    ) : loginMethod === 'key' ? (
-                      <KeyRound size={15} color="#ffffff" strokeWidth={2.4} />
-                    ) : (
-                      <Radio size={15} color="#ffffff" strokeWidth={2.4} />
-                    )}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.accountStrip}
+            contentContainerStyle={styles.accountButtons}
+          >
+            {accountEntries.map(([pubkey, account]) => (
+              <AccountAvatarButton
+                key={pubkey}
+                selected={pubkey === selectedPubkey}
+                loginMethod={
+                  account.nsec
+                    ? 'key'
+                    : account.hasSigner
+                      ? 'remote'
+                      : 'readonly'
+                }
+                onPress={() => switchAccount(pubkey)}
+              />
+            ))}
             <Pressable
               style={styles.addAccountButton}
               onPress={() => navigate({ type: 'login' })}
             >
               <Plus size={22} color={iconColor} strokeWidth={2.4} />
             </Pressable>
-          </View>
+          </ScrollView>
 
           <View style={styles.menuGroup}>
             {auth.pubkey ? (
@@ -510,6 +572,80 @@ export function PrivateKeyLogin({
         </ScrollView>
       </View>
     </View>
+  );
+}
+
+function AccountAvatarButton({
+  selected,
+  loginMethod,
+  onPress,
+}: {
+  selected: boolean;
+  loginMethod: 'readonly' | 'key' | 'remote';
+  onPress: () => void;
+}) {
+  const styles = useProfileModalStyles();
+  const sizeProgress = useRef(new Animated.Value(selected ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(sizeProgress, {
+      toValue: selected ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [selected, sizeProgress]);
+
+  const tileSize = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [42, 58],
+  });
+  const tileRadius = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [21, 29],
+  });
+  const avatarScale = sizeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.75, 1],
+  });
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={[
+        styles.profileAvatarWrap,
+        {
+          borderRadius: tileRadius,
+          height: tileSize,
+          width: tileSize,
+        },
+        selected ? styles.selectedAccountAvatar : styles.accountAvatar,
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.accountAvatarImageWrap,
+          { transform: [{ scale: avatarScale }] },
+        ]}
+      >
+        <Image
+          source={fallbackProfileImage}
+          style={styles.accountAvatarImage}
+          contentFit="cover"
+        />
+      </Animated.View>
+      <View style={styles.loginMethodBadge}>
+        {loginMethod === 'readonly' ? (
+          <Binoculars size={15} color="#ffffff" strokeWidth={2.4} />
+        ) : loginMethod === 'key' ? (
+          <KeyRound size={15} color="#ffffff" strokeWidth={2.4} />
+        ) : (
+          <Radio size={15} color="#ffffff" strokeWidth={2.4} />
+        )}
+      </View>
+    </AnimatedPressable>
   );
 }
 
@@ -1102,7 +1238,7 @@ function WalletKeyRow({
 
 export function MintsModal({
   manager,
-  onClose,
+  onClose: _onClose,
 }: {
   manager: NostrManagerLike | null;
   onClose: () => void;
@@ -1788,15 +1924,42 @@ function createProfileModalStyles(colors: AppThemeColors) {
     textAlign: 'center',
   },
   accountButtons: {
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 18,
+    paddingBottom: 18,
+    paddingTop: 8,
+    paddingHorizontal: 2,
+    overflow: 'visible',
+  },
+  accountStrip: {
+    marginBottom: 0,
     overflow: 'visible',
   },
   profileAvatarWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
     height: 56,
     overflow: 'visible',
     width: 56,
+  },
+  accountAvatar: {
+    opacity: 0.78,
+  },
+  selectedAccountAvatar: {
+    opacity: 1,
+  },
+  accountAvatarImageWrap: {
+    borderColor: colors.primary,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 56,
+    overflow: 'hidden',
+    width: 56,
+  },
+  accountAvatarImage: {
+    height: '100%',
+    width: '100%',
   },
   loginMethodBadge: {
     alignItems: 'center',

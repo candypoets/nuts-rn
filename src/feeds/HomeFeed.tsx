@@ -48,6 +48,7 @@ import {
   Wallet,
   Zap,
 } from 'lucide-react-native';
+import { AppButton } from '../components/AppButton';
 import { Feed } from '../components/Feed';
 import { MintCardPicker } from '../components/MintCardPicker';
 import { Avatar } from '../components/notes/Avatar';
@@ -1072,24 +1073,11 @@ function LoggedOutHome() {
           <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
             Home shows your wallet activity once you are signed in.
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            className="mx-auto mt-5 min-w-40 rounded-xl border border-primary px-5 py-3"
+          <AppButton
+            title="Sign in"
+            className="mx-auto mt-5 min-w-36 px-6"
             onPress={() => navigation.navigate('Login')}
-            style={({ pressed }) => ({
-              backgroundColor: pressed ? `${theme.colors.primary}14` : 'transparent',
-              borderColor: theme.colors.primary,
-              opacity: pressed ? 0.82 : 1,
-              transform: [{ translateY: pressed ? 1 : 0 }],
-            })}
-          >
-            <View className="flex-row items-center justify-center gap-2">
-              <Text className="text-base font-extrabold text-base-content">
-                Sign in
-              </Text>
-              <ArrowRight size={17} color={theme.colors.primaryContent} strokeWidth={2.5} />
-            </View>
-          </Pressable>
+          />
         </View>
       </View>
     </View>

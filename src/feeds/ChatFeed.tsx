@@ -463,8 +463,17 @@ function ChatHeader({
       <View className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}>
         <View className="h-14 flex-row items-center justify-between">
           <Text className="text-2xl font-bold text-base-content">Messages</Text>
-          <Pressable className="h-9 w-9 items-center justify-center rounded-full border border-primary bg-base-300">
-            <MessageCirclePlus size={19} color={theme.colors.primary} strokeWidth={2.2} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="New chat"
+            className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
+            hitSlop={12}
+          >
+            <MessageCirclePlus
+              size={19}
+              color={theme.colors.primaryContent}
+              strokeWidth={2.2}
+            />
           </Pressable>
         </View>
         {!sticky ? <RelaysList relays={relays} statuses={statuses} /> : null}

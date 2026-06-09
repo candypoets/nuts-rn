@@ -401,20 +401,20 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
 
   const empty = (
     <View className="px-3 py-16">
-      <Text className="text-center text-base font-semibold text-primary-content">
-        {!pubkey
-          ? 'Sign in to see chats'
-          : hasSigner === false
-            ? 'Chats unavailable'
-            : 'No chats yet'}
-      </Text>
-      <Text className="mt-2 text-center text-sm text-primary-content">
-        {!pubkey
-          ? 'Chat uses your account pubkey to load direct-message conversations.'
-          : hasSigner === false
-            ? 'Direct messages are not available in read-only mode.'
-            : 'Conversations appear here once messages arrive.'}
-      </Text>
+      {pubkey && hasSigner === false ? (
+        <ReadOnlyChatStub />
+      ) : (
+        <>
+          <Text className="text-center text-base font-semibold text-primary-content">
+            {pubkey ? 'No chats yet' : 'Sign in to see chats'}
+          </Text>
+          <Text className="mt-2 text-center text-sm text-primary-content">
+            {pubkey
+              ? 'Conversations appear here once messages arrive.'
+              : 'Chat uses your account pubkey to load direct-message conversations.'}
+          </Text>
+        </>
+      )}
       {!pubkey ? (
         <AppButton
           title="Sign in"
@@ -496,6 +496,26 @@ function ChatHeader({
             onPress={() => onSelectTab('requests')}
           />
         </View>
+      </View>
+    </View>
+  );
+}
+
+function ReadOnlyChatStub() {
+  const theme = useAppTheme();
+
+  return (
+    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
+      <View className="items-center">
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
+          <MessageCirclePlus size={30} color={theme.colors.primary} strokeWidth={2.2} />
+        </View>
+        <Text className="text-center text-xl font-semibold text-base-content">
+          Chats unavailable
+        </Text>
+        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
+          Direct messages are not available in read-only mode.
+        </Text>
       </View>
     </View>
   );

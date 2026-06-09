@@ -334,6 +334,7 @@ export function PrivateKeyLogin({
   const mutedIconColor = theme.colors.primaryContent;
   const [privateKey, setPrivateKey] = useState('');
   const [qrText, setQrText] = useState('');
+  const [qrLinkCopied, setQrLinkCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const initialPubkeyRef = useRef(auth.pubkey);
@@ -406,6 +407,7 @@ export function PrivateKeyLogin({
       setAuth({ privkey: null, nsec: null });
       setPrivateKey('');
       setQrText(nextQrText);
+      setQrLinkCopied(false);
     } catch (nextError) {
       setLoginPending(false);
       setError(
@@ -417,6 +419,8 @@ export function PrivateKeyLogin({
   const copyQrText = useCallback(async () => {
     if (!qrText) return;
     await Clipboard.setStringAsync(qrText);
+    setQrLinkCopied(true);
+    setTimeout(() => setQrLinkCopied(false), 1800);
   }, [qrText]);
 
   return (
@@ -461,9 +465,14 @@ export function PrivateKeyLogin({
                   Scan this code with your signing app.
                 </Text>
                 <Pressable style={styles.secondaryAction} onPress={copyQrText}>
-                  <Text style={styles.secondaryActionText}>
-                    Copy connection link
-                  </Text>
+                  <View style={styles.copyConnectionRow}>
+                    {qrLinkCopied ? (
+                      <Check size={16} color={theme.colors.primary} strokeWidth={2.5} />
+                    ) : null}
+                    <Text style={styles.secondaryActionText}>
+                      {qrLinkCopied ? 'Copied' : 'Copy connection link'}
+                    </Text>
+                  </View>
                 </Pressable>
               </View>
             ) : null}
@@ -2061,6 +2070,12 @@ function createProfileModalStyles(colors: AppThemeColors) {
     justifyContent: 'center',
     marginTop: 12,
     minHeight: 42,
+  },
+  copyConnectionRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
   },
   secondaryActionText: {
     color: colors.primaryContent,

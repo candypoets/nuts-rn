@@ -1,11 +1,10 @@
 import { VideoView } from 'expo-video';
-import { ChevronLeft, MoreHorizontal } from 'lucide-react-native';
+import { Image } from 'expo-image';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
-  Image,
   Modal,
-  Pressable,
+  NativeModules,
   StyleSheet,
   Text,
   View,
@@ -34,6 +33,10 @@ import { Footer } from './notes/Footer';
 import { User } from './notes/User';
 
 type ZoomLink = UIStore['imageZoom']['links'][number];
+const AnimatedImage = Animated.createAnimatedComponent(Image);
+const OrientationGate = NativeModules.OrientationGate as
+  | { setImageZoomActive?: (active: boolean) => void }
+  | undefined;
 
 function zoomNoteText(note: NonNullable<UIStore['imageZoom']['note']>) {
   const kind1 = asKind1(note);
@@ -69,6 +72,7 @@ export function ImageZoom() {
   const listRef = useRef<FlatList<ZoomLink>>(null);
   const visible = imageZoom.zoomed !== undefined && imageZoom.links.length > 0;
   const links = imageZoom.links;
+  const isLandscape = width > height;
   const translateY = useSharedValue(0);
   const backgroundOpacity = useSharedValue(0);
 
@@ -94,6 +98,14 @@ export function ImageZoom() {
     });
   }, [backgroundOpacity, imageZoom.zoomed, links.length, translateY, visible]);
 
+  useEffect(() => {
+    OrientationGate?.setImageZoomActive?.(visible);
+
+    return () => {
+      OrientationGate?.setImageZoomActive?.(false);
+    };
+  }, [visible]);
+
   const dismiss = useCallback(() => {
     backgroundOpacity.value = withTiming(0, { duration: 140 });
     close();
@@ -110,7 +122,13 @@ export function ImageZoom() {
   if (!visible) return null;
 
   return (
-    <Modal transparent visible={visible} statusBarTranslucent animationType="fade">
+    <Modal
+      transparent
+      visible={visible}
+      statusBarTranslucent
+      animationType="fade"
+      supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}
+    >
       <View style={styles.modal}>
         <Animated.View style={[styles.backdrop, backdropStyle]} />
         <Animated.View style={[styles.content, contentStyle]}>
@@ -153,40 +171,22 @@ export function ImageZoom() {
             )}
           />
         </Animated.View>
-        <View
-          pointerEvents="box-none"
-          style={[styles.chrome, { paddingTop: insets.top + 12 }]}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close media"
-            hitSlop={12}
-            onPress={close}
-            style={styles.closeButton}
-          >
-            <ChevronLeft size={28} color="#fff" strokeWidth={2.4} />
-          </Pressable>
-          {links.length > 1 ? (
-            <Text style={styles.counter}>
-              {currentIndex + 1} / {links.length}
-            </Text>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="More"
-            hitSlop={12}
-            style={styles.closeButton}
-          >
-            <MoreHorizontal size={25} color="#fff" strokeWidth={2.4} />
-          </Pressable>
-        </View>
-        <ZoomNoteOverlay bottomInset={insets.bottom} />
+        <ZoomNoteOverlay
+          bottomInset={insets.bottom}
+          compact={isLandscape}
+        />
       </View>
     </Modal>
   );
 }
 
-function ZoomNoteOverlay({ bottomInset }: { bottomInset: number }) {
+function ZoomNoteOverlay({
+  bottomInset,
+  compact,
+}: {
+  bottomInset: number;
+  compact: boolean;
+}) {
   const note = useUIStore(state => state.imageZoom.note);
   const visible = useUIStore(state => state.imageZoom.zoomed !== undefined);
 
@@ -199,7 +199,12 @@ function ZoomNoteOverlay({ bottomInset }: { bottomInset: number }) {
     <View
       style={[
         styles.noteOverlay,
-        { paddingBottom: Math.max(12, bottomInset + 8) },
+        compact ? styles.noteOverlayCompact : null,
+        {
+          paddingBottom: compact
+            ? Math.max(8, bottomInset)
+            : Math.max(12, bottomInset + 8),
+        },
       ]}
     >
       <View style={styles.noteCard}>
@@ -217,7 +222,7 @@ function ZoomNoteOverlay({ bottomInset }: { bottomInset: number }) {
         </View>
         {content ? (
           <Text
-            numberOfLines={3}
+            numberOfLines={compact ? 1 : 3}
             style={styles.noteText}
           >
             {content}
@@ -424,9 +429,10 @@ function ZoomImage({
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={styles.zoomImageWrap}>
-        <Animated.Image
+        <AnimatedImage
           source={{ uri: link.src }}
-          resizeMode="contain"
+          contentFit="contain"
+          cachePolicy="memory-disk"
           style={[styles.zoomImage, { width, height }, imageStyle]}
         />
       </Animated.View>
@@ -497,7 +503,8 @@ function ZoomVideo({
         {link.blurhash ? (
           <Image
             source={{ uri: link.blurhash }}
-            resizeMode="contain"
+            contentFit="contain"
+            cachePolicy="memory-disk"
             style={styles.videoPoster}
           />
         ) : null}
@@ -562,30 +569,6 @@ const styles = StyleSheet.create({
     top: 0,
     zIndex: -1,
   },
-  chrome: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-  },
-  closeButton: {
-    height: 56,
-    width: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 28,
-    backgroundColor: 'rgba(15, 23, 42, 0.38)',
-  },
-  counter: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
   noteCard: {
     gap: 8,
   },
@@ -596,6 +579,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     zIndex: 3,
+  },
+  noteOverlayCompact: {
+    paddingHorizontal: 88,
   },
   noteText: {
     color: '#fff',

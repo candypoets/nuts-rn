@@ -55,6 +55,8 @@
 	<string>Allow NutsRn to scan payment and profile QR codes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>NutsRn connects to the development server on your local network.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Allow NutsRn to use Face ID before copying your private key.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>NutsRn uses your location when a feature needs local context.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -71,6 +73,8 @@
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>

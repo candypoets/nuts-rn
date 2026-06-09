@@ -33,6 +33,12 @@
         }
       ],
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow NutsRn to use Face ID before copying your private key."
+        }
+      ],
+      [
         "expo-dev-client",
         {
           "launchMode": "most-recent",
@@ -46,7 +52,21 @@
           }
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#131716",
+          "image": "./assets/splash-nutscash.png",
+          "imageWidth": 120,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#131716",
+            "image": "./assets/splash-nutscash.png"
+          }
+        }
+      ],
+      "expo-web-browser"
     ]
   }
 }

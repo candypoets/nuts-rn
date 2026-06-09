@@ -32,6 +32,13 @@ class AppDelegate: ExpoAppDelegate {
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
+
+  override func application(
+    _ application: UIApplication,
+    supportedInterfaceOrientationsFor window: UIWindow?
+  ) -> UIInterfaceOrientationMask {
+    OrientationGate.isImageZoomActive ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait
+  }
 }
 
 class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {

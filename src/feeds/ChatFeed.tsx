@@ -464,7 +464,7 @@ function ChatHeader({
       <View className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}>
         <View className="h-14 flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
-            <Text className="text-2xl font-bold text-base-content">BM</Text>
+            <Text className="text-2xl font-bold text-base-content">Messages</Text>
             <Pressable className="h-8 w-8 items-center justify-center rounded-full bg-base-200">
               <Info size={17} color={iconColor} strokeWidth={2.2} />
             </Pressable>

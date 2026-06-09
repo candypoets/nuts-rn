@@ -1,5 +1,8 @@
-import React, { memo, useRef, useState } from 'react';
-import {Linking, Text, View} from 'react-native';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import {Linking, Pressable, StyleSheet, Text, View} from 'react-native';
+import {Image} from 'expo-image';
+import * as WebBrowser from 'expo-web-browser';
+import {ExternalLink, Play} from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
@@ -46,6 +49,7 @@ function normalizeText(text: string) {
 
 function InlineLink({ text, url }: { text: string; url: string }) {
   const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const openUrl = normalizeLinkUrl(url);
 
   return (
     <Text
@@ -65,7 +69,7 @@ function InlineLink({ text, url }: { text: string; url: string }) {
           y: event.nativeEvent.pageY,
         };
         if (!movedTooFar(pressStartRef.current, end)) {
-          Linking.openURL(url).catch(() => {});
+          openLink(openUrl);
         }
         pressStartRef.current = null;
       }}
@@ -81,16 +85,196 @@ function truncateMiddle(value: string, maxLength = 54) {
   return `${value.slice(0, edgeLength)}...${value.slice(-edgeLength)}`;
 }
 
+function normalizeLinkUrl(url: string) {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function openLink(url: string) {
+  WebBrowser.openBrowserAsync(url).catch(() => {
+    Linking.openURL(url).catch(() => {});
+  });
+}
+
+type YoutubeMetadata = {
+  title: string;
+  authorName?: string;
+};
+
+const youtubeMetadataCache = new Map<string, YoutubeMetadata | null>();
+
+function getYoutubeOembedUrl(url: string) {
+  return `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
+    normalizeLinkUrl(url),
+  )}`;
+}
+
+function getUrlParts(url: string) {
+  try {
+    const parsed = new URL(normalizeLinkUrl(url));
+    const hostname = parsed.hostname.replace(/^www\./, '');
+    return {
+      hostname,
+      label: hostname || url,
+      path: `${parsed.pathname}${parsed.search}`.replace(/\/$/, ''),
+    };
+  } catch {
+    return {
+      hostname: '',
+      label:
+        url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] ||
+        url,
+      path: '',
+    };
+  }
+}
+
+function getYoutubeVideoId(url: string) {
+  try {
+    const parsed = new URL(normalizeLinkUrl(url));
+    const hostname = parsed.hostname.replace(/^www\./, '').toLowerCase();
+
+    if (hostname === 'youtu.be') {
+      return parsed.pathname.split('/').filter(Boolean)[0] || null;
+    }
+
+    if (
+      hostname === 'youtube.com' ||
+      hostname === 'm.youtube.com' ||
+      hostname === 'music.youtube.com'
+    ) {
+      if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
+
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      if (['shorts', 'embed', 'live'].includes(parts[0])) {
+        return parts[1] || null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function LinkPreviewCard({url, text}: {url: string; text: string}) {
+  const parts = useMemo(() => getUrlParts(url), [url]);
+  const youtubeVideoId = useMemo(() => getYoutubeVideoId(url), [url]);
+  const openUrl = useMemo(() => normalizeLinkUrl(url), [url]);
+  const [youtubeMetadata, setYoutubeMetadata] =
+    useState<YoutubeMetadata | null>(null);
+  const [thumbnailFallback, setThumbnailFallback] = useState(0);
+  const thumbnailUrl =
+    youtubeVideoId && thumbnailFallback < YOUTUBE_THUMBNAILS.length
+      ? `https://i.ytimg.com/vi/${youtubeVideoId}/${YOUTUBE_THUMBNAILS[thumbnailFallback]}`
+      : null;
+  const displayText = text && text !== url ? text : parts.path || url;
+
+  useEffect(() => {
+    if (!youtubeVideoId) return;
+
+    const cached = youtubeMetadataCache.get(youtubeVideoId);
+    if (cached !== undefined) {
+      setYoutubeMetadata(cached);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(getYoutubeOembedUrl(openUrl), {signal: controller.signal})
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => {
+        if (!data || typeof data.title !== 'string') {
+          youtubeMetadataCache.set(youtubeVideoId, null);
+          setYoutubeMetadata(null);
+          return;
+        }
+
+        const metadata = {
+          title: data.title,
+          authorName:
+            typeof data.author_name === 'string' ? data.author_name : undefined,
+        };
+        youtubeMetadataCache.set(youtubeVideoId, metadata);
+        setYoutubeMetadata(metadata);
+      })
+      .catch(error => {
+        if (error?.name === 'AbortError') return;
+        youtubeMetadataCache.set(youtubeVideoId, null);
+      });
+
+    return () => controller.abort();
+  }, [openUrl, youtubeVideoId]);
+
+  return (
+    <Pressable
+      className="overflow-hidden rounded-lg border border-base-200 bg-base-300"
+      onPress={event => {
+        event.stopPropagation();
+        openLink(openUrl);
+      }}
+    >
+      {thumbnailUrl ? (
+        <View className="relative aspect-video w-full bg-base-200">
+          <Image
+            source={{uri: thumbnailUrl}}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            style={StyleSheet.absoluteFill}
+            onError={() => setThumbnailFallback(value => value + 1)}
+          />
+          <View className="absolute inset-0 items-center justify-center">
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-black/70">
+              <Play size={22} color="white" fill="white" />
+            </View>
+          </View>
+        </View>
+      ) : null}
+      <View className="gap-1 px-3 py-2.5">
+        <View className="flex-row items-center gap-1.5">
+          <Text
+            className="flex-1 text-xs font-semibold uppercase text-base-content/60"
+            numberOfLines={1}
+          >
+            {youtubeMetadata?.authorName ||
+              (youtubeVideoId ? 'YouTube' : parts.label)}
+          </Text>
+          <ExternalLink size={13} color="rgba(120,120,120,0.9)" />
+        </View>
+        <Text
+          className="text-[15px] font-medium leading-5 text-base-content"
+          numberOfLines={2}
+        >
+          {youtubeVideoId
+            ? youtubeMetadata?.title ||
+              displayText.replace(/^https?:\/\/(www\.)?/, '')
+            : displayText}
+        </Text>
+        {!youtubeVideoId ? (
+          <Text className="text-xs text-base-content/60" numberOfLines={1}>
+            {truncateMiddle(url, 72)}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+const YOUTUBE_THUMBNAILS = [
+  'maxresdefault.jpg',
+  'hqdefault.jpg',
+  'mqdefault.jpg',
+  'default.jpg',
+];
+
 function isUserEntity(entity?: string | null) {
   return !!entity?.match(/n(profile|pub)/);
 }
 
-function isInlineContentBlock(block: ContentBlock) {
+function isInlineContentBlock(block: ContentBlock, showMedia: boolean) {
   if (block.type() === 'text') return true;
 
   const dataType = block.dataType();
   if (
-    dataType === ContentData.LinkPreviewData ||
+    (!showMedia && dataType === ContentData.LinkPreviewData) ||
     dataType === ContentData.HashtagData
   ) {
     return true;
@@ -209,19 +393,19 @@ function ContentBlocksComponent({
       block.text() || ''
     }`;
 
-    if (isInlineContentBlock(block)) {
+    if (isInlineContentBlock(block, showMedia)) {
       const inlineBlocks: ContentBlock[] = [];
       const inlineStartIndex = index;
       while (
         index < displayContent.length &&
-        isInlineContentBlock(displayContent[index])
+        isInlineContentBlock(displayContent[index], showMedia)
       ) {
         inlineBlocks.push(displayContent[index]);
         index += 1;
       }
 
       const nextBlock = displayContent[index];
-      const trimEnd = !nextBlock || !isInlineContentBlock(nextBlock);
+      const trimEnd = !nextBlock || !isInlineContentBlock(nextBlock, showMedia);
       const inlineChildren: React.ReactNode[] = [];
       inlineBlocks.forEach((inlineBlock, inlineBlockIndex) => {
         const displayIndex = inlineStartIndex + inlineBlockIndex;
@@ -277,6 +461,20 @@ function ContentBlocksComponent({
           </Text>,
         );
       }
+      index += 1;
+      continue;
+    }
+
+    if (block.dataType() === ContentData.LinkPreviewData) {
+      const preview = asLinkPreview(block);
+      const url = preview?.url?.() || block.text() || '';
+      if (!url) {
+        index += 1;
+        continue;
+      }
+      renderedBlocks.push(
+        <LinkPreviewCard key={blockKey} text={block.text() || url} url={url} />,
+      );
       index += 1;
       continue;
     }

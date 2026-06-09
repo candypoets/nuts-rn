@@ -66,7 +66,13 @@ function readBlobAsArrayBuffer(blob: Blob) {
 function signEvent(template: EventTemplate) {
   return new Promise<Event>((resolve, reject) => {
     try {
-      useSignEvent(template, resolve);
+      useSignEvent(template, signedEvent => {
+        if (typeof signedEvent === 'string') {
+          resolve(JSON.parse(signedEvent));
+          return;
+        }
+        resolve(signedEvent);
+      });
     } catch (error) {
       reject(error);
     }
@@ -74,6 +80,10 @@ function signEvent(template: EventTemplate) {
 }
 
 function canonicalAuthEvent(signed: Event) {
+  if (!signed.id || !signed.pubkey || !signed.sig) {
+    throw new Error('Failed to sign upload authorization');
+  }
+
   return {
     id: signed.id,
     pubkey: signed.pubkey,

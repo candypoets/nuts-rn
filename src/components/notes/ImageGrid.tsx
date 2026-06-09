@@ -9,7 +9,6 @@ import {
   Text,
   View,
   useWindowDimensions,
-  type LayoutChangeEvent,
 } from 'react-native';
 import {useSharedVideoPlayer} from '../../media/videoPlayers';
 import {useUIStore} from '../../stores/uiStore';
@@ -97,7 +96,6 @@ function VideoTile({
   const [muted, setMuted] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [progressWidth, setProgressWidth] = useState(1);
   const player = useSharedVideoPlayer(src);
 
   useEffect(() => {
@@ -141,29 +139,13 @@ function VideoTile({
   }, [player]);
 
   const remaining = Math.max(0, duration - currentTime);
-  const progress = duration > 0 ? Math.min(Math.max(currentTime / duration, 0), 1) : 0;
-
-  const handleProgressLayout = (event: LayoutChangeEvent) => {
-    setProgressWidth(Math.max(1, event.nativeEvent.layout.width));
-  };
-
-  const seekFromLocation = (locationX: number) => {
-    if (!duration) return;
-    const nextProgress = Math.min(Math.max(locationX / progressWidth, 0), 1);
-    player.currentTime = duration * nextProgress;
-    setCurrentTime(duration * nextProgress);
-  };
 
   const handleVideoPress = () => {
-    if (muted) {
-      player.muted = false;
-      player.volume = 1;
-      setMuted(false);
-      setPlayRequested(true);
-      player.play();
-      return;
-    }
-
+    player.muted = false;
+    player.volume = 1;
+    setMuted(false);
+    setPlayRequested(true);
+    player.play();
     onOpenZoom();
   };
 
@@ -200,9 +182,7 @@ function VideoTile({
           className="absolute inset-0 items-center justify-center bg-black/15"
           onPress={event => {
             event.stopPropagation();
-            setPlayRequested(true);
-            setFirstFrameRendered(true);
-            player.play();
+            handleVideoPress();
           }}
         >
           <View className="h-14 w-14 items-center justify-center rounded-full bg-black/65">
@@ -222,6 +202,8 @@ function VideoTile({
               player.muted = nextMuted;
               player.volume = nextMuted ? 0 : 1;
               setMuted(nextMuted);
+              setPlayRequested(true);
+              player.play();
             }}
             style={styles.controlButton}
           >
@@ -231,19 +213,7 @@ function VideoTile({
               <Volume2 size={17} color="#fff" strokeWidth={2.4} />
             )}
           </Pressable>
-          <Pressable
-            accessibilityRole="adjustable"
-            accessibilityLabel="Video progress"
-            onLayout={handleProgressLayout}
-            onPress={event => {
-              event.stopPropagation();
-              seekFromLocation(event.nativeEvent.locationX);
-            }}
-            style={styles.progressTrack}
-          >
-            <View style={[styles.progressFill, {width: `${progress * 100}%`}]} />
-          </Pressable>
-          <Text style={styles.remainingTime}>-{formatRemaining(remaining)}</Text>
+          <Text style={styles.remainingTime}>{formatRemaining(remaining)}</Text>
         </View>
       ) : null}
     </Pressable>
@@ -274,35 +244,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     height: 32,
     justifyContent: 'center',
+    position: 'absolute',
+    right: 8,
+    top: 8,
     width: 32,
   },
-  progressFill: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    height: '100%',
-  },
-  progressTrack: {
-    backgroundColor: 'rgba(255, 255, 255, 0.34)',
-    borderRadius: 999,
-    flex: 1,
-    height: 4,
-    overflow: 'hidden',
-  },
   remainingTime: {
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    borderRadius: 12,
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
-    minWidth: 42,
-    textAlign: 'right',
-  },
-  videoControls: {
-    alignItems: 'center',
-    bottom: 8,
-    flexDirection: 'row',
-    gap: 8,
-    left: 8,
+    minWidth: 46,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     position: 'absolute',
     right: 8,
+    bottom: 8,
+    textAlign: 'center',
+  },
+  videoControls: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
 });
 

@@ -62,15 +62,6 @@ function withoutKnownSpentProofs(mint: string, proofs: Proof[]) {
   const uniqueProofs = uniqProofs(proofs);
   if (!spentSecrets.size) return uniqueProofs;
   const nextProofs = uniqueProofs.filter(proof => !spentSecrets.has(proof.secret));
-  const discarded = uniqueProofs.length - nextProofs.length;
-  if (discarded > 0) {
-    console.log('[wallet] discarded locally known spent proofs', {
-      mint,
-      discarded,
-      incoming: uniqueProofs.length,
-      kept: nextProofs.length,
-    });
-  }
   return nextProofs;
 }
 
@@ -185,6 +176,8 @@ export type WalletStore = {
   walletMnemonic: string;
   walletMnemonicIndex: number;
   walletPassphrase: string;
+  walletPrivateKey: string;
+  walletPublicKey: string;
   walletMintUrls: string[];
   activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
@@ -207,10 +200,12 @@ export type WalletStore = {
   setWalletMnemonic(value: string): void;
   setWalletMnemonicIndex(value: number): void;
   setWalletPassphrase(value: string): void;
+  setWalletKeys(value: {privateKey?: string | null; publicKey?: string | null}): void;
   setWalletMintUrls(value: string[]): void;
   setActiveMintUrl(value: string | null): void;
   setBalanceByMint(value: Record<string, number>): void;
   setDeletedKind7375Ids(value: string[]): void;
+  resetWalletSession(): void;
 };
 
 export const useWalletStore = create<WalletStore>()(
@@ -219,6 +214,8 @@ export const useWalletStore = create<WalletStore>()(
       walletMnemonic: '',
       walletMnemonicIndex: 0,
       walletPassphrase: '',
+      walletPrivateKey: '',
+      walletPublicKey: '',
       walletMintUrls: [],
       activeMintUrl: null,
       balanceByMint: {},
@@ -393,27 +390,15 @@ export const useWalletStore = create<WalletStore>()(
             proofs.map(proof => ({ secret: proof.secret })),
           );
           const unspentProofs: Proof[] = [];
-          let spentCount = 0;
           states.forEach((state, index) => {
             const proof = proofs[index];
             if (!proof) return;
             if (state.state !== CheckStateEnum.SPENT) {
               unspentProofs.push(proof);
-            } else {
-              spentCount += 1;
             }
           });
-          if (spentCount > 0) {
-            console.log('[wallet] discarded mint-reported spent proofs', {
-              mint,
-              discarded: spentCount,
-              checked: proofs.length,
-              kept: unspentProofs.length,
-            });
-          }
           return withoutKnownSpentProofs(mint, unspentProofs);
-        } catch (error) {
-          console.error('[wallet] proof state check failed', mint, error);
+        } catch {
           return withoutKnownSpentProofs(mint, proofs);
         }
       },
@@ -431,25 +416,15 @@ export const useWalletStore = create<WalletStore>()(
               );
               const nextUnspent: Proof[] = [];
               const nextSpent = [...(spentProofs.get(mint) || [])];
-              let spentCount = 0;
               states.forEach((state, index) => {
                 const proof = proofs[index];
                 if (!proof) return;
                 if (state.state === CheckStateEnum.SPENT) {
-                  spentCount += 1;
                   nextSpent.push(proof);
                 } else {
                   nextUnspent.push(proof);
                 }
               });
-              if (spentCount > 0) {
-                console.log('[wallet] moved spent proofs out of unspent', {
-                  mint,
-                  spent: spentCount,
-                  checked: proofs.length,
-                  remaining: nextUnspent.length,
-                });
-              }
               unspentProofs.set(mint, uniqProofs(nextUnspent));
               spentProofs.set(mint, uniqProofs(nextSpent));
               await Promise.all([
@@ -466,8 +441,7 @@ export const useWalletStore = create<WalletStore>()(
                   uniqProofs(nextSpent),
                 ),
               ]);
-            } catch (error) {
-              console.error('[wallet] proof state check failed', mint, error);
+            } catch {
             }
           }
           const balanceByMint = balanceFor(unspentProofs, reservedProofs);
@@ -492,11 +466,39 @@ export const useWalletStore = create<WalletStore>()(
       setWalletMnemonicIndex: walletMnemonicIndex =>
         set({ walletMnemonicIndex }),
       setWalletPassphrase: walletPassphrase => set({ walletPassphrase }),
+      setWalletKeys: ({privateKey, publicKey}) =>
+        set(state => ({
+          walletPrivateKey: privateKey ?? state.walletPrivateKey,
+          walletPublicKey: publicKey ?? state.walletPublicKey,
+        })),
       setWalletMintUrls: walletMintUrls =>
         set({ walletMintUrls: walletMintUrls.map(normalizeMintUrl) }),
       setActiveMintUrl: activeMintUrl => set({ activeMintUrl }),
       setBalanceByMint: balanceByMint => set({ balanceByMint }),
       setDeletedKind7375Ids: deletedKind7375Ids => set({ deletedKind7375Ids }),
+      resetWalletSession: () => {
+        activeWalletPubkey = null;
+        verifyingProofs = false;
+        unspentProofs.clear();
+        spentProofs.clear();
+        reservedProofs.clear();
+        cashuWallets.clear();
+        set({
+          walletMnemonic: '',
+          walletMnemonicIndex: 0,
+          walletPassphrase: '',
+          walletPrivateKey: '',
+          walletPublicKey: '',
+          walletMintUrls: [],
+          activeMintUrl: null,
+          balanceByMint: {},
+          proofDebugStats: EMPTY_PROOF_DEBUG_STATS,
+          proofsLoaded: false,
+          proofsVerifying: false,
+          deletedKind7375Ids: [],
+          pendingMintQuotes: [],
+        });
+      },
     }),
     {
       name: 'wallet',
@@ -505,6 +507,8 @@ export const useWalletStore = create<WalletStore>()(
         walletMnemonic: state.walletMnemonic,
         walletMnemonicIndex: state.walletMnemonicIndex,
         walletPassphrase: state.walletPassphrase,
+        walletPrivateKey: state.walletPrivateKey,
+        walletPublicKey: state.walletPublicKey,
         walletMintUrls: state.walletMintUrls,
         activeMintUrl: state.activeMintUrl,
         deletedKind7375Ids: state.deletedKind7375Ids,

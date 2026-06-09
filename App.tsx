@@ -50,21 +50,26 @@ import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions
 import {
   FeedBuilderModal,
   Kind1111CommentsModal,
+  KeysModal,
   CmdKModal,
   LogoutModal,
   MintingModal,
+  MintsModal,
   PostModal,
   PrivateKeyLogin,
   ProfileModal,
   ProfileStubModal,
   ReceiveModal,
+  RelayPreferencesModal,
   RelayInfosModal,
   ScanModal,
   SendEcashModal,
   SendModal,
   SendPlaceholderModal,
+  ShareModal,
   SignupModal,
   ThemeModal,
+  WalletModal,
 } from './src/modals';
 import { Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
 import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
@@ -320,6 +325,9 @@ function RootNavigator({
             <LogoutScreen manager={manager} onClose={navigation.goBack} />
           )}
         </NativeStack.Screen>
+        <NativeStack.Screen name="Keys" options={{ presentation: 'modal' }}>
+          {({ navigation }) => <KeysScreen onClose={navigation.goBack} />}
+        </NativeStack.Screen>
         <NativeStack.Screen
           name="CmdK"
           component={CmdKScreen}
@@ -356,6 +364,16 @@ function RootNavigator({
           options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
+          name="Share"
+          component={ShareScreen}
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.6],
+            sheetCornerRadius: 18,
+            sheetGrabberVisible: false,
+          }}
+        />
+        <NativeStack.Screen
           name="Scan"
           component={ScanScreen}
           options={{ presentation: 'modal' }}
@@ -375,6 +393,28 @@ function RootNavigator({
           component={ThemeScreen}
           options={{ presentation: 'modal' }}
         />
+        <NativeStack.Screen
+          name="Mints"
+          options={{
+            presentation: 'modal',
+            headerShown: true,
+            title: 'Mints',
+          }}
+        >
+          {({ navigation }) => (
+            <MintsScreen manager={manager} onClose={navigation.goBack} />
+          )}
+        </NativeStack.Screen>
+        <NativeStack.Screen
+          name="RelayPreferences"
+          component={RelayPreferencesScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <NativeStack.Screen name="Wallet" options={{ presentation: 'modal' }}>
+          {({ navigation }) => (
+            <WalletScreen manager={manager} onClose={navigation.goBack} />
+          )}
+        </NativeStack.Screen>
         <NativeStack.Screen
           name="ProfileStub"
           component={ProfileStubScreen}
@@ -407,8 +447,11 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   const addProofs = useWalletStore(state => state.addProofs);
   const getUnspentProofsForMint = useWalletStore(state => state.getUnspentProofsForMint);
   const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
+  const resetWalletSession = useWalletStore(state => state.resetWalletSession);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
+  const resetNostrState = useNostrStore(state => state.resetNostrState);
   const activeMintQuoteMonitorsRef = useRef(new Map<string, () => void>());
+  const activeNostrPubkeyRef = useRef<string | null | undefined>(undefined);
 
   useRootNostrSubscriptions(Boolean(manager));
   useNotificationSubscription(Boolean(manager));
@@ -425,6 +468,11 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
         }
       ).detail;
       const pubkey = detail?.pubkey ?? null;
+      const currentPubkey = useAuthStore.getState().pubkey;
+      if (pubkey !== currentPubkey) {
+        resetNostrState();
+        resetWalletSession();
+      }
       setAuth({
         pubkey,
         npub: pubkey ? nip19.npubEncode(pubkey) : null,
@@ -435,7 +483,16 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
 
     manager.addEventListener('auth', handleAuth);
     return () => manager.removeEventListener('auth', handleAuth);
-  }, [manager, setAuth]);
+  }, [manager, resetNostrState, resetWalletSession, setAuth]);
+
+  useEffect(() => {
+    if (activeNostrPubkeyRef.current === authPubkey) return;
+    activeNostrPubkeyRef.current = authPubkey;
+    if (authPubkey) {
+      resetNostrState();
+      resetWalletSession();
+    }
+  }, [authPubkey, resetNostrState, resetWalletSession]);
 
   useEffect(() => {
     if (!authPubkey) return;
@@ -769,6 +826,23 @@ function SendEcashScreen({
   );
 }
 
+function ShareScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Share'>) {
+  return (
+    <ShareModal
+      nevent={route.params.nevent}
+      naddr={route.params.naddr}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function KeysScreen({ onClose }: { onClose: () => void }) {
+  return <KeysModal onClose={onClose} />;
+}
+
 function ScanScreen({
   route,
 }: NativeStackScreenProps<RootStackParamList, 'Scan'>) {
@@ -810,6 +884,32 @@ function ProfileStubScreen({
 
 function ThemeScreen() {
   return <ThemeModal />;
+}
+
+function MintsScreen({
+  manager,
+  onClose,
+}: {
+  manager: NostrManagerLike | null;
+  onClose: () => void;
+}) {
+  return <MintsModal manager={manager} onClose={onClose} />;
+}
+
+function RelayPreferencesScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'RelayPreferences'>) {
+  return <RelayPreferencesModal onClose={navigation.goBack} />;
+}
+
+function WalletScreen({
+  manager,
+  onClose,
+}: {
+  manager: NostrManagerLike | null;
+  onClose: () => void;
+}) {
+  return <WalletModal manager={manager} onClose={onClose} />;
 }
 
 function RelayInfosScreen({

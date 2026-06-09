@@ -27,7 +27,6 @@ import {
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
-  asKind17375,
   asKind9321,
   asKind9735,
   asParsedEvent,
@@ -64,6 +63,9 @@ import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
+import {
+  uniqueWalletRelays,
+} from '../hooks/useWalletSubscription';
 
 type HomeFeedProps = {
   enabled: boolean;
@@ -88,7 +90,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const unsubscribeWalletRef = useRef<(() => void) | null>(null);
   const unsubscribeProofsRef = useRef<(() => void) | null>(null);
   const unsubscribeNutzapsRef = useRef<(() => void) | null>(null);
   const handleProofsMessageRef = useRef<((message: WorkerMessage) => void) | null>(
@@ -112,13 +113,14 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const [viewHidden, setViewHidden] = useState(false);
   const [, setTick] = useState(0);
   const [walletRelayFallbackReady, setWalletRelayFallbackReady] = useState(false);
-  const [proofDebug, setProofDebug] = useState({
+  const [, setProofDebug] = useState({
     validProofMessages: 0,
     proofCount: 0,
     backupEvents: 0,
     nutzapEvents: 0,
   });
   const authPubkey = useAuthStore(state => state.pubkey);
+  const hasSigner = useAuthStore(state => state.hasSigner);
   const readRelays = useNostrStore(state => state.readRelays);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
   const kind10019UpdatedAt = useNostrStore(state => state.kind10019UpdatedAt);
@@ -131,7 +133,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const mutedHashtags = useNostrStore(state => state.mutedHashtags);
   const mutedWords = useNostrStore(state => state.mutedWords);
   const mutedEventIds = useNostrStore(state => state.mutedEventIds);
-  const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
   const initializeProofWallet = useWalletStore(
     state => state.initializeProofWallet,
@@ -153,7 +154,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     ];
   }, [readRelays, walletReadRelays]);
   const walletProofRelays = useMemo(() => {
-    return [...new Set([...readRelays, ...walletReadRelays])];
+    return uniqueWalletRelays(readRelays, walletReadRelays);
   }, [readRelays, walletReadRelays]);
   const walletRelaysResolved =
     kind10019UpdatedAt > 0 || walletRelayFallbackReady;
@@ -279,7 +280,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   );
 
   const initFeed = useCallback(() => {
-    if (!enabled || !visible || !authPubkey) return;
+    if (!enabled || !visible || !authPubkey || !hasSigner) return;
     if (!homeRelays.length) return;
     const requests = requestList();
     if (!requests.length) return;
@@ -311,65 +312,11 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     visible,
   ]);
 
-  const handleWalletMessage = useCallback(
-    async (message: WorkerMessage) => {
-      const status = asConnectionStatus(message);
-      if (status) {
-        const relayUrl = status.relayUrl();
-        const relayStatus = status.status()?.toString();
-        if (relayUrl && relayStatus) {
-          setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-        }
-        return;
-      }
-
-      const parsed = asParsedEvent(message);
-      if (!parsed || parsed.kind() !== 17375) return;
-      const wallet = asKind17375(parsed);
-      if (!wallet) return;
-
-      const mintUrls = Array.from(
-        { length: wallet.mintsLength() },
-        (_, index) => wallet.mints(index),
-      ).filter((mint): mint is string => !!mint);
-
-      const currentWallet = useWalletStore.getState();
-      const normalizedMintUrls = mintUrls.map(normalizeMintUrl);
-      const currentMintUrls = currentWallet.walletMintUrls.map(normalizeMintUrl);
-      if (!sameStringArray(currentMintUrls, normalizedMintUrls)) {
-        setWalletMintUrls(mintUrls);
-      }
-
-      const nextActiveMintUrl =
-        currentWallet.activeMintUrl &&
-        normalizedMintUrls.includes(normalizeMintUrl(currentWallet.activeMintUrl))
-          ? currentWallet.activeMintUrl
-          : mintUrls[0] ?? null;
-      if (nextActiveMintUrl !== currentWallet.activeMintUrl) {
-        setActiveMintUrl(nextActiveMintUrl);
-      }
-    },
-    [
-      setActiveMintUrl,
-      setRelayStatus,
-      setWalletMintUrls,
-    ],
-  );
-
   const subscribeToNutzapsSince = useCallback(
     (since: number) => {
       if (!authPubkey || !walletProofRelays.length) return;
       proofSinceRef.current = since;
       unsubscribeNutzapsRef.current?.();
-      console.log('[home-wallet] proof fetch relays', {
-        phase: 'nutzaps',
-        subId: `nutszap_events_${authPubkey}_${requestCacheRef.current}_${since}`,
-        since,
-        relays: walletProofRelays,
-        source: 'readRelays+walletReadRelays',
-        walletReadRelays,
-        readRelays,
-      });
       unsubscribeNutzapsRef.current = subscribeToNostr(
         `nutszap_events_${authPubkey}_${requestCacheRef.current}_${since}`,
         [
@@ -388,14 +335,10 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
           pipeline: proofPipeline,
         },
       );
-      console.log('[home-wallet] querying nutzaps after proof backups', {
-        since,
-      });
     },
     [
       authPubkey,
       proofPipeline,
-      walletReadRelays,
       walletProofRelays,
     ],
   );
@@ -408,28 +351,20 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     if (!collectingProofBackupsRef.current) return;
     collectingProofBackupsRef.current = false;
     verifyAndCleanProofs()
-      .then(() => {
-        console.log('[home-wallet] finished proof backup scan');
-        subscribeToNutzapsSince(Math.floor(Date.now() / 1000) - 24 * 60 * 60);
-      })
-      .catch(error => {
-        console.error('[home-wallet] proof backup finish failed', error);
-      });
+      .then(() => subscribeToNutzapsSince(Math.floor(Date.now() / 1000) - 24 * 60 * 60))
+      .catch(() => {});
   }, [
     subscribeToNutzapsSince,
     verifyAndCleanProofs,
   ]);
 
   const scheduleResolveProofBackups = useCallback(
-    (reason: string) => {
+    () => {
       if (!collectingProofBackupsRef.current) return;
       if (resolveProofBackupsTimeoutRef.current) {
         clearTimeout(resolveProofBackupsTimeoutRef.current);
       }
       resolveProofBackupsTimeoutRef.current = setTimeout(() => {
-        console.log('[home-wallet] finishing proof backup scan', {
-          reason,
-        });
         finishProofBackupScan();
       }, 1200);
     },
@@ -439,10 +374,8 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   const handleProofsMessage = useCallback(
     async (message: WorkerMessage) => {
       if (asEoce(message)) {
-        verifyAndCleanProofs().catch(error => {
-          console.error('[home-wallet] proof verification failed', error);
-        });
-        scheduleResolveProofBackups('eoce');
+        verifyAndCleanProofs().catch(() => {});
+        scheduleResolveProofBackups();
         return;
       }
 
@@ -450,10 +383,8 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
       if (status) {
         if (status.status()?.toString() === 'EOSE' && !proofEoseReceivedRef.current) {
           proofEoseReceivedRef.current = true;
-          verifyAndCleanProofs().catch(error => {
-            console.error('[home-wallet] proof verification failed', error);
-          });
-          scheduleResolveProofBackups('eose');
+          verifyAndCleanProofs().catch(() => {});
+          scheduleResolveProofBackups();
         }
         return;
       }
@@ -463,12 +394,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         const parsed = asParsedEvent(message);
         if (parsed && (parsed.kind() === 7375 || parsed.kind() === 9321)) {
           pendingProofEventsRef.current.push(parsed);
-          console.log('[home-wallet] proof event forwarded', {
-            id: parsed.id(),
-            kind: parsed.kind(),
-            createdAt: parsed.createdAt(),
-            relays: fbArray(parsed, 'relays'),
-          });
         }
         return;
       }
@@ -477,7 +402,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
       const sourceKind =
         sourceEvent?.kind() ??
         (collectingProofBackupsRef.current ? 7375 : undefined);
-      let rawProofCount = 0;
       let messageProofCount = 0;
       for (const mintProofs of fbIterable(validProofs, 'proofs')) {
         const mint = mintProofs.mint();
@@ -485,28 +409,20 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         const proofs = fbArray(mintProofs, 'proofs')
           .map(toCashuProof)
           .filter((proof): proof is Proof => !!proof);
-        rawProofCount += proofs.length;
         const checkedProofs =
           proofEoseReceivedRef.current && !collectingProofBackupsRef.current
             ? await checkAndFilterProofs(mint, proofs)
             : proofs;
         messageProofCount += checkedProofs.length;
         if (checkedProofs.length) {
-          addProofs(mint, checkedProofs).catch(error => {
-            console.error('[home-wallet] proof ingest failed', error);
-          });
+          addProofs(mint, checkedProofs).catch(() => {});
         }
       }
-      console.log('[home-wallet] valid proofs message', {
-        sourceKind,
-        rawProofs: rawProofCount,
-        keptProofs: messageProofCount,
-      });
       if (pendingProofEventsRef.current.length) {
         pendingProofEventsRef.current.shift();
       }
       if (sourceKind === 7375) {
-        scheduleResolveProofBackups('valid-proof-backup');
+        scheduleResolveProofBackups();
       }
       setProofDebug(current => ({
         validProofMessages: current.validProofMessages + 1,
@@ -528,37 +444,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
   useEffect(() => {
     handleProofsMessageRef.current = handleProofsMessage;
   }, [handleProofsMessage]);
-
-  const initWallet = useCallback(() => {
-    if (!enabled || !visible || !authPubkey) return;
-    if (!walletRelaysResolved) return;
-    if (!walletProofRelays.length) return;
-    const subId = `active_wallet_${authPubkey}_${
-      requestCacheRef.current
-    }_${hashKey(walletProofRelays.join(','))}`;
-    unsubscribeWalletRef.current?.();
-    unsubscribeWalletRef.current = subscribeToNostr(
-      subId,
-      [
-        {
-          kinds: [17375],
-          authors: [authPubkey],
-          limit: 10,
-          noCache: !!requestCacheRef.current,
-          relays: walletProofRelays,
-        },
-      ],
-      handleWalletMessage,
-      { bytesPerEvent: 6144 },
-    );
-  }, [
-    authPubkey,
-    enabled,
-    handleWalletMessage,
-    visible,
-    walletProofRelays,
-    walletRelaysResolved,
-  ]);
 
   const initProofs = useCallback(() => {
     if (!enabled || !visible || !authPubkey) return;
@@ -590,14 +475,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         relays: walletProofRelays,
       },
     ];
-    console.log('[home-wallet] proof fetch relays', {
-      phase: 'backups',
-      subId,
-      relays: walletProofRelays,
-      source: 'readRelays+walletReadRelays',
-      walletReadRelays,
-      readRelays,
-    });
     unsubscribeProofsRef.current?.();
     unsubscribeNutzapsRef.current?.();
     unsubscribeProofsRef.current = null;
@@ -617,14 +494,13 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
           },
         );
       })
-      .catch(error => {
-        console.error('[home-wallet] proof wallet init failed', error);
-      });
+      .catch(() => {});
   }, [
     authPubkey,
     clearProofStorageOnce,
     enabled,
     handleProofsMessage,
+    hasSigner,
     initializeProofWallet,
     proofPipeline,
     verifyAndCleanProofs,
@@ -632,7 +508,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     walletProofRelays,
     walletRelaysResolved,
     walletMintUrls,
-    walletReadRelays,
   ]);
 
   useEffect(() => {
@@ -676,8 +551,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     clearRefreshTimeout();
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
-    unsubscribeWalletRef.current?.();
-    unsubscribeWalletRef.current = null;
     unsubscribeProofsRef.current?.();
     unsubscribeNutzapsRef.current?.();
     unsubscribeProofsRef.current = null;
@@ -695,8 +568,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     setRefreshing(false);
 
     if (enabled && visible && authPubkey) {
-      // Temporarily disabled while investigating iOS crashes around wallet/kind0 resolution.
-      initWallet();
       initProofs();
       initFeed();
     }
@@ -704,8 +575,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     return () => {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
-      unsubscribeWalletRef.current?.();
-      unsubscribeWalletRef.current = null;
       unsubscribeProofsRef.current?.();
       unsubscribeProofsRef.current = null;
       proofSubscriptionSeqRef.current += 1;
@@ -721,7 +590,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     enabled,
     initFeed,
     initProofs,
-    initWallet,
     visible,
   ]);
 
@@ -729,11 +597,9 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     if (!authPubkey || refreshing) return;
     requestCacheRef.current += 1;
     setRefreshing(true);
-    // Temporarily disabled while investigating iOS crashes around wallet/kind0 resolution.
-    initWallet();
     initProofs();
     initFeed();
-  }, [authPubkey, initFeed, initProofs, initWallet, refreshing]);
+  }, [authPubkey, initFeed, initProofs, refreshing]);
 
   const activities = useMemo(
     () =>
@@ -756,12 +622,14 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         balanceByMint={balanceByMint}
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
+        readOnly={!hasSigner}
       />
     ),
     [
       authPubkey,
       activeMintUrl,
       balanceByMint,
+      hasSigner,
       homeRelays,
       relayStatuses,
       setActiveMintUrl,
@@ -783,12 +651,14 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         onSelectMint={setActiveMintUrl}
         onToggleView={() => setViewHidden(value => !value)}
         showMintCards={false}
+        readOnly={!hasSigner}
       />
     ),
     [
       authPubkey,
       activeMintUrl,
       balanceByMint,
+      hasSigner,
       homeRelays,
       relayStatuses,
       setActiveMintUrl,
@@ -804,6 +674,19 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         empty={<LoggedOutHome />}
+        contentContainerClassName="pb-28"
+      />
+    );
+  }
+
+  if (!hasSigner) {
+    return (
+      <Feed
+        items={[]}
+        header={renderHeader}
+        stickyHeader={renderStickyHeader}
+        renderItem={() => null}
+        empty={<ReadOnlyWalletStub />}
         contentContainerClassName="pb-28"
       />
     );
@@ -840,6 +723,7 @@ function HomeHeader({
   onSelectMint,
   onToggleView,
   showMintCards = true,
+  readOnly = false,
 }: {
   compact?: boolean;
   relays: string[];
@@ -852,6 +736,7 @@ function HomeHeader({
   onSelectMint: (mintUrl: string | null) => void;
   onToggleView: () => void;
   showMintCards?: boolean;
+  readOnly?: boolean;
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -899,6 +784,7 @@ function HomeHeader({
             balanceByMint={balanceByMint}
             onSelectMint={onSelectMint}
             showMintCards={showMintCards}
+            readOnly={readOnly}
           />
         ) : null}
       </View>
@@ -912,14 +798,36 @@ function WalletHeaderSection({
   balanceByMint,
   onSelectMint,
   showMintCards = true,
+  readOnly = false,
 }: {
   mintUrls: string[];
   activeMintUrl: string | null;
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   showMintCards?: boolean;
+  readOnly?: boolean;
 }) {
   const theme = useAppTheme();
+
+  if (readOnly) {
+    return (
+      <View className="mt-3 rounded-lg border border-base-200 bg-base-100 px-4 py-4">
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="min-w-0 flex-1">
+            <Text className="text-base font-semibold text-base-content">
+              Wallet unavailable
+            </Text>
+            <Text className="mt-1 text-sm text-primary-content">
+              Wallet features are not available in read-only mode.
+            </Text>
+          </View>
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-base-200">
+            <Wallet size={20} color={theme.colors.primary} strokeWidth={2.2} />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (showMintCards && !mintUrls.length) {
     return (
@@ -1147,32 +1055,38 @@ function WalletActivityRow({
 }
 
 function LoggedOutHome() {
+  const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const theme = useAppTheme();
 
   return (
-    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
-      <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
-          <Wallet size={30} color={theme.colors.primary} strokeWidth={2.2} />
-        </View>
-        <Text className="text-center text-xl font-semibold text-base-content">
-          Sign in to load your wallet feed
-        </Text>
-        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
-          Home shows your NIP-61 NutsZap and NIP-57 zap activity once a Nostr
-          key is available.
-        </Text>
-        <Pressable
-          className="mt-5 rounded-full bg-primary px-5 py-3"
-          onPress={() => navigation.navigate('Login')}
-        >
-          <Text className="text-sm font-semibold text-white">
-            Login with private key
+    <View className="px-3 py-16">
+      <Text className="text-center text-base font-semibold text-primary-content">
+        Sign in to load your wallet feed
+      </Text>
+      <Text className="mt-2 text-center text-sm text-primary-content">
+        Home shows your wallet activity once you are signed in.
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        className="mx-auto mt-5 min-w-40 rounded-xl border border-primary px-5 py-3"
+        onPress={() => navigation.navigate('Login')}
+        style={({ pressed }) => ({
+          backgroundColor: pressed ? `${theme.colors.primary}14` : 'transparent',
+          borderColor: theme.colors.primary,
+          opacity: pressed ? 0.82 : 1,
+          transform: [{ translateY: pressed ? 1 : 0 }],
+        })}
+      >
+        <View className="flex-row items-center justify-center gap-2">
+          <Text
+            className="text-base font-extrabold text-base-content"
+          >
+            Sign in
           </Text>
-        </Pressable>
-      </View>
+          <ArrowRight size={17} color={theme.colors.primaryContent} strokeWidth={2.5} />
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -1192,6 +1106,26 @@ function EmptyWalletStub() {
         <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
           Cashu wallet loading is stubbed for now. Activity will appear here
           when NIP-61 or NIP-57 events are found.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function ReadOnlyWalletStub() {
+  const theme = useAppTheme();
+
+  return (
+    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
+      <View className="items-center">
+        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
+          <Wallet size={30} color={theme.colors.primary} strokeWidth={2.2} />
+        </View>
+        <Text className="text-center text-xl font-semibold text-base-content">
+          Wallet unavailable
+        </Text>
+        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
+          Wallet activity is not available in read-only mode.
         </Text>
       </View>
     </View>
@@ -1309,25 +1243,6 @@ function toText(value: string | Uint8Array) {
     text += String.fromCharCode(value[index]);
   }
   return text;
-}
-
-function normalizeMintUrl(url: string) {
-  return url.trim().replace(/\/$/, '');
-}
-
-function sameStringArray(left: string[], right: string[]) {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
-function hashKey(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) % 2147483647;
-  }
-  return hash.toString(36);
 }
 
 function normalizeRelayUrl(url: string) {

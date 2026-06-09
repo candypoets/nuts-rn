@@ -13,6 +13,13 @@ export const BOOTSTRAP_RELAYS = [
 
 export const SEARCH_RELAYS = ['wss://relay.vertexlab.io'];
 
+export const INDEXER_RELAYS = [
+  'wss://purplepag.es',
+  'wss://user.kindpag.es',
+  'wss://profiles.nostr1.com',
+  'wss://relay.vertexlab.io',
+];
+
 export type RelayMarker = {
   url: string;
   read: boolean;
@@ -198,7 +205,8 @@ export const useNostrStore = create<NostrStore>()(
             ? current
             : { walletReadRelays },
         ),
-      resetNostrState: () => set(initialState),
+      resetNostrState: () =>
+        set(current => ({ ...initialState, hydrated: current.hydrated })),
       setHydrated: hydrated => set({ hydrated }),
     }),
     {

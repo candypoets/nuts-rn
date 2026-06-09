@@ -17,8 +17,10 @@ import {
   useNostrStore,
   type RelayMarker,
 } from '../stores';
+import {useWalletSubscription} from './useWalletSubscription';
 
 const ROOT_DEBUG = false;
+const REPLACEABLE_LIST_BYTES_PER_EVENT = 128 * 1024;
 
 function rootDebug(label: string, data?: Record<string, unknown>) {
   if (!ROOT_DEBUG) return;
@@ -64,6 +66,7 @@ function handleRootMessage(message: WorkerMessage) {
   });
 
   const state = useNostrStore.getState();
+  const previousKind3UpdatedAt = state.kind3UpdatedAt;
   state.setKindTimestamp(event.kind(), event.createdAt());
 
   if (event.kind() === 0) {
@@ -86,6 +89,13 @@ function handleRootMessage(message: WorkerMessage) {
   }
 
   if (event.kind() === 3) {
+    if (previousKind3UpdatedAt > 0 && event.createdAt() <= previousKind3UpdatedAt) {
+      rootDebug('kind3 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind3UpdatedAt,
+      });
+      return;
+    }
     const kind3 = asKind3(event);
     rootDebug('kind3 parse', {
       ok: !!kind3,
@@ -165,6 +175,8 @@ export function useRootNostrSubscriptions(enabled: boolean) {
   );
   const writeRelaysKey = writeRelays.join(',');
 
+  useWalletSubscription({enabled});
+
   useEffect(() => {
     if (!enabled || !pubkey) return;
 
@@ -183,7 +195,10 @@ export function useRootNostrSubscriptions(enabled: boolean) {
         { kinds: [10096], authors: [pubkey], relays: BOOTSTRAP_RELAYS },
       ],
       handleRootMessage,
-      { closeOnEose: false },
+      {
+        bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
+        closeOnEose: false,
+      },
     );
   }, [enabled, pubkey]);
 
@@ -203,6 +218,7 @@ export function useRootNostrSubscriptions(enabled: boolean) {
     ];
 
     return subscribeToNostr(subId, requests, handleRootMessage, {
+      bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
       closeOnEose: false,
     });
   }, [

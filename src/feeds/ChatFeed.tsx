@@ -2,10 +2,21 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {Kind4Parsed, ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
+import {
+  ChatLimiterPipeConfigT,
+  MuteFilterPipeConfigT,
+  ParsePipeConfigT,
+  PipeConfig,
+  PipeT,
+  SaveToDbPipeConfigT,
+  SerializeEventsPipeConfigT,
+  type Kind4Parsed,
+  type ParsedEvent,
+  type RequestObject,
+  type WorkerMessage,
+} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
-  asBufferFull,
   asConnectionStatus,
   asEoce,
   asKind4,
@@ -14,6 +25,7 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import {Info, MessageCirclePlus} from 'lucide-react-native';
+import {AppButton} from '../components/AppButton';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {wasRecentSwipeGesture} from '../components/notes/press';
@@ -38,14 +50,6 @@ type Conversation = {
   hasOutgoing: boolean;
 };
 
-type ChatDiagnostics = {
-  totalEvents: number;
-  uniqueChats: number;
-  oldestCreatedAt: number | null;
-  bufferFullWarnings: number;
-  bufferFullMessages: number;
-};
-
 function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
@@ -64,12 +68,6 @@ function formatRelativeTime(timestamp: number) {
   return `${Math.floor(months / 12)}y`;
 }
 
-function formatDiagnosticTime(timestamp: number | null) {
-  if (!timestamp) return 'none';
-  const date = new Date(timestamp * 1000);
-  return `${date.toISOString().slice(0, 10)} (${formatRelativeTime(timestamp)})`;
-}
-
 function correspondent(event: ParsedEvent, myPubkey: string | null) {
   const kind4 = asKind4(event);
   const recipient = kind4?.recipient() || '';
@@ -84,31 +82,6 @@ function buildRequests(pubkey: string | null, relays: string[]): RequestObject[]
     {kinds: [4], tags: {'#p': [pubkey]}, relays, noCache: true},
     {kinds: [4], tags: {'#p': [pubkey]}, relays},
   ];
-}
-
-function getChatDiagnostics(
-  events: ParsedEvent[],
-  _eventsVersion: number,
-  bufferFullWarnings: number,
-  bufferFullMessages: number,
-): ChatDiagnostics {
-  const chatIds = new Set<string>();
-  let oldestCreatedAt: number | null = null;
-  events.forEach(event => {
-    const chatId = asKind4(event)?.chatId();
-    if (chatId) chatIds.add(chatId);
-    const createdAt = event.createdAt();
-    if (!oldestCreatedAt || createdAt < oldestCreatedAt) {
-      oldestCreatedAt = createdAt;
-    }
-  });
-  return {
-    totalEvents: events.length,
-    uniqueChats: chatIds.size,
-    oldestCreatedAt,
-    bufferFullWarnings,
-    bufferFullMessages,
-  };
 }
 
 function groupConversations(
@@ -167,6 +140,8 @@ function groupConversations(
 }
 
 export function ChatFeed({enabled, visible}: ChatFeedProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const eventsRef = useRef<ParsedEvent[]>([]);
   const pendingEventsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -179,14 +154,16 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [eventsVersion, setEventsVersion] = useState(0);
-  const [bufferFullWarnings, setBufferFullWarnings] = useState(0);
-  const [bufferFullMessages, setBufferFullMessages] = useState(0);
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
   const contacts = useNostrStore(state => state.follows);
   const hasContactList = useNostrStore(state => state.kind3UpdatedAt > 0);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
+  const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
+  const mutedHashtags = useNostrStore(state => state.mutedHashtags);
+  const mutedWords = useNostrStore(state => state.mutedWords);
+  const mutedEventIds = useNostrStore(state => state.mutedEventIds);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
@@ -200,6 +177,30 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     () => `${pubkey || 'anon'}:${hasSigner === false ? 'readonly' : 'signer'}:${relays.join(',')}`,
     [hasSigner, pubkey, relays],
   );
+  const createChatPipeline = useCallback(
+    (subId: string, ownPubkey: string) => [
+      new PipeT(
+        PipeConfig.MuteFilterPipeConfig,
+        new MuteFilterPipeConfigT(
+          mutedPubkeys,
+          mutedHashtags,
+          mutedWords,
+          mutedEventIds,
+        ),
+      ),
+      new PipeT(
+        PipeConfig.ChatLimiterPipeConfig,
+        new ChatLimiterPipeConfigT(ownPubkey, 5, 5000, [4]),
+      ),
+      new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
+      new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
+      new PipeT(
+        PipeConfig.SerializeEventsPipeConfig,
+        new SerializeEventsPipeConfigT(subId),
+      ),
+    ],
+    [mutedEventIds, mutedHashtags, mutedPubkeys, mutedWords],
+  );
   const conversations = useMemo(() => {
     return groupConversations(
       eventsRef.current,
@@ -209,14 +210,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       eventsVersion,
     );
   }, [contacts, eventsVersion, hasContactList, pubkey]);
-  const diagnostics = useMemo<ChatDiagnostics>(() => {
-    return getChatDiagnostics(
-      eventsRef.current,
-      eventsVersion,
-      bufferFullWarnings,
-      bufferFullMessages,
-    );
-  }, [bufferFullMessages, bufferFullWarnings, eventsVersion]);
   const items =
     activeTab === 'requests' ? conversations.requests : conversations.messages;
 
@@ -233,8 +226,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     seenIdsRef.current.clear();
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = false;
-    setBufferFullWarnings(0);
-    setBufferFullMessages(0);
     setEventsVersion(version => version + 1);
   }, []);
 
@@ -261,13 +252,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     (message: WorkerMessage) => {
       if (asEoce(message)) {
         commitPendingEvents();
-        return;
-      }
-
-      const bufferFull = asBufferFull(message);
-      if (bufferFull) {
-        setBufferFullMessages(count => count + 1);
-        completeResolvingSubscription();
         return;
       }
 
@@ -300,23 +284,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     [commitPendingEvents, completeResolvingSubscription, setRelayStatus],
   );
 
-  useEffect(() => {
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      const text = args.map(arg => String(arg)).join(' ');
-      if (
-        text.includes('[ArrayBufferReader] Dropping') &&
-        text.includes('buffer full')
-      ) {
-        setBufferFullWarnings(count => count + 1);
-      }
-      originalWarn(...args);
-    };
-    return () => {
-      console.warn = originalWarn;
-    };
-  }, []);
-
   const startSubscription = useCallback(
     (forceCacheBust = false) => {
       if (!enabled || !visible || !pubkey || hasSigner === false) return;
@@ -330,7 +297,9 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       pendingEventsRef.current = [];
       connectionTrackerRef.current.reset();
       subscriptionResolvingRef.current = true;
-      unsubscribeRef.current = subscribeToNostr(subId, requests, handleEvents);
+      unsubscribeRef.current = subscribeToNostr(subId, requests, handleEvents, {
+        pipeline: createChatPipeline(subId, pubkey),
+      });
       setLoading(eventsRef.current.length === 0);
       clearTimer();
       timeoutRef.current = setTimeout(() => {
@@ -340,6 +309,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     [
       clearTimer,
       completeResolvingSubscription,
+      createChatPipeline,
       enabled,
       handleEvents,
       hasSigner,
@@ -385,13 +355,15 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
     resetEvents();
     startSubscription(true);
   }, [resetEvents, startSubscription]);
+  const openLogin = useCallback(() => {
+    navigation.navigate('Login');
+  }, [navigation]);
   const header = useCallback(
     () => (
       <ChatHeader
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
-        diagnostics={diagnostics}
         relays={relays}
         statuses={relayStatuses}
         onSelectTab={setActiveTab}
@@ -401,7 +373,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       activeTab,
       conversations.messages.length,
       conversations.requests.length,
-      diagnostics,
       relayStatuses,
       relays,
     ],
@@ -413,7 +384,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
-        diagnostics={diagnostics}
         relays={relays}
         statuses={relayStatuses}
         onSelectTab={setActiveTab}
@@ -424,7 +394,6 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       activeTab,
       conversations.messages.length,
       conversations.requests.length,
-      diagnostics,
       relayStatuses,
       relays,
     ],
@@ -433,13 +402,26 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
   const empty = (
     <View className="px-3 py-16">
       <Text className="text-center text-base font-semibold text-primary-content">
-        {pubkey ? 'No chats yet' : 'Sign in to see chats'}
+        {!pubkey
+          ? 'Sign in to see chats'
+          : hasSigner === false
+            ? 'Chats unavailable'
+            : 'No chats yet'}
       </Text>
       <Text className="mt-2 text-center text-sm text-primary-content">
-        {pubkey
-          ? 'Kind 4 subscriptions are ready; conversations appear here once messages arrive.'
-          : 'Chat uses your account pubkey to load direct-message conversations.'}
+        {!pubkey
+          ? 'Chat uses your account pubkey to load direct-message conversations.'
+          : hasSigner === false
+            ? 'Direct messages are not available in read-only mode.'
+            : 'Conversations appear here once messages arrive.'}
       </Text>
+      {!pubkey ? (
+        <AppButton
+          title="Sign in"
+          className="mx-auto mt-5 min-w-36 px-6"
+          onPress={openLogin}
+        />
+      ) : null}
     </View>
   );
 
@@ -470,7 +452,6 @@ function ChatHeader({
   activeTab,
   messagesCount,
   requestsCount,
-  diagnostics,
   relays,
   statuses,
   onSelectTab,
@@ -479,7 +460,6 @@ function ChatHeader({
   activeTab: ChatListTab;
   messagesCount: number;
   requestsCount: number;
-  diagnostics: ChatDiagnostics;
   relays: string[];
   statuses: Record<string, string>;
   onSelectTab: (tab: ChatListTab) => void;
@@ -502,7 +482,6 @@ function ChatHeader({
           </Pressable>
         </View>
         {!sticky ? <RelaysList relays={relays} statuses={statuses} /> : null}
-        {!sticky ? <ChatDiagnosticsPanel diagnostics={diagnostics} /> : null}
         <View className="mt-3 flex-row rounded-lg bg-base-200 p-1">
           <ChatTab
             active={activeTab === 'messages'}
@@ -518,22 +497,6 @@ function ChatHeader({
           />
         </View>
       </View>
-    </View>
-  );
-}
-
-function ChatDiagnosticsPanel({diagnostics}: {diagnostics: ChatDiagnostics}) {
-  return (
-    <View className="mt-3 rounded-md border border-base-200 bg-base-100 px-3 py-2">
-      <Text className="text-xs font-semibold text-base-content">
-        chat diag
-      </Text>
-      <Text className="mt-1 text-xs text-primary-content">
-        events {diagnostics.totalEvents} · chats {diagnostics.uniqueChats} · oldest {formatDiagnosticTime(diagnostics.oldestCreatedAt)}
-      </Text>
-      <Text className="mt-1 text-xs text-primary-content">
-        buffer full warnings {diagnostics.bufferFullWarnings} · messages {diagnostics.bufferFullMessages}
-      </Text>
     </View>
   );
 }

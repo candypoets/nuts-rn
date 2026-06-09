@@ -10,10 +10,15 @@ export type RootStackParamList = {
   Minting: undefined;
   Send: undefined;
   SendEcash: { pubkey: string; noteId?: string };
+  Share: { nevent: string; naddr?: string };
   Scan: { mode?: 'share' | 'scan' } | undefined;
   Tapcash: undefined;
   Lightning: { invoice?: string } | undefined;
   Theme: undefined;
+  Keys: undefined;
+  Mints: undefined;
+  RelayPreferences: undefined;
+  Wallet: undefined;
   ProfileStub: { path: 'relays' | 'wallet' | 'nprofile' };
   RelayInfos: { subId?: string; relays: string[]; statuses?: Record<string, string> };
   PublicProfile: { pubkey: string };

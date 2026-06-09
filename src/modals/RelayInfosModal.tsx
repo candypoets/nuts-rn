@@ -2,7 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {Check} from 'lucide-react-native';
 import {useRelayStore} from '../stores';
-import {type AppTheme, useAppTheme} from '../theme';
+import {type AppTheme, type AppThemeColors, useAppTheme} from '../theme';
 
 type RelayInfosModalProps = {
   subId?: string;
@@ -24,11 +24,11 @@ function relayLabel(url: string) {
   }
 }
 
-function statusColor(status?: string) {
+function statusColor(status: string | undefined, colors: AppThemeColors) {
   switch (status) {
     case 'EOSE':
     case 'OK':
-      return '#10b981';
+      return colors.success;
     case 'SUBSCRIBED':
       return '#3b82f6';
     case 'FAILED':
@@ -147,7 +147,7 @@ export function RelayInfosModal({
                 <View
                   style={[
                     styles.statusDot,
-                    {backgroundColor: statusColor(item.status)},
+                    {backgroundColor: statusColor(item.status, theme.colors)},
                   ]}
                 />
                 <View style={styles.textBlock}>
@@ -159,7 +159,7 @@ export function RelayInfosModal({
                   </Text>
                 </View>
                 {item.status === 'EOSE' || item.status === 'OK' ? (
-                  <Check size={18} color="#10b981" strokeWidth={2.4} />
+                  <Check size={18} color={theme.colors.success} strokeWidth={2.4} />
                 ) : (
                   <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
                 )}
@@ -203,7 +203,7 @@ function createRelayInfosStyles(theme: AppTheme) {
     justifyContent: 'space-between',
   },
   title: {
-    color: theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a',
+    color: theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a',
     fontSize: 18,
     fontWeight: '700',
   },
@@ -255,7 +255,7 @@ function createRelayInfosStyles(theme: AppTheme) {
     minWidth: 0,
   },
   relayName: {
-    color: theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a',
+    color: theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a',
     fontSize: 14,
     fontWeight: '700',
   },

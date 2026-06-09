@@ -32,10 +32,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
 import { kinds, type EventTemplate } from 'nostr-tools';
-import { neventEncode } from 'nostr-tools/nip19';
+import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
 import { IconComment, IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
+import { eventTags, tagValue } from './kindHelpers';
 import type { RelayStatusSink } from './RelaysList';
 
 type FooterProps = {
@@ -389,6 +390,29 @@ export function Footer({
         kind: note.kind(),
         relays,
       }),
+    });
+  }, [navigation, note, noteId, notePubkey, relays]);
+  const openShare = useCallback(() => {
+    if (!noteId) return;
+    const kind = note.kind();
+    const identifier =
+      kind >= 30000 && kind < 40000 ? tagValue(eventTags(note), 'd') : '';
+    navigation.navigate('Share', {
+      nevent: neventEncode({
+        id: noteId,
+        author: notePubkey || undefined,
+        kind,
+        relays,
+      }),
+      naddr:
+        notePubkey && identifier
+          ? naddrEncode({
+              kind,
+              pubkey: notePubkey,
+              identifier,
+              relays,
+            })
+          : undefined,
     });
   }, [navigation, note, noteId, notePubkey, relays]);
   const openZap = useCallback(() => {
@@ -766,7 +790,7 @@ export function Footer({
           mode={mode}
           onPress={sendReaction}
         />
-        <Action kind="share" animation="share" mode={mode} />
+        <Action kind="share" animation="share" mode={mode} onPress={openShare} />
       </View>
       {mode === 'zoom' ? null : <ZapAction onPress={openZap} />}
     </View>

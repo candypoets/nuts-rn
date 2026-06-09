@@ -3,8 +3,6 @@ import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {isKind0} from '@candypoets/nipworker/utils';
 
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-
 type UseKind0ValueOptions<T> = {
   enabled?: boolean;
   fallback: T;
@@ -22,7 +20,6 @@ export function useKind0Value<T>(
   }: UseKind0ValueOptions<T>,
 ) {
   const [value, setValue] = useState(fallback);
-  const relaysKey = DEFAULT_FEED_RELAYS.join('|');
 
   useEffect(() => {
     setValue(current => (isEqual(current, fallback) ? current : fallback));
@@ -38,7 +35,7 @@ export function useKind0Value<T>(
           limit: 1,
           cacheFirst: true,
           closeOnEOSE: true,
-          relays: DEFAULT_FEED_RELAYS,
+          relays: [],
         },
       ],
       message => {
@@ -51,7 +48,7 @@ export function useKind0Value<T>(
     );
 
     return () => unsubscribe();
-  }, [enabled, fallback, isEqual, pubkey, relaysKey, selector]);
+  }, [enabled, fallback, isEqual, pubkey, selector]);
 
   return value;
 }

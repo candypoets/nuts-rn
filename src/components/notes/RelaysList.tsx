@@ -27,11 +27,11 @@ function statusClass(status?: string) {
   switch (status) {
     case 'EOSE':
     case 'OK':
-      return 'bg-emerald-700';
+      return 'bg-success';
     case 'SUBSCRIBED':
       return 'bg-blue-500';
     case 'FAILED':
-      return 'bg-red-500';
+      return 'bg-error';
     case 'CLOSED':
       return 'bg-base-200';
     default:

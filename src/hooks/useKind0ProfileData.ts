@@ -13,6 +13,8 @@ import {
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {useRelayStore} from '../stores';
 
+const REPLACEABLE_LIST_BYTES_PER_EVENT = 128 * 1024;
+
 function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
@@ -106,7 +108,10 @@ export function useKind0ProfileData(pubkey: string) {
             setProfileContacts(current => (sameStringArray(current, contacts) ? current : contacts));
           }
         },
-        {closeOnEose: true},
+        {
+          bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
+          closeOnEose: true,
+        },
       );
     }, 240);
     const feedReadyTimeout = setTimeout(() => setFeedReady(true), 320);

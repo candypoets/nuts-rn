@@ -736,7 +736,7 @@ function NoteComponent({
       ].join(' ');
   const cardStyle = useMemo<ViewStyle | undefined>(() => {
     if (cardlessMain || isQuote) return undefined;
-    if (theme.colors.base100 !== '#333333') return undefined;
+    if (theme.colors.base100 !== '#111111') return undefined;
     return {
       shadowColor: '#000000',
       shadowOffset: {width: 0, height: 3},

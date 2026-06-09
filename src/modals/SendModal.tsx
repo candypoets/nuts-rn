@@ -399,7 +399,7 @@ function createSendModalStyles(theme: ReturnType<typeof useAppTheme>) {
     marginBottom: 14,
   },
   placeholderTitle: {
-    color: theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a',
+    color: theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a',
     fontSize: 22,
     fontWeight: '800',
   },

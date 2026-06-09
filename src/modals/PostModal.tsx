@@ -1546,7 +1546,7 @@ const editorHtmlStyle = {
 };
 
 function readableContentColor(theme: AppTheme) {
-  return theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
+  return theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a';
 }
 
 function createPostModalStyles(theme: AppTheme) {
@@ -1630,10 +1630,6 @@ function createPostModalStyles(theme: AppTheme) {
   },
   editorShell: {
     minHeight: 190,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
     overflow: 'hidden',
   },
   replyEditorShell: {

@@ -49,7 +49,7 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
-import {useAppTheme} from '../theme';
+import { useAppTheme } from '../theme';
 import { FeedKindIcon } from '../components/FeedKindIcon';
 
 type ExploreFeedProps = {
@@ -68,10 +68,6 @@ const GUEST_EXPLORE_RELAYS = [
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
 
-function exploreFeedDebug(message: string, data?: Record<string, unknown>) {
-  console.log(`[explore-feed] ${message}`, data ?? {});
-}
-
 function authorsForExplorePacks(
   packs: FeedPackSelection[],
   follows: string[],
@@ -86,33 +82,8 @@ function authorsForExplorePacks(
   return Array.from(authors);
 }
 
-function verifyExploreItemIds(items: ParsedEvent[], feedKey: string) {
-  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
-
-  const ids = new Map<string, number>();
-  let missing = 0;
-
-  items.forEach(item => {
-    const id = item.id();
-    if (!id) {
-      missing += 1;
-      return;
-    }
-    ids.set(id, (ids.get(id) ?? 0) + 1);
-  });
-
-  const duplicates = Array.from(ids.entries()).filter(([, count]) => count > 1);
-  if (!missing && !duplicates.length) return;
-
-  console.warn('[explore-feed] invalid item ids', {
-    feedKey,
-    items: items.length,
-    missing,
-    duplicates: duplicates.slice(0, 10).map(([id, count]) => ({
-      id: id.slice(0, 12),
-      count,
-    })),
-  });
+function hasFollowListPack(packs: FeedPackSelection[]) {
+  return packs.some(pack => pack.id === 'followlist');
 }
 
 export function ExploreFeed({
@@ -124,22 +95,16 @@ export function ExploreFeed({
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
-  const isInitializingRef = useRef(false);
-  const hasInitializedRef = useRef(false);
-  const isInitialBatchReadyRef = useRef(false);
   const startRef = useRef(0);
   const lastSeenTopItemRef = useRef<number | null>(null);
-  const lastFeedKeyRef = useRef<string | null>(null);
   const rootSubIdRef = useRef<string | null>(null);
+  const liveSubIdRef = useRef<string | null>(null);
   const prevPaginationSubIdRef = useRef<string | null>(null);
   const paginationCounterRef = useRef(0);
-  const subscriptionCounterRef = useRef(0);
   const requestCacheRef = useRef(0);
   const itemsBeforePaginationRef = useRef(0);
   const untilRef = useRef<number | undefined>(undefined);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -153,8 +118,10 @@ export function ExploreFeed({
     typeof requestAnimationFrame
   > | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const unsubscribeLiveRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
+  const deferredNewItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
   const [loading, setLoading] = useState(false);
@@ -163,6 +130,7 @@ export function ExploreFeed({
   const [newPostsCount, setNewPostsCount] = useState(0);
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
   const loadingRef = useRef(false);
+  const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
   const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
@@ -197,9 +165,12 @@ export function ExploreFeed({
     [authPubkey, readRelays],
   );
   const authReadyForExplore = Boolean(authPubkey) || authResolved;
+  const followsReadyForExplore =
+    !hasFollowListPack(selectedPacks) || kind3UpdatedAt > 0;
   const canStartExplore =
     feedBuilderHydrated &&
     nostrHydrated &&
+    followsReadyForExplore &&
     (authReadyForExplore || allowGuestExplore);
   const feedKey = useMemo(
     () =>
@@ -208,7 +179,7 @@ export function ExploreFeed({
       }:${feedRelays.join(',')}`,
     [feedRelays, requestAuthors, requestKinds],
   );
-  const [itemsVersion, setItemsVersion] = useState(0);
+  const [, setItemsVersion] = useState(0);
 
   const defaultHeader = useCallback(
     () => (
@@ -241,17 +212,9 @@ export function ExploreFeed({
   const defaultStickyFooter = useCallback(() => <ExploreComposerFooter />, []);
 
   const clearTimers = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
     if (initTimeoutRef.current) {
       clearTimeout(initTimeoutRef.current);
       initTimeoutRef.current = null;
-    }
-    if (refreshTimeoutRef.current) {
-      clearTimeout(refreshTimeoutRef.current);
-      refreshTimeoutRef.current = null;
     }
     if (paginationTimeoutRef.current) {
       clearTimeout(paginationTimeoutRef.current);
@@ -268,15 +231,21 @@ export function ExploreFeed({
   }, []);
 
   const requestList = useCallback(
-    (forPagination = false): RequestObject[] => {
+    (options?: {
+      forPagination?: boolean;
+      since?: number;
+      limit?: number;
+    }): RequestObject[] => {
+      const forPagination = options?.forPagination ?? false;
       return [
         {
           kinds: requestKinds,
           authors: requestAuthors.length ? requestAuthors : undefined,
-          limit: 50,
+          limit: options?.limit ?? 50,
           since: forPagination
             ? undefined
-            : Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
+            : options?.since ??
+              Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
           until: forPagination ? untilRef.current : undefined,
           noCache: !!requestCacheRef.current,
           relays: feedRelays,
@@ -298,12 +267,23 @@ export function ExploreFeed({
     loadingRef.current = loading;
   }, [loading]);
 
-  const resetFeed = useCallback(() => {
+  useEffect(() => {
+    refreshingRef.current = refreshing;
+  }, [refreshing]);
+
+  const setLoadingState = useCallback((next: boolean) => {
+    loadingRef.current = next;
+    setLoading(next);
+  }, []);
+
+  const setRefreshingState = useCallback((next: boolean) => {
+    refreshingRef.current = next;
+    setRefreshing(next);
+  }, []);
+
+  const resetItems = useCallback(() => {
     itemsRef.current = [];
     seenIdsRef.current.clear();
-    isInitialBatchReadyRef.current = false;
-    hasInitializedRef.current = false;
-    isInitializingRef.current = false;
     startRef.current = 0;
     lastSeenTopItemRef.current = null;
     untilRef.current = undefined;
@@ -312,20 +292,42 @@ export function ExploreFeed({
     itemsBeforePaginationRef.current = 0;
     prevPaginationSubIdRef.current = null;
     rootSubIdRef.current = null;
-    setLoading(false);
-    setRefreshing(false);
     setNewPostsCount(0);
     pendingItemsRef.current = [];
+    deferredNewItemsRef.current = [];
     connectionTrackerRef.current.reset();
-    subscriptionResolvingRef.current = false;
     setItemsVersion(version => version + 1);
+  }, []);
 
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    unsubscribePaginationRef.current?.();
-    unsubscribePaginationRef.current = null;
-    clearTimers();
-  }, [clearTimers]);
+  const stopRootSubscription = useCallback(
+    (clearLoading = true) => {
+      subscriptionResolvingRef.current = false;
+      pendingItemsRef.current = [];
+      connectionTrackerRef.current.reset();
+      if (clearLoading) {
+        setLoadingState(false);
+        setRefreshingState(false);
+      }
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
+      unsubscribeLiveRef.current?.();
+      unsubscribeLiveRef.current = null;
+      rootSubIdRef.current = null;
+      liveSubIdRef.current = null;
+      prevPaginationSubIdRef.current = null;
+      unsubscribePaginationRef.current?.();
+      unsubscribePaginationRef.current = null;
+      clearTimers();
+    },
+    [clearTimers, setLoadingState, setRefreshingState],
+  );
+
+  const resetFeed = useCallback(() => {
+    stopRootSubscription(false);
+    resetItems();
+    setLoadingState(false);
+    setRefreshingState(false);
+  }, [resetItems, setLoadingState, setRefreshingState, stopRootSubscription]);
 
   const commitPendingItems = useCallback(() => {
     commitFrameRef.current = null;
@@ -334,21 +336,34 @@ export function ExploreFeed({
     pendingItemsRef.current = [];
 
     const headCreatedAt = itemsRef.current[0]?.createdAt() ?? 0;
-    const newAboveViewport =
-      startRef.current > 0 && lastSeenTopItemRef.current !== null
-        ? pending.filter(event => event.createdAt() > headCreatedAt).length
-        : 0;
+    const nearTop = startRef.current === 0;
+    const deferred =
+      !nearTop && lastSeenTopItemRef.current !== null
+        ? pending.filter(event => event.createdAt() > headCreatedAt)
+        : [];
+    const immediate =
+      deferred.length > 0
+        ? pending.filter(event => event.createdAt() <= headCreatedAt)
+        : pending;
 
-    itemsRef.current = [...itemsRef.current, ...pending].sort(
-      (left, right) => right.createdAt() - left.createdAt(),
-    );
-    if (startRef.current === 0) {
+    if (immediate.length > 0) {
+      itemsRef.current = [...itemsRef.current, ...immediate].sort(
+        (left, right) => right.createdAt() - left.createdAt(),
+      );
+    }
+    if (nearTop) {
       lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
       setNewPostsCount(0);
-    } else if (newAboveViewport) {
-      setNewPostsCount(count => count + newAboveViewport);
+    } else if (deferred.length > 0) {
+      deferredNewItemsRef.current = [
+        ...deferredNewItemsRef.current,
+        ...deferred,
+      ].sort((left, right) => right.createdAt() - left.createdAt());
+      setNewPostsCount(count => count + deferred.length);
     }
-    setItemsVersion(version => version + 1);
+    if (immediate.length > 0) {
+      setItemsVersion(version => version + 1);
+    }
   }, []);
 
   const scheduleCommitPendingItems = useCallback(() => {
@@ -357,29 +372,22 @@ export function ExploreFeed({
   }, [commitPendingItems]);
 
   const completeResolvingSubscription = useCallback(() => {
-    if (!subscriptionResolvingRef.current) return;
-    subscriptionResolvingRef.current = false;
-    isInitialBatchReadyRef.current = true;
-    commitPendingItems();
-    setLoading(false);
-    setRefreshing(false);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+    if (!subscriptionResolvingRef.current) {
+      return;
     }
+    subscriptionResolvingRef.current = false;
+    commitPendingItems();
+    setLoadingState(false);
+    setRefreshingState(false);
     if (initTimeoutRef.current) {
       clearTimeout(initTimeoutRef.current);
       initTimeoutRef.current = null;
-    }
-    if (refreshTimeoutRef.current) {
-      clearTimeout(refreshTimeoutRef.current);
-      refreshTimeoutRef.current = null;
     }
     if (paginationTimeoutRef.current) {
       clearTimeout(paginationTimeoutRef.current);
       paginationTimeoutRef.current = null;
     }
-  }, [commitPendingItems]);
+  }, [commitPendingItems, setLoadingState, setRefreshingState]);
 
   const addItem = useCallback(
     (parsedEvent: ParsedEvent) => {
@@ -466,31 +474,17 @@ export function ExploreFeed({
     [addItem, completeResolvingSubscription, setRelayStatus, shouldIncludeKind],
   );
 
-  const initFeed = useCallback(() => {
-    if (!enabled || !visible || !canStartExplore) {
-      return;
-    }
-    if (hasInitializedRef.current) {
-      return;
-    }
-    if (loadingRef.current) {
-      return;
-    }
-    if (isInitializingRef.current) {
-      return;
-    }
-
-    isInitializingRef.current = true;
-    setLoading(itemsRef.current.length === 0);
+  const startRootSubscription = useCallback(() => {
+    setLoadingState(itemsRef.current.length === 0);
     const requests = requestList();
     if (!requests.length) {
-      setLoading(false);
-      setRefreshing(false);
-      isInitializingRef.current = false;
+      setLoadingState(false);
+      setRefreshingState(false);
       return;
     }
 
     unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
     rootSubIdRef.current = `feed_explore_${hashKey(
       `${feedKey}:${requestCacheRef.current}`,
     )}`;
@@ -501,36 +495,6 @@ export function ExploreFeed({
     feedRelays.forEach(relay => {
       setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED');
     });
-    subscriptionCounterRef.current += 1;
-    exploreFeedDebug('create subscription', {
-      sequence: subscriptionCounterRef.current,
-      type: 'main',
-      subId: rootSubIdRef.current,
-      enabled,
-      visible,
-      canStartExplore,
-      feedBuilderHydrated,
-      nostrHydrated,
-      authPubkey: authPubkey ? `${authPubkey.slice(0, 8)}...` : null,
-      authResolved,
-      allowGuestExplore,
-      feedKeyHash: hashKey(feedKey),
-      requestCache: requestCacheRef.current,
-      kinds: requestKinds,
-      authors: requestAuthors.length,
-      storedAuthors: selectedAuthors.length,
-      follows: follows.length,
-      relays: feedRelays,
-      requests: requests.map(request => ({
-        kinds: request.kinds,
-        authors: request.authors?.length ?? 0,
-        limit: request.limit,
-        since: request.since,
-        until: request.until,
-        noCache: request.noCache,
-        relays: request.relays,
-      })),
-    });
     unsubscribeRef.current = subscribeToNostr(
       rootSubIdRef.current,
       requests,
@@ -538,49 +502,61 @@ export function ExploreFeed({
       { bytesPerEvent: 10 * 1024 },
     );
     prevPaginationSubIdRef.current = rootSubIdRef.current;
-    hasInitializedRef.current = true;
-    isInitializingRef.current = false;
-    isInitialBatchReadyRef.current = false;
 
     initTimeoutRef.current = setTimeout(() => {
       if (loadingRef.current) {
         completeResolvingSubscription();
-        if (itemsRef.current.length === 0) {
-          hasInitializedRef.current = false;
-        }
       }
     }, 1500);
   }, [
     completeResolvingSubscription,
-    allowGuestExplore,
-    authPubkey,
-    authResolved,
-    canStartExplore,
-    enabled,
-    feedBuilderHydrated,
     feedKey,
     feedRelays,
-    follows.length,
     handleEvents,
-    nostrHydrated,
-    requestAuthors.length,
     requestList,
-    requestKinds,
-    selectedAuthors.length,
     setRelayStatus,
     setSubRelays,
-    visible,
+    setLoadingState,
+    setRefreshingState,
+  ]);
+
+  const stopLiveSubscription = useCallback(() => {
+    unsubscribeLiveRef.current?.();
+    unsubscribeLiveRef.current = null;
+    liveSubIdRef.current = null;
+  }, []);
+
+  const startLiveSubscription = useCallback(() => {
+    const since = Math.floor(Date.now() / 1000);
+    const requests = requestList({ since, limit: 20 });
+    if (!requests.length) return;
+
+    stopLiveSubscription();
+    liveSubIdRef.current = `feed_explore_live_${hashKey(
+      `${feedKey}:${since}:${requestCacheRef.current}`,
+    )}`;
+    setSubRelays(liveSubIdRef.current, feedRelays.map(normalizeRelayUrl));
+    unsubscribeLiveRef.current = subscribeToNostr(
+      liveSubIdRef.current,
+      requests,
+      handleEvents,
+      { bytesPerEvent: 10 * 1024 },
+    );
+  }, [
+    feedKey,
+    feedRelays,
+    handleEvents,
+    requestList,
+    setSubRelays,
+    stopLiveSubscription,
   ]);
 
   const handleRefresh = useCallback(() => {
     if (!canStartExplore) return;
     if (refreshing) return;
 
-    setRefreshing(true);
+    setRefreshingState(true);
     requestCacheRef.current += 1;
-    hasInitializedRef.current = false;
-    loadingRef.current = false;
-    setLoading(false);
     setHasMore(true);
     untilRef.current = undefined;
     prevPaginationSubIdRef.current = null;
@@ -590,24 +566,25 @@ export function ExploreFeed({
     clearTimers();
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
+    stopLiveSubscription();
     unsubscribePaginationRef.current?.();
     unsubscribePaginationRef.current = null;
-    refreshTimeoutRef.current = setTimeout(() => {
-      completeResolvingSubscription();
-    }, 10000);
-    initFeed();
+    startRootSubscription();
+    startLiveSubscription();
   }, [
     canStartExplore,
     clearTimers,
-    completeResolvingSubscription,
-    initFeed,
     refreshing,
+    setRefreshingState,
+    startLiveSubscription,
+    startRootSubscription,
+    stopLiveSubscription,
   ]);
 
   const handleNearBottom = useCallback(() => {
     if (loading || !hasMore || itemsRef.current.length === 0) return;
 
-    setLoading(true);
+    setLoadingState(true);
     itemsBeforePaginationRef.current = itemsRef.current.length;
     paginationCounterRef.current += 1;
     pendingItemsRef.current = [];
@@ -615,39 +592,11 @@ export function ExploreFeed({
     subscriptionResolvingRef.current = true;
     const lastItem = itemsRef.current[itemsRef.current.length - 1];
     if (lastItem) untilRef.current = lastItem.createdAt() - 1;
-    const requests = requestList(true);
+    const requests = requestList({ forPagination: true });
 
     if (requests.length > 0) {
       unsubscribePaginationRef.current?.();
       const pageSubId = `${feedKey}_page_${paginationCounterRef.current}_${untilRef.current}`;
-      subscriptionCounterRef.current += 1;
-      exploreFeedDebug('create subscription', {
-        sequence: subscriptionCounterRef.current,
-        type: 'pagination',
-        subId: pageSubId,
-        previousSubId: prevPaginationSubIdRef.current,
-        enabled,
-        visible,
-        feedKeyHash: hashKey(feedKey),
-        requestCache: requestCacheRef.current,
-        paginationCounter: paginationCounterRef.current,
-        itemsBeforePagination: itemsBeforePaginationRef.current,
-        until: untilRef.current,
-        kinds: requestKinds,
-        authors: requestAuthors.length,
-        storedAuthors: selectedAuthors.length,
-        follows: follows.length,
-        relays: feedRelays,
-        requests: requests.map(request => ({
-          kinds: request.kinds,
-          authors: request.authors?.length ?? 0,
-          limit: request.limit,
-          since: request.since,
-          until: request.until,
-          noCache: request.noCache,
-          relays: request.relays,
-        })),
-      });
       unsubscribePaginationRef.current = subscribeToNostr(
         pageSubId,
         requests,
@@ -662,7 +611,7 @@ export function ExploreFeed({
         completeResolvingSubscription();
       }, 10000);
     } else {
-      setLoading(false);
+      setLoadingState(false);
       setHasMore(false);
     }
   }, [
@@ -672,13 +621,27 @@ export function ExploreFeed({
     hasMore,
     loading,
     requestList,
-    requestKinds,
-    requestAuthors.length,
-    selectedAuthors.length,
-    follows.length,
-    feedRelays,
-    visible,
-    enabled,
+    setLoadingState,
+  ]);
+
+  const resetFeedRef = useRef(resetFeed);
+  const startLiveSubscriptionRef = useRef(startLiveSubscription);
+  const startRootSubscriptionRef = useRef(startRootSubscription);
+  const stopLiveSubscriptionRef = useRef(stopLiveSubscription);
+  const stopRootSubscriptionRef = useRef(stopRootSubscription);
+
+  useEffect(() => {
+    resetFeedRef.current = resetFeed;
+    startLiveSubscriptionRef.current = startLiveSubscription;
+    startRootSubscriptionRef.current = startRootSubscription;
+    stopLiveSubscriptionRef.current = stopLiveSubscription;
+    stopRootSubscriptionRef.current = stopRootSubscription;
+  }, [
+    resetFeed,
+    startLiveSubscription,
+    startRootSubscription,
+    stopLiveSubscription,
+    stopRootSubscription,
   ]);
 
   useEffect(() => {
@@ -706,18 +669,6 @@ export function ExploreFeed({
   }, [loading]);
 
   useEffect(() => {
-    verifyExploreItemIds(itemsRef.current, feedKey);
-  }, [feedKey, itemsVersion]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    if (!canStartExplore) return;
-    if (lastFeedKeyRef.current === feedKey) return;
-    lastFeedKeyRef.current = feedKey;
-    resetFeed();
-  }, [canStartExplore, enabled, feedKey, resetFeed]);
-
-  useEffect(() => {
     if (!enabled || !visible || authReadyForExplore) {
       setAllowGuestExplore(false);
       if (authFallbackTimeoutRef.current) {
@@ -739,35 +690,34 @@ export function ExploreFeed({
         authFallbackTimeoutRef.current = null;
       }
     };
-  }, [authReadyForExplore, enabled, visible]);
+  }, [allowGuestExplore, authReadyForExplore, enabled, visible]);
 
   useEffect(() => {
     if (!enabled) return;
     if (!visible || !canStartExplore) {
-      hasInitializedRef.current = false;
-      isInitializingRef.current = false;
-      setLoading(false);
-      setRefreshing(false);
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      unsubscribePaginationRef.current?.();
-      unsubscribePaginationRef.current = null;
-      clearTimers();
+      stopRootSubscriptionRef.current();
       return;
     }
 
-    initFeed();
+    resetFeedRef.current();
+    startRootSubscriptionRef.current();
+    startLiveSubscriptionRef.current();
 
     return () => {
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      unsubscribePaginationRef.current?.();
-      unsubscribePaginationRef.current = null;
-      clearTimers();
+      stopLiveSubscriptionRef.current();
+      stopRootSubscriptionRef.current();
     };
-  }, [canStartExplore, clearTimers, enabled, initFeed, visible]);
+  }, [canStartExplore, enabled, feedKey, followsReadyForExplore, visible]);
 
   const mergePendingItems = useCallback(() => {
+    const deferred = deferredNewItemsRef.current;
+    if (deferred.length > 0) {
+      deferredNewItemsRef.current = [];
+      itemsRef.current = [...itemsRef.current, ...deferred].sort(
+        (left, right) => right.createdAt() - left.createdAt(),
+      );
+      setItemsVersion(version => version + 1);
+    }
     setNewPostsCount(0);
     lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
   }, []);
@@ -848,12 +798,9 @@ export function ExploreFeed({
 }
 
 function ExploreComposerFooter() {
+  const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const primary = {
-    background: '#17212b',
-    border: '#17212b',
-  };
   const openPost = useCallback(() => navigation.navigate('Post'), [navigation]);
 
   return (
@@ -861,18 +808,24 @@ function ExploreComposerFooter() {
       <Pressable
         hitSlop={8}
         onPress={openPost}
-        style={[styles.composerButton, { borderColor: `${primary.border}66` }]}
+        style={[
+          styles.composerButton,
+          {
+            backgroundColor: `${theme.colors.primary}4D`,
+            borderColor: `${theme.colors.primary}CC`,
+          },
+        ]}
       >
         <BlurView
-          intensity={28}
-          tint="light"
+          intensity={36}
+          tint="dark"
           style={[
             styles.composerBlur,
-            { backgroundColor: `${primary.background}2E` },
+            { backgroundColor: `${theme.colors.primary}26` },
           ]}
         >
-          <PenLine size={17} color={primary.background} strokeWidth={2.1} />
-          <Text style={[styles.composerText, { color: primary.background }]}>
+          <PenLine size={17} color="#ffffff" strokeWidth={2.1} />
+          <Text style={[styles.composerText, { color: '#ffffff' }]}>
             What's up?
           </Text>
         </BlurView>
@@ -989,7 +942,11 @@ function FeedKindHeaderButtons({
   );
 }
 
-function HeaderSearchButton({surfaceClassName}: {surfaceClassName: string}) {
+function HeaderSearchButton({
+  surfaceClassName,
+}: {
+  surfaceClassName: string;
+}) {
   const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();

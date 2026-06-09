@@ -22,9 +22,11 @@ import type {
 } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
+  asConnectionStatus,
   asEoce,
   asNip51,
   asParsedEvent,
+  ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
 import {
@@ -99,10 +101,16 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const paginationCounterRef = useRef(0);
   const prevPaginationSubIdRef = useRef<string | null>(null);
-  const followSetsUntilRef = useRef<number | undefined>(undefined);
   const publicPacksUntilRef = useRef<number | undefined>(undefined);
   const rawPageEventsRef = useRef(0);
+  const paginationTrackerRef = useRef(new ConnectionTracker());
   const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const paginationProgressTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const paginationCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const [loadingMorePacks, setLoadingMorePacks] = useState(false);
@@ -148,6 +156,14 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
       clearTimeout(paginationTimeoutRef.current);
       paginationTimeoutRef.current = null;
     }
+    if (paginationProgressTimeoutRef.current) {
+      clearTimeout(paginationProgressTimeoutRef.current);
+      paginationProgressTimeoutRef.current = null;
+    }
+    if (paginationCheckTimeoutRef.current) {
+      clearTimeout(paginationCheckTimeoutRef.current);
+      paginationCheckTimeoutRef.current = null;
+    }
   }, []);
 
   const completePagination = useCallback(() => {
@@ -191,10 +207,17 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   const handleFollowListMessage = useCallback(
     (message: WorkerMessage, forPagination = false) => {
       if (asEoce(message)) {
-        if (forPagination && rawPageEventsRef.current === 0) {
-          setHasMorePacks(false);
+        return;
+      }
+
+      const status = asConnectionStatus(message);
+      if (status) {
+        if (forPagination) {
+          paginationTrackerRef.current.handleMessage(message);
+          if (paginationTrackerRef.current.resolutionRate > 0.5) {
+            completePagination();
+          }
         }
-        if (forPagination) completePagination();
         return;
       }
 
@@ -204,13 +227,14 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
       if (!list?.title()) return;
       if (forPagination) {
         rawPageEventsRef.current += 1;
+        if (!paginationProgressTimeoutRef.current) {
+          paginationProgressTimeoutRef.current = setTimeout(() => {
+            paginationProgressTimeoutRef.current = null;
+            completePagination();
+          }, 500);
+        }
         const nextUntil = parsedEvent.createdAt() - 1;
-        if (parsedEvent.kind() === 30000) {
-          followSetsUntilRef.current =
-            followSetsUntilRef.current === undefined
-              ? nextUntil
-              : Math.min(followSetsUntilRef.current, nextUntil);
-        } else if (parsedEvent.kind() === 39089) {
+        if (parsedEvent.kind() === 39089) {
           publicPacksUntilRef.current =
             publicPacksUntilRef.current === undefined
               ? nextUntil
@@ -229,6 +253,21 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
   );
 
   useEffect(() => {
+    if (loadingMorePacks) return;
+    if (paginationCounterRef.current === 0) return;
+    if (paginationCheckTimeoutRef.current) {
+      clearTimeout(paginationCheckTimeoutRef.current);
+    }
+
+    paginationCheckTimeoutRef.current = setTimeout(() => {
+      paginationCheckTimeoutRef.current = null;
+      if (rawPageEventsRef.current === 0) {
+        setHasMorePacks(false);
+      }
+    }, 500);
+  }, [loadingMorePacks]);
+
+  useEffect(() => {
     const seenFollowSets = seenFollowSetsRef.current;
     const seenPublicPacks = seenPublicPacksRef.current;
 
@@ -240,9 +279,9 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     unsubscribePaginationRef.current = null;
     paginationCounterRef.current = 0;
     prevPaginationSubIdRef.current = null;
-    followSetsUntilRef.current = undefined;
     publicPacksUntilRef.current = undefined;
     rawPageEventsRef.current = 0;
+    paginationTrackerRef.current.reset();
     clearPaginationTimeout();
     setLoadingMorePacks(false);
     setHasMorePacks(true);
@@ -353,15 +392,8 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     if (tab !== 'packs' || loadingMorePacks || !hasMorePacks) return;
     if (packEventCount() === 0) return;
 
-    const lastFollowSet =
-      followSetsRef.current[followSetsRef.current.length - 1];
     const lastPublicPack =
       publicPacksRef.current[publicPacksRef.current.length - 1];
-    if (followSetsUntilRef.current === undefined) {
-      followSetsUntilRef.current = lastFollowSet?.createdAt()
-        ? lastFollowSet.createdAt() - 1
-        : undefined;
-    }
     if (publicPacksUntilRef.current === undefined) {
       publicPacksUntilRef.current = lastPublicPack?.createdAt()
         ? lastPublicPack.createdAt() - 1
@@ -369,7 +401,6 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
     }
 
     const requests = buildFollowListRequests(pubkey, {
-      followSetsUntil: followSetsUntilRef.current,
       publicPacksUntil: publicPacksUntilRef.current,
     });
     if (requests.length === 0) {
@@ -379,18 +410,17 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
 
     setLoadingMorePacks(true);
     rawPageEventsRef.current = 0;
+    paginationTrackerRef.current.reset();
     paginationCounterRef.current += 1;
     unsubscribePaginationRef.current?.();
     const pageSubId = [
       `followlists_${pubkey ?? 'public'}_page`,
       paginationCounterRef.current,
-      followSetsUntilRef.current ?? 'none',
       publicPacksUntilRef.current ?? 'none',
     ].join('_');
     feedBuilderDebug('create page subscription', {
       subId: pageSubId,
       previousSubId: prevPaginationSubIdRef.current,
-      followSetsUntil: followSetsUntilRef.current,
       publicPacksUntil: publicPacksUntilRef.current,
       requests: requests.map(request => ({
         kinds: request.kinds,
@@ -410,7 +440,7 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
       },
     );
     prevPaginationSubIdRef.current = pageSubId;
-    paginationTimeoutRef.current = setTimeout(completePagination, 10000);
+    paginationTimeoutRef.current = setTimeout(completePagination, 2000);
   }, [
     completePagination,
     hasMorePacks,
@@ -565,19 +595,17 @@ const KindListItem = memo(function KindListItem({
 export function buildFollowListRequests(
   pubkey: string | null,
   cursors?: {
-    followSetsUntil?: number;
     publicPacksUntil?: number;
   },
 ): RequestObject[] {
   const forPagination = !!cursors;
   return [
-    ...(pubkey && (!forPagination || cursors?.followSetsUntil !== undefined)
+    ...(pubkey && !forPagination
       ? [
           {
             kinds: [30000],
             authors: [pubkey],
             limit: 50,
-            until: cursors?.followSetsUntil,
             noCache: true,
             relays: DEFAULT_FEED_RELAYS,
           },

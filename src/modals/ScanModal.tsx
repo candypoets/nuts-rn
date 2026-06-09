@@ -77,7 +77,7 @@ function parseScanValue(rawValue: string): ScanResult {
 export function ScanModal({initialMode}: ScanModalProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createScanStyles(theme), [theme]);
-  const contentColor = theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
+  const contentColor = theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a';
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const pubkey = useAuthStore(state => state.pubkey);
@@ -281,7 +281,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
 }
 
 function createScanStyles(theme: AppTheme) {
-  const contentColor = theme.colors.base100 === '#333333' ? '#ffffff' : '#1a1a1a';
+  const contentColor = theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a';
   return StyleSheet.create({
   root: {
     backgroundColor: '#020617',

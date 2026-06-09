@@ -188,6 +188,13 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
     initialTimeoutRef.current = null;
   }, []);
 
+  const resetNotificationState = useCallback(() => {
+    seenIdsRef.current.clear();
+    shortBackfillCountRef.current = 0;
+    setRawEvents([]);
+    setHasMore(true);
+  }, []);
+
   const initSubscription = useCallback(() => {
     if (!visible || !pubkey) return;
     unsubscribeRef.current?.();
@@ -195,10 +202,6 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
     clearPaginationTimeout();
     clearInitialTimeout();
     connectionTrackerRef.current = new ConnectionTracker();
-    seenIdsRef.current.clear();
-    shortBackfillCountRef.current = 0;
-    setRawEvents([]);
-    setHasMore(true);
     setLoading(true);
 
     unsubscribeRef.current = subscribeToNostr(
@@ -221,6 +224,10 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
     relays,
     visible,
   ]);
+
+  useEffect(() => {
+    resetNotificationState();
+  }, [pubkey, resetNotificationState]);
 
   useEffect(() => {
     initSubscription();

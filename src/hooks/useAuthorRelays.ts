@@ -4,7 +4,7 @@ import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asParsedEvent, isKind10002} from '@candypoets/nipworker/utils';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import {BOOTSTRAP_RELAYS, useRelayStore} from '../stores';
+import {useRelayStore} from '../stores';
 
 export type RelayMarkerType = 'read' | 'write';
 
@@ -129,17 +129,17 @@ export function useAuthorRelays(
   pubkey: string | undefined | null,
   marker: RelayMarkerType,
   fallbackRelays: string[] = DEFAULT_FEED_RELAYS,
-  discoveryRelays: string[] = BOOTSTRAP_RELAYS,
+  discoveryRelays: string[] = EMPTY_RELAYS,
 ) {
   const normalizedFallback = useMemo(() => relayList(fallbackRelays), [fallbackRelays]);
   const normalizedDiscovery = useMemo(() => relayList(discoveryRelays), [discoveryRelays]);
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
 
   useEffect(() => {
     if (!pubkey) return undefined;
 
     const entry = resolveAuthorRelays(pubkey, normalizedDiscovery);
-    const listener = () => setVersion(version => version + 1);
+    const listener = () => setVersion(currentVersion => currentVersion + 1);
     entry.listeners.add(listener);
 
     return () => {
@@ -147,27 +147,25 @@ export function useAuthorRelays(
     };
   }, [normalizedDiscovery, pubkey]);
 
-  return useMemo(() => {
-    if (!pubkey) return normalizedFallback;
-    const entry = cache.get(cacheKey(pubkey, normalizedDiscovery));
-    const resolved = entry?.relays?.[marker];
-    return resolved && resolved.length ? resolved : normalizedFallback;
-  }, [marker, normalizedDiscovery, normalizedFallback, pubkey, version]);
+  if (!pubkey) return normalizedFallback;
+  const entry = cache.get(cacheKey(pubkey, normalizedDiscovery));
+  const resolved = entry?.relays?.[marker];
+  return resolved && resolved.length ? resolved : normalizedFallback;
 }
 
 export function useResolvedAuthorRelays(
   pubkey: string | undefined | null,
   marker: RelayMarkerType,
-  discoveryRelays: string[] = BOOTSTRAP_RELAYS,
+  discoveryRelays: string[] = EMPTY_RELAYS,
 ) {
   const normalizedDiscovery = useMemo(() => relayList(discoveryRelays), [discoveryRelays]);
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
 
   useEffect(() => {
     if (!pubkey) return undefined;
 
     const entry = resolveAuthorRelays(pubkey, normalizedDiscovery);
-    const listener = () => setVersion(version => version + 1);
+    const listener = () => setVersion(currentVersion => currentVersion + 1);
     entry.listeners.add(listener);
 
     return () => {
@@ -175,24 +173,22 @@ export function useResolvedAuthorRelays(
     };
   }, [normalizedDiscovery, pubkey]);
 
-  return useMemo(() => {
-    if (!pubkey) return undefined;
-    return cache.get(cacheKey(pubkey, normalizedDiscovery))?.relays?.[marker];
-  }, [marker, normalizedDiscovery, pubkey, version]);
+  if (!pubkey) return undefined;
+  return cache.get(cacheKey(pubkey, normalizedDiscovery))?.relays?.[marker];
 }
 
 function useAuthorRelayEntry(
   pubkey: string | undefined | null,
-  discoveryRelays: string[] = BOOTSTRAP_RELAYS,
+  discoveryRelays: string[] = EMPTY_RELAYS,
 ) {
   const normalizedDiscovery = useMemo(() => relayList(discoveryRelays), [discoveryRelays]);
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
 
   useEffect(() => {
     if (!pubkey) return undefined;
 
     const entry = resolveAuthorRelays(pubkey, normalizedDiscovery);
-    const listener = () => setVersion(version => version + 1);
+    const listener = () => setVersion(currentVersion => currentVersion + 1);
     entry.listeners.add(listener);
 
     return () => {
@@ -200,10 +196,8 @@ function useAuthorRelayEntry(
     };
   }, [normalizedDiscovery, pubkey]);
 
-  return useMemo(() => {
-    if (!pubkey) return undefined;
-    return cache.get(cacheKey(pubkey, normalizedDiscovery));
-  }, [normalizedDiscovery, pubkey, version]);
+  if (!pubkey) return undefined;
+  return cache.get(cacheKey(pubkey, normalizedDiscovery));
 }
 
 export function useEffectiveAuthorRelays({

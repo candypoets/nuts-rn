@@ -338,7 +338,6 @@ export function PrivateKeyLogin({
   const [error, setError] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const initialPubkeyRef = useRef(auth.pubkey);
-  const setAuth = useAuthStore(state => state.setAuth);
 
   useEffect(() => {
     if (!loginPending || !auth.pubkey) return;
@@ -358,7 +357,6 @@ export function PrivateKeyLogin({
       if (value.startsWith('bunker://')) {
         setLoginPending(true);
         manager.setNip46Bunker(value);
-        setAuth({ privkey: null, nsec: null });
         setPrivateKey('');
         setQrText('');
         setError(null);
@@ -369,7 +367,6 @@ export function PrivateKeyLogin({
         const pubkey = decodePublicKey(value);
         setLoginPending(true);
         manager.setPubkey(pubkey);
-        setAuth({ privkey: null, nsec: null });
         setPrivateKey('');
         setQrText('');
         setError(null);
@@ -378,12 +375,8 @@ export function PrivateKeyLogin({
 
       const secretKey = decodePrivateKey(privateKey);
       const privkey = bytesToHex(secretKey);
-      const nsec = privateKey.trim().toLowerCase().startsWith('nsec')
-        ? privateKey.trim()
-        : nip19.nsecEncode(secretKey);
       setLoginPending(true);
       manager.setSigner('privkey', privkey);
-      setAuth({ privkey, nsec });
       setPrivateKey('');
       setError(null);
     } catch (nextError) {
@@ -392,7 +385,7 @@ export function PrivateKeyLogin({
         nextError instanceof Error ? nextError.message : String(nextError),
       );
     }
-  }, [manager, privateKey, setAuth]);
+  }, [manager, privateKey]);
 
   const startQrConnect = useCallback(async () => {
     if (!manager) {
@@ -404,7 +397,6 @@ export function PrivateKeyLogin({
       setError(null);
       setLoginPending(true);
       const nextQrText = await connectWithQRCode('Nuts', DEFAULT_FEED_RELAYS);
-      setAuth({ privkey: null, nsec: null });
       setPrivateKey('');
       setQrText(nextQrText);
       setQrLinkCopied(false);
@@ -414,7 +406,7 @@ export function PrivateKeyLogin({
         nextError instanceof Error ? nextError.message : String(nextError),
       );
     }
-  }, [manager, setAuth]);
+  }, [manager]);
 
   const copyQrText = useCallback(async () => {
     if (!qrText) return;

@@ -112,6 +112,14 @@ function isRetryableMintNetworkError(error: unknown) {
   return /cancelled|canceled|network request failed|fetch failed/i.test(message);
 }
 
+function hexToBytes(hex: string) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 async function retryMintNetworkCall<T>(
   operation: () => Promise<T>,
   attempts = 3,
@@ -464,10 +472,19 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
     const handleAuth = (event: Event) => {
       const detail = (
         event as Event & {
-          detail?: { pubkey?: string | null; hasSigner?: boolean };
+          detail?: {
+            pubkey?: string | null;
+            hasSigner?: boolean;
+            secretKey?: unknown;
+          };
         }
       ).detail;
       const pubkey = detail?.pubkey ?? null;
+      const secretKey =
+        typeof detail?.secretKey === 'string' &&
+        /^[0-9a-f]{64}$/i.test(detail.secretKey)
+          ? detail.secretKey
+          : null;
       const currentPubkey = useAuthStore.getState().pubkey;
       if (pubkey !== currentPubkey) {
         resetNostrState();
@@ -478,6 +495,12 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
         npub: pubkey ? nip19.npubEncode(pubkey) : null,
         hasSigner: detail?.hasSigner ?? false,
         authResolved: true,
+        ...(secretKey
+          ? {
+              privkey: secretKey,
+              nsec: nip19.nsecEncode(hexToBytes(secretKey)),
+            }
+          : {}),
       });
     };
 

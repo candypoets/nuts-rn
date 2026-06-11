@@ -358,6 +358,9 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
   const openLogin = useCallback(() => {
     navigation.navigate('Login');
   }, [navigation]);
+  const openNewChat = useCallback(() => {
+    navigation.navigate('NewChat');
+  }, [navigation]);
   const header = useCallback(
     () => (
       <ChatHeader
@@ -367,6 +370,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
         relays={relays}
         statuses={relayStatuses}
         onSelectTab={setActiveTab}
+        onNewChat={openNewChat}
       />
     ),
     [
@@ -375,6 +379,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       conversations.requests.length,
       relayStatuses,
       relays,
+      openNewChat,
     ],
   );
 
@@ -387,6 +392,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
         relays={relays}
         statuses={relayStatuses}
         onSelectTab={setActiveTab}
+        onNewChat={openNewChat}
         sticky
       />
     ),
@@ -396,6 +402,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       conversations.requests.length,
       relayStatuses,
       relays,
+      openNewChat,
     ],
   );
 
@@ -406,14 +413,19 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       ) : !pubkey ? (
         <LoggedOutChatStub onSignIn={openLogin} />
       ) : (
-        <>
+        <View className="items-center">
           <Text className="text-center text-base font-semibold text-primary-content">
             No chats yet
           </Text>
           <Text className="mt-2 text-center text-sm text-primary-content">
             Conversations appear here once messages arrive.
           </Text>
-        </>
+          <AppButton
+            title="Start a new chat"
+            className="mt-5 min-w-44 px-6"
+            onPress={openNewChat}
+          />
+        </View>
       )}
     </View>
   );
@@ -447,6 +459,7 @@ function ChatHeader({
   relays,
   statuses,
   onSelectTab,
+  onNewChat,
   sticky = false,
 }: {
   activeTab: ChatListTab;
@@ -455,6 +468,7 @@ function ChatHeader({
   relays: string[];
   statuses: Record<string, string>;
   onSelectTab: (tab: ChatListTab) => void;
+  onNewChat: () => void;
   sticky?: boolean;
 }) {
   const theme = useAppTheme();
@@ -468,6 +482,7 @@ function ChatHeader({
             accessibilityLabel="New chat"
             className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
             hitSlop={12}
+            onPress={onNewChat}
           >
             <MessageCirclePlus
               size={19}

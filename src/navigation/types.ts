@@ -9,6 +9,7 @@ export type RootStackParamList = {
   Receive: undefined;
   Minting: undefined;
   Send: undefined;
+  NewChat: undefined;
   SendEcash: { pubkey: string; noteId?: string };
   Share: { nevent: string; naddr?: string };
   Scan: { mode?: 'share' | 'scan' } | undefined;

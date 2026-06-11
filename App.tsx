@@ -55,6 +55,7 @@ import {
   LogoutModal,
   MintingModal,
   MintsModal,
+  NewChatModal,
   PostModal,
   PrivateKeyLogin,
   ProfileModal,
@@ -375,7 +376,7 @@ function RootNavigator({
         <NativeStack.Screen
           name="CmdK"
           component={CmdKScreen}
-          options={{ presentation: 'formSheet' }}
+          options={{ presentation: 'fullScreenModal' }}
         />
         <NativeStack.Screen
           name="FeedBuilder"
@@ -400,6 +401,11 @@ function RootNavigator({
         <NativeStack.Screen
           name="Send"
           component={SendScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <NativeStack.Screen
+          name="NewChat"
+          component={NewChatScreen}
           options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
@@ -868,6 +874,12 @@ function SendScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, 'Send'>) {
   return <SendModal onClose={navigation.goBack} />;
+}
+
+function NewChatScreen({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'NewChat'>) {
+  return <NewChatModal onClose={navigation.goBack} />;
 }
 
 function ReceiveScreen({

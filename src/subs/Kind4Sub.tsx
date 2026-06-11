@@ -10,7 +10,7 @@ import {
 import {useReanimatedKeyboardAnimation} from 'react-native-keyboard-controller';
 import Animated, {interpolate, useAnimatedStyle} from 'react-native-reanimated';
 import {
-  getManager,
+  type ConnectionStatus,
   Kind4ParsedT,
   ParsedData,
   ParsedEvent as FbParsedEvent,
@@ -21,11 +21,15 @@ import {
   type RequestObject,
   type WorkerMessage,
 } from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import {
+  usePublish as publishToNostr,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
 import {
   asKind4,
   asParsedEvent,
   fbArray,
+  isConnectionStatus,
   parseContent,
 } from '@candypoets/nipworker/utils';
 import {Builder, ByteBuffer} from 'flatbuffers';
@@ -35,7 +39,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import {useAuthStore, useNostrStore} from '../stores';
+import {useAuthStore, useNostrStore, useSendStatusStore} from '../stores';
 import {useAppTheme} from '../theme';
 
 type Kind4ThreadProps = {
@@ -45,6 +49,7 @@ type Kind4ThreadProps = {
 };
 
 const THREAD_HEADER_HEIGHT = 65;
+const THREAD_COMPOSER_HEIGHT = 88;
 const TOP_SAFE_AREA_OFFSET = 8;
 
 function now() {
@@ -67,7 +72,7 @@ function getNonce(event: ParsedEvent) {
   return undefined;
 }
 
-function processEvents(events: ParsedEvent[]) {
+function processEvents(events: ParsedEvent[], _version: number) {
   const seen = new Set<string>();
   return events
     .filter(event => {
@@ -113,19 +118,21 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [eventsVersion, setEventsVersion] = useState(0);
+  const [scrollToBottomKey, setScrollToBottomKey] = useState(0);
   const keyboardAnimation = useReanimatedKeyboardAnimation();
   const insets = useSafeAreaInsets();
   const iconColor = theme.colors.primaryContent;
   const pubkey = useAuthStore(state => state.pubkey);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
+  const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const readRelayList = readRelays.length ? readRelays : DEFAULT_FEED_RELAYS;
   const writeRelayList = writeRelays.length ? writeRelays : readRelayList;
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
-  const items = useMemo(() => {
-    void eventsVersion;
-    return processEvents(rawEventsRef.current);
-  }, [eventsVersion]);
+  const items = useMemo(
+    () => processEvents(rawEventsRef.current, eventsVersion),
+    [eventsVersion],
+  );
 
   const clearPaginationTimeout = useCallback(() => {
     if (paginationTimeoutRef.current) {
@@ -297,13 +304,28 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
     sendingMapRef.current.set(nonce, Date.now());
     rawEventsRef.current = [parsedEvent, ...rawEventsRef.current];
     setEventsVersion(version => version + 1);
-    getManager().publish(
-      `4${event.content}`,
+    setScrollToBottomKey(key => key + 1);
+    const sendId = `kind4_${nonce}`;
+    const sendStatus: Record<string, ConnectionStatus> = {};
+    publishToNostr(
+      sendId,
       event,
-      writeRelayList,
-      prevPaginationSubIdRef.current ? [prevPaginationSubIdRef.current] : undefined,
+      (workerMessage: WorkerMessage) => {
+        const status = isConnectionStatus(workerMessage);
+        const relayUrl = status?.relayUrl();
+        if (!status || !relayUrl) return;
+        sendStatus[relayUrl] = status;
+        updateSendStatus(sendId, sendStatus);
+      },
+      {
+        defaultRelays: writeRelayList,
+        trackStatus: true,
+        subId: prevPaginationSubIdRef.current
+          ? [prevPaginationSubIdRef.current]
+          : undefined,
+      },
     );
-  }, [message, peerPubkey, pubkey, writeRelayList]);
+  }, [message, peerPubkey, pubkey, updateSendStatus, writeRelayList]);
 
   const fixedHeader = useCallback(
     () => (
@@ -353,7 +375,16 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         </View>
       </View>
     ),
-    [handleSubmit, message],
+    [handleSubmit, message, theme.colors.primaryContent],
+  );
+
+  const topSpacer = useCallback(
+    () => <View style={{height: THREAD_HEADER_HEIGHT + topInset}} />,
+    [topInset],
+  );
+  const bottomSpacer = useCallback(
+    () => <View style={{height: THREAD_COMPOSER_HEIGHT + insets.bottom}} />,
+    [insets.bottom],
   );
 
   const useKeyboardAccessory = Platform.OS === 'ios';
@@ -371,6 +402,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         items={items}
         getItemId={item => String(item.id() || '')}
         visible={visible}
+        scrollToBottomKey={scrollToBottomKey}
         bottom
         bottomAutoScroll="initial"
         fixedHeader={fixedHeader}
@@ -389,7 +421,9 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
             sentAt={sendingMapRef.current.get(getNonce(item) || '')}
           />
         )}
-        header={() => <View style={{height: THREAD_HEADER_HEIGHT + topInset}} />}
+        headerSafeArea={false}
+        header={topSpacer}
+        footer={bottomSpacer}
         empty={
           <View className="px-6 py-20">
             <Text className="text-center text-base font-semibold text-primary-content">

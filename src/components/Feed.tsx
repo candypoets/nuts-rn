@@ -40,9 +40,11 @@ export type FeedRenderItemInfo<T> = ListRenderItemInfo<T> & {
 export type FeedProps<T> = {
   items: T[];
   resetScrollKey?: string | number;
+  scrollToBottomKey?: string | number;
   getItemId?: (item: T, index: number) => string | number;
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   header?: (props: FeedChromeProps) => ReactNode;
+  footer?: (props: FeedChromeProps) => ReactNode;
   stickyHeader?: (props: FeedChromeProps) => ReactNode;
   stickyHeaderSafeAreaColor?: string;
   stickyFooter?: (props: FeedChromeProps) => ReactNode;
@@ -98,9 +100,11 @@ function defaultGetItemId<T>(item: T, index: number) {
 export function Feed<T>({
   items,
   resetScrollKey,
+  scrollToBottomKey,
   getItemId = defaultGetItemId,
   renderItem,
   header,
+  footer,
   stickyHeader,
   stickyHeaderSafeAreaColor,
   stickyFooter,
@@ -156,12 +160,12 @@ export function Feed<T>({
 
   useEffect(() => {
     const shouldInitialScroll =
-      bottomAutoScroll === 'initial' && !didInitialBottomScrollRef.current;
-    const shouldContinuousScroll = bottomAutoScroll === true;
+      (bottomAutoScroll === 'initial' || bottomAutoScroll === true) &&
+      !didInitialBottomScrollRef.current;
+    const shouldContinuousScroll = bottomAutoScroll === true && start <= 1;
     if (
       !bottom ||
       items.length === 0 ||
-      start > 1 ||
       (!shouldInitialScroll && !shouldContinuousScroll)
     ) {
       return;
@@ -180,6 +184,19 @@ export function Feed<T>({
       setDown(true);
     });
   }, [bottom, resetScrollKey]);
+
+  useEffect(() => {
+    if (scrollToBottomKey === undefined) return;
+    requestAnimationFrame(() => {
+      if (bottom) {
+        listRef.current?.scrollToOffset({offset: 0, animated: true});
+      } else {
+        listRef.current?.scrollToEnd({animated: true});
+      }
+      lastOffsetRef.current = 0;
+      setDown(true);
+    });
+  }, [bottom, scrollToBottomKey]);
 
   useEffect(() => {
     onViewportChange?.({start, end, down});
@@ -272,6 +289,11 @@ export function Feed<T>({
     );
   }, [chromeProps, header, headerSafeArea, topInset]);
 
+  const listFooter = useMemo(() => {
+    if (!footer) return null;
+    return <View className="w-full">{footer(chromeProps)}</View>;
+  }, [chromeProps, footer]);
+
   const listEmpty = useMemo(() => {
     if (loading) {
       return (
@@ -312,6 +334,7 @@ export function Feed<T>({
           })
         }
         ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
         ListEmptyComponent={listEmpty}
         className="flex-1"
         contentContainerClassName={contentContainerClassName}

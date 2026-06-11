@@ -158,7 +158,9 @@ const Kind1Header = memo(function Kind1Header({
         <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
           <ChevronLeft size={22} color={theme.colors.primaryContent} />
         </Pressable>
-        <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />
+        <View className="flex-1 items-end justify-center pl-3">
+          <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />
+        </View>
       </View>
       {headerItem ? (
         <View className="mt-2 px-1">

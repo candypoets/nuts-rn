@@ -1,16 +1,20 @@
-import React, {memo, useEffect, useMemo, useState} from 'react';
-import {Text, View} from 'react-native';
+import React, { memo, useEffect, useMemo, useState } from 'react';
+import { Text, View } from 'react-native';
 import type {
   Kind9321Parsed,
   Kind9735Parsed,
   ParsedEvent,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import {ParsedData} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
-import {asKind9321, asKind9735, asParsedEvent} from '@candypoets/nipworker/utils';
-import {DEFAULT_FEED_RELAYS} from '../../nostr/relays';
-import {Avatar} from './Avatar';
+import { ParsedData } from '@candypoets/nipworker';
+import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
+import {
+  asKind9321,
+  asKind9735,
+  asParsedEvent,
+} from '@candypoets/nipworker/utils';
+import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import { Avatar } from './Avatar';
 
 type ZapSummaryProps = {
   note: ParsedEvent;
@@ -82,6 +86,9 @@ function ZapSummaryComponent({
   );
   const totalAmount = zaps.reduce((sum, zap) => sum + zap.amount, 0);
   const biggestZap = zaps[0];
+  const otherSenderZaps = biggestZap
+    ? zaps.filter(zap => zap.sender && zap.sender !== biggestZap.sender)
+    : zaps;
 
   useEffect(() => {
     setZaps([]);
@@ -96,7 +103,7 @@ function ZapSummaryComponent({
         [
           {
             kinds: [9735, 9321],
-            tags: {'#e': [noteId]},
+            tags: { '#e': [noteId] },
             noContext: true,
             limit: 100,
             since: note.createdAt(),
@@ -110,7 +117,7 @@ function ZapSummaryComponent({
           if (!zap) return;
           setZaps(current => upsertZap(current, zap));
         },
-        {closeOnEose: false},
+        { closeOnEose: false },
       );
 
       cleanup = unsubscribe;
@@ -128,45 +135,47 @@ function ZapSummaryComponent({
   }
 
   return (
-    <View className={['relative flex-row items-center justify-between pl-10', className || ''].join(' ')}>
-      <View className="min-w-0 flex-1 flex-row items-center gap-1">
-        {zaps.length ? (
-          <>
-            <View className="flex-row items-center">
-              <Text className="text-xs font-semibold text-white">⚡</Text>
-              <Text className="text-xs font-semibold text-base-content">
-                {totalAmount.toLocaleString()}
-              </Text>
-            </View>
-            <View className="ml-1 flex-row items-center">
-              {zaps.slice(0, 5).map((zap, index) => (
-                <View key={zap.id} style={{marginLeft: index === 0 ? 0 : -8}}>
+    <View
+      className={[
+        'relative flex-row items-center justify-end pl-10',
+        className || '',
+      ].join(' ')}
+    >
+      {biggestZap ? (
+        <View className="min-w-0 flex-row items-center justify-end gap-1">
+          {otherSenderZaps.length ? (
+            <View className="mr-1 flex-row items-center">
+              {otherSenderZaps.slice(0, 5).map((zap, index) => (
+                <View key={zap.id} className={index === 0 ? '' : '-ml-2'}>
                   <Avatar pubkey={zap.sender} size="xs" link />
                 </View>
               ))}
-              {zaps.length > 5 ? (
+              {otherSenderZaps.length > 5 ? (
                 <View className="-ml-2 rounded-full border border-base-100 bg-base-200 px-1.5 py-0.5">
                   <Text className="text-[10px] font-bold text-base-content">
-                    +{zaps.length - 5}
+                    +{otherSenderZaps.length - 5}
                   </Text>
                 </View>
               ) : null}
             </View>
-          </>
-        ) : null}
-      </View>
-
-      {biggestZap ? (
-        <View className="ml-2 max-w-[48%] flex-row items-center justify-end gap-1">
+          ) : null}
           {biggestZap.comment ? (
             <Text
-              className="min-w-0 flex-shrink text-xs text-primary-content"
+              className="min-w-0 max-w-[48%] flex-shrink text-xs text-primary-content"
               numberOfLines={1}
             >
               "{biggestZap.comment}"
             </Text>
           ) : null}
-          <Avatar pubkey={biggestZap.sender} size="s" link />
+          <View className="flex-row items-center">
+            <Text className="text-xs font-semibold text-white">⚡</Text>
+            <Text className="text-xs font-semibold text-base-content">
+              {totalAmount.toLocaleString()}
+            </Text>
+          </View>
+          <View className="-ml-0.5 mt-0.5">
+            <Avatar pubkey={biggestZap.sender} size="zap" link />
+          </View>
         </View>
       ) : null}
     </View>

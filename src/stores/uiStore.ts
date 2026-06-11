@@ -1,6 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Dimensions } from 'react-native';
 import type { ParsedEvent } from '@candypoets/nipworker';
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 const initialDimensions = Dimensions.get('window');
 
@@ -26,17 +28,28 @@ export type UIStore = {
   setDebugEnabled(debugEnabled: boolean): void;
 };
 
-export const useUIStore = create<UIStore>()(set => ({
-  dimensions: { width: initialDimensions.width, height: initialDimensions.height },
-  imageZoom: { links: [], gridId: '', videoTime: 0 },
-  themeId: null,
-  debugEnabled: false,
-  setDimensions: dimensions => set({ dimensions }),
-  setImageZoom: value =>
-    set(state => ({ imageZoom: { ...state.imageZoom, ...value } })),
-  setThemeId: themeId => set({ themeId }),
-  setDebugEnabled: debugEnabled => set({ debugEnabled }),
-}));
+export const useUIStore = create<UIStore>()(
+  persist(
+    set => ({
+      dimensions: { width: initialDimensions.width, height: initialDimensions.height },
+      imageZoom: { links: [], gridId: '', videoTime: 0 },
+      themeId: null,
+      debugEnabled: false,
+      setDimensions: dimensions => set({ dimensions }),
+      setImageZoom: value =>
+        set(state => ({ imageZoom: { ...state.imageZoom, ...value } })),
+      setThemeId: themeId => set({ themeId }),
+      setDebugEnabled: debugEnabled => set({ debugEnabled }),
+    }),
+    {
+      name: 'ui',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: state => ({
+        themeId: state.themeId,
+      }),
+    },
+  ),
+);
 
 Dimensions.addEventListener('change', ({ window }) => {
   useUIStore.getState().setDimensions({ width: window.width, height: window.height });

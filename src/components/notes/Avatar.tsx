@@ -1,13 +1,22 @@
-import React, {memo, useCallback, useContext, useMemo} from 'react';
-import {Pressable, StyleSheet, View} from 'react-native';
-import {Image} from 'expo-image';
-import {NavigationContext} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {useKind0Value} from '../../hooks/useKind0Value';
-import {pushDistinct} from '../../navigation/pushDistinct';
-import type {RootStackParamList} from '../../navigation/types';
+import React, { memo, useCallback, useContext, useMemo } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
+import { NavigationContext } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useKind0Value } from '../../hooks/useKind0Value';
+import { pushDistinct } from '../../navigation/pushDistinct';
+import type { RootStackParamList } from '../../navigation/types';
 
-type AvatarSize = 'xxs' | 'xs' | 's' | 'sm' | 'md' | 'lg' | 'xl';
+type AvatarSize =
+  | 'xxs'
+  | 'xs'
+  | 'zap'
+  | 's'
+  | 'sm'
+  | 'md'
+  | 'lg'
+  | 'xl'
+  | 'fill';
 
 type AvatarProps = {
   pubkey: string;
@@ -20,11 +29,13 @@ type AvatarProps = {
 const sizeClass: Record<AvatarSize, string> = {
   xxs: 'h-5 w-5',
   xs: 'h-4 w-4',
+  zap: 'h-6 w-6',
   s: 'h-7 w-7',
   sm: 'h-8 w-8',
   md: 'h-10 w-10',
   lg: 'h-12 w-12',
   xl: 'h-14 w-14',
+  fill: 'h-full w-full',
 };
 
 const fallbackProfileImage = require('../../../assets/miss-profile.png');
@@ -50,7 +61,7 @@ function AvatarComponent({
     selector: selectPicture,
   });
   const imageSource = useMemo(
-    () => (picture ? {uri: picture} : fallbackProfileImage),
+    () => (picture ? { uri: picture } : fallbackProfileImage),
     [picture],
   );
   const openProfile = useCallback(() => {
@@ -59,11 +70,13 @@ function AvatarComponent({
       return;
     }
     if (!navigation) return;
-    pushDistinct(navigation, 'PublicProfile', {pubkey});
+    pushDistinct(navigation, 'PublicProfile', { pubkey });
   }, [navigation, onProfileOpen, pubkey]);
 
   const content = (
-    <View className={`${sizeClass[size]} overflow-hidden rounded-full border border-base-200 bg-base-200`}>
+    <View
+      className={`${sizeClass[size]} overflow-hidden rounded-full border border-base-200 bg-base-200`}
+    >
       <Image
         source={imageSource}
         style={styles.fill}
@@ -82,13 +95,15 @@ function AvatarComponent({
   );
 }
 
-export const Avatar = memo(AvatarComponent, (previous, next) => (
-  previous.pubkey === next.pubkey &&
-  (previous.size ?? 'md') === (next.size ?? 'md') &&
-  (previous.query ?? true) === (next.query ?? true) &&
-  (previous.link ?? false) === (next.link ?? false) &&
-  previous.onProfileOpen === next.onProfileOpen
-));
+export const Avatar = memo(
+  AvatarComponent,
+  (previous, next) =>
+    previous.pubkey === next.pubkey &&
+    (previous.size ?? 'md') === (next.size ?? 'md') &&
+    (previous.query ?? true) === (next.query ?? true) &&
+    (previous.link ?? false) === (next.link ?? false) &&
+    previous.onProfileOpen === next.onProfileOpen,
+);
 
 const styles = StyleSheet.create({
   fill: {

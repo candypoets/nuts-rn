@@ -231,7 +231,7 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
       <View className="gap-1 px-3 py-2.5">
         <View className="flex-row items-center gap-1.5">
           <Text
-            className="flex-1 text-xs font-semibold uppercase text-base-content/60"
+            className="flex-1 text-xs font-medium uppercase text-base-content/60"
             numberOfLines={1}
           >
             {youtubeMetadata?.authorName ||
@@ -240,7 +240,7 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
           <ExternalLink size={13} color="rgba(120,120,120,0.9)" />
         </View>
         <Text
-          className="text-[15px] font-medium leading-5 text-base-content"
+          className="text-[15px] font-light leading-5 text-base-content"
           numberOfLines={2}
         >
           {youtubeVideoId
@@ -357,7 +357,7 @@ function ContentBlocksComponent({
       return (
         <Text
           key={blockKey}
-          className="text-[15px] font-semibold text-primary"
+          className="text-[15px] font-light text-primary"
           onPress={event => {
             event.stopPropagation();
             if (tag) navigation.navigate('Tags', {tags: [tag]});
@@ -376,7 +376,7 @@ function ContentBlocksComponent({
           key={blockKey}
           pubkey={author}
           link
-          className="text-[15px] font-semibold text-primary"
+          className="text-[15px] font-light text-primary"
         />
       );
     }
@@ -426,7 +426,7 @@ function ContentBlocksComponent({
         renderedBlocks.push(
           <Text
             key={`inline-${blockKey}`}
-            className="text-[15px] leading-5 text-base-content"
+            className="text-[15px] font-light leading-5 text-base-content"
           >
             {inlineChildren}
           </Text>,

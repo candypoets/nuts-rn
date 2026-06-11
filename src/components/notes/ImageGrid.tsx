@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ViewStyle,
   useWindowDimensions,
 } from 'react-native';
 import {useSharedVideoPlayer} from '../../media/videoPlayers';
@@ -22,6 +23,8 @@ export type ImageGridLink = {
 
 const MAX_IMAGE_HEIGHT = 384;
 const IMAGE_GRID_HEIGHT = 192;
+const IMAGE_GRID_GAP = 4;
+const MAX_DISPLAY_LINKS = 6;
 
 function formatRemaining(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
@@ -46,28 +49,71 @@ function getImageHeight(dim: string | null | undefined, containerWidth: number) 
   return Math.min((parsed.height * containerWidth) / parsed.width, MAX_IMAGE_HEIGHT);
 }
 
-function getColumns(count: number) {
-  return Math.ceil(Math.sqrt(count || 1));
-}
+function getGridTileLayout(total: number, index: number, width: number): ViewStyle {
+  const halfWidth = (width - IMAGE_GRID_GAP) / 2;
+  const halfHeight = (IMAGE_GRID_HEIGHT - IMAGE_GRID_GAP) / 2;
+  const thirdWidth = (width - IMAGE_GRID_GAP * 2) / 3;
+  const twoThirdsWidth = thirdWidth * 2 + IMAGE_GRID_GAP;
 
-function getRounded(i: number, total: number, columns: number) {
-  if (total === 1) return 'rounded-lg';
-  const row = Math.floor(i / columns);
-  const col = i % columns;
-  const totalRows = Math.ceil(total / columns);
-  const firstRow = row === 0;
-  const lastRow = row === totalRows - 1;
-  const firstCol = col === 0;
-  const lastCol = col === columns - 1 || i === total - 1;
+  if (total === 2) {
+    return {
+      height: IMAGE_GRID_HEIGHT,
+      left: index === 0 ? 0 : halfWidth + IMAGE_GRID_GAP,
+      top: 0,
+      width: halfWidth,
+    };
+  }
 
-  return [
-    firstRow && firstCol ? 'rounded-tl-lg' : '',
-    firstRow && lastCol ? 'rounded-tr-lg' : '',
-    lastRow && firstCol ? 'rounded-bl-lg' : '',
-    lastRow && lastCol ? 'rounded-br-lg' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  if (total === 3) {
+    if (index === 0) {
+      return {height: IMAGE_GRID_HEIGHT, left: 0, top: 0, width: halfWidth};
+    }
+
+    return {
+      height: halfHeight,
+      left: halfWidth + IMAGE_GRID_GAP,
+      top: index === 1 ? 0 : halfHeight + IMAGE_GRID_GAP,
+      width: halfWidth,
+    };
+  }
+
+  if (total === 4) {
+    return {
+      height: halfHeight,
+      left: index % 2 === 0 ? 0 : halfWidth + IMAGE_GRID_GAP,
+      top: index < 2 ? 0 : halfHeight + IMAGE_GRID_GAP,
+      width: halfWidth,
+    };
+  }
+
+  if (total === 5) {
+    if (index === 0) {
+      return {height: IMAGE_GRID_HEIGHT, left: 0, top: 0, width: halfWidth};
+    }
+
+    const offsetIndex = index - 1;
+    const smallWidth = (halfWidth - IMAGE_GRID_GAP) / 2;
+    return {
+      height: halfHeight,
+      left:
+        halfWidth +
+        IMAGE_GRID_GAP +
+        (offsetIndex % 2) * (smallWidth + IMAGE_GRID_GAP),
+      top: offsetIndex < 2 ? 0 : halfHeight + IMAGE_GRID_GAP,
+      width: smallWidth,
+    };
+  }
+
+  if (total === 6) {
+    return {
+      height: halfHeight,
+      left: (index % 3) * (thirdWidth + IMAGE_GRID_GAP),
+      top: index < 3 ? 0 : halfHeight + IMAGE_GRID_GAP,
+      width: thirdWidth,
+    };
+  }
+
+  return {height: IMAGE_GRID_HEIGHT, left: 0, top: 0, width: twoThirdsWidth};
 }
 
 function VideoTile({
@@ -276,12 +322,12 @@ const styles = StyleSheet.create({
 export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedEvent}) {
   const {width} = useWindowDimensions();
   const setImageZoom = useUIStore(state => state.setImageZoom);
+  const validLinks = useMemo(() => links.filter(link => link.src), [links]);
   const displayLinks = useMemo(
-    () => links.filter(link => link.src).slice(0, 5),
-    [links],
+    () => validLinks.slice(0, MAX_DISPLAY_LINKS),
+    [validLinks],
   );
-  const remainingCount = Math.max(0, links.length - displayLinks.length);
-  const columns = getColumns(displayLinks.length);
+  const remainingCount = Math.max(0, validLinks.length - displayLinks.length);
   const containerWidth = Math.max(160, width - 88);
 
   useEffect(() => {
@@ -294,25 +340,30 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
   if (!displayLinks.length) return null;
 
   return (
-    <View className="mb-2 overflow-hidden rounded-lg">
-      <View className="flex-row flex-wrap gap-1">
+    <View
+      className="mb-2 overflow-hidden rounded-lg"
+      style={{width: containerWidth}}
+    >
+      <View
+        style={
+          displayLinks.length === 1
+            ? {height: getImageHeight(displayLinks[0]?.dim, containerWidth)}
+            : {height: IMAGE_GRID_HEIGHT}
+        }
+      >
         {displayLinks.map((link, index) => {
           const single = displayLinks.length === 1;
-          const tileWidth = single
-            ? containerWidth
-            : (containerWidth - (columns - 1) * 4) / columns;
-          const height = single
-            ? getImageHeight(link.dim, containerWidth)
-            : IMAGE_GRID_HEIGHT;
-          const rounded = getRounded(index, displayLinks.length, columns);
+          const tileStyle: ViewStyle = single
+            ? {height: '100%', left: 0, top: 0, width: containerWidth}
+            : getGridTileLayout(displayLinks.length, index, containerWidth);
           const imageUri = link.type === 'video' && link.blurhash ? link.blurhash : link.src;
           const autoplay = link.type === 'video' && (single || index === 0);
           const openZoom = () => {
             setImageZoom({
-              links: links.filter(item => item.src),
+              links: validLinks,
               note,
               zoomed: index,
-              gridId: `${links[0]?.src || 'media'}-${links.length}`,
+              gridId: `${validLinks[0]?.src || 'media'}-${validLinks.length}`,
               videoTime: 0,
             });
           };
@@ -321,8 +372,8 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
             return (
               <View
                 key={`${link.src}-${index}`}
-                className={['relative overflow-hidden', rounded].join(' ')}
-                style={{width: tileWidth, height}}
+                className="absolute overflow-hidden"
+                style={tileStyle}
               >
                 <VideoTile
                   src={link.src}
@@ -344,8 +395,8 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
           return (
             <Pressable
               key={`${link.src}-${index}`}
-              className={['relative overflow-hidden', rounded].join(' ')}
-              style={{width: tileWidth, height}}
+              className="absolute overflow-hidden"
+              style={tileStyle}
               onPress={event => {
                 event.stopPropagation();
                 openZoom();

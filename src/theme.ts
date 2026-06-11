@@ -50,13 +50,17 @@ function hexToRgbChannels(hex: string) {
 }
 
 function isDarkHex(hex: string) {
+  return getHexLuminance(hex) < 140;
+}
+
+function getHexLuminance(hex: string) {
   const normalized = hex.replace('#', '').slice(0, 6);
   const value = Number.parseInt(normalized, 16);
-  if (!Number.isFinite(value)) return true;
+  if (!Number.isFinite(value)) return 0;
   const red = (value >> 16) & 255;
   const green = (value >> 8) & 255;
   const blue = value & 255;
-  return (red * 299 + green * 587 + blue * 114) / 1000 < 140;
+  return (red * 299 + green * 587 + blue * 114) / 1000;
 }
 
 function getBaseContentColor(theme: AppTheme) {
@@ -65,6 +69,25 @@ function getBaseContentColor(theme: AppTheme) {
 
 function getMutedContentColor(theme: AppTheme) {
   return theme.colors.primaryContent;
+}
+
+function getOrderedBaseColors(colors: AppThemeColors) {
+  const base100Luminance = getHexLuminance(colors.base100);
+  const base300Luminance = getHexLuminance(colors.base300);
+  const shouldBase300BeDarker = isDarkHex(colors.base100);
+  const isOrdered = shouldBase300BeDarker
+    ? base300Luminance < base100Luminance
+    : base300Luminance > base100Luminance;
+
+  if (isOrdered) {
+    return colors;
+  }
+
+  return {
+    ...colors,
+    base100: colors.base300,
+    base300: colors.base100,
+  };
 }
 
 const builtInThemeColors: Record<AppThemeId, AppThemeColors> = {
@@ -139,7 +162,7 @@ const builtInThemeColors: Record<AppThemeId, AppThemeColors> = {
     secondaryContent: '#b3b3b3',
     base100: '#00213f',
     base200: '#161616',
-    base300: '#3441597a',
+    base300: '#1f2a3d',
     accent: '#f7931a',
     neutral: '#141414',
     info: '#336699',
@@ -177,12 +200,12 @@ const themeNames: Record<AppThemeId, string> = {
 
 function createAppTheme(id: AppThemeId): AppTheme {
   const sourceColors = builtInThemeColors[id];
-  const colors = {
+  const colors = getOrderedBaseColors({
     ...sourceColors,
     primaryContent: isDarkHex(sourceColors.base100)
       ? sourceColors.primaryContent
       : '#52616f',
-  };
+  });
 
   return {
     id,

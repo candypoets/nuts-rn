@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import {Image} from 'expo-image';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {
   MessageType,
   type ParsedEvent,
@@ -18,7 +19,7 @@ import {
 } from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asKind0, asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
-import {Hash, Search, User} from 'lucide-react-native';
+import {Hash, Search, User, X} from 'lucide-react-native';
 import {SEARCH_RELAYS} from '../stores';
 import {type AppTheme, useAppTheme} from '../theme';
 
@@ -48,6 +49,7 @@ export function CmdKModal({
   onSelectHashtag,
 }: CmdKModalProps) {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createCmdKStyles(theme), [theme]);
   const iconColor = theme.colors.primaryContent;
   const inputRef = useRef<TextInput>(null);
@@ -254,9 +256,8 @@ export function CmdKModal({
 
   return (
     <CmdKStylesContext.Provider value={styles}>
-    <View style={styles.screen}>
+    <View style={[styles.screen, {paddingTop: insets.top}]}>
       <View style={styles.panel}>
-        <View style={styles.handle} />
         <View style={styles.inputRow}>
           {mode === 'hashtags' ? (
             <Hash size={21} color={iconColor} strokeWidth={2.2} />
@@ -281,6 +282,15 @@ export function CmdKModal({
             autoCorrect={false}
             style={styles.input}
           />
+          <Pressable
+            accessibilityLabel="Close search"
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onClose}
+            style={styles.closeButton}
+          >
+            <X size={21} color={iconColor} strokeWidth={2.2} />
+          </Pressable>
         </View>
 
         <View style={styles.modeRow}>
@@ -298,7 +308,9 @@ export function CmdKModal({
 
         {mode === 'hashtags' ? (
           <FlatList
+            keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={() => inputRef.current?.blur()}
             data={cleanTag ? [cleanTag] : hashtagHistory}
             keyExtractor={(item, index) => `${item}:${index}`}
             ListEmptyComponent={<EmptyState loading={false} text={emptyText} />}
@@ -324,7 +336,9 @@ export function CmdKModal({
           />
         ) : (
           <FlatList
+            keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={() => inputRef.current?.blur()}
             data={items}
             keyExtractor={(item, index) =>
               item.id() || `${item.pubkey() ?? 'missing'}:${index}`
@@ -426,7 +440,14 @@ function ProfileRow({
 }
 
 function readableContentColor(theme: AppTheme) {
-  return theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a';
+  const normalized = theme.colors.base100.replace('#', '').slice(0, 6);
+  const value = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(value)) return '#ffffff';
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+  return luminance < 140 ? '#ffffff' : '#1a1a1a';
 }
 
 function createCmdKStyles(theme: AppTheme) {
@@ -436,27 +457,11 @@ function createCmdKStyles(theme: AppTheme) {
     flex: 1,
     backgroundColor: theme.colors.base100,
     justifyContent: 'flex-start',
-    paddingHorizontal: 12,
-    paddingTop: 18,
   },
   panel: {
     flex: 1,
-    backgroundColor: theme.colors.base300,
-    borderRadius: 12,
+    backgroundColor: theme.colors.base100,
     overflow: 'hidden',
-    shadowColor: '#0f172a',
-    shadowOffset: {width: 0, height: 12},
-    shadowOpacity: 0.14,
-    shadowRadius: 24,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: theme.colors.base200,
-    marginTop: 8,
-    marginBottom: 8,
   },
   inputRow: {
     minHeight: 62,
@@ -475,6 +480,12 @@ function createCmdKStyles(theme: AppTheme) {
     fontSize: 19,
     fontWeight: '500',
   },
+  closeButton: {
+    alignItems: 'center',
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
   modeRow: {
     flexDirection: 'row',
     gap: 8,
@@ -482,7 +493,7 @@ function createCmdKStyles(theme: AppTheme) {
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
+    backgroundColor: theme.colors.base100,
   },
   modeButton: {
     borderRadius: 999,
@@ -509,7 +520,7 @@ function createCmdKStyles(theme: AppTheme) {
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
+    backgroundColor: theme.colors.base100,
   },
   activeRow: {
     backgroundColor: theme.colors.base200,

@@ -1,5 +1,5 @@
 import React from 'react';
-import {Pressable, ScrollView, Text, View} from 'react-native';
+import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../navigation/types';
@@ -56,10 +56,17 @@ export function RelaysList({
         event.stopPropagation();
         navigation.navigate('RelayInfos', {relays, statuses});
       }}
+      style={styles.container}
     >
       <ScrollView
         className={heightClass}
         horizontal
+        onScrollBeginDrag={event => {
+          event.stopPropagation();
+        }}
+        onTouchStart={event => {
+          event.stopPropagation();
+        }}
         showsHorizontalScrollIndicator={false}
         contentContainerClassName={`flex-row items-center gap-1 ${mini ? '' : 'px-4'}`}
       >
@@ -89,3 +96,10 @@ export function RelaysList({
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flexShrink: 1,
+    maxWidth: '100%',
+  },
+});

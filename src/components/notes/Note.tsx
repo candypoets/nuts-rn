@@ -324,7 +324,7 @@ const NoteBody = memo(
               visible={visible}
               relays={relays}
               className={[
-                '-mb-3 w-full px-2',
+                '-mt-1 -mb-5 w-full pl-2 pr-2.5',
                 main || fullBleedContent ? 'pl-2' : 'pl-10',
               ].join(' ')}
             />

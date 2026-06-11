@@ -44,6 +44,7 @@ import { nip19, type EventTemplate } from 'nostr-tools';
 import type {SearchBarCommands} from 'react-native-screens';
 
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
+import { Avatar } from '../components/notes';
 import { pushDistinct } from '../navigation/pushDistinct';
 import type { RootStackParamList } from '../navigation/types';
 import {
@@ -70,8 +71,6 @@ import {
   useAppTheme,
 } from '../theme';
 import { useUIStore } from '../stores/uiStore';
-
-const fallbackProfileImage = require('../../assets/miss-profile.png');
 
 type ProfileModalTarget =
   | { type: 'login' }
@@ -260,6 +259,7 @@ export function ProfileModal({ auth, manager }: ProfileModalProps) {
             {accountEntries.map(([pubkey, account]) => (
               <AccountAvatarButton
                 key={pubkey}
+                pubkey={pubkey}
                 selected={pubkey === selectedPubkey}
                 loginMethod={
                   account.nsec
@@ -576,10 +576,12 @@ export function PrivateKeyLogin({
 }
 
 function AccountAvatarButton({
+  pubkey,
   selected,
   loginMethod,
   onPress,
 }: {
+  pubkey: string;
   selected: boolean;
   loginMethod: 'readonly' | 'key' | 'remote';
   onPress: () => void;
@@ -604,11 +606,6 @@ function AccountAvatarButton({
     inputRange: [0, 1],
     outputRange: [21, 29],
   });
-  const avatarScale = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.75, 1],
-  });
-
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -627,14 +624,14 @@ function AccountAvatarButton({
       <Animated.View
         style={[
           styles.accountAvatarImageWrap,
-          { transform: [{ scale: avatarScale }] },
+          {
+            borderRadius: tileRadius,
+            height: tileSize,
+            width: tileSize,
+          },
         ]}
       >
-        <Image
-          source={fallbackProfileImage}
-          style={styles.accountAvatarImage}
-          contentFit="cover"
-        />
+        <Avatar pubkey={pubkey} size="fill" />
       </Animated.View>
       <View style={styles.loginMethodBadge}>
         {loginMethod === 'readonly' ? (
@@ -1956,10 +1953,6 @@ function createProfileModalStyles(colors: AppThemeColors) {
     height: 56,
     overflow: 'hidden',
     width: 56,
-  },
-  accountAvatarImage: {
-    height: '100%',
-    width: '100%',
   },
   loginMethodBadge: {
     alignItems: 'center',

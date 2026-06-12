@@ -53,7 +53,7 @@ function InlineLink({ text, url }: { text: string; url: string }) {
 
   return (
     <Text
-      className="text-primary"
+      className="font-medium text-primary"
       onPress={event => {
         event.stopPropagation();
       }}
@@ -240,7 +240,7 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
           <ExternalLink size={13} color="rgba(120,120,120,0.9)" />
         </View>
         <Text
-          className="text-[15px] font-light leading-5 text-base-content"
+          className="text-[15px] font-medium leading-5 text-base-content"
           numberOfLines={2}
         >
           {youtubeVideoId
@@ -332,7 +332,7 @@ function ContentBlocksComponent({
             : displayText}
           {canToggleFullContent && isLastTextBlock(index, displayContent) ? (
             <Text
-              className="text-primary"
+            className="font-medium text-primary"
               onPress={event => {
                 event.stopPropagation();
                 setShowFull(value => !value);
@@ -357,7 +357,7 @@ function ContentBlocksComponent({
       return (
         <Text
           key={blockKey}
-          className="text-[15px] font-light text-primary"
+          className="text-[15px] font-medium text-primary"
           onPress={event => {
             event.stopPropagation();
             if (tag) navigation.navigate('Tags', {tags: [tag]});
@@ -376,7 +376,7 @@ function ContentBlocksComponent({
           key={blockKey}
           pubkey={author}
           link
-          className="text-[15px] font-light text-primary"
+          className="text-[15px] font-medium text-primary"
         />
       );
     }
@@ -426,7 +426,7 @@ function ContentBlocksComponent({
         renderedBlocks.push(
           <Text
             key={`inline-${blockKey}`}
-            className="text-[15px] font-light leading-5 text-base-content"
+            className="text-[15px] font-normal leading-5 text-base-content"
           >
             {inlineChildren}
           </Text>,
@@ -456,7 +456,7 @@ function ContentBlocksComponent({
         );
       } else {
         renderedBlocks.push(
-          <Text key={blockKey} className="text-[15px] text-primary">
+          <Text key={blockKey} className="text-[15px] font-medium text-primary">
             {entity || id || block.text()}
           </Text>,
         );
@@ -597,6 +597,20 @@ function ContentBlocksComponent({
     index += 1;
   }
 
+  if (canToggleFullContent && !showFull) {
+    return (
+      <Pressable
+        className="gap-2"
+        onPress={event => {
+          event.stopPropagation();
+          setShowFull(true);
+        }}
+      >
+        {renderedBlocks}
+      </Pressable>
+    );
+  }
+
   return <View className="gap-2">{renderedBlocks}</View>;
 }
 
@@ -609,5 +623,6 @@ export const ContentBlocks = memo(
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.showQuote ?? true) === (next.showQuote ?? true) &&
     (previous.showMedia ?? true) === (next.showMedia ?? true) &&
+    (previous.forceFullContent ?? false) === (next.forceFullContent ?? false) &&
     previous.renderQuote === next.renderQuote,
 );

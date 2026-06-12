@@ -743,8 +743,8 @@ export function Footer({
       accessibilityLabel={`Actions for note ${note.id() || ''}`}
       className={[
         mode === 'zoom'
-          ? 'mt-3 w-full flex-row items-center justify-between'
-          : 'mt-2 h-6 w-full flex-row items-center px-2',
+          ? 'relative z-30 mt-3 w-full flex-row items-center justify-between'
+          : 'relative z-30 mt-2 h-6 w-full flex-row items-center px-2',
         mode === 'zoom' ? '' : main ? 'pl-2' : 'pl-10',
       ].join(' ')}
     >

@@ -137,28 +137,12 @@ function ZapSummaryComponent({
   return (
     <View
       className={[
-        'relative flex-row items-center justify-end pl-10',
+        'relative z-0 flex-row items-center justify-end pl-10',
         className || '',
       ].join(' ')}
     >
       {biggestZap ? (
         <View className="min-w-0 flex-row items-center justify-end gap-1">
-          {otherSenderZaps.length ? (
-            <View className="mr-1 flex-row items-center">
-              {otherSenderZaps.slice(0, 5).map((zap, index) => (
-                <View key={zap.id} className={index === 0 ? '' : '-ml-2'}>
-                  <Avatar pubkey={zap.sender} size="xs" link />
-                </View>
-              ))}
-              {otherSenderZaps.length > 5 ? (
-                <View className="-ml-2 rounded-full border border-base-100 bg-base-200 px-1.5 py-0.5">
-                  <Text className="text-[10px] font-bold text-base-content">
-                    +{otherSenderZaps.length - 5}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
           {biggestZap.comment ? (
             <Text
               className="min-w-0 max-w-[48%] flex-shrink text-xs text-primary-content"
@@ -173,7 +157,23 @@ function ZapSummaryComponent({
               {totalAmount.toLocaleString()}
             </Text>
           </View>
-          <View className="-ml-0.5 mt-0.5">
+          {otherSenderZaps.length ? (
+            <View className="z-20 -mr-2 flex-row items-center">
+              {otherSenderZaps.slice(0, 5).map((zap, index) => (
+                <View key={zap.id} className={index === 0 ? '' : '-ml-2'}>
+                  <Avatar pubkey={zap.sender} size="xs" link />
+                </View>
+              ))}
+              {otherSenderZaps.length > 5 ? (
+                <View className="-ml-2 rounded-full border border-base-100 bg-base-200 px-1.5 py-0.5">
+                  <Text className="text-[10px] font-bold text-base-content">
+                    +{otherSenderZaps.length - 5}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          <View className="z-10 -ml-0.5 mt-0.5">
             <Avatar pubkey={biggestZap.sender} size="zap" link />
           </View>
         </View>

@@ -71,6 +71,7 @@ import {
 type HomeFeedProps = {
   enabled: boolean;
   visible: boolean;
+  onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
 type WalletActivity = {
@@ -87,7 +88,7 @@ type WalletActivity = {
   redeemed?: boolean;
 };
 
-export function HomeFeed({ enabled, visible }: HomeFeedProps) {
+export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -306,6 +307,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     authPubkey,
     completeResolvingSubscription,
     enabled,
+    hasSigner,
     handleMessage,
     homeRelays,
     requestList,
@@ -501,7 +503,6 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
     clearProofStorageOnce,
     enabled,
     handleProofsMessage,
-    hasSigner,
     initializeProofWallet,
     proofPipeline,
     verifyAndCleanProofs,
@@ -674,6 +675,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         header={renderHeader}
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
+        onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<LoggedOutHome />}
         contentContainerClassName="pb-28"
       />
@@ -687,6 +689,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
         header={renderHeader}
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
+        onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<ReadOnlyWalletStub />}
         contentContainerClassName="pb-28"
       />
@@ -706,6 +709,7 @@ export function HomeFeed({ enabled, visible }: HomeFeedProps) {
       loading={loading && activities.length === 0}
       refreshing={refreshing}
       onRefresh={handleRefresh}
+      onChromeVisibilityChange={onChromeVisibilityChange}
       empty={<EmptyWalletStub />}
       contentContainerClassName="pb-28"
     />

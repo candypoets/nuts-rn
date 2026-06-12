@@ -63,6 +63,7 @@ export type FeedProps<T> = {
   onRefresh?: () => void | Promise<void>;
   onNearBottom?: (event: {distance: number}) => void;
   onViewportChange?: (state: {start: number; end: number; down: boolean}) => void;
+  onChromeVisibilityChange?: (visible: boolean) => void;
   contentContainerClassName?: string;
   estimatedItemSize?: number;
   removeClippedSubviews?: boolean;
@@ -117,12 +118,13 @@ export function Feed<T>({
   pullToRefresh = false,
   bottom = false,
   bottomAutoScroll = true,
-  maintainVisibleContentPosition = bottom,
+  maintainVisibleContentPosition = true,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   onRefresh,
   onNearBottom,
   onViewportChange,
+  onChromeVisibilityChange,
   contentContainerClassName = 'pb-28',
   removeClippedSubviews = true,
 }: FeedProps<T>) {
@@ -201,6 +203,10 @@ export function Feed<T>({
   useEffect(() => {
     onViewportChange?.({start, end, down});
   }, [down, end, onViewportChange, start]);
+
+  useEffect(() => {
+    onChromeVisibilityChange?.(!down || start < 1);
+  }, [down, onChromeVisibilityChange, start]);
 
   useEffect(() => {
     headerVisible.value = withTiming(start >= 1 && !down ? 1 : 0, {
@@ -348,7 +354,9 @@ export function Feed<T>({
                   autoscrollToBottomThreshold: 0.2,
                   animateAutoScrollToBottom: true,
                 }
-              : undefined
+              : bottom
+                ? undefined
+                : {}
             : {disabled: true}
         }
         onEndReached={handleEndReached}

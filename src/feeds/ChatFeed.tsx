@@ -41,6 +41,7 @@ type ChatListTab = 'messages' | 'requests';
 type ChatFeedProps = {
   enabled: boolean;
   visible: boolean;
+  onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
 type Conversation = {
@@ -139,7 +140,7 @@ function groupConversations(
     );
 }
 
-export function ChatFeed({enabled, visible}: ChatFeedProps) {
+export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const eventsRef = useRef<ParsedEvent[]>([]);
@@ -446,6 +447,7 @@ export function ChatFeed({enabled, visible}: ChatFeedProps) {
       loading={loading || refreshing}
       refreshing={refreshing}
       onRefresh={handleRefresh}
+      onChromeVisibilityChange={onChromeVisibilityChange}
       empty={empty}
       contentContainerClassName="pb-28"
     />

@@ -11,7 +11,9 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {markSwipeGestureEnd} from './notes/press';
 
 export const SWIPE_SPRING = {
@@ -19,6 +21,8 @@ export const SWIPE_SPRING = {
   stiffness: 220,
   mass: 0.9,
 };
+
+const FEED_TOP_SAFE_AREA_OFFSET = 14;
 
 type CarouselAnimatorProps = {
   activeIndex: number;
@@ -28,6 +32,8 @@ type CarouselAnimatorProps = {
   stackDepth: SharedValue<number>;
   dismissProgress: SharedValue<number>;
   stackPresentation: 'flat' | 'modal' | 'sub';
+  indicatorColor?: string;
+  indicatorVisible?: boolean;
   onIndexChange: (index: number) => void;
   renderPage: (params: {
     index: number;
@@ -45,19 +51,30 @@ export function CarouselAnimator({
   stackDepth,
   dismissProgress,
   stackPresentation,
+  indicatorColor = '#ffffff',
+  indicatorVisible = true,
   onIndexChange,
   renderPage,
 }: CarouselAnimatorProps) {
   const {width} = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const pagerRef = useRef<PagerView>(null);
   const virtualIndex = useSharedValue(activeIndex);
+  const indicatorProgress = useSharedValue(indicatorVisible ? 1 : 0);
   const selectedIndexRef = useRef(activeIndex);
+  const indicatorTop = Math.max(0, insets.top - FEED_TOP_SAFE_AREA_OFFSET);
 
   useEffect(() => {
     selectedIndexRef.current = activeIndex;
     virtualIndex.value = withSpring(activeIndex, SWIPE_SPRING);
     pagerRef.current?.setPageWithoutAnimation(activeIndex);
   }, [activeIndex, virtualIndex]);
+
+  useEffect(() => {
+    indicatorProgress.value = withTiming(indicatorVisible ? 1 : 0, {
+      duration: 180,
+    });
+  }, [indicatorProgress, indicatorVisible]);
 
   const navigateTo = (index: number) => {
     const next = Math.max(0, Math.min(pageCount - 1, index));
@@ -119,6 +136,11 @@ export function CarouselAnimator({
     };
   });
 
+  const indicatorStyle = useAnimatedStyle(() => ({
+    opacity: indicatorProgress.value,
+    transform: [{translateY: (1 - indicatorProgress.value) * -8}],
+  }));
+
   return (
     <>
       <Animated.View style={[styles.mainPager, mainStyle]}>
@@ -142,27 +164,39 @@ export function CarouselAnimator({
           ))}
         </PagerView>
       </Animated.View>
-      <View style={styles.carouselProgress}>
-        {labels.map((label, index) => (
-          <Pressable
-            key={label}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            style={styles.progressButton}
-            onPress={() => navigateTo(index)}
-          >
-            <ProgressBar index={index} virtualIndex={virtualIndex} />
-          </Pressable>
-        ))}
+      <View
+        pointerEvents={indicatorVisible ? 'box-none' : 'none'}
+        style={[styles.carouselProgress, {top: indicatorTop}]}
+      >
+        <Animated.View style={[styles.progressRow, indicatorStyle]}>
+          {labels.map((label, index) => (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{selected: index === activeIndex}}
+              style={styles.progressButton}
+              onPress={() => navigateTo(index)}
+            >
+              <ProgressBar
+                color={indicatorColor}
+                index={index}
+                virtualIndex={virtualIndex}
+              />
+            </Pressable>
+          ))}
+        </Animated.View>
       </View>
     </>
   );
 }
 
 function ProgressBar({
+  color,
   index,
   virtualIndex,
 }: {
+  color: string;
   index: number;
   virtualIndex: SharedValue<number>;
 }) {
@@ -170,11 +204,11 @@ function ProgressBar({
     const ratio = 1 / (Math.abs(virtualIndex.value - index) + 1);
     return {
       opacity: 0.3 + ratio * 0.7,
-      transform: [{scaleX: 0.75 + ratio * 0.5}],
+      width: 10 + ratio * 8,
     };
   });
 
-  return <Animated.View style={[styles.progress, style]} />;
+  return <Animated.View style={[styles.progress, {backgroundColor: color}, style]} />;
 }
 
 const styles = StyleSheet.create({
@@ -190,21 +224,24 @@ const styles = StyleSheet.create({
   },
   carouselProgress: {
     alignSelf: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    zIndex: 60,
+    elevation: 60,
+  },
+  progressRow: {
+    alignSelf: 'center',
     flexDirection: 'row',
     gap: 8,
-    left: '25%',
-    position: 'absolute',
-    right: '25%',
-    top: 8,
-    zIndex: 20,
+    justifyContent: 'center',
   },
   progressButton: {
-    flex: 1,
+    alignItems: 'center',
     paddingVertical: 10,
   },
   progress: {
-    backgroundColor: '#17212b',
-    borderRadius: 2,
+    borderRadius: 999,
     height: 4,
   },
 });

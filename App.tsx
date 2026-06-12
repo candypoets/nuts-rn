@@ -708,6 +708,13 @@ function MainTabs({
     explore: true,
     chat: false,
   });
+  const [chromeVisibleByRoute, setChromeVisibleByRoute] = useState<
+    Record<RouteId, boolean>
+  >({
+    home: true,
+    explore: true,
+    chat: true,
+  });
   const stackDepth = useSharedValue(0);
   const dismissProgress = useSharedValue(0);
   const activeRouteIndex = useMemo(
@@ -737,6 +744,30 @@ function MainTabs({
     setActiveRouteId(ROUTES[index]?.id ?? 'explore');
   }, []);
 
+  const setRouteChromeVisible = useCallback((routeId: RouteId, nextVisible: boolean) => {
+    setChromeVisibleByRoute(current =>
+      current[routeId] === nextVisible
+        ? current
+        : {
+            ...current,
+            [routeId]: nextVisible,
+          },
+    );
+  }, []);
+
+  const handleHomeChromeVisibility = useCallback(
+    (nextVisible: boolean) => setRouteChromeVisible('home', nextVisible),
+    [setRouteChromeVisible],
+  );
+  const handleExploreChromeVisibility = useCallback(
+    (nextVisible: boolean) => setRouteChromeVisible('explore', nextVisible),
+    [setRouteChromeVisible],
+  );
+  const handleChatChromeVisibility = useCallback(
+    (nextVisible: boolean) => setRouteChromeVisible('chat', nextVisible),
+    [setRouteChromeVisible],
+  );
+
   return (
     <View
       style={[
@@ -753,6 +784,8 @@ function MainTabs({
         stackDepth={stackDepth}
         dismissProgress={dismissProgress}
         stackPresentation="flat"
+        indicatorColor={theme.colors.primaryContent}
+        indicatorVisible={chromeVisibleByRoute[activeRoute.id]}
         onIndexChange={changeRouteIndex}
         renderPage={({ index, width }) => (
           <FeedPage
@@ -762,14 +795,23 @@ function MainTabs({
             width={width}
           >
             {ROUTES[index].id === 'home' ? (
-              <HomeFeed enabled={nostrEnabled} visible={activatedRoutes.home} />
+              <HomeFeed
+                enabled={nostrEnabled}
+                visible={activatedRoutes.home}
+                onChromeVisibilityChange={handleHomeChromeVisibility}
+              />
             ) : ROUTES[index].id === 'explore' ? (
               <ExploreFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.explore}
+                onChromeVisibilityChange={handleExploreChromeVisibility}
               />
             ) : (
-              <ChatFeed enabled={nostrEnabled} visible={activatedRoutes.chat} />
+              <ChatFeed
+                enabled={nostrEnabled}
+                visible={activatedRoutes.chat}
+                onChromeVisibilityChange={handleChatChromeVisibility}
+              />
             )}
           </FeedPage>
         )}

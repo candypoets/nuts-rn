@@ -58,6 +58,7 @@ type ExploreFeedProps = {
   header?: () => React.ReactNode;
   stickyHeader?: () => React.ReactNode;
   stickyFooter?: () => React.ReactNode;
+  onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
 const followListImage = require('../../assets/followlist.png');
@@ -92,6 +93,7 @@ export function ExploreFeed({
   header,
   stickyHeader,
   stickyFooter,
+  onChromeVisibilityChange,
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -790,6 +792,7 @@ export function ExploreFeed({
         onRefresh={handleRefresh}
         onNearBottom={handleNearBottom}
         onViewportChange={handleViewportChange}
+        onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}
         contentContainerClassName="pb-28"
       />

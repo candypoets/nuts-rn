@@ -10,8 +10,8 @@
 		0C80B921A6F3F58F76C31292 /* libPods-NutsRn.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-NutsRn.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2BE7C6CE4A0AFD8E29A98249 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5927D864CB9F4E4BCDE112B4 /* ExpoModulesProvider.swift */; };
-		3A3B6C302D7F4115A8B9C001 /* OrientationGateBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */; };
 		3A3B6C2E2D7F4115A8B9C001 /* OrientationGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A3B6C2D2D7F4115A8B9C001 /* OrientationGate.swift */; };
+		3A3B6C302D7F4115A8B9C001 /* OrientationGateBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		AA2A2CEFDEE8F0004EC0D87D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
@@ -22,8 +22,8 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = NutsRn/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = NutsRn/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = NutsRn/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = OrientationGateBridge.m; path = NutsRn/OrientationGateBridge.m; sourceTree = "<group>"; };
 		3A3B6C2D2D7F4115A8B9C001 /* OrientationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OrientationGate.swift; path = NutsRn/OrientationGate.swift; sourceTree = "<group>"; };
+		3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = OrientationGateBridge.m; path = NutsRn/OrientationGateBridge.m; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-NutsRn.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NutsRn.debug.xcconfig"; path = "Target Support Files/Pods-NutsRn/Pods-NutsRn.debug.xcconfig"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-NutsRn.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NutsRn.release.xcconfig"; path = "Target Support Files/Pods-NutsRn/Pods-NutsRn.release.xcconfig"; sourceTree = "<group>"; };
 		5927D864CB9F4E4BCDE112B4 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-NutsRn/ExpoModulesProvider.swift"; sourceTree = "<group>"; };

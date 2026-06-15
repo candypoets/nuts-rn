@@ -47,6 +47,7 @@ import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
 const NOTE_SEARCH_TIMEOUT_MS = 2500;
+const NOTE_BYTES_PER_EVENT = 10 * 1024;
 const NOTE_FALLBACK_RELAYS = [
   'wss://nostr.wine',
   'wss://relay.snort.social',
@@ -568,7 +569,7 @@ function NoteComponent({
         fetchedRef.current = parsed;
         addContextEvent(parsed);
       },
-      { closeOnEose: false },
+      { bytesPerEvent: NOTE_BYTES_PER_EVENT },
     );
 
     return () => {
@@ -745,22 +746,30 @@ function NoteComponent({
       elevation: 3,
     };
   }, [cardlessMain, isQuote, theme.colors.base100]);
+  const threadConnectorStyle = useMemo<ViewStyle>(
+    () => ({
+      backgroundColor: theme.id === 'snowwhite' ? '#dddddd' : theme.colors.base200,
+    }),
+    [theme.colors.base200, theme.id],
+  );
   const threadConnectors = (
     <>
       {hasBottomThreadConnector ? (
         <View
           className={[
-            'absolute bottom-0 left-7 top-8 w-0.5 bg-base-200',
+            'absolute bottom-0 left-7 top-8 w-0.5',
             isKind20 ? 'hidden' : '',
           ].join(' ')}
+          style={threadConnectorStyle}
         />
       ) : null}
       {hasTopThreadConnector ? (
         <View
           className={[
-            'absolute left-7 top-0 h-8 w-0.5 bg-base-200',
+            'absolute left-7 top-0 h-8 w-0.5',
             isKind20 ? 'hidden' : '',
           ].join(' ')}
+          style={threadConnectorStyle}
         />
       ) : null}
     </>

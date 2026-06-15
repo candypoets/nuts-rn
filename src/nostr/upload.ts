@@ -1,6 +1,7 @@
 import { useSignEvent } from '@candypoets/nipworker/hooks';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { Event, EventTemplate } from 'nostr-tools';
 
 export const DEFAULT_BLOSSOM_SERVER = 'https://blossom.nuts.cash';
@@ -47,23 +48,16 @@ function base64Encode(value: string) {
 }
 /* eslint-enable no-bitwise */
 
-function readBlobAsArrayBuffer(blob: Blob) {
-  return new Promise<ArrayBuffer>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result instanceof ArrayBuffer) {
-        resolve(reader.result);
-      } else {
-        reject(new Error('Failed to read file bytes'));
-      }
-    };
-    reader.onerror = () =>
-      reject(reader.error ?? new Error('Failed to read file'));
-    reader.readAsArrayBuffer(blob);
-  });
+function base64UrlEncode(value: string) {
+  return base64Encode(value)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-function signEvent(template: EventTemplate) {
+let signQueue = Promise.resolve();
+
+function signEventUnqueued(template: EventTemplate) {
   return new Promise<Event>((resolve, reject) => {
     try {
       useSignEvent(template, signedEvent => {
@@ -77,6 +71,15 @@ function signEvent(template: EventTemplate) {
       reject(error);
     }
   });
+}
+
+function signEvent(template: EventTemplate) {
+  const next = signQueue.then(() => signEventUnqueued(template));
+  signQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
 }
 
 function canonicalAuthEvent(signed: Event) {
@@ -107,7 +110,7 @@ async function makeBlossomAuthHeader(sha256Hex: string) {
     content: '',
   });
 
-  return `Nostr ${base64Encode(JSON.stringify(canonicalAuthEvent(signed)))}`;
+  return `Nostr ${base64UrlEncode(JSON.stringify(canonicalAuthEvent(signed)))}`;
 }
 
 async function makeNip98AuthHeader(
@@ -133,6 +136,33 @@ function normalizeUploadUrl(url: string) {
   return url.replace(/^https?:\/\/https?:\/\//i, 'https://');
 }
 
+function blossomBlobUrl(server: string, sha256Hex: string) {
+  return `${server.replace(/\/$/, '')}/${sha256Hex}`;
+}
+
+/* eslint-disable no-bitwise */
+function base64ToBytes(value: string) {
+  const chars =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = value.replace(/[^A-Za-z0-9+/=]/g, '');
+  const output: number[] = [];
+
+  for (let index = 0; index < clean.length; index += 4) {
+    const enc1 = chars.indexOf(clean.charAt(index));
+    const enc2 = chars.indexOf(clean.charAt(index + 1));
+    const enc3 = chars.indexOf(clean.charAt(index + 2));
+    const enc4 = chars.indexOf(clean.charAt(index + 3));
+    if (enc1 < 0 || enc2 < 0) break;
+
+    output.push((enc1 << 2) | (enc2 >> 4));
+    if (enc3 >= 0) output.push(((enc2 & 15) << 4) | (enc3 >> 2));
+    if (enc4 >= 0) output.push(((enc3 & 3) << 6) | enc4);
+  }
+
+  return new Uint8Array(output);
+}
+/* eslint-enable no-bitwise */
+
 function nip94Tags(asset: LocalUploadAsset, sha256Hex: string, url: string) {
   const tags: string[][] = [
     ['url', url],
@@ -151,46 +181,54 @@ function nip94Tags(asset: LocalUploadAsset, sha256Hex: string, url: string) {
   return tags;
 }
 
-async function readLocalAsset(asset: LocalUploadAsset) {
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
-  const bytes = new Uint8Array(await readBlobAsArrayBuffer(blob));
+async function hashLocalAsset(asset: LocalUploadAsset) {
+  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  const bytes = base64ToBytes(base64);
   const sha256Hex = bytesToHex(sha256(bytes));
-  const mimeType =
-    asset.mimeType || blob.type || response.headers.get('content-type') || '';
+  const mimeType = asset.mimeType || '';
 
-  return { blob, sha256Hex, mimeType };
+  return { sha256Hex, mimeType };
 }
 
 export async function uploadToBlossom(
   asset: LocalUploadAsset,
   server = DEFAULT_BLOSSOM_SERVER,
 ): Promise<UploadResult> {
-  const { blob, sha256Hex, mimeType } = await readLocalAsset(asset);
+  const { sha256Hex, mimeType } = await hashLocalAsset(asset);
   const uploadUrl = `${server.replace(/\/$/, '')}/upload`;
   const authorization = await makeBlossomAuthHeader(sha256Hex);
-  const uploadResponse = await fetch(uploadUrl, {
-    method: 'PUT',
+  const uploadResponse = await FileSystem.uploadAsync(uploadUrl, asset.uri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: {
       Authorization: authorization,
       'X-SHA-256': sha256Hex,
       'Content-Type': mimeType || 'application/octet-stream',
     },
-    body: blob,
   });
 
-  if (!uploadResponse.ok) {
+  if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
     const reason =
-      uploadResponse.headers.get('x-reason') ||
-      uploadResponse.headers.get('X-Reason') ||
-      (await uploadResponse.text().catch(() => ''));
+      uploadResponse.headers['x-reason'] ||
+      uploadResponse.headers['X-Reason'] ||
+      uploadResponse.body ||
+      '';
     throw new Error(
       `Blossom upload failed with status ${uploadResponse.status}: ${reason}`,
     );
   }
 
-  const json = await uploadResponse.json().catch(() => null as any);
-  const url = normalizeUploadUrl(String(json?.url || uploadUrl));
+  let json: any = null;
+  try {
+    json = JSON.parse(uploadResponse.body);
+  } catch {
+    // Some Blossom servers can return an empty body for an already-present blob.
+  }
+  const url = normalizeUploadUrl(
+    String(json?.url || blossomBlobUrl(server, sha256Hex)),
+  );
 
   return {
     url,
@@ -234,7 +272,7 @@ export async function uploadToNip96(
   asset: LocalUploadAsset,
   server = DEFAULT_UPLOAD_SERVER,
 ): Promise<UploadResult> {
-  const { sha256Hex, mimeType } = await readLocalAsset(asset);
+  const { sha256Hex, mimeType } = await hashLocalAsset(asset);
   const uploadUrl = await discoverNip96UploadUrl(server);
   const authorization = await makeNip98AuthHeader(uploadUrl, 'POST', sha256Hex);
   const form = new FormData();

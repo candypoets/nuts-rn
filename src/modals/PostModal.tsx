@@ -2,7 +2,6 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import {
   ActivityIndicator,
   FlatList,
-  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -64,9 +63,11 @@ import {
   SEARCH_RELAYS,
   useAuthStore,
   useNostrStore,
+  useRelayStore,
   useSendStatusStore,
 } from '../stores';
 import { Note } from '../components/notes/Note';
+import { RelaysList } from '../components/RelaysList';
 import { useKind0Value } from '../hooks/useKind0Value';
 import {type AppTheme, useAppTheme} from '../theme';
 
@@ -97,9 +98,16 @@ type TenorGif = {
   };
 };
 type SelectedImage = LocalUploadAsset & {
+  remote?: boolean;
   uploadUrl?: string;
+  uploadTags?: string[][];
   status: 'waiting' | 'uploading' | 'uploaded' | 'failed';
   error?: string;
+};
+type UploadedImage = SelectedImage & {
+  uploadUrl: string;
+  uploadTags: string[][];
+  status: 'uploaded';
 };
 type SelectedMention = {
   name: string;
@@ -214,6 +222,40 @@ function decodeReplyTarget(reply?: string) {
   return { id: reply, relays: [] as string[] };
 }
 
+function imetaTagFromUpload(image: SelectedImage) {
+  if (!image.uploadUrl) return null;
+  const tag = ['imeta', `url ${image.uploadUrl}`];
+  const uploadTags = image.uploadTags || [];
+  const fields = new Map(uploadTags.map(item => [item[0], item[1]]));
+  const dim =
+    fields.get('dim') ||
+    (image.width && image.height
+      ? `${Math.round(image.width)}x${Math.round(image.height)}`
+      : '');
+  const mimeType = fields.get('m') || image.mimeType || '';
+  const sha256Hex = fields.get('x') || '';
+  const alt = fields.get('alt') || image.fileName || '';
+
+  if (mimeType) tag.push(`m ${mimeType}`);
+  if (dim) tag.push(`dim ${dim}`);
+  if (sha256Hex) tag.push(`x ${sha256Hex}`);
+  if (alt) tag.push(`alt ${alt}`);
+
+  return tag;
+}
+
+function isTag(tag: string[] | null): tag is string[] {
+  return Array.isArray(tag);
+}
+
+function hasContentPart(value: string | undefined | null): value is string {
+  return Boolean(value?.trim());
+}
+
+function waitForNextFrame() {
+  return new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+}
+
 export function PostModal({ reply, quote, onClose }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createPostModalStyles(theme), [theme]);
@@ -223,16 +265,16 @@ export function PostModal({ reply, quote, onClose }: Props) {
   const editorYRef = useRef(0);
   const editorHeightRef = useRef(0);
   const editorWidthRef = useRef(0);
-  const scrollOffsetRef = useRef(0);
+  const mountedRef = useRef(true);
   const mentionSearchUnsubscribeRef = useRef<(() => void) | null>(null);
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
+  const setSubRelays = useRelayStore(state => state.setSubRelays);
   const uploadPreference = useNostrStore(selectPreferredUploadServer);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const [text, setText] = useState('');
-  const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -257,6 +299,15 @@ export function PostModal({ reply, quote, onClose }: Props) {
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
   );
+  const publishRelaySubId = useMemo(
+    () => `composer_publish_${pubkey || 'anon'}`,
+    [pubkey],
+  );
+  const selectedPublishRelays = useRelayStore(
+    state => state.relaySubs[publishRelaySubId],
+  );
+  const publishRelays =
+    selectedPublishRelays !== undefined ? selectedPublishRelays : relays;
   const lookupRelays = useMemo(
     () => [
       ...new Set([
@@ -274,6 +325,11 @@ export function PostModal({ reply, quote, onClose }: Props) {
     () => pollOptions.map(option => option.trim()).filter(Boolean),
     [pollOptions],
   );
+
+  useEffect(() => {
+    if (selectedPublishRelays !== undefined) return;
+    setSubRelays(publishRelaySubId, relays);
+  }, [publishRelaySubId, relays, selectedPublishRelays, setSubRelays]);
   const mentionSuggestions = useMemo(() => {
     if (mentionQuery === null || !mentionQuery.trim()) return [];
     const query = mentionQuery.trim().toLowerCase();
@@ -319,6 +375,37 @@ export function PostModal({ reply, quote, onClose }: Props) {
         selectedImages.length ||
         (pollEnabled && validPollOptions.length >= 2),
     );
+  const submitLabel = isSubmitting
+    ? submitStatus?.startsWith('Uploading')
+      ? 'Uploading'
+      : submitStatus?.startsWith('Publishing')
+        ? 'Publishing'
+        : 'Signing'
+    : pollEnabled
+      ? 'Poll'
+      : reply
+        ? 'Reply'
+        : quote
+          ? 'Quote'
+          : 'Post';
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
+  const updateSelectedImagesIfMounted = useCallback(
+    (update: React.SetStateAction<SelectedImage[]>) => {
+      if (mountedRef.current) setSelectedImages(update);
+    },
+    [],
+  );
+
+  const setSubmitStatusIfMounted = useCallback((value: string | null) => {
+    if (mountedRef.current) setSubmitStatus(value);
+  }, []);
 
   const scrollToComposer = useCallback(() => {
     requestAnimationFrame(() => {
@@ -328,11 +415,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
       });
       editorRef.current?.focus();
     });
-  }, []);
-
-  const blurComposer = useCallback(() => {
-    editorRef.current?.blur();
-    Keyboard.dismiss();
   }, []);
 
   const openComposerPanel = useCallback(
@@ -353,18 +435,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
       editorRef.current?.focus();
     });
   }, []);
-
-  const blurComposerWhenTouchingOutsideEditor = useCallback(
-    (event: NativeSyntheticEvent<{ locationY: number }>) => {
-      const touchY = event.nativeEvent.locationY + scrollOffsetRef.current;
-      const editorTop = editorYRef.current;
-      const editorBottom = editorTop + editorHeightRef.current;
-      if (touchY < editorTop || touchY > editorBottom) {
-        blurComposer();
-      }
-    },
-    [blurComposer],
-  );
 
   useEffect(() => {
     setReplyNote(null);
@@ -500,7 +570,13 @@ export function PostModal({ reply, quote, onClose }: Props) {
           }
         : null,
     ],
-    [activePanel, keyboardHeight, keyboardOpen, lastKeyboardHeight],
+    [
+      activePanel,
+      keyboardHeight,
+      keyboardOpen,
+      lastKeyboardHeight,
+      styles.content,
+    ],
   );
 
   const updatePollOption = useCallback((index: number, value: string) => {
@@ -560,53 +636,78 @@ export function PostModal({ reply, quote, onClose }: Props) {
     setIsSubmitting(true);
 
     try {
-      setSubmitStatus(
-        selectedImages.length
-          ? `Uploading ${selectedImages.length} image${
-              selectedImages.length === 1 ? '' : 's'
+      const localImages = selectedImages.filter(image => !image.remote);
+      const remoteImages = selectedImages
+        .filter(image => image.remote)
+        .map(image => ({
+          ...image,
+          status: 'uploaded' as const,
+          uploadUrl: image.uploadUrl || image.uri,
+          uploadTags: image.uploadTags || [],
+        }));
+
+      setSubmitStatusIfMounted(
+        localImages.length
+          ? `Uploading ${localImages.length} image${
+              localImages.length === 1 ? '' : 's'
             } to ${mediaServer}...`
           : 'Preparing event...',
       );
-      const html = await editorRef.current?.getHTML();
-      setHtmlPreview(typeof html === 'string' ? html : null);
-      const uploadedImages: SelectedImage[] = [];
+      updateSelectedImagesIfMounted(current =>
+        current.map(item =>
+          localImages.some(image => image.uri === item.uri)
+            ? { ...item, status: 'uploading' }
+            : item,
+        ),
+      );
 
-      for (const image of selectedImages) {
-        setSelectedImages(current =>
-          current.map(item =>
-            item.uri === image.uri ? { ...item, status: 'uploading' } : item,
-          ),
-        );
-
-        try {
-          const result = await uploadFile(image, {
-            server: mediaServer,
-            serverType: mediaServerType,
-          });
-          const uploaded = {
-            ...image,
-            status: 'uploaded' as const,
-            uploadUrl: result.url,
-          };
-          uploadedImages.push(uploaded);
-          setSelectedImages(current =>
-            current.map(item => (item.uri === image.uri ? uploaded : item)),
-          );
-        } catch (error) {
-          const failed = {
-            ...image,
-            status: 'failed' as const,
-            error: error instanceof Error ? error.message : 'Upload failed',
-          };
-          setSelectedImages(current =>
-            current.map(item => (item.uri === image.uri ? failed : item)),
-          );
-          setSubmitStatus(failed.error);
-          return;
-        }
+      const uploadResults = await Promise.all(
+        localImages.map(async image => {
+          try {
+            const result = await uploadFile(image, {
+              server: mediaServer,
+              serverType: mediaServerType,
+            });
+            const uploaded = {
+              ...image,
+              status: 'uploaded' as const,
+              uploadUrl: result.url,
+              uploadTags: result.tags,
+            };
+            updateSelectedImagesIfMounted(current =>
+              current.map(item => (item.uri === image.uri ? uploaded : item)),
+            );
+            return uploaded;
+          } catch (error) {
+            const failed = {
+              ...image,
+              status: 'failed' as const,
+              error: error instanceof Error ? error.message : 'Upload failed',
+            };
+            updateSelectedImagesIfMounted(current =>
+              current.map(item => (item.uri === image.uri ? failed : item)),
+            );
+            return failed;
+          }
+        }),
+      );
+      const failedUpload = uploadResults.find(
+        image => image.status === 'failed',
+      );
+      if (failedUpload) {
+        setSubmitStatusIfMounted(failedUpload.error || 'Upload failed');
+        return;
       }
+      const uploadedImages = uploadResults.filter(
+        (image): image is UploadedImage => image.status === 'uploaded',
+      );
+      const mediaImages = [...uploadedImages, ...remoteImages].sort(
+        (left, right) =>
+          selectedImages.findIndex(image => image.uri === left.uri) -
+          selectedImages.findIndex(image => image.uri === right.uri),
+      );
 
-      setSubmitStatus('Publishing post...');
+      setSubmitStatusIfMounted('Publishing post...');
       let baseTags: string[][] = [];
       if (replyTarget?.id && replyNote) {
         baseTags = fbArray(replyNote, 'tags').map(tag =>
@@ -623,12 +724,13 @@ export function PostModal({ reply, quote, onClose }: Props) {
             })}`
           : '';
       const content = [
-        textWithNostrMentions(text.trim(), selectedMentions),
-        ...uploadedImages.map(image => image.uploadUrl).filter(Boolean),
+        textWithNostrMentions(text, selectedMentions),
+        ...mediaImages.map(image => image.uploadUrl),
         quoteLink,
       ]
-        .filter(Boolean)
-        .join('\n\n');
+        .filter(hasContentPart)
+        .join('\n\n')
+        .trim();
       let event: EventTemplate & { id?: string } = {
         kind: pollEnabled ? 1068 : 1,
         content,
@@ -640,6 +742,10 @@ export function PostModal({ reply, quote, onClose }: Props) {
       }
 
       event = prepareEvent(event);
+      event.tags = [
+        ...event.tags,
+        ...mediaImages.map(imetaTagFromUpload).filter(isTag),
+      ];
 
       if (quoteTarget?.id && replyNote) {
         const relayHint = quoteTarget.relays[0] || '';
@@ -682,7 +788,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
           updateSendStatus(sendId, sendStatus);
         },
         {
-          defaultRelays: relays,
+          defaultRelays: publishRelays,
           trackStatus: true,
           subId: noteTarget?.id
             ? [`f_${noteTarget.id}`, `replies_${noteTarget.id}`]
@@ -690,19 +796,21 @@ export function PostModal({ reply, quote, onClose }: Props) {
         },
       );
 
-      editorRef.current?.setValue('');
-      setText('');
-      setSelectedMentions([]);
-      setSelectedImages([]);
-      setSubmitStatus(null);
-      setActivePanel(null);
-      setPollEnabled(false);
-      setPollOptions(['', '']);
-      setPollType('singlechoice');
-      setPollEndsAt(null);
-      onClose();
+      if (mountedRef.current) {
+        editorRef.current?.setValue('');
+        setText('');
+        setSelectedMentions([]);
+        setSelectedImages([]);
+        setSubmitStatus(null);
+        setActivePanel(null);
+        setPollEnabled(false);
+        setPollOptions(['', '']);
+        setPollType('singlechoice');
+        setPollEndsAt(null);
+        onClose();
+      }
     } finally {
-      setIsSubmitting(false);
+      if (mountedRef.current) setIsSubmitting(false);
     }
   }, [
     canSubmit,
@@ -716,12 +824,14 @@ export function PostModal({ reply, quote, onClose }: Props) {
     quoteTarget,
     noteTarget,
     replyTarget,
-    relays,
+    publishRelays,
     text,
     updateSendStatus,
     validPollOptions,
     selectedImages,
     selectedMentions,
+    setSubmitStatusIfMounted,
+    updateSelectedImagesIfMounted,
     mediaServer,
     mediaServerType,
   ]);
@@ -734,18 +844,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
       mimeType?: string | null,
       fileName?: string | null,
     ) => {
-      const maxInlineWidth = Math.max(120, editorWidthRef.current - 28);
-      const maxInlineHeight = 120;
-      const scale = Math.min(
-        1,
-        maxInlineWidth / Math.max(1, width),
-        maxInlineHeight / Math.max(1, height),
-      );
-      editorRef.current?.setImage(
-        uri,
-        Math.max(1, Math.round(width * scale)),
-        Math.max(1, Math.round(height * scale)),
-      );
       setSelectedImages(current =>
         current.some(image => image.uri === uri)
           ? current
@@ -765,19 +863,26 @@ export function PostModal({ reply, quote, onClose }: Props) {
     [],
   );
 
+  const removeImage = useCallback((uri: string) => {
+    setSelectedImages(current => current.filter(image => image.uri !== uri));
+  }, []);
+
   const insertRemoteImage = useCallback(
     (uri: string, width: number, height: number) => {
-      const maxInlineWidth = Math.max(120, editorWidthRef.current - 28);
-      const maxInlineHeight = 120;
-      const scale = Math.min(
-        1,
-        maxInlineWidth / Math.max(1, width),
-        maxInlineHeight / Math.max(1, height),
-      );
-      editorRef.current?.setImage(
-        uri,
-        Math.max(1, Math.round(width * scale)),
-        Math.max(1, Math.round(height * scale)),
+      setSelectedImages(current =>
+        current.some(image => image.uri === uri)
+          ? current
+          : [
+              ...current,
+              {
+                uri,
+                width,
+                height,
+                remote: true,
+                uploadUrl: uri,
+                status: 'uploaded',
+              },
+            ],
       );
     },
     [],
@@ -808,10 +913,15 @@ export function PostModal({ reply, quote, onClose }: Props) {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ['images'],
+      preferredAssetRepresentationMode:
+        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Automatic,
       quality: 0.92,
     });
 
     if (!result.canceled) {
+      await waitForNextFrame();
+      editorRef.current?.focus();
+
       for (const asset of result.assets) {
         if (!asset.uri) continue;
         insertImage(
@@ -821,6 +931,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
           asset.mimeType,
           asset.fileName,
         );
+        await waitForNextFrame();
       }
     }
 
@@ -863,30 +974,19 @@ export function PostModal({ reply, quote, onClose }: Props) {
             disabled={!canSubmit}
             onPress={submit}
           >
-            <Text style={styles.submitText}>
-              {isSubmitting
-                ? 'Signing'
-                : pollEnabled
-                  ? 'Poll'
-                  : reply
-                    ? 'Reply'
-                    : quote
-                      ? 'Quote'
-                    : 'Post'}
-            </Text>
-            <Send size={16} color="#ffffff" strokeWidth={2.4} />
+            <Text style={styles.submitText}>{submitLabel}</Text>
+            <Send size={16} color={theme.button.primary.text} strokeWidth={2.4} />
           </Pressable>
         </View>
+      ) : null}
+      {activePanel !== 'gif' ? (
+        <PublishRelayList relays={publishRelays} subId={publishRelaySubId} />
       ) : null}
 
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={contentContainerStyle}
-        onScroll={event => {
-          scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
-        }}
-        onTouchStart={blurComposerWhenTouchingOutsideEditor}
         scrollEventThrottle={16}
       >
         {!pubkey || !hasSigner ? (
@@ -944,6 +1044,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
             selectionColor={theme.colors.primary}
             cursorColor={theme.colors.primary}
             linkRegex={/(https?:\/\/|nostr:)[^\s]+/}
+            scrollEnabled
             onChangeText={(event: NativeSyntheticEvent<{ value: string }>) =>
               setText(event.nativeEvent.value)
             }
@@ -965,12 +1066,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         </View>
 
         {selectedImages.length ? (
-          <UploadStatus
-            images={selectedImages}
-            mediaServer={mediaServer}
-            mediaServerType={mediaServerType}
-            submitStatus={submitStatus}
-          />
+          <SelectedMediaGrid images={selectedImages} onRemove={removeImage} />
         ) : null}
 
         {pollEnabled ? (
@@ -984,12 +1080,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
             removeOption={removePollOption}
             updateOption={updatePollOption}
           />
-        ) : null}
-
-        {htmlPreview ? (
-          <Text style={styles.debugHtml} numberOfLines={2}>
-            {htmlPreview}
-          </Text>
         ) : null}
 
       </ScrollView>
@@ -1015,7 +1105,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
           style={[
             styles.gifModal,
             {
-              top: 0,
               bottom: Math.max(0, (keyboardOpen ? keyboardHeight : 0) - 18),
             },
           ]}
@@ -1031,45 +1120,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
       ) : null}
     </View>
     </PostModalStylesContext.Provider>
-  );
-}
-
-function UploadStatus({
-  images,
-  mediaServer,
-  mediaServerType,
-  submitStatus,
-}: {
-  images: SelectedImage[];
-  mediaServer: string;
-  mediaServerType: 'blossom' | 'nip96';
-  submitStatus: string | null;
-}) {
-  const styles = usePostModalStyles();
-  return (
-    <View style={styles.uploadBox}>
-      <Text style={styles.uploadTitle}>Media server</Text>
-      <Text style={styles.uploadServer} numberOfLines={1}>
-        {mediaServerType === 'blossom' ? 'Blossom' : 'NIP-96'} - {mediaServer}
-      </Text>
-      {images.map((image, index) => (
-        <Text
-          key={image.uri}
-          style={[
-            styles.uploadLine,
-            image.status === 'failed' && styles.uploadError,
-          ]}
-          numberOfLines={2}
-        >
-          Image {index + 1}: {image.status}
-          {image.uploadUrl ? ` - ${image.uploadUrl}` : ''}
-          {image.error ? ` - ${image.error}` : ''}
-        </Text>
-      ))}
-      {submitStatus ? (
-        <Text style={styles.uploadLine}>{submitStatus}</Text>
-      ) : null}
-    </View>
   );
 }
 
@@ -1141,6 +1191,108 @@ function MentionSuggestions({
   );
 }
 
+function SelectedMediaGrid({
+  images,
+  onRemove,
+}: {
+  images: SelectedImage[];
+  onRemove: (uri: string) => void;
+}) {
+  const styles = usePostModalStyles();
+  const errors = images
+    .map((image, index) =>
+      image.status === 'failed' && image.error
+        ? `Image ${index + 1}: ${image.error}`
+        : null,
+    )
+    .filter((error): error is string => Boolean(error));
+
+  return (
+    <View style={styles.selectedMediaBlock}>
+      <View style={styles.selectedMediaGrid}>
+        {images.map((image, index) => {
+          const uploading = image.status === 'uploading';
+          const uploaded = image.status === 'uploaded';
+          const failed = image.status === 'failed';
+          const overlayLabel = uploaded
+            ? 'Uploaded'
+            : failed
+              ? 'Failed'
+              : '';
+          const badgeLabel = image.status === 'waiting' ? `${index + 1}` : '';
+
+          return (
+            <View
+              key={image.uri}
+              style={[
+                styles.selectedMediaTile,
+                failed && styles.selectedMediaTileFailed,
+              ]}
+            >
+              <Image
+                source={{uri: image.uri}}
+                style={styles.selectedMediaImage}
+                contentFit="cover"
+              />
+              {!image.remote && (uploading || uploaded || failed) ? (
+                <View style={styles.selectedMediaOverlay}>
+                  {uploading ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.selectedMediaStateText}>
+                      {uploaded ? '✓' : '!'}
+                    </Text>
+                  )}
+                  {overlayLabel ? (
+                    <Text style={styles.selectedMediaStatusLabel}>
+                      {overlayLabel}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+              {!image.remote && badgeLabel ? (
+                <Text style={styles.selectedMediaBadge}>
+                  {badgeLabel}
+                </Text>
+              ) : null}
+              {!uploading ? (
+                <Pressable
+                  accessibilityLabel="Remove media"
+                  hitSlop={8}
+                  style={styles.mediaRemove}
+                  onPress={() => onRemove(image.uri)}
+                >
+                  <X size={13} color="#ffffff" strokeWidth={2.5} />
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+      {errors.length ? (
+        <View style={styles.selectedMediaErrors}>
+          {errors.map(error => (
+            <Text key={error} style={styles.selectedMediaError}>
+              {error}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PublishRelayList({relays, subId}: {relays: string[]; subId: string}) {
+  const styles = usePostModalStyles();
+  if (!relays.length) return null;
+
+  return (
+    <View style={styles.publishRelays}>
+      <RelaysList relays={relays} subId={subId} mini />
+    </View>
+  );
+}
+
 function ComposerToolbar({
   activePanel,
   onInsertImage,
@@ -1181,6 +1333,8 @@ function ComposerToolbar({
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
+      preferredAssetRepresentationMode:
+        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Automatic,
       quality: 0.92,
     });
 
@@ -1582,17 +1736,20 @@ function createPostModalStyles(theme: AppTheme) {
     height: 38,
     borderRadius: 19,
     paddingHorizontal: 14,
-    backgroundColor: theme.colors.primary,
+    borderWidth: 1,
+    borderColor: theme.button.primary.border,
+    backgroundColor: theme.button.primary.background,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
   },
   submitDisabled: {
-    backgroundColor: theme.colors.base200,
+    borderColor: theme.button.disabled.border,
+    backgroundColor: theme.button.disabled.background,
   },
   submitText: {
-    color: '#ffffff',
+    color: theme.button.primary.text,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1629,21 +1786,21 @@ function createPostModalStyles(theme: AppTheme) {
     fontWeight: '600',
   },
   editorShell: {
-    minHeight: 190,
+    height: 128,
     overflow: 'hidden',
   },
   replyEditorShell: {
-    minHeight: 104,
+    height: 104,
   },
   editor: {
-    minHeight: 190,
+    height: 128,
     padding: 14,
     fontSize: 17,
     lineHeight: 24,
     color: contentColor,
   },
   replyEditor: {
-    minHeight: 104,
+    height: 104,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
@@ -1733,6 +1890,7 @@ function createPostModalStyles(theme: AppTheme) {
   },
   gifModal: {
     position: 'absolute',
+    top: 0,
     left: 12,
     right: 12,
     zIndex: 30,
@@ -1950,22 +2108,79 @@ function createPostModalStyles(theme: AppTheme) {
     fontWeight: '900',
     lineHeight: 16,
   },
-  mediaGrid: {
+  selectedMediaBlock: {
+    gap: 8,
+  },
+  selectedMediaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    paddingBottom: 18,
   },
-  mediaTile: {
-    width: 82,
-    height: 82,
+  selectedMediaTile: {
+    width: 88,
+    height: 88,
     borderRadius: 8,
     backgroundColor: theme.colors.base200,
     overflow: 'hidden',
   },
-  mediaTileImage: {
+  selectedMediaTileFailed: {
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+  },
+  selectedMediaImage: {
     width: '100%',
     height: '100%',
+  },
+  selectedMediaOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.36)',
+  },
+  selectedMediaStateText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+  },
+  selectedMediaStatusLabel: {
+    marginTop: 5,
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '900',
+    lineHeight: 12,
+    textAlign: 'center',
+  },
+  selectedMediaBadge: {
+    position: 'absolute',
+    left: 5,
+    bottom: 5,
+    minWidth: 22,
+    maxWidth: 76,
+    height: 22,
+    borderRadius: 11,
+    overflow: 'hidden',
+    paddingHorizontal: 5,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  selectedMediaErrors: {
+    gap: 4,
+  },
+  selectedMediaError: {
+    color: theme.colors.error,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  publishRelays: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    alignItems: 'flex-end',
   },
   mediaRemove: {
     position: 'absolute',
@@ -1977,32 +2192,6 @@ function createPostModalStyles(theme: AppTheme) {
     backgroundColor: 'rgba(15, 23, 42, 0.72)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  uploadBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
-    padding: 12,
-    gap: 4,
-  },
-  uploadTitle: {
-    color: contentColor,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  uploadServer: {
-    color: theme.colors.primary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  uploadLine: {
-    color: theme.colors.primaryContent,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  uploadError: {
-    color: '#b91c1c',
   },
   pollBox: {
     borderRadius: 8,
@@ -2095,10 +2284,6 @@ function createPostModalStyles(theme: AppTheme) {
     color: theme.colors.primaryContent,
     fontWeight: '700',
     fontSize: 12,
-  },
-  debugHtml: {
-    color: '#94a3b8',
-    fontSize: 11,
   },
   });
 }

@@ -3,9 +3,11 @@ import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../navigation/types';
+import {useRelayStore} from '../stores';
 
 type RelaysListProps = {
   relays: string[];
+  subId?: string;
   statuses?: Record<string, string>;
   mini?: boolean;
 };
@@ -39,12 +41,16 @@ function relayLabel(url: string) {
 
 export function RelaysList({
   relays,
+  subId,
   statuses = {},
   mini = false,
 }: RelaysListProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const displayRelays = relays.filter(Boolean);
+  const storeRelays = useRelayStore(state =>
+    subId ? state.relaySubs[subId] : undefined,
+  );
+  const displayRelays = (storeRelays ?? relays).filter(Boolean);
   const heightClass = mini ? 'h-6' : 'h-7';
   if (!displayRelays.length) return null;
 
@@ -54,7 +60,11 @@ export function RelaysList({
       hitSlop={10}
       onPress={event => {
         event.stopPropagation();
-        navigation.navigate('RelayInfos', {relays, statuses});
+        navigation.navigate('RelayInfos', {
+          subId,
+          relays: displayRelays,
+          statuses,
+        });
       }}
       style={styles.container}
     >

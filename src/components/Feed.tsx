@@ -14,10 +14,11 @@ import {
   View,
 } from 'react-native';
 import {
-  FlashList,
-  type FlashListRef,
-  type ListRenderItemInfo,
-} from '@shopify/flash-list';
+  LegendList,
+  type LegendListRef,
+  type LegendListRenderItemProps,
+} from '@legendapp/list/react-native';
+import {KeyboardAwareLegendList} from '@legendapp/list/keyboard';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
@@ -33,7 +34,7 @@ type FeedChromeProps = {
   start: number;
 };
 
-export type FeedRenderItemInfo<T> = ListRenderItemInfo<T> & {
+export type FeedRenderItemInfo<T> = LegendListRenderItemProps<T> & {
   visible: boolean;
 };
 
@@ -65,7 +66,6 @@ export type FeedProps<T> = {
   onViewportChange?: (state: {start: number; end: number; down: boolean}) => void;
   onChromeVisibilityChange?: (visible: boolean) => void;
   contentContainerClassName?: string;
-  estimatedItemSize?: number;
   removeClippedSubviews?: boolean;
 };
 
@@ -126,12 +126,11 @@ export function Feed<T>({
   onViewportChange,
   onChromeVisibilityChange,
   contentContainerClassName = 'pb-28',
-  removeClippedSubviews = true,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
   const [down, setDown] = useState(true);
-  const listRef = useRef<FlashListRef<T>>(null);
+  const listRef = useRef<LegendListRef>(null);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
@@ -143,6 +142,10 @@ export function Feed<T>({
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
   const refreshInset = headerSafeArea ? topInset : 0;
   const refreshColor = getRefreshControlColor(theme);
+  const listItems = useMemo(
+    () => (bottom ? [...items].reverse() : items),
+    [bottom, items],
+  );
 
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({offset: 0, animated: true});
@@ -173,7 +176,7 @@ export function Feed<T>({
       return;
     }
     requestAnimationFrame(() => {
-      listRef.current?.scrollToOffset({offset: 0, animated: false});
+      listRef.current?.scrollToEnd({animated: false});
       didInitialBottomScrollRef.current = true;
     });
   }, [bottom, bottomAutoScroll, items.length, start]);
@@ -190,11 +193,7 @@ export function Feed<T>({
   useEffect(() => {
     if (scrollToBottomKey === undefined) return;
     requestAnimationFrame(() => {
-      if (bottom) {
-        listRef.current?.scrollToOffset({offset: 0, animated: true});
-      } else {
-        listRef.current?.scrollToEnd({animated: true});
-      }
+      listRef.current?.scrollToEnd({animated: true});
       lastOffsetRef.current = 0;
       setDown(true);
     });
@@ -236,6 +235,7 @@ export function Feed<T>({
       const indexes = viewableItems
         .map(item => item.index)
         .filter((index): index is number => typeof index === 'number')
+        .map(index => bottom ? items.length - 1 - index : index)
         .sort((a, b) => a - b);
       if (!indexes.length) return;
       const nextStart = indexes[0] ?? 0;
@@ -248,7 +248,7 @@ export function Feed<T>({
       }
 
     },
-    [items.length, nearBottomThreshold],
+    [bottom, items.length, nearBottomThreshold],
   );
 
   const handleScroll = useCallback((event: {nativeEvent: {contentOffset: {y: number}}}) => {
@@ -310,6 +310,7 @@ export function Feed<T>({
     }
     return empty ? <View className="px-6 py-12">{empty}</View> : null;
   }, [empty, loading]);
+  const ListComponent = bottom ? KeyboardAwareLegendList : LegendList;
   return (
     <View className="relative flex-1">
       {fixedHeader ? (
@@ -329,38 +330,48 @@ export function Feed<T>({
           <Pressable onPress={scrollToTop}>{stickyHeader(chromeProps)}</Pressable>
         </Animated.View>
       ) : null}
-      <FlashList
+      <ListComponent
         ref={listRef}
-        data={items}
+        data={listItems}
         keyExtractor={keyExtractor}
-        renderItem={info =>
-          renderItem({
-            ...info,
-            visible: visible && info.index >= start - 5,
-          })
-        }
+        renderItem={info => {
+          const index = bottom ? items.length - 1 - info.index : info.index;
+          const item = items[index];
+          if (item === undefined) return null;
+          return (
+            renderItem({
+              ...info,
+              item,
+              index,
+              data: items,
+              visible: visible && index >= start - 5,
+            })
+          );
+        }}
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
         ListEmptyComponent={listEmpty}
         className="flex-1"
         contentContainerClassName={contentContainerClassName}
-        inverted={bottom}
-        initialScrollIndex={bottom && items.length ? 0 : undefined}
+        alignItemsAtEnd={bottom}
+        keyboardLiftBehavior={bottom ? 'whenAtEnd' : undefined}
+        initialScrollAtEnd={bottom && items.length > 0}
         maintainVisibleContentPosition={
           maintainVisibleContentPosition
-            ? bottom && bottomAutoScroll === true
-              ? {
-                  startRenderingFromBottom: true,
-                  autoscrollToBottomThreshold: 0.2,
-                  animateAutoScrollToBottom: true,
-                }
-              : bottom
-                ? undefined
-                : {}
-            : {disabled: true}
+            ? bottom
+              ? {size: true, data: true}
+              : true
+            : false
         }
+        maintainScrollAtEnd={
+          bottom && bottomAutoScroll === true ? {animated: true} : false
+        }
+        maintainScrollAtEndThreshold={0.2}
+        recycleItems
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.35}
+        onStartReached={bottom ? handleEndReached : undefined}
+        onStartReachedThreshold={0.35}
         onScroll={handleScroll}
         onViewableItemsChanged={handleViewableItemsChanged}
         refreshControl={
@@ -375,7 +386,6 @@ export function Feed<T>({
             />
           ) : undefined
         }
-        removeClippedSubviews={removeClippedSubviews}
         scrollEventThrottle={16}
         viewabilityConfig={{
           itemVisiblePercentThreshold: 1,

@@ -21,6 +21,7 @@
   "dependencies": {
     "@candypoets/nipworker": "file:../nipworker",
     "@cashu/cashu-ts": "^3.1.1",
+    "@legendapp/list": "^3.0.6",
     "@react-native-async-storage/async-storage": "^3.1.0",
     "@react-native/new-app-screen": "0.85.3",
     "@react-navigation/core": "^7.17.5",

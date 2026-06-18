@@ -404,7 +404,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         visible={visible}
         scrollToBottomKey={scrollToBottomKey}
         bottom
-        bottomAutoScroll="initial"
+        bottomAutoScroll
         fixedHeader={fixedHeader}
         stickyFooter={useKeyboardAccessory ? undefined : stickyFooter}
         stickyFooterVisible={!useKeyboardAccessory}

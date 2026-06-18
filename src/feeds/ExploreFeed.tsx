@@ -5,8 +5,16 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
+import {
+  Animated as RNAnimated,
+  Easing,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BlurView } from 'expo-blur';
@@ -35,7 +43,7 @@ import { Feed } from '../components/Feed';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
-import { Infinity, PenLine, Search, Users } from 'lucide-react-native';
+import { ChevronDown, PenLine, Search } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
   KIND_LABELS,
@@ -61,13 +69,32 @@ type ExploreFeedProps = {
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
-const followListImage = require('../../assets/followlist.png');
 const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.wine',
   'wss://pyramid.fiatjaf.com',
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
+type ExploreKindTabId =
+  | 'all'
+  | 'notes'
+  | 'articles'
+  | 'polls'
+  | 'media'
+  | 'events';
+type ExploreKindTab = {
+  id: ExploreKindTabId;
+  label: string;
+  kinds?: FeedKind[];
+};
+const EXPLORE_KIND_TABS: ExploreKindTab[] = [
+  {id: 'all', label: 'All'},
+  {id: 'notes', label: 'Notes', kinds: [1, 6]},
+  {id: 'articles', label: 'Articles', kinds: [30023]},
+  {id: 'polls', label: 'Polls', kinds: [1068]},
+  {id: 'media', label: 'Media', kinds: [20, 34235]},
+  {id: 'events', label: 'Events', kinds: [30311]},
+];
 
 function authorsForExplorePacks(
   packs: FeedPackSelection[],
@@ -134,6 +161,7 @@ export function ExploreFeed({
   const loadingRef = useRef(false);
   const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
+  const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
   const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
   const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
   const feedBuilderHydrated = useFeedBuilderStore(state => state.hydrated);
@@ -190,11 +218,20 @@ export function ExploreFeed({
         relays={feedRelays}
         relayStatuses={relayStatuses}
         selectedKinds={selectedKinds}
+        setSelectedKinds={setSelectedKinds}
         selectedPacks={selectedPacks}
+        showKindSelector
         surfaceClassName="bg-base-100"
       />
     ),
-    [authPubkey, feedRelays, relayStatuses, selectedKinds, selectedPacks],
+    [
+      authPubkey,
+      feedRelays,
+      relayStatuses,
+      selectedKinds,
+      selectedPacks,
+      setSelectedKinds,
+    ],
   );
 
   const defaultStickyHeader = useCallback(
@@ -204,11 +241,19 @@ export function ExploreFeed({
         relays={feedRelays}
         relayStatuses={relayStatuses}
         selectedKinds={selectedKinds}
+        setSelectedKinds={setSelectedKinds}
         selectedPacks={selectedPacks}
         surfaceClassName="bg-base-100"
       />
     ),
-    [authPubkey, feedRelays, relayStatuses, selectedKinds, selectedPacks],
+    [
+      authPubkey,
+      feedRelays,
+      relayStatuses,
+      selectedKinds,
+      selectedPacks,
+      setSelectedKinds,
+    ],
   );
 
   const defaultStickyFooter = useCallback(() => <ExploreComposerFooter />, []);
@@ -843,7 +888,9 @@ function ExploreHeader({
   relayStatuses,
   relays,
   selectedKinds,
+  setSelectedKinds,
   selectedPacks,
+  showKindSelector = false,
   surfaceClassName,
 }: {
   mini?: boolean;
@@ -851,7 +898,9 @@ function ExploreHeader({
   relayStatuses: Record<string, string>;
   relays: string[];
   selectedKinds: FeedKind[];
+  setSelectedKinds: (kinds: FeedKind[]) => void;
   selectedPacks: FeedPackSelection[];
+  showKindSelector?: boolean;
   surfaceClassName: string;
 }) {
   const visibleKinds =
@@ -865,7 +914,9 @@ function ExploreHeader({
         className={
           mini
             ? 'h-12 flex-row items-center justify-between'
-            : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'
+            : `rounded-lg bg-base-300/90 px-3 pt-3 shadow-sm ${
+                showKindSelector ? 'pb-0' : 'pb-3'
+              }`
         }
       >
         <View
@@ -876,12 +927,11 @@ function ExploreHeader({
           }
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            <FeedPackHeaderButtons
+            <ExploreScopeToggle
               packs={selectedPacks}
-              surfaceClassName={surfaceClassName}
             />
             <FeedKindHeaderButtons
-              kinds={visibleKinds}
+              kinds={showKindSelector ? [] : visibleKinds}
               surfaceClassName={surfaceClassName}
             />
           </View>
@@ -901,7 +951,153 @@ function ExploreHeader({
           statuses={relayStatuses}
           mini={mini}
         />
+        {showKindSelector ? (
+          <View className="mt-4">
+            <ExploreKindSelector
+              selectedKinds={selectedKinds}
+              onSelectKinds={setSelectedKinds}
+            />
+          </View>
+        ) : null}
       </View>
+    </View>
+  );
+}
+
+function sameKinds(left: FeedKind[], right: FeedKind[]) {
+  if (left.length !== right.length) return false;
+  return left.every((kind, index) => kind === right[index]);
+}
+
+function selectedExploreKindTab(selectedKinds: FeedKind[]): ExploreKindTabId {
+  if (
+    selectedKinds.length === 0 ||
+    sameKinds(selectedKinds, ALL_FEED_KINDS)
+  ) {
+    return 'all';
+  }
+
+  return (
+    EXPLORE_KIND_TABS.find(tab =>
+      tab.kinds ? sameKinds(selectedKinds, tab.kinds) : false,
+    )?.id ?? 'all'
+  );
+}
+
+function ExploreKindSelector({
+  selectedKinds,
+  onSelectKinds,
+}: {
+  selectedKinds: FeedKind[];
+  onSelectKinds: (kinds: FeedKind[]) => void;
+}) {
+  const selectedId = selectedExploreKindTab(selectedKinds);
+
+  return (
+    <View className="w-full">
+      <ExploreSegmentedTabs
+        tabs={EXPLORE_KIND_TABS}
+        selectedId={selectedId}
+        onSelect={id => {
+          const tab = EXPLORE_KIND_TABS.find(item => item.id === id);
+          onSelectKinds(tab?.kinds ?? []);
+        }}
+      />
+    </View>
+  );
+}
+
+function ExploreSegmentedTabs<T extends string>({
+  tabs,
+  selectedId,
+  onSelect,
+}: {
+  tabs: Array<{id: T; label: string}>;
+  selectedId: T;
+  onSelect: (id: T) => void;
+}) {
+  const [tabLayouts, setTabLayouts] = useState<
+    Partial<Record<T, {x: number; width: number}>>
+  >({});
+  const underlineX = useRef(new RNAnimated.Value(0)).current;
+  const underlineWidth = useRef(new RNAnimated.Value(0)).current;
+  const selectedLayout = tabLayouts[selectedId];
+
+  const handleTabLayout = useCallback(
+    (id: T, event: LayoutChangeEvent) => {
+      const {x, width} = event.nativeEvent.layout;
+      setTabLayouts(current => {
+        const previous = current[id];
+        if (
+          previous &&
+          Math.abs(previous.x - x) < 0.5 &&
+          Math.abs(previous.width - width) < 0.5
+        ) {
+          return current;
+        }
+        return {...current, [id]: {x, width}};
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!selectedLayout) return;
+    RNAnimated.parallel([
+      RNAnimated.timing(underlineX, {
+        toValue: selectedLayout.x,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+      RNAnimated.timing(underlineWidth, {
+        toValue: selectedLayout.width,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [selectedLayout, underlineWidth, underlineX]);
+
+  return (
+    <View className="relative w-full">
+      <ScrollView
+        horizontal
+        bounces={false}
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="flex-row"
+      >
+        <RNAnimated.View
+          className="absolute bottom-0 left-0 h-0.5 rounded-full bg-primary"
+          style={{
+            width: underlineWidth,
+            transform: [{translateX: underlineX}],
+          }}
+        />
+        {tabs.map(tab => {
+          const selected = tab.id === selectedId;
+          return (
+            <Pressable
+              key={tab.id}
+              accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
+              accessibilityState={{selected}}
+              className="h-11 min-w-20 items-center justify-center px-3 pb-2 pt-1"
+              onLayout={event => handleTabLayout(tab.id, event)}
+              onPress={() => {
+                if (!selected) onSelect(tab.id);
+              }}
+            >
+              <Text
+                className={`text-base font-semibold ${
+                  selected ? 'text-base-content' : 'text-base-content/60'
+                }`}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -967,62 +1163,59 @@ function HeaderSearchButton({
   );
 }
 
-function FeedPackHeaderButtons({
+function ExploreScopeToggle({
   packs,
-  surfaceClassName,
 }: {
   packs: FeedPackSelection[];
-  surfaceClassName: string;
 }) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const iconColor = theme.colors.primaryContent;
-  const openFeedBuilder = useCallback(
-    () => navigation.navigate('FeedBuilder'),
-    [navigation],
-  );
+  const follows = useNostrStore(state => state.follows);
+  const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
+  const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
+  const applySelection = useFeedBuilderStore(state => state.applySelection);
+  const clearPacks = useFeedBuilderStore(state => state.clearPacks);
+  const contactsSelected = packs.some(pack => pack.id === 'followlist');
+  const label = contactsSelected ? 'Contacts' : 'Everyone';
+  const accessibilityLabel = contactsSelected
+    ? 'Showing contacts. Switch to everyone.'
+    : 'Showing everyone. Switch to contacts.';
 
-  if (!packs.length) {
-    return (
-      <Pressable
-        className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
-        hitSlop={12}
-        onPress={openFeedBuilder}
-      >
-        <Infinity size={21} color={iconColor} strokeWidth={2.2} />
-      </Pressable>
-    );
-  }
+  const toggleScope = useCallback(() => {
+    if (contactsSelected) {
+      clearPacks();
+      return;
+    }
+    applySelection(selectedKinds, [
+      {
+        id: 'followlist',
+        kind: 39089,
+        title: 'Follow List',
+        description: 'People you follow',
+        image: null,
+        localImage: 'followlist',
+        people: kind3UpdatedAt > 0 ? follows : [],
+        dTag: 'followlist',
+      },
+    ]);
+  }, [applySelection, clearPacks, contactsSelected, follows, kind3UpdatedAt, selectedKinds]);
 
   return (
-    <View className="flex-row items-center gap-1">
-      {packs.slice(0, 4).map(pack => (
-        <Pressable
-          key={pack.id}
-          accessibilityRole="button"
-          accessibilityLabel={pack.title}
-          className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-base-200 ${surfaceClassName}`}
-          hitSlop={12}
-          onPress={openFeedBuilder}
-        >
-          {pack.localImage === 'followlist' || pack.image ? (
-            <Image
-              source={
-                pack.localImage === 'followlist'
-                  ? followListImage
-                  : { uri: pack.image ?? '' }
-              }
-              style={styles.fill}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-            />
-          ) : (
-            <Users size={18} color={iconColor} strokeWidth={2.1} />
-          )}
-        </Pressable>
-      ))}
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      className="min-w-0 flex-row items-center gap-1"
+      hitSlop={12}
+      onPress={toggleScope}
+    >
+      <Text className="text-2xl font-semibold text-base-content">
+        {label}
+      </Text>
+      <ChevronDown
+        size={19}
+        color={theme.colors.primaryContent}
+        strokeWidth={2.2}
+      />
+    </Pressable>
   );
 }
 
@@ -1035,10 +1228,6 @@ function hashKey(value: string) {
 }
 
 const styles = StyleSheet.create({
-  fill: {
-    height: '100%',
-    width: '100%',
-  },
   composerButton: {
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,

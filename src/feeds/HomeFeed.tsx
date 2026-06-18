@@ -61,7 +61,6 @@ import {
   useWalletStore,
 } from '../stores';
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
-import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import {
@@ -126,7 +125,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   const readRelays = useNostrStore(state => state.readRelays);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
   const kind10019UpdatedAt = useNostrStore(state => state.kind10019UpdatedAt);
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const activeMintUrl = useWalletStore(state => state.activeMintUrl);
@@ -615,8 +613,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   const renderHeader = useCallback(
     () => (
       <HomeHeader
-        relays={homeRelays}
-        relayStatuses={relayStatuses}
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={walletMintUrls}
@@ -632,8 +628,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       activeMintUrl,
       balanceByMint,
       hasSigner,
-      homeRelays,
-      relayStatuses,
       setActiveMintUrl,
       viewHidden,
       walletMintUrls,
@@ -643,8 +637,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   const renderStickyHeader = useCallback(
     () => (
       <HomeHeader
-        relays={homeRelays}
-        relayStatuses={relayStatuses}
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={[]}
@@ -661,8 +653,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       activeMintUrl,
       balanceByMint,
       hasSigner,
-      homeRelays,
-      relayStatuses,
       setActiveMintUrl,
       viewHidden,
     ],
@@ -718,8 +708,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
 
 function HomeHeader({
   compact = false,
-  relays,
-  relayStatuses,
   viewHidden,
   pubkey,
   mintUrls,
@@ -731,8 +719,6 @@ function HomeHeader({
   readOnly = false,
 }: {
   compact?: boolean;
-  relays: string[];
-  relayStatuses: Record<string, string>;
   viewHidden: boolean;
   pubkey: string | null;
   mintUrls: string[];
@@ -777,11 +763,6 @@ function HomeHeader({
             <HeaderProfileButton pubkey={pubkey} />
           </View>
         </View>
-        <HeaderRelaysList
-          relays={relays}
-          statuses={relayStatuses}
-          mini={compact}
-        />
         {!compact && pubkey ? (
           <WalletHeaderSection
             mintUrls={mintUrls}

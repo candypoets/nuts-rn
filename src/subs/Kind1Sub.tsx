@@ -17,7 +17,7 @@ import {decode, type EventPointer} from 'nostr-tools/nip19';
 
 import {Feed} from '../components/Feed';
 import {Note} from '../components/notes';
-import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
+import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {useNostrStore, useRelayStore} from '../stores';
 import {useAppTheme} from '../theme';
@@ -150,7 +150,6 @@ const Kind1Header = memo(function Kind1Header({
   visible,
 }: Kind1HeaderProps) {
   const theme = useAppTheme();
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
 
   return (
     <View>
@@ -159,7 +158,14 @@ const Kind1Header = memo(function Kind1Header({
           <ChevronLeft size={22} color={theme.colors.primaryContent} />
         </Pressable>
         <View className="flex-1 items-end justify-center pl-3">
-          <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />
+          {headerItem ? (
+            <NoteRelaysList
+              note={headerItem}
+              subId={`kind1_header_${headerItem.id() || 'missing'}`}
+              relays={relays}
+              mini
+            />
+          ) : null}
         </View>
       </View>
       {headerItem ? (

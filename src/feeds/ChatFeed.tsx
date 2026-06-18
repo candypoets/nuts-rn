@@ -29,7 +29,6 @@ import {AppButton} from '../components/AppButton';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {wasRecentSwipeGesture} from '../components/notes/press';
-import {RelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {RootStackParamList} from '../navigation/types';
@@ -165,7 +164,6 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
   const mutedHashtags = useNostrStore(state => state.mutedHashtags);
   const mutedWords = useNostrStore(state => state.mutedWords);
   const mutedEventIds = useNostrStore(state => state.mutedEventIds);
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const relays = useMemo(() => {
@@ -368,8 +366,6 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
-        relays={relays}
-        statuses={relayStatuses}
         onSelectTab={setActiveTab}
         onNewChat={openNewChat}
       />
@@ -378,8 +374,6 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
       activeTab,
       conversations.messages.length,
       conversations.requests.length,
-      relayStatuses,
-      relays,
       openNewChat,
     ],
   );
@@ -390,8 +384,6 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
-        relays={relays}
-        statuses={relayStatuses}
         onSelectTab={setActiveTab}
         onNewChat={openNewChat}
         sticky
@@ -401,8 +393,6 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
       activeTab,
       conversations.messages.length,
       conversations.requests.length,
-      relayStatuses,
-      relays,
       openNewChat,
     ],
   );
@@ -458,8 +448,6 @@ function ChatHeader({
   activeTab,
   messagesCount,
   requestsCount,
-  relays,
-  statuses,
   onSelectTab,
   onNewChat,
   sticky = false,
@@ -467,8 +455,6 @@ function ChatHeader({
   activeTab: ChatListTab;
   messagesCount: number;
   requestsCount: number;
-  relays: string[];
-  statuses: Record<string, string>;
   onSelectTab: (tab: ChatListTab) => void;
   onNewChat: () => void;
   sticky?: boolean;
@@ -493,7 +479,6 @@ function ChatHeader({
             />
           </Pressable>
         </View>
-        {!sticky ? <RelaysList relays={relays} statuses={statuses} /> : null}
         <View className="mt-3 flex-row rounded-lg bg-base-200 p-1">
           <ChatTab
             active={activeTab === 'messages'}

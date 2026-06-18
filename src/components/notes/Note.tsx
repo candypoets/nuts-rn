@@ -181,7 +181,7 @@ const LoadingNoteBody = memo(function LoadingNoteBody({
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      <NoteVisibilityDebug visible={visible} />
+      {/* <NoteVisibilityDebug visible={visible} /> */}
       <Text className="text-xs text-primary-content">
         Loading note {effectiveId ? `${effectiveId.slice(0, 12)}...` : ''}
       </Text>
@@ -202,7 +202,7 @@ const NotFoundNoteBody = memo(function NotFoundNoteBody({
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      <NoteVisibilityDebug visible={visible} />
+      {/* <NoteVisibilityDebug visible={visible} /> */}
       <View className="flex-row items-center gap-2">
         <CloudOff
           size={16}
@@ -251,7 +251,7 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      <NoteVisibilityDebug visible={visible} />
+      {/* <NoteVisibilityDebug visible={visible} /> */}
       <Text className="text-sm text-primary-content">
         Kind {effectiveNote.kind()} is not supported yet.
       </Text>
@@ -290,7 +290,7 @@ const NoteBody = memo(
         {ancestor}
         <View className={containerClassName} style={cardStyle}>
           {threadConnectors}
-          <NoteVisibilityDebug visible={visible} />
+          {/* <NoteVisibilityDebug visible={visible} /> */}
           <Header
             note={effectiveNote}
             subId={subId}

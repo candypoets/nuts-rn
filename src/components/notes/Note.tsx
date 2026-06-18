@@ -146,6 +146,7 @@ type LoadingNoteBodyProps = {
   cardStyle?: ViewStyle;
   effectiveId: string;
   threadConnectors: React.ReactNode;
+  visible: boolean;
 };
 
 type NotFoundNoteBodyProps = LoadingNoteBodyProps & {
@@ -158,17 +159,29 @@ type UnsupportedNoteBodyProps = {
   cardStyle?: ViewStyle;
   effectiveNote: ParsedEvent;
   threadConnectors: React.ReactNode;
+  visible: boolean;
 };
+
+function NoteVisibilityDebug({visible}: {visible: boolean}) {
+  if (!__DEV__) return null;
+  return (
+    <Text className="mb-1 font-mono text-[10px] text-primary-content opacity-50">
+      {visible ? 'visible' : 'not visible'}
+    </Text>
+  );
+}
 
 const LoadingNoteBody = memo(function LoadingNoteBody({
   cardStyle,
   containerClassName,
   effectiveId,
   threadConnectors,
+  visible,
 }: LoadingNoteBodyProps) {
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
+      <NoteVisibilityDebug visible={visible} />
       <Text className="text-xs text-primary-content">
         Loading note {effectiveId ? `${effectiveId.slice(0, 12)}...` : ''}
       </Text>
@@ -183,11 +196,13 @@ const NotFoundNoteBody = memo(function NotFoundNoteBody({
   onRetry,
   retrying,
   threadConnectors,
+  visible,
 }: NotFoundNoteBodyProps) {
   const theme = useAppTheme();
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
+      <NoteVisibilityDebug visible={visible} />
       <View className="flex-row items-center gap-2">
         <CloudOff
           size={16}
@@ -231,10 +246,12 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
   containerClassName,
   effectiveNote,
   threadConnectors,
+  visible,
 }: UnsupportedNoteBodyProps) {
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
+      <NoteVisibilityDebug visible={visible} />
       <Text className="text-sm text-primary-content">
         Kind {effectiveNote.kind()} is not supported yet.
       </Text>
@@ -273,6 +290,7 @@ const NoteBody = memo(
         {ancestor}
         <View className={containerClassName} style={cardStyle}>
           {threadConnectors}
+          <NoteVisibilityDebug visible={visible} />
           <Header
             note={effectiveNote}
             subId={subId}
@@ -920,6 +938,7 @@ function NoteComponent({
           onRetry={retryWithFallbackRelays}
           retrying={retryNonce > 0}
           threadConnectors={threadConnectors}
+          visible={visible}
         />
       );
     }
@@ -930,6 +949,7 @@ function NoteComponent({
         containerClassName={containerClassName}
         effectiveId={effectiveId}
         threadConnectors={threadConnectors}
+        visible={visible}
       />
     );
   }
@@ -941,6 +961,7 @@ function NoteComponent({
         containerClassName={containerClassName}
         effectiveNote={displayNote ?? effectiveNote}
         threadConnectors={threadConnectors}
+        visible={visible}
       />
     );
   }

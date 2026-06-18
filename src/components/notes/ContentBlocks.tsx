@@ -20,6 +20,11 @@ import { ImageGrid } from './ImageGrid';
 import { movedTooFar } from './press';
 import { User } from './User';
 import type {RootStackParamList} from '../../navigation/types';
+import {
+  cachedLinkPreview,
+  fetchLinkPreview,
+  type OpenGraphData,
+} from '../../lib/linkPreview';
 
 type ContentBlocksProps = {
   content: ContentBlock[];
@@ -95,19 +100,6 @@ function openLink(url: string) {
   });
 }
 
-type YoutubeMetadata = {
-  title: string;
-  authorName?: string;
-};
-
-const youtubeMetadataCache = new Map<string, YoutubeMetadata | null>();
-
-function getYoutubeOembedUrl(url: string) {
-  return `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
-    normalizeLinkUrl(url),
-  )}`;
-}
-
 function getUrlParts(url: string) {
   try {
     const parsed = new URL(normalizeLinkUrl(url));
@@ -160,49 +152,37 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
   const parts = useMemo(() => getUrlParts(url), [url]);
   const youtubeVideoId = useMemo(() => getYoutubeVideoId(url), [url]);
   const openUrl = useMemo(() => normalizeLinkUrl(url), [url]);
-  const [youtubeMetadata, setYoutubeMetadata] =
-    useState<YoutubeMetadata | null>(null);
+  const [metadata, setMetadata] = useState<OpenGraphData | null | undefined>(
+    () => cachedLinkPreview(url),
+  );
   const [thumbnailFallback, setThumbnailFallback] = useState(0);
   const thumbnailUrl =
     youtubeVideoId && thumbnailFallback < YOUTUBE_THUMBNAILS.length
       ? `https://i.ytimg.com/vi/${youtubeVideoId}/${YOUTUBE_THUMBNAILS[thumbnailFallback]}`
-      : null;
+      : metadata?.image || null;
   const displayText = text && text !== url ? text : parts.path || url;
 
   useEffect(() => {
-    if (!youtubeVideoId) return;
-
-    const cached = youtubeMetadataCache.get(youtubeVideoId);
+    const cached = cachedLinkPreview(url);
     if (cached !== undefined) {
-      setYoutubeMetadata(cached);
+      setMetadata(cached);
       return;
     }
 
-    const controller = new AbortController();
-    fetch(getYoutubeOembedUrl(openUrl), {signal: controller.signal})
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => {
-        if (!data || typeof data.title !== 'string') {
-          youtubeMetadataCache.set(youtubeVideoId, null);
-          setYoutubeMetadata(null);
-          return;
-        }
-
-        const metadata = {
-          title: data.title,
-          authorName:
-            typeof data.author_name === 'string' ? data.author_name : undefined,
-        };
-        youtubeMetadataCache.set(youtubeVideoId, metadata);
-        setYoutubeMetadata(metadata);
+    let active = true;
+    setMetadata(undefined);
+    fetchLinkPreview(url)
+      .then(result => {
+        if (active) setMetadata(result);
       })
-      .catch(error => {
-        if (error?.name === 'AbortError') return;
-        youtubeMetadataCache.set(youtubeVideoId, null);
+      .catch(() => {
+        if (active) setMetadata(null);
       });
 
-    return () => controller.abort();
-  }, [openUrl, youtubeVideoId]);
+    return () => {
+      active = false;
+    };
+  }, [url]);
 
   return (
     <Pressable
@@ -219,13 +199,17 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
             contentFit="cover"
             cachePolicy="memory-disk"
             style={StyleSheet.absoluteFill}
-            onError={() => setThumbnailFallback(value => value + 1)}
+            onError={() => {
+              if (youtubeVideoId) setThumbnailFallback(value => value + 1);
+            }}
           />
-          <View className="absolute inset-0 items-center justify-center">
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-black/70">
-              <Play size={22} color="white" fill="white" />
+          {youtubeVideoId ? (
+            <View className="absolute inset-0 items-center justify-center">
+              <View className="h-12 w-12 items-center justify-center rounded-full bg-black/70">
+                <Play size={22} color="white" fill="white" />
+              </View>
             </View>
-          </View>
+          ) : null}
         </View>
       ) : null}
       <View className="gap-1 px-3 py-2.5">
@@ -234,8 +218,7 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
             className="flex-1 text-xs font-medium uppercase text-base-content/60"
             numberOfLines={1}
           >
-            {youtubeMetadata?.authorName ||
-              (youtubeVideoId ? 'YouTube' : parts.label)}
+            {metadata?.siteName || (youtubeVideoId ? 'YouTube' : parts.label)}
           </Text>
           <ExternalLink size={13} color="rgba(120,120,120,0.9)" />
         </View>
@@ -243,12 +226,13 @@ function LinkPreviewCard({url, text}: {url: string; text: string}) {
           className="text-[15px] font-medium leading-5 text-base-content"
           numberOfLines={2}
         >
-          {youtubeVideoId
-            ? youtubeMetadata?.title ||
-              displayText.replace(/^https?:\/\/(www\.)?/, '')
-            : displayText}
+          {metadata?.title || displayText.replace(/^https?:\/\/(www\.)?/, '')}
         </Text>
-        {!youtubeVideoId ? (
+        {metadata?.description ? (
+          <Text className="text-xs text-base-content/60" numberOfLines={2}>
+            {metadata.description}
+          </Text>
+        ) : !youtubeVideoId ? (
           <Text className="text-xs text-base-content/60" numberOfLines={1}>
             {truncateMiddle(url, 72)}
           </Text>

@@ -16,6 +16,7 @@ type RelayInfosModalProps = {
   subId?: string;
   relays: string[];
   statuses?: Record<string, string>;
+  mode?: 'relays' | 'communities';
   onClose: () => void;
 };
 
@@ -95,6 +96,7 @@ export function RelayInfosModal({
   subId,
   relays,
   statuses = {},
+  mode = 'relays',
   onClose: _onClose,
 }: RelayInfosModalProps) {
   const theme = useAppTheme();
@@ -110,6 +112,7 @@ export function RelayInfosModal({
   );
   const [expandedRelay, setExpandedRelay] = useState<string | null>(null);
   const selectedRelaysRef = useRef(selectedRelays);
+  const communityMode = mode === 'communities';
 
   useEffect(() => {
     setSelectedRelays(
@@ -123,9 +126,9 @@ export function RelayInfosModal({
 
   useEffect(
     () => () => {
-      if (subId) setSubRelays(subId, selectedRelaysRef.current);
+      if (subId && !communityMode) setSubRelays(subId, selectedRelaysRef.current);
     },
-    [setSubRelays, subId],
+    [communityMode, setSubRelays, subId],
   );
 
   const toggleRelay = useCallback(
@@ -144,15 +147,17 @@ export function RelayInfosModal({
   const items = useMemo(() => {
     const selectedRelaySet = new Set(selectedRelays);
     const routeRelays = relays.map(normalizeRelayUrl).filter(Boolean);
-    const allRelays = [
-      ...new Set([
-        ...routeRelays,
-        ...selectedRelaySet,
-        ...Object.keys(relayStatuses),
-        ...Object.keys(statuses).map(normalizeRelayUrl),
-        ...Object.keys(relayInfos),
-      ]),
-    ];
+    const allRelays = communityMode
+      ? routeRelays
+      : [
+          ...new Set([
+            ...routeRelays,
+            ...selectedRelaySet,
+            ...Object.keys(relayStatuses),
+            ...Object.keys(statuses).map(normalizeRelayUrl),
+            ...Object.keys(relayInfos),
+          ]),
+        ];
 
     return allRelays
       .map(url => ({
@@ -162,7 +167,7 @@ export function RelayInfosModal({
         infoEntry: relayInfos[url],
         info: relayInfos[url]?.info,
       }));
-  }, [relayInfos, relayStatuses, relays, selectedRelays, statuses]);
+  }, [communityMode, relayInfos, relayStatuses, relays, selectedRelays, statuses]);
 
   useEffect(() => {
     fetchRelayInfosForRelays(items.map(item => item.url));
@@ -172,7 +177,14 @@ export function RelayInfosModal({
     <View style={styles.modalBody}>
       <View style={styles.modalSheet}>
         <View style={styles.modalHeader}>
-          <Text style={styles.title}>Relays</Text>
+          <View>
+            <Text style={styles.title}>
+              Communities
+            </Text>
+            {communityMode ? (
+              <Text style={styles.subtitle}>Your spaces. Your people.</Text>
+            ) : null}
+          </View>
         </View>
         <ScrollView
           style={styles.list}
@@ -201,27 +213,29 @@ export function RelayInfosModal({
                   onPress={() => setExpandedRelay(expanded ? null : item.url)}
                 >
                   <View style={styles.row}>
-                    <Pressable
-                      hitSlop={8}
-                      style={[
-                        styles.selectionBox,
-                        item.selected
-                          ? styles.selectionBoxSelected
-                          : styles.selectionBoxIdle,
-                      ]}
-                      onPress={event => {
-                        event.stopPropagation();
-                        toggleRelay(item.url);
-                      }}
-                    >
-                      {item.selected ? (
-                        <Check
-                          size={13}
-                          color={theme.button.primary.text}
-                          strokeWidth={3}
-                        />
-                      ) : null}
-                    </Pressable>
+                    {communityMode ? null : (
+                      <Pressable
+                        hitSlop={8}
+                        style={[
+                          styles.selectionBox,
+                          item.selected
+                            ? styles.selectionBoxSelected
+                            : styles.selectionBoxIdle,
+                        ]}
+                        onPress={event => {
+                          event.stopPropagation();
+                          toggleRelay(item.url);
+                        }}
+                      >
+                        {item.selected ? (
+                          <Check
+                            size={13}
+                            color={theme.button.primary.text}
+                            strokeWidth={3}
+                          />
+                        ) : null}
+                      </Pressable>
+                    )}
                     {item.info?.icon ? (
                       <Image
                         source={{ uri: item.info.icon }}
@@ -253,10 +267,14 @@ export function RelayInfosModal({
                         {item.info?.name || relayLabel(item.url)}
                       </Text>
                       <Text style={styles.relayUrl} numberOfLines={1}>
-                        {item.url}
+                        {communityMode
+                          ? item.info?.description || 'Public community'
+                          : item.url}
                       </Text>
                     </View>
-                    {item.status === 'EOSE' || item.status === 'OK' ? (
+                    {communityMode ? (
+                      <Text style={styles.statusText}>Public</Text>
+                    ) : item.status === 'EOSE' || item.status === 'OK' ? (
                       <Check
                         size={18}
                         color={theme.colors.success}
@@ -277,16 +295,20 @@ export function RelayInfosModal({
 
                   {expanded ? (
                     <View style={styles.details}>
-                      {item.info?.description ? (
+                      {item.info?.description && !communityMode ? (
                         <Text style={styles.description}>
                           {item.info.description}
                         </Text>
                       ) : null}
 
                       <View style={styles.infoStatusRow}>
-                        <Text style={styles.metaLabel}>NIP-11</Text>
+                        <Text style={styles.metaLabel}>
+                          {communityMode ? 'visibility' : 'NIP-11'}
+                        </Text>
                         <Text style={styles.metaValue}>
-                          {infoStatus === 'ok'
+                          {communityMode
+                            ? 'public'
+                            : infoStatus === 'ok'
                             ? 'metadata loaded'
                             : infoStatus === 'loading'
                             ? 'loading metadata'
@@ -447,12 +469,18 @@ function createRelayInfosStyles(theme: AppTheme) {
     },
     title: {
       color: surfaceTextColor,
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: 24,
+      fontWeight: '600',
+    },
+    subtitle: {
+      color: theme.colors.primaryContent,
+      fontSize: 13,
+      fontWeight: '600',
+      marginTop: 2,
     },
     content: {
       paddingHorizontal: 12,
-      paddingTop: 52,
+      paddingTop: 62,
       paddingBottom: 12,
       gap: 8,
     },

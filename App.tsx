@@ -72,7 +72,7 @@ import {
   ThemeModal,
   WalletModal,
 } from './src/modals';
-import { Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
+import { CommunitySub, Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
 import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
 import { CarouselAnimator } from './src/components/CarouselAnimator';
 import { ImageZoom } from './src/components/ImageZoom';
@@ -311,6 +311,11 @@ function RootNavigator({
         <NativeStack.Screen
           name="PublicProfile"
           component={PublicProfileScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
+          name="Community"
+          component={CommunityScreen}
           options={{ animation: 'slide_from_right' }}
         />
         <NativeStack.Screen
@@ -1049,6 +1054,7 @@ function RelayInfosScreen({
       subId={route.params.subId}
       relays={route.params.relays}
       statuses={route.params.statuses}
+      mode={route.params.mode}
       onClose={navigation.goBack}
     />
   );
@@ -1078,6 +1084,40 @@ function PublicProfileScreen({
   return (
     <Kind0Sub
       pubkey={route.params.pubkey}
+      visible={isFocused && subVisible}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function CommunityScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'Community'>) {
+  const isFocused = useIsFocused();
+  const [subVisible, setSubVisible] = useState(false);
+
+  useEffect(() => {
+    setSubVisible(false);
+    if (!isFocused) return undefined;
+
+    const frame = requestAnimationFrame(() => {
+      setSubVisible(true);
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      setSubVisible(false);
+    };
+  }, [isFocused, route.params.relay]);
+
+  return (
+    <CommunitySub
+      description={route.params.description}
+      icon={route.params.icon}
+      name={route.params.name}
+      relationship={route.params.relationship}
+      relay={route.params.relay}
       visible={isFocused && subVisible}
       onClose={navigation.goBack}
     />

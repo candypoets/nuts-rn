@@ -1,3 +1,4 @@
+export {CommunitySub} from './CommunitySub';
 export {Kind0Sub} from './Kind0Sub';
 export {Kind1Sub} from './Kind1Sub';
 export {Kind30023Sub} from './Kind30023Sub';

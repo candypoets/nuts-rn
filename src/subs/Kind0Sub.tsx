@@ -7,6 +7,8 @@ import React, {
   useState,
 } from 'react';
 import {
+  Animated,
+  Easing,
   Linking,
   Pressable,
   ScrollView,
@@ -28,12 +30,16 @@ import {
   asConnectionStatus,
   asKind1,
   asParsedEvent,
+  isKind0,
   isConnectionStatus,
   parseContent,
 } from '@candypoets/nipworker/utils';
 import {
   ChevronLeft,
   CircleSlash,
+  MessageSquare,
+  ShieldCheck,
+  Users,
   UserCheck,
   UserPlus,
   Volume2,
@@ -43,9 +49,8 @@ import type { EventTemplate } from 'nostr-tools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Feed } from '../components/Feed';
-import { FeedKindIcon } from '../components/FeedKindIcon';
 import { Avatar, Note, User } from '../components/notes';
-import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
+import { fetchRelayInfosForRelays } from '../nostr/nip11';
 import {
   ALL_FEED_KINDS,
   BOOTSTRAP_RELAYS,
@@ -60,28 +65,28 @@ import { useAppTheme } from '../theme';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 const TOP_SAFE_AREA_OFFSET = 8;
-const PRE_PUBLISH_LOOKUP_TIMEOUT_MS = 1200;
+const PRE_PUBLISH_LOOKUP_TIMEOUT_MS = 1500;
 const REPLACEABLE_LIST_BYTES_PER_EVENT = 128 * 1024;
 const PROFILE_EMPTY_TIMEOUT_MS = 2400;
-type ProfileKindFilterId = 'notes' | 'articles' | 'polls' | 'images' | 'videos';
+type ProfileKindFilterId = 'notes' | 'articles' | 'polls' | 'media';
+type ProfileActivityTabId = 'all' | ProfileKindFilterId;
 const PROFILE_KIND_FILTERS: Array<{
   id: ProfileKindFilterId;
-  iconKind: FeedKind;
   kinds: FeedKind[];
   label: string;
 }> = [
-  { id: 'notes', iconKind: 1, kinds: [1, 6], label: 'Notes' },
-  { id: 'articles', iconKind: 30023, kinds: [30023], label: 'Articles' },
-  { id: 'polls', iconKind: 1068, kinds: [1068], label: 'Polls' },
-  { id: 'images', iconKind: 20, kinds: [20], label: 'Images' },
-  { id: 'videos', iconKind: 34235, kinds: [34235], label: 'Videos' },
+  { id: 'notes', kinds: [1, 6], label: 'Notes' },
+  { id: 'articles', kinds: [30023], label: 'Articles' },
+  { id: 'polls', kinds: [1068], label: 'Polls' },
+  { id: 'media', kinds: [20, 34235], label: 'Media' },
 ];
 
 type Kind0ProfileHeaderProps = {
   about: string;
   aboutContent: ParsedAboutBlock[];
-  activeRelays: string[];
   banner: string | null;
+  communities: ProfileCommunity[];
+  contributionCount: number;
   lnaddress: string;
   name: string;
   nip05: string;
@@ -110,8 +115,23 @@ type Kind0ImageProps = {
   className: string;
 };
 
-type Kind0RelayBlockProps = {
-  relays: string[];
+type ProfileCommunity = {
+  key: string;
+  name: string;
+  relationship: 'follow' | 'belong';
+  url: string;
+};
+
+type CommunityPreviewProfile = {
+  pubkey: string;
+  name: string;
+  picture: string | null;
+};
+
+type AnimatedSegmentedTab<T extends string> = {
+  id: T;
+  label: string;
+  count?: number;
 };
 
 type ParsedAboutBlock = {
@@ -129,11 +149,23 @@ function blockString(value: string | Uint8Array | null | undefined) {
   return new TextDecoder().decode(value);
 }
 
+function readableTextColor(background: string) {
+  const normalized = background.replace('#', '').slice(0, 6);
+  if (normalized.length !== 6) return '#1a1a1a';
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  if (![red, green, blue].every(Number.isFinite)) return '#1a1a1a';
+  return (red * 299 + green * 587 + blue * 114) / 1000 < 140
+    ? '#ffffff'
+    : '#1a1a1a';
+}
+
 function Kind0ProfileAbout({ content }: { content: ParsedAboutBlock[] }) {
   if (!content.length) return null;
 
   return (
-    <Text className="text-[15px] leading-5 text-primary-content">
+    <Text className="text-[15px] leading-5 text-base-content">
       {content.map((block, index) => {
         const type = blockString(block.type);
         const text = blockString(block.text);
@@ -243,19 +275,461 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
   );
 });
 
-const Kind0RelayBlock = memo(function Kind0RelayBlock({
-  relays,
-}: Kind0RelayBlockProps) {
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
+function AnimatedSegmentedTabs<T extends string>({
+  tabs,
+  selectedId,
+  onSelect,
+  variant = 'underline',
+}: {
+  tabs: Array<AnimatedSegmentedTab<T>>;
+  selectedId: T;
+  onSelect: (id: T) => void;
+  variant?: 'underline' | 'pill';
+}) {
+  const [tabWidth, setTabWidth] = useState(0);
+  const underlineX = useRef(new Animated.Value(0)).current;
+  const pillInset = variant === 'pill' ? 1 : 0;
+  const selectedIndex = Math.max(
+    0,
+    tabs.findIndex(tab => tab.id === selectedId),
+  );
 
-  return <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />;
+  useEffect(() => {
+    if (!tabWidth) return;
+    Animated.timing(underlineX, {
+      toValue: selectedIndex * tabWidth,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [selectedIndex, tabWidth, underlineX]);
+
+  return (
+    <View
+      className={`relative flex-row ${
+        variant === 'pill'
+          ? 'overflow-hidden rounded-full border border-base-200 bg-base-300'
+          : ''
+      }`}
+      onLayout={event => {
+        const nextWidth =
+          (event.nativeEvent.layout.width - pillInset * 2) / tabs.length;
+        setTabWidth(current =>
+          Math.abs(current - nextWidth) < 0.5 ? current : nextWidth,
+        );
+      }}
+    >
+      {variant === 'pill' ? (
+        <Animated.View
+          className="absolute rounded-full border border-primary bg-base-200"
+          style={{
+            bottom: pillInset,
+            left: pillInset,
+            top: pillInset,
+            width: tabWidth,
+            transform: [{translateX: underlineX}],
+          }}
+        />
+      ) : (
+        <Animated.View
+          className="absolute -bottom-2 left-0 h-0.5 rounded-full bg-primary"
+          style={{
+            width: tabWidth,
+            transform: [{translateX: underlineX}],
+          }}
+        />
+      )}
+      {tabs.map(tab => {
+        const selected = tab.id === selectedId;
+        return (
+          <Pressable
+            key={tab.id}
+            accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
+            accessibilityState={{selected}}
+            className={`h-9 flex-1 items-center justify-center ${
+              variant === 'pill' ? 'flex-row gap-2 px-3' : 'pt-1'
+            }`}
+            onPress={() => {
+              if (!selected) onSelect(tab.id);
+            }}
+          >
+            <Text
+              className={`${
+                variant === 'pill'
+                  ? 'text-xs font-bold uppercase'
+                  : 'text-base font-semibold'
+              } ${selected ? 'text-base-content' : 'text-primary-content'}`}
+            >
+              {tab.label}
+            </Text>
+            {tab.count !== undefined ? (
+              <View className="min-w-6 items-center rounded-full bg-base-200 px-2 py-0.5">
+                <Text className="text-xs font-bold text-primary-content">
+                  {tab.count}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function relayLabel(url: string) {
+  return normalizeRelayUrl(url)
+    .replace(/^wss?:\/\//, '')
+    .replace(/^relay\./, '')
+    .replace(/\/$/, '');
+}
+
+const communityNames: Record<string, string> = {
+  'wss://relay.nuts.cash': 'Nuts',
+  'wss://relay.damus.io': 'Damus',
+  'wss://nos.lol': 'Nos',
+  'wss://relay.thibautduchene.fr': 'Thibaut',
+  'wss://purplepag.es': 'Purple Pages',
+  'wss://user.kindpag.es': 'Kind Pages',
+};
+
+function initials(name: string) {
+  const words = name
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0]}${words[1][0]}`.toUpperCase();
+}
+
+const communityColorClasses = [
+  'bg-primary',
+  'bg-secondary',
+  'bg-accent',
+  'bg-info',
+  'bg-warning',
+  'bg-success',
+];
+
+function communityColorClass(key: string) {
+  let hash = 0;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) % communityColorClasses.length;
+  }
+  return communityColorClasses[hash];
+}
+
+function eventRelayUrls(event: ParsedEvent) {
+  if (typeof event.relaysLength !== 'function') return [];
+  return Array.from({length: event.relaysLength()}, (_, index) =>
+    event.relays(index),
+  )
+    .filter((relay): relay is string => Boolean(relay))
+    .map(normalizeRelayUrl);
+}
+
+const Kind0CommunitySection = memo(function Kind0CommunitySection({
+  communities,
+  contributionCount,
+}: {
+  communities: ProfileCommunity[];
+  contributionCount: number;
+}) {
+  const theme = useAppTheme();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const relayInfos = useRelayStore(state => state.relayInfos);
+  const [selectedRelationship, setSelectedRelationship] = useState<
+    ProfileCommunity['relationship']
+  >('belong');
+  const [previewProfiles, setPreviewProfiles] = useState<
+    Record<string, CommunityPreviewProfile[]>
+  >({});
+  const followCount = communities.filter(
+    community => community.relationship === 'follow',
+  ).length;
+  const belongCount = communities.filter(
+    community => community.relationship === 'belong',
+  ).length;
+  const visibleCommunities = communities.filter(
+    community => community.relationship === selectedRelationship,
+  );
+
+  useEffect(() => {
+    if (communities.length) {
+      fetchRelayInfosForRelays(communities.map(community => community.url));
+    }
+  }, [communities]);
+
+  useEffect(() => {
+    setSelectedRelationship(current => {
+      if (current === 'belong' && belongCount) return current;
+      if (current === 'follow' && followCount) return current;
+      return belongCount ? 'belong' : 'follow';
+    });
+  }, [belongCount, followCount]);
+
+  useEffect(() => {
+    if (!communities.length) return undefined;
+
+    setPreviewProfiles({});
+    const unsubscribes = communities.map(community => {
+      const seen = new Set<string>();
+      const profiles: CommunityPreviewProfile[] = [];
+      return subscribeToNostr(
+        `community_kind0_${relayHash([community.key])}`,
+        [
+          {
+            kinds: [0],
+            limit: 10,
+            relays: [community.url],
+            closeOnEOSE: true,
+          },
+        ],
+        message => {
+          const kind0 = isKind0(message);
+          const event = asParsedEvent(message);
+          const pubkey = kind0?.pubkey?.();
+          if (!kind0 || !pubkey || seen.has(pubkey)) return;
+          const eventRelays = event ? eventRelayUrls(event) : [];
+          if (eventRelays.length && !eventRelays.includes(community.key)) {
+            return;
+          }
+          seen.add(pubkey);
+          profiles.push({
+            pubkey,
+            name:
+              kind0.name?.()?.trim() ||
+              kind0.displayName?.()?.trim() ||
+              pubkey.slice(0, 8),
+            picture: kind0.picture?.() || null,
+          });
+          setPreviewProfiles(current => ({
+            ...current,
+            [community.key]: [...profiles],
+          }));
+        },
+        {closeOnEose: true},
+      );
+    });
+
+    return () => {
+      unsubscribes.forEach(unsubscribe => unsubscribe());
+    };
+  }, [communities]);
+
+  if (!communities.length) return null;
+
+  return (
+    <View className="mt-5">
+      <View className="flex-row items-center justify-between">
+        <View>
+          <Text className="text-xl font-bold text-base-content">
+            Communities
+          </Text>
+          <Text className="mt-1 text-sm text-primary-content">
+            Your spaces. Your people.
+          </Text>
+        </View>
+        <Pressable
+          className="flex-row items-center gap-1"
+          hitSlop={8}
+          onPress={() =>
+            navigation.navigate('RelayInfos', {
+              relays: communities.map(community => community.url),
+              mode: 'communities',
+            })
+          }
+        >
+          <Text className="text-sm font-semibold text-primary">
+            See all ({communities.length})
+          </Text>
+          <ChevronLeft
+            size={17}
+            color={theme.colors.primary}
+            strokeWidth={2.3}
+            style={{transform: [{rotate: '180deg'}]}}
+          />
+        </Pressable>
+      </View>
+
+      <View className="mt-3 flex-row overflow-hidden rounded-lg border border-base-200 bg-base-300">
+        <View className="flex-1 border-r border-base-200 px-3 py-3">
+          <Users size={18} color={theme.colors.primaryContent} />
+          <Text className="text-lg font-bold text-base-content">
+            {communities.length}
+          </Text>
+          <Text className="text-xs font-semibold uppercase text-primary-content">
+            Communities
+          </Text>
+        </View>
+        <View className="flex-1 border-r border-base-200 px-3 py-3">
+          <ShieldCheck size={18} color={theme.colors.primaryContent} />
+          <Text className="text-lg font-bold text-base-content">
+            {belongCount}
+          </Text>
+          <Text className="text-xs font-semibold uppercase text-primary-content">
+            Roles
+          </Text>
+        </View>
+        <View className="flex-1 px-3 py-3">
+          <MessageSquare size={18} color={theme.colors.primaryContent} />
+          <Text className="text-lg font-bold text-base-content">
+            {contributionCount}
+          </Text>
+          <Text className="text-xs font-semibold uppercase text-primary-content">
+            24h posts
+          </Text>
+        </View>
+      </View>
+
+      <View className="mt-4">
+        <AnimatedSegmentedTabs
+          tabs={[
+            {id: 'belong', label: 'Belongs to', count: belongCount},
+            {id: 'follow', label: 'Following', count: followCount},
+          ]}
+          selectedId={selectedRelationship}
+          onSelect={setSelectedRelationship}
+          variant="pill"
+        />
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        className="mt-3"
+        contentContainerClassName="gap-3"
+      >
+        {visibleCommunities.map(community => {
+          const info = relayInfos[community.key]?.info;
+          const name =
+            info?.name?.trim() ||
+            communityNames[community.key] ||
+            community.name;
+          const belongs = community.relationship === 'belong';
+          const profiles = previewProfiles[community.key] ?? [];
+          return (
+            <Pressable
+              key={`${community.relationship}-${community.key}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${name} community`}
+              className={`w-56 rounded-lg border p-3 ${
+                belongs
+                  ? 'border-primary/35 bg-base-300'
+                  : 'border-base-200 bg-base-300'
+              }`}
+              onPress={event => {
+                event.stopPropagation();
+                navigation.navigate('Community', {
+                  description: info?.description,
+                  icon: info?.icon,
+                  name,
+                  relationship: community.relationship,
+                  relay: community.url,
+                });
+              }}
+            >
+              <View className="flex-row items-start gap-3">
+                <View
+                  className={`h-12 w-12 items-center justify-center overflow-hidden rounded-lg ${communityColorClass(
+                    community.key,
+                  )}`}
+                >
+                  {info?.icon ? (
+                    <Image
+                      source={{ uri: info.icon }}
+                      style={styles.trackedImage}
+                    />
+                  ) : (
+                    <Text className="text-sm font-bold text-base-100">
+                      {initials(name)}
+                    </Text>
+                  )}
+                </View>
+                <View className="min-w-0 flex-1">
+                  <View className="flex-row items-center gap-1">
+                    <Text
+                      className="min-w-0 flex-1 text-[15px] font-bold text-base-content"
+                      numberOfLines={1}
+                    >
+                      {name}
+                    </Text>
+                    {belongs ? (
+                      <ShieldCheck
+                        size={15}
+                        color={theme.colors.primary}
+                        strokeWidth={2.3}
+                      />
+                    ) : null}
+                  </View>
+                  <Text className="mt-1 text-xs font-semibold uppercase text-primary">
+                    {belongs ? 'Member' : 'Following'}
+                  </Text>
+                </View>
+              </View>
+              {info?.description ? (
+                <Text
+                  className="mt-3 min-h-10 text-sm leading-5 text-primary-content"
+                  numberOfLines={2}
+                >
+                  {info.description}
+                </Text>
+              ) : (
+                <Text className="mt-3 min-h-10 text-sm leading-5 text-primary-content">
+                  Public community
+                </Text>
+              )}
+              <View className="mt-3 h-6 flex-row items-center">
+                {profiles.length ? (
+                  <>
+                  {profiles.slice(0, 5).map((profile, index) => (
+                    <View
+                      key={profile.pubkey}
+                      className="h-6 w-6 overflow-hidden rounded-full border border-base-300 bg-base-200"
+                      style={{marginLeft: index ? -7 : 0}}
+                    >
+                      {profile.picture ? (
+                        <Image
+                          source={{uri: profile.picture}}
+                          style={styles.trackedImage}
+                        />
+                      ) : (
+                        <Text className="mt-1 text-center text-[9px] font-bold text-primary-content">
+                          {initials(profile.name)}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                  {profiles.length > 5 ? (
+                    <Text className="ml-2 text-xs font-semibold text-primary-content">
+                      +{profiles.length - 5}
+                    </Text>
+                  ) : null}
+                  </>
+                ) : null}
+              </View>
+              <View className="mt-3 flex-row items-center gap-1">
+                <Users size={14} color={theme.colors.primaryContent} />
+                <Text className="text-xs font-medium text-primary-content">
+                  Public
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 });
 
 const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   about,
   aboutContent,
-  activeRelays,
   banner,
+  communities,
+  contributionCount,
   lnaddress,
   name,
   nip05,
@@ -273,10 +747,18 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   muted,
 }: Kind0ProfileHeaderProps) {
   const theme = useAppTheme();
-  const iconColor = theme.colors.primaryContent;
+  const iconColor = readableTextColor(theme.colors.base100);
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
+  const activityTabs = useMemo<Array<AnimatedSegmentedTab<ProfileActivityTabId>>>(
+    () => [
+      {id: 'all', label: 'All'},
+      ...PROFILE_KIND_FILTERS,
+    ],
+    [],
+  );
+  const selectedActivityId: ProfileActivityTabId = selectedKind ?? 'all';
 
   return (
     <View className="overflow-hidden rounded-lg bg-base-300/95">
@@ -304,7 +786,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
       </View>
 
       <View className="px-4 pb-4">
-        <View className="-mt-16 mb-4 flex-row items-center gap-3">
+        <View className="-mt-16 mb-4 flex-row items-center justify-between">
           <View className="h-32 w-32 overflow-hidden rounded-full border border-white bg-base-200">
             <Kind0TrackedImage
               uri={picture}
@@ -370,46 +852,30 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
             <Kind0ProfileAbout content={aboutContent} />
           </View>
         ) : null}
-        <View className="mt-3 items-start">
-          <Kind0RelayBlock relays={activeRelays} />
-        </View>
+        <Kind0CommunitySection
+          communities={communities}
+          contributionCount={contributionCount}
+        />
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        className="border-t border-base-200 bg-base-300/95"
-        contentContainerClassName="gap-2 px-4 py-3"
-      >
-        {PROFILE_KIND_FILTERS.map(({ id, iconKind, label }) => {
-          const selected = selectedKind === id;
-          const color = selected
-            ? theme.colors.primary
-            : theme.colors.primaryContent;
-          return (
-            <Pressable
-              key={id}
-              accessibilityLabel={`${selected ? 'Clear' : 'Select'} ${label}`}
-              accessibilityState={{ selected }}
-              className={`h-10 flex-row items-center gap-2 rounded-full border px-3 ${
-                selected
-                  ? 'border-primary bg-primary/15'
-                  : 'border-base-200 bg-base-200/70'
-              }`}
-              onPress={() => onKindPress(id)}
-            >
-              <FeedKindIcon kind={iconKind} size={18} color={color} />
-              <Text
-                className={`text-sm font-semibold ${
-                  selected ? 'text-base-content' : 'text-primary-content'
-                }`}
-              >
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <View className="px-4 pb-2 pt-4">
+        <Text className="text-xl font-bold text-base-content">
+          Recent activity
+        </Text>
+        <View className="mt-3">
+          <AnimatedSegmentedTabs
+            tabs={activityTabs}
+            selectedId={selectedActivityId}
+            onSelect={id => {
+              if (id === 'all') {
+                if (selectedKind) onKindPress(selectedKind);
+                return;
+              }
+              if (selectedKind !== id) onKindPress(id);
+            }}
+          />
+        </View>
+      </View>
     </View>
   );
 });
@@ -442,6 +908,35 @@ function hasOkStatus(statuses: Record<string, ConnectionStatus>) {
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function communityList(readRelays: string[], writeRelays: string[]) {
+  const writeSet = new Set(writeRelays.map(normalizeRelayUrl));
+  const belongCommunities = writeRelays.map(relay => {
+    const key = normalizeRelayUrl(relay);
+    return {
+      key,
+      name: communityNames[key] || relayLabel(relay),
+      relationship: 'belong' as const,
+      url: key,
+    };
+  });
+  const followCommunities = readRelays
+    .map(normalizeRelayUrl)
+    .filter(relay => !writeSet.has(relay))
+    .map(relay => ({
+      key: relay,
+      name: communityNames[relay] || relayLabel(relay),
+      relationship: 'follow' as const,
+      url: relay,
+    }));
+
+  return [...belongCommunities, ...followCommunities];
+}
+
+function contributionsLast24h(events: ParsedEvent[]) {
+  const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+  return events.filter(event => event.createdAt() >= since).length;
 }
 
 function kindFilterLabel(kind: ProfileKindFilterId | null) {
@@ -507,12 +1002,15 @@ export function Kind0Sub({
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const authPubkey = useAuthStore(state => state.pubkey);
   const follows = useNostrStore(state => state.follows);
+  const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
+  const kind10000UpdatedAt = useNostrStore(state => state.kind10000UpdatedAt);
   const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
   const mutedHashtags = useNostrStore(state => state.mutedHashtags);
   const mutedWords = useNostrStore(state => state.mutedWords);
   const mutedEventIds = useNostrStore(state => state.mutedEventIds);
   const rootWriteRelays = useNostrStore(state => state.writeRelays);
   const setFollows = useNostrStore(state => state.setFollows);
+  const setKindTimestamp = useNostrStore(state => state.setKindTimestamp);
   const setMutes = useNostrStore(state => state.setMutes);
   const [profilePosts, setProfilePosts] = useState<ParsedEvent[]>([]);
   const [selectedKind, setSelectedKind] =
@@ -555,11 +1053,20 @@ export function Kind0Sub({
     fallbackRelays,
     feedReady,
     profile,
+    readRelays,
     writeRelays,
   } = useKind0ProfileData(pubkey);
   const activeRelays = useMemo(
     () => (writeRelays.length ? writeRelays : fallbackRelays),
     [fallbackRelays, writeRelays],
+  );
+  const communities = useMemo(
+    () => communityList(readRelays, writeRelays),
+    [readRelays, writeRelays],
+  );
+  const contributionCount = useMemo(
+    () => contributionsLast24h(profilePosts),
+    [profilePosts],
   );
   const requestKinds = useMemo(
     () =>
@@ -893,9 +1400,10 @@ export function Kind0Sub({
       const nextFollows = nextFollowing
         ? uniqueStrings([...baseFollows, pubkey])
         : baseFollows.filter(follow => follow !== pubkey);
+      const createdAt = Math.floor(Date.now() / 1000);
       const template: EventTemplate = {
         kind: 3,
-        created_at: Math.floor(Date.now() / 1000),
+        created_at: createdAt,
         tags: nextFollows.map(follow => [
           'p',
           follow,
@@ -906,6 +1414,7 @@ export function Kind0Sub({
       const statusMap: Record<string, ConnectionStatus> = {};
 
       setFollows(nextFollows);
+      setKindTimestamp(3, createdAt);
       followPublishUnsubRef.current = publishToNostr(
         `follow_${pubkey}_${Date.now()}`,
         template,
@@ -927,6 +1436,7 @@ export function Kind0Sub({
         const event = asParsedEvent(message);
         if (!event || event.kind() !== 3 || event.pubkey() !== authPubkey)
           return;
+        if (event.createdAt() <= kind3UpdatedAt) return;
         publishFollow(contactPubkeysFromEvent(event));
       },
       {
@@ -942,9 +1452,11 @@ export function Kind0Sub({
     authPubkey,
     following,
     follows,
+    kind3UpdatedAt,
     pubkey,
     rootWriteRelays,
     setFollows,
+    setKindTimestamp,
   ]);
 
   const handleMutePress = useCallback(() => {
@@ -1001,6 +1513,7 @@ export function Kind0Sub({
         mutedPubkeys: nextMutedPubkeys,
         mutedWords: words,
       });
+      setKindTimestamp(10000, template.created_at);
       mutePublishUnsubRef.current = publishToNostr(
         `mute_${pubkey}_${Date.now()}`,
         template,
@@ -1022,6 +1535,7 @@ export function Kind0Sub({
         const event = asParsedEvent(message);
         if (!event || event.kind() !== 10000 || event.pubkey() !== authPubkey)
           return;
+        if (event.createdAt() <= kind10000UpdatedAt) return;
         publishMute({
           eventIds: tagValues(event, 'e'),
           hashtags: tagValues(event, 't'),
@@ -1044,6 +1558,7 @@ export function Kind0Sub({
     }, PRE_PUBLISH_LOOKUP_TIMEOUT_MS);
   }, [
     authPubkey,
+    kind10000UpdatedAt,
     muted,
     mutedEventIds,
     mutedHashtags,
@@ -1051,6 +1566,7 @@ export function Kind0Sub({
     mutedWords,
     pubkey,
     rootWriteRelays,
+    setKindTimestamp,
     setMutes,
   ]);
 
@@ -1067,8 +1583,9 @@ export function Kind0Sub({
       <Kind0ProfileHeader
         about={about}
         aboutContent={aboutContent}
-        activeRelays={activeRelays}
         banner={banner}
+        communities={communities}
+        contributionCount={contributionCount}
         lnaddress={lnaddress}
         name={name}
         nip05={nip05}
@@ -1089,8 +1606,9 @@ export function Kind0Sub({
     [
       about,
       aboutContent,
-      activeRelays,
       banner,
+      communities,
+      contributionCount,
       handleFollowPress,
       handleKindPress,
       handleMutePress,

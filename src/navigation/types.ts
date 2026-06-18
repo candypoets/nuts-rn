@@ -21,7 +21,19 @@ export type RootStackParamList = {
   RelayPreferences: undefined;
   Wallet: undefined;
   ProfileStub: { path: 'relays' | 'wallet' | 'nprofile' };
-  RelayInfos: { subId?: string; relays: string[]; statuses?: Record<string, string> };
+  RelayInfos: {
+    subId?: string;
+    relays: string[];
+    statuses?: Record<string, string>;
+    mode?: 'relays' | 'communities';
+  };
+  Community: {
+    description?: string;
+    icon?: string;
+    name?: string;
+    relationship?: 'follow' | 'belong';
+    relay: string;
+  };
   PublicProfile: { pubkey: string };
   Kind1Thread: { nevent: string };
   Kind30023Thread: { naddr: string };

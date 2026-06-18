@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   FlatList,
   Keyboard,
@@ -22,6 +22,7 @@ import {
   useSendStatusStore,
   type RelayMarker,
 } from '../stores';
+import {fetchRelayInfosForRelays} from '../nostr/nip11';
 import {type AppTheme, type AppThemeColors, useAppTheme} from '../theme';
 
 type RelayMode = 'read' | 'write';
@@ -145,7 +146,7 @@ export function RelayPreferencesModal({onClose: _onClose}: RelayPreferencesModal
 
     return urls
       .map(url => {
-        const info = relayInfos[url];
+        const info = relayInfos[url]?.info;
         return {
           url,
           selected: selectedSet.has(url),
@@ -176,6 +177,10 @@ export function RelayPreferencesModal({onClose: _onClose}: RelayPreferencesModal
     selectedRelays,
     writeRelays,
   ]);
+
+  useEffect(() => {
+    fetchRelayInfosForRelays(items.map(item => item.url));
+  }, [items]);
 
   const setSelectedRelays = useCallback(
     (next: string[]) => {
@@ -297,7 +302,7 @@ export function RelayPreferencesModal({onClose: _onClose}: RelayPreferencesModal
         </View>
       </Pressable>
     ),
-    [styles, toggleRelay],
+    [styles, theme.colors, toggleRelay],
   );
 
   return (

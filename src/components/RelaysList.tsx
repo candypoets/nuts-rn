@@ -1,9 +1,20 @@
-import React from 'react';
-import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {RootStackParamList} from '../navigation/types';
-import {useRelayStore} from '../stores';
+import React, { useEffect, useMemo } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Plus } from 'lucide-react-native';
+import { fetchRelayInfosForRelays, normalizeRelayUrl } from '../nostr/nip11';
+import type { RootStackParamList } from '../navigation/types';
+import { useRelayStore } from '../stores';
+import { useAppTheme } from '../theme';
 
 type RelaysListProps = {
   relays: string[];
@@ -28,8 +39,18 @@ function statusClass(status?: string) {
   }
 }
 
-function normalizeRelayUrl(url: string) {
-  return url.trim().replace(/\/$/, '');
+function fullStatusKind(status?: string) {
+  switch (status) {
+    case 'EOSE':
+    case 'OK':
+      return 'success';
+    case 'FAILED':
+    case 'CLOSED':
+      return 'failed';
+    case 'SUBSCRIBED':
+    default:
+      return 'loading';
+  }
 }
 
 function relayLabel(url: string) {
@@ -37,6 +58,48 @@ function relayLabel(url: string) {
     .replace(/^wss?:\/\//, '')
     .replace(/^relay\./, '')
     .replace(/\/$/, '');
+}
+
+const relayNames: Record<string, string> = {
+  'wss://relay.nuts.cash': 'Nuts',
+  'wss://relay.damus.io': 'Damus',
+  'wss://nos.lol': 'Nos',
+  'wss://relay.thibautduchene.fr': 'Thibaut',
+  'wss://purplepag.es': 'Purple Pages',
+  'wss://user.kindpag.es': 'Kind Pages',
+};
+
+const relayColorClasses = [
+  'bg-primary',
+  'bg-secondary',
+  'bg-accent',
+  'bg-info',
+  'bg-warning',
+  'bg-success',
+];
+
+function relayColorClass(key: string) {
+  let hash = 0;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) % relayColorClasses.length;
+  }
+  return relayColorClasses[hash];
+}
+
+function communityName(url: string, name?: string) {
+  const normalized = normalizeRelayUrl(url);
+  return name?.trim() || relayNames[normalized] || relayLabel(url);
+}
+
+function initials(name: string) {
+  const words = name
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0]}${words[1][0]}`.toUpperCase();
 }
 
 export function RelaysList({
@@ -47,12 +110,116 @@ export function RelaysList({
 }: RelaysListProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const theme = useAppTheme();
   const storeRelays = useRelayStore(state =>
     subId ? state.relaySubs[subId] : undefined,
   );
-  const displayRelays = (storeRelays ?? relays).filter(Boolean);
+  const relayInfos = useRelayStore(state => state.relayInfos);
+  const sourceRelays = storeRelays ?? relays;
+  const displayRelays = useMemo(
+    () => sourceRelays.filter(Boolean),
+    [sourceRelays],
+  );
   const heightClass = mini ? 'h-6' : 'h-7';
+  const openRelayInfos = () => {
+    navigation.navigate('RelayInfos', {
+      subId,
+      relays: displayRelays,
+      statuses,
+    });
+  };
+
+  useEffect(() => {
+    if (mini || !displayRelays.length) return;
+    fetchRelayInfosForRelays(displayRelays);
+  }, [displayRelays, mini]);
+
   if (!displayRelays.length) return null;
+
+  if (!mini) {
+    return (
+      <View style={styles.fullContainer}>
+        <ScrollView
+          horizontal
+          onScrollBeginDrag={event => {
+            event.stopPropagation();
+          }}
+          onTouchStart={event => {
+            event.stopPropagation();
+          }}
+          showsHorizontalScrollIndicator={false}
+          contentContainerClassName="flex-row items-center gap-2"
+        >
+          {displayRelays.map(relay => {
+            const key = normalizeRelayUrl(relay);
+            const status = statuses[key];
+            const statusKind = fullStatusKind(status);
+            const info = relayInfos[key]?.info;
+            const name = communityName(relay, info?.name);
+            return (
+              <Pressable
+                key={key}
+                accessibilityRole="button"
+                accessibilityLabel={name}
+                className={`h-8 w-8 items-center justify-center rounded-full ${
+                  statusKind === 'success'
+                    ? 'border-success'
+                    : statusKind === 'failed'
+                    ? 'border-error'
+                    : 'border-transparent'
+                }`}
+                hitSlop={8}
+                onPress={event => {
+                  event.stopPropagation();
+                  openRelayInfos();
+                }}
+                style={[
+                  styles.fullRelayButton,
+                  statusKind === 'loading' && styles.fullRelayButtonLoading,
+                ]}
+              >
+                {statusKind === 'loading' ? (
+                  <ActivityIndicator
+                    color={theme.colors.primary}
+                    size={32}
+                    style={styles.loadingRing}
+                  />
+                ) : null}
+                <View
+                  className={`h-7 w-7 items-center justify-center overflow-hidden rounded-full ${relayColorClass(
+                    key,
+                  )}`}
+                >
+                  {info?.icon ? (
+                    <Image
+                      source={{ uri: info.icon }}
+                      style={styles.iconImage}
+                    />
+                  ) : (
+                    <Text className="text-[10px] font-bold text-base-100">
+                      {initials(name)}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Manage relays"
+            className="h-9 w-9 items-center justify-center rounded-full border border-dashed border-base-200 bg-base-300"
+            hitSlop={8}
+            onPress={event => {
+              event.stopPropagation();
+              openRelayInfos();
+            }}
+          >
+            <Plus size={17} color={theme.colors.primaryContent} />
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <Pressable
@@ -78,7 +245,9 @@ export function RelaysList({
           event.stopPropagation();
         }}
         showsHorizontalScrollIndicator={false}
-        contentContainerClassName={`flex-row items-center gap-1 ${mini ? '' : 'px-4'}`}
+        contentContainerClassName={`flex-row items-center gap-1 ${
+          mini ? '' : 'px-4'
+        }`}
       >
         {displayRelays.map(relay => {
           const key = normalizeRelayUrl(relay);
@@ -91,10 +260,14 @@ export function RelaysList({
               }`}
             >
               <View
-                className={`${mini ? 'h-1 w-1' : 'h-1.5 w-1.5'} rounded-full ${statusClass(status)}`}
+                className={`${
+                  mini ? 'h-1 w-1' : 'h-1.5 w-1.5'
+                } rounded-full ${statusClass(status)}`}
               />
               <Text
-                className={`${mini ? 'text-[10px]' : 'text-[11px]'} text-primary-content`}
+                className={`${
+                  mini ? 'text-[10px]' : 'text-[11px]'
+                } text-primary-content`}
                 numberOfLines={1}
               >
                 {relayLabel(relay)}
@@ -111,5 +284,22 @@ const styles = StyleSheet.create({
   container: {
     flexShrink: 1,
     maxWidth: '100%',
+  },
+  fullContainer: {
+    flexShrink: 1,
+    maxWidth: '100%',
+  },
+  fullRelayButton: {
+    borderWidth: 1,
+  },
+  fullRelayButtonLoading: {
+    borderWidth: 2,
+  },
+  iconImage: {
+    height: '100%',
+    width: '100%',
+  },
+  loadingRing: {
+    position: 'absolute',
   },
 });

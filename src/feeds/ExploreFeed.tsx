@@ -243,6 +243,7 @@ export function ExploreFeed({
         selectedKinds={selectedKinds}
         setSelectedKinds={setSelectedKinds}
         selectedPacks={selectedPacks}
+        showKindIndicators={false}
         surfaceClassName="bg-base-100"
       />
     ),
@@ -890,6 +891,7 @@ function ExploreHeader({
   selectedKinds,
   setSelectedKinds,
   selectedPacks,
+  showKindIndicators = true,
   showKindSelector = false,
   surfaceClassName,
 }: {
@@ -900,6 +902,7 @@ function ExploreHeader({
   selectedKinds: FeedKind[];
   setSelectedKinds: (kinds: FeedKind[]) => void;
   selectedPacks: FeedPackSelection[];
+  showKindIndicators?: boolean;
   showKindSelector?: boolean;
   surfaceClassName: string;
 }) {
@@ -927,13 +930,13 @@ function ExploreHeader({
           }
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            <ExploreScopeToggle
-              packs={selectedPacks}
-            />
-            <FeedKindHeaderButtons
-              kinds={showKindSelector ? [] : visibleKinds}
-              surfaceClassName={surfaceClassName}
-            />
+            <ExploreScopeToggle packs={selectedPacks} />
+            {showKindIndicators ? (
+              <FeedKindHeaderButtons
+                kinds={showKindSelector ? [] : visibleKinds}
+                surfaceClassName={surfaceClassName}
+              />
+            ) : null}
           </View>
           <View className="flex-row items-center gap-2">
             <HeaderSearchButton surfaceClassName={surfaceClassName} />

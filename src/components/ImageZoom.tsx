@@ -5,15 +5,14 @@ import {
   FlatList,
   Modal,
   NativeModules,
+  Pressable,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
-import {
-  Gesture,
-  GestureDetector,
-} from 'react-native-gesture-handler';
+import { Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
   type SharedValue,
@@ -33,7 +32,6 @@ import { Footer } from './notes/Footer';
 import { User } from './notes/User';
 
 type ZoomLink = UIStore['imageZoom']['links'][number];
-const AnimatedImage = Animated.createAnimatedComponent(Image);
 const OrientationGate = NativeModules.OrientationGate as
   | { setImageZoomActive?: (active: boolean) => void }
   | undefined;
@@ -69,6 +67,7 @@ export function ImageZoom() {
   const setImageZoom = useUIStore(state => state.setImageZoom);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentImageZoomed, setCurrentImageZoomed] = useState(false);
+  const [chromeVisible, setChromeVisible] = useState(true);
   const listRef = useRef<FlatList<ZoomLink>>(null);
   const visible = imageZoom.zoomed !== undefined && imageZoom.links.length > 0;
   const links = imageZoom.links;
@@ -91,6 +90,7 @@ export function ImageZoom() {
     const index = clampIndex(imageZoom.zoomed, links.length);
     setCurrentIndex(index);
     setCurrentImageZoomed(false);
+    setChromeVisible(true);
     translateY.value = 0;
     backgroundOpacity.value = withTiming(1, { duration: 160 });
     requestAnimationFrame(() => {
@@ -151,6 +151,7 @@ export function ImageZoom() {
                 Math.round(event.nativeEvent.contentOffset.x / width),
               );
               setCurrentImageZoomed(false);
+              setChromeVisible(true);
             }}
             renderItem={({ item, index }) => (
               <View style={[styles.page, { width, height }]}>
@@ -159,6 +160,7 @@ export function ImageZoom() {
                   width={width}
                   height={height}
                   onDismiss={dismiss}
+                  onToggleChrome={() => setChromeVisible(value => !value)}
                   onZoomStateChange={zoomed => {
                     if (index === currentIndex) {
                       setCurrentImageZoomed(zoomed);
@@ -173,6 +175,8 @@ export function ImageZoom() {
         </Animated.View>
         <ZoomNoteOverlay
           bottomInset={insets.bottom}
+          link={links[currentIndex]}
+          visible={chromeVisible}
           compact={isLandscape}
         />
       </View>
@@ -182,15 +186,19 @@ export function ImageZoom() {
 
 function ZoomNoteOverlay({
   bottomInset,
+  link,
+  visible: chromeVisible,
   compact,
 }: {
   bottomInset: number;
+  link?: ZoomLink;
+  visible: boolean;
   compact: boolean;
 }) {
   const note = useUIStore(state => state.imageZoom.note);
-  const visible = useUIStore(state => state.imageZoom.zoomed !== undefined);
+  const zoomVisible = useUIStore(state => state.imageZoom.zoomed !== undefined);
 
-  if (!note) return null;
+  if (!note || !chromeVisible) return null;
 
   const content = zoomNoteText(note);
   const pubkey = note.pubkey?.() || '';
@@ -208,27 +216,27 @@ function ZoomNoteOverlay({
       ]}
     >
       <View style={styles.noteCard}>
-        <View style={styles.noteHeader}>
-          {pubkey ? (
-            <>
-              <Avatar pubkey={pubkey} size="sm" link />
-              <User
-                pubkey={pubkey}
-                link
-                className="text-sm font-semibold text-white"
-              />
-            </>
+        <View style={styles.notePreviewPad}>
+          <View style={styles.noteHeader}>
+            {pubkey ? (
+              <>
+                <Avatar pubkey={pubkey} size="sm" link />
+                <User
+                  pubkey={pubkey}
+                  link
+                  className="text-sm font-semibold text-white"
+                />
+              </>
+            ) : null}
+          </View>
+          {content ? (
+            <Text numberOfLines={compact ? 1 : 3} style={styles.noteText}>
+              {content}
+            </Text>
           ) : null}
+          <Footer note={note} visible={zoomVisible} mode="zoom" />
         </View>
-        {content ? (
-          <Text
-            numberOfLines={compact ? 1 : 3}
-            style={styles.noteText}
-          >
-            {content}
-          </Text>
-        ) : null}
-        <Footer note={note} visible={visible} mode="zoom" />
+        {link?.type === 'video' ? <ZoomVideoControls src={link.src} /> : null}
       </View>
     </View>
   );
@@ -239,6 +247,7 @@ const ZoomPage = memo(function ZoomPage({
   width,
   height,
   onDismiss,
+  onToggleChrome,
   onZoomStateChange,
   overlayTranslateY,
   backgroundOpacity,
@@ -247,6 +256,7 @@ const ZoomPage = memo(function ZoomPage({
   width: number;
   height: number;
   onDismiss: () => void;
+  onToggleChrome: () => void;
   onZoomStateChange: (zoomed: boolean) => void;
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
@@ -257,6 +267,7 @@ const ZoomPage = memo(function ZoomPage({
         link={link}
         height={height}
         onDismiss={onDismiss}
+        onToggleChrome={onToggleChrome}
         overlayTranslateY={overlayTranslateY}
         backgroundOpacity={backgroundOpacity}
       />
@@ -397,10 +408,11 @@ function ZoomImage({
     .numberOfTaps(2)
     .onEnd(event => {
       const nextScale = scale.value > 1 ? 1 : 2.4;
-      scale.value = withTiming(nextScale, { duration: 180 });
       savedScale.value = nextScale;
-      updateZoomState(nextScale > 1.02);
       if (nextScale === 1) {
+        scale.value = withTiming(1, { duration: 180 }, finished => {
+          if (finished) updateZoomState(false);
+        });
         translateX.value = withTiming(0, { duration: 180 });
         imageTranslateY.value = withTiming(0, { duration: 180 });
         savedX.value = 0;
@@ -410,6 +422,9 @@ function ZoomImage({
         const offsetY = event.y - height / 2;
         const nextX = -offsetX * (nextScale - 1);
         const nextY = -offsetY * (nextScale - 1);
+        scale.value = withTiming(nextScale, { duration: 180 }, finished => {
+          if (finished) updateZoomState(true);
+        });
         translateX.value = withTiming(nextX, { duration: 180 });
         imageTranslateY.value = withTiming(nextY, { duration: 180 });
         savedX.value = nextX;
@@ -429,12 +444,14 @@ function ZoomImage({
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={styles.zoomImageWrap}>
-        <AnimatedImage
-          source={{ uri: link.src }}
-          contentFit="contain"
-          cachePolicy="memory-disk"
-          style={[styles.zoomImage, { width, height }, imageStyle]}
-        />
+        <Animated.View style={[{ width, height }, imageStyle]}>
+          <Image
+            source={{ uri: link.src }}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            style={styles.zoomImage}
+          />
+        </Animated.View>
       </Animated.View>
     </GestureDetector>
   );
@@ -444,12 +461,14 @@ function ZoomVideo({
   link,
   height,
   onDismiss,
+  onToggleChrome,
   overlayTranslateY,
   backgroundOpacity,
 }: {
   link: ZoomLink;
   height: number;
   onDismiss: () => void;
+  onToggleChrome: () => void;
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
 }) {
@@ -459,6 +478,7 @@ function ZoomVideo({
     player.loop = false;
     player.muted = false;
     player.volume = 1;
+    player.timeUpdateEventInterval = 0.25;
     player.showNowPlayingNotification = false;
     player.staysActiveInBackground = false;
     player.play();
@@ -494,7 +514,7 @@ function ZoomVideo({
       <View style={styles.videoWrap}>
         <VideoView
           player={player}
-          nativeControls
+          nativeControls={false}
           contentFit="contain"
           allowsPictureInPicture={false}
           startsPictureInPictureAutomatically={false}
@@ -508,8 +528,164 @@ function ZoomVideo({
             style={styles.videoPoster}
           />
         ) : null}
+        <Pressable
+          accessibilityLabel="Toggle video focus mode"
+          onPress={onToggleChrome}
+          style={styles.videoTouch}
+        />
       </View>
     </GestureDetector>
+  );
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
+  const total = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${rest.toString().padStart(2, '0')}`;
+}
+
+function ZoomVideoControls({ src }: { src: string }) {
+  const player = useSharedVideoPlayer(src);
+  const [playing, setPlaying] = useState(player.playing);
+  const [muted, setMuted] = useState(player.muted);
+  const [rate, setRate] = useState(player.playbackRate || 1);
+  const [currentTime, setCurrentTime] = useState(player.currentTime || 0);
+  const [duration, setDuration] = useState(player.duration || 0);
+  const [ended, setEnded] = useState(false);
+  const [trackWidth, setTrackWidth] = useState(1);
+
+  useEffect(() => {
+    const subscriptions = [
+      player.addListener('playingChange', event => setPlaying(event.isPlaying)),
+      player.addListener('mutedChange', event => setMuted(event.muted)),
+      player.addListener('playbackRateChange', event =>
+        setRate(event.playbackRate),
+      ),
+      player.addListener('timeUpdate', event => {
+        setCurrentTime(event.currentTime);
+        setDuration(player.duration || 0);
+        if (player.duration > 0 && event.currentTime < player.duration - 0.25) {
+          setEnded(false);
+        }
+      }),
+      player.addListener('sourceLoad', event => {
+        setDuration(event.duration || player.duration || 0);
+        setEnded(false);
+      }),
+      player.addListener('playToEnd', () => setEnded(true)),
+    ];
+
+    setPlaying(player.playing);
+    setMuted(player.muted);
+    setRate(player.playbackRate || 1);
+    setCurrentTime(player.currentTime || 0);
+    setDuration(player.duration || 0);
+
+    return () => {
+      subscriptions.forEach(subscription => subscription.remove());
+    };
+  }, [player]);
+
+  const progress =
+    duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+
+  const togglePlayback = () => {
+    if (playing) player.pause();
+    else {
+      if (ended) {
+        player.currentTime = 0;
+        setCurrentTime(0);
+        setEnded(false);
+      }
+      player.play();
+    }
+  };
+
+  const toggleRate = () => {
+    const nextRate = rate >= 2 ? 1 : rate >= 1.5 ? 2 : 1.5;
+    player.playbackRate = nextRate;
+    setRate(nextRate);
+  };
+
+  return (
+    <View style={styles.videoControls}>
+      <Pressable
+        accessibilityLabel="Seek video"
+        hitSlop={{ top: 8, bottom: 8 }}
+        onLayout={event =>
+          setTrackWidth(Math.max(1, event.nativeEvent.layout.width))
+        }
+        onPress={event => {
+          if (duration <= 0) return;
+          const nextTime =
+            duration *
+            Math.min(1, Math.max(0, event.nativeEvent.locationX / trackWidth));
+          player.currentTime = nextTime;
+          setCurrentTime(nextTime);
+          setEnded(nextTime >= duration - 0.25);
+        }}
+        style={styles.videoTrack}
+      >
+        <View style={styles.videoTrackRail}>
+          <View
+            style={[styles.videoTrackFill, { width: `${progress * 100}%` }]}
+          />
+        </View>
+      </Pressable>
+      <View style={[styles.videoControlsRow, styles.notePreviewPad]}>
+        <Pressable
+          accessibilityLabel={playing ? 'Pause video' : 'Play video'}
+          onPress={togglePlayback}
+          style={styles.videoControlButton}
+        >
+          {playing ? (
+            <Pause color="#fff" size={24} />
+          ) : (
+            <Play color="#fff" size={24} />
+          )}
+        </Pressable>
+        <Text style={styles.videoTime}>
+          -{formatDuration(duration - currentTime)}
+        </Text>
+        <Pressable
+          accessibilityLabel="Change playback speed"
+          onPress={toggleRate}
+          style={styles.videoSpeedButton}
+        >
+          <Text style={styles.videoSpeedText}>
+            {rate.toFixed(rate % 1 ? 1 : 0)}x
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
+          onPress={() => {
+            player.muted = !muted;
+            setMuted(!muted);
+          }}
+          style={styles.videoControlButton}
+        >
+          {muted ? (
+            <VolumeX color="#fff" size={24} />
+          ) : (
+            <Volume2 color="#fff" size={24} />
+          )}
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Replay video"
+          onPress={() => {
+            player.currentTime = 0;
+            setCurrentTime(0);
+            setEnded(false);
+            player.play();
+          }}
+          style={styles.videoControlButton}
+        >
+          <RotateCcw color="#fff" size={24} />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -548,8 +724,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   zoomImage: {
-    maxWidth: '100%',
-    maxHeight: '100%',
+    height: '100%',
+    width: '100%',
   },
   videoWrap: {
     flex: 1,
@@ -561,6 +737,14 @@ const styles = StyleSheet.create({
     height: '100%',
     width: '100%',
   },
+  videoTouch: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 2,
+  },
   videoPoster: {
     bottom: 0,
     left: 0,
@@ -571,17 +755,21 @@ const styles = StyleSheet.create({
   },
   noteCard: {
     gap: 8,
+    width: '100%',
+  },
+  notePreviewPad: {
+    paddingHorizontal: 16,
   },
   noteOverlay: {
     bottom: 0,
     left: 0,
-    paddingHorizontal: 32,
+    paddingHorizontal: 0,
     position: 'absolute',
     right: 0,
     zIndex: 3,
   },
   noteOverlayCompact: {
-    paddingHorizontal: 88,
+    paddingHorizontal: 0,
   },
   noteText: {
     color: '#fff',
@@ -595,5 +783,57 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
+  },
+  videoControls: {
+    gap: 6,
+    width: '100%',
+  },
+  videoControlsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    height: 34,
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  videoControlButton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    width: 36,
+  },
+  videoSpeedButton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    minWidth: 44,
+  },
+  videoSpeedText: {
+    color: '#fff',
+    fontSize: 21,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  videoTime: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 16,
+    fontVariant: ['tabular-nums'],
+    fontWeight: '500',
+    includeFontPadding: false,
+    minWidth: 54,
+  },
+  videoTrack: {
+    height: 10,
+    justifyContent: 'center',
+  },
+  videoTrackRail: {
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 999,
+    height: 3,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  videoTrackFill: {
+    backgroundColor: '#fff',
+    height: '100%',
   },
 });

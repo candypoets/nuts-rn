@@ -161,7 +161,7 @@ export function RelaysList({
                 key={key}
                 accessibilityRole="button"
                 accessibilityLabel={name}
-                className={`h-8 w-8 items-center justify-center rounded-full ${
+                className={`items-center justify-center rounded-full ${
                   statusKind === 'success'
                     ? 'border-success'
                     : statusKind === 'failed'
@@ -181,14 +181,15 @@ export function RelaysList({
                 {statusKind === 'loading' ? (
                   <ActivityIndicator
                     color={theme.colors.primary}
-                    size={32}
+                    size={48}
                     style={styles.loadingRing}
                   />
                 ) : null}
                 <View
-                  className={`h-7 w-7 items-center justify-center overflow-hidden rounded-full ${relayColorClass(
+                  className={`items-center justify-center overflow-hidden rounded-full ${relayColorClass(
                     key,
                   )}`}
+                  style={styles.fullRelayAvatar}
                 >
                   {info?.icon ? (
                     <Image
@@ -207,14 +208,15 @@ export function RelaysList({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Manage relays"
-            className="h-9 w-9 items-center justify-center rounded-full border border-dashed border-base-200 bg-base-300"
+            className="items-center justify-center rounded-full border border-dashed border-base-200 bg-base-300"
             hitSlop={8}
             onPress={event => {
               event.stopPropagation();
               openRelayInfos();
             }}
+            style={styles.fullManageButton}
           >
-            <Plus size={17} color={theme.colors.primaryContent} />
+            <Plus size={22} color={theme.colors.primaryContent} />
           </Pressable>
         </ScrollView>
       </View>
@@ -290,10 +292,20 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   fullRelayButton: {
+    width: 52,
+    height: 52,
     borderWidth: 1,
   },
   fullRelayButtonLoading: {
     borderWidth: 2,
+  },
+  fullRelayAvatar: {
+    width: 44,
+    height: 44,
+  },
+  fullManageButton: {
+    width: 48,
+    height: 48,
   },
   iconImage: {
     height: '100%',

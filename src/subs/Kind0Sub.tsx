@@ -7,8 +7,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  Animated,
-  Easing,
   Linking,
   Pressable,
   ScrollView,
@@ -22,6 +20,12 @@ import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ConnectionStatus, ParsedEvent, WorkerMessage } from '@candypoets/nipworker';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  type SharedValue,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import {
   usePublish as publishToNostr,
   useSubscription as subscribeToNostr,
@@ -49,6 +53,8 @@ import type { EventTemplate } from 'nostr-tools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Feed } from '../components/Feed';
+import {FeedKindNavigator} from '../components/FeedKindNavigator';
+import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
 import { fetchRelayInfosForRelays } from '../nostr/nip11';
 import {
@@ -69,7 +75,6 @@ const PRE_PUBLISH_LOOKUP_TIMEOUT_MS = 1500;
 const REPLACEABLE_LIST_BYTES_PER_EVENT = 128 * 1024;
 const PROFILE_EMPTY_TIMEOUT_MS = 2400;
 type ProfileKindFilterId = 'notes' | 'articles' | 'polls' | 'media';
-type ProfileActivityTabId = 'all' | ProfileKindFilterId;
 const PROFILE_KIND_FILTERS: Array<{
   id: ProfileKindFilterId;
   kinds: FeedKind[];
@@ -78,7 +83,7 @@ const PROFILE_KIND_FILTERS: Array<{
   { id: 'notes', kinds: [1, 6], label: 'Notes' },
   { id: 'articles', kinds: [30023], label: 'Articles' },
   { id: 'polls', kinds: [1068], label: 'Polls' },
-  { id: 'media', kinds: [20, 34235], label: 'Media' },
+  { id: 'media', kinds: [20, 22], label: 'Media' },
 ];
 
 type Kind0ProfileHeaderProps = {
@@ -97,6 +102,7 @@ type Kind0ProfileHeaderProps = {
   onZapPress: () => void;
   picture: string | null;
   pubkey: string;
+  scrollY: SharedValue<number>;
   selectedKind: ProfileKindFilterId | null;
   followPending: boolean;
   following: boolean;
@@ -126,12 +132,6 @@ type CommunityPreviewProfile = {
   pubkey: string;
   name: string;
   picture: string | null;
-};
-
-type AnimatedSegmentedTab<T extends string> = {
-  id: T;
-  label: string;
-  count?: number;
 };
 
 type ParsedAboutBlock = {
@@ -274,107 +274,6 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
     </View>
   );
 });
-
-function AnimatedSegmentedTabs<T extends string>({
-  tabs,
-  selectedId,
-  onSelect,
-  variant = 'underline',
-}: {
-  tabs: Array<AnimatedSegmentedTab<T>>;
-  selectedId: T;
-  onSelect: (id: T) => void;
-  variant?: 'underline' | 'pill';
-}) {
-  const [tabWidth, setTabWidth] = useState(0);
-  const underlineX = useRef(new Animated.Value(0)).current;
-  const pillInset = variant === 'pill' ? 1 : 0;
-  const selectedIndex = Math.max(
-    0,
-    tabs.findIndex(tab => tab.id === selectedId),
-  );
-
-  useEffect(() => {
-    if (!tabWidth) return;
-    Animated.timing(underlineX, {
-      toValue: selectedIndex * tabWidth,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [selectedIndex, tabWidth, underlineX]);
-
-  return (
-    <View
-      className={`relative flex-row ${
-        variant === 'pill'
-          ? 'overflow-hidden rounded-full border border-base-200 bg-base-300'
-          : ''
-      }`}
-      onLayout={event => {
-        const nextWidth =
-          (event.nativeEvent.layout.width - pillInset * 2) / tabs.length;
-        setTabWidth(current =>
-          Math.abs(current - nextWidth) < 0.5 ? current : nextWidth,
-        );
-      }}
-    >
-      {variant === 'pill' ? (
-        <Animated.View
-          className="absolute rounded-full border border-primary bg-base-200"
-          style={{
-            bottom: pillInset,
-            left: pillInset,
-            top: pillInset,
-            width: tabWidth,
-            transform: [{translateX: underlineX}],
-          }}
-        />
-      ) : (
-        <Animated.View
-          className="absolute -bottom-2 left-0 h-0.5 rounded-full bg-primary"
-          style={{
-            width: tabWidth,
-            transform: [{translateX: underlineX}],
-          }}
-        />
-      )}
-      {tabs.map(tab => {
-        const selected = tab.id === selectedId;
-        return (
-          <Pressable
-            key={tab.id}
-            accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
-            accessibilityState={{selected}}
-            className={`h-9 flex-1 items-center justify-center ${
-              variant === 'pill' ? 'flex-row gap-2 px-3' : 'pt-1'
-            }`}
-            onPress={() => {
-              if (!selected) onSelect(tab.id);
-            }}
-          >
-            <Text
-              className={`${
-                variant === 'pill'
-                  ? 'text-xs font-bold uppercase'
-                  : 'text-base font-semibold'
-              } ${selected ? 'text-base-content' : 'text-primary-content'}`}
-            >
-              {tab.label}
-            </Text>
-            {tab.count !== undefined ? (
-              <View className="min-w-6 items-center rounded-full bg-base-200 px-2 py-0.5">
-                <Text className="text-xs font-bold text-primary-content">
-                  {tab.count}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
 
 function relayLabel(url: string) {
   return normalizeRelayUrl(url)
@@ -585,7 +484,7 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
       </View>
 
       <View className="mt-4">
-        <AnimatedSegmentedTabs
+        <SegmentedTabs
           tabs={[
             {id: 'belong', label: 'Belongs to', count: belongCount},
             {id: 'follow', label: 'Following', count: followCount},
@@ -740,6 +639,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   onZapPress,
   picture,
   pubkey,
+  scrollY,
   selectedKind,
   followPending,
   following,
@@ -751,25 +651,47 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
-  const activityTabs = useMemo<Array<AnimatedSegmentedTab<ProfileActivityTabId>>>(
-    () => [
-      {id: 'all', label: 'All'},
-      ...PROFILE_KIND_FILTERS,
-    ],
-    [],
+  const bannerHeight = 208 + topInset;
+  const bannerStyle = useAnimatedStyle(() => {
+    const pullDistance = Math.max(-scrollY.value, 0);
+    return {
+      transformOrigin: 'top',
+      transform: [
+        {
+          translateY: Math.min(scrollY.value, 0),
+        },
+        {
+          scale: interpolate(
+            pullDistance,
+            [0, 180],
+            [1, 1.36],
+            Extrapolation.CLAMP,
+          ),
+        },
+      ],
+    };
+  });
+  const selectedActivityKinds = useMemo(
+    () =>
+      selectedKind
+        ? PROFILE_KIND_FILTERS.find(filter => filter.id === selectedKind)
+            ?.kinds ?? []
+        : [],
+    [selectedKind],
   );
-  const selectedActivityId: ProfileActivityTabId = selectedKind ?? 'all';
 
   return (
-    <View className="overflow-hidden rounded-lg bg-base-300/95">
+    <View className="rounded-lg bg-base-300/95">
       <View
-        className="bg-base-300/95"
+        className="overflow-visible bg-base-300/95"
         style={{
-          height: 208 + topInset,
+          height: bannerHeight,
           width: screenWidth,
         }}
       >
-        <Kind0TrackedImage uri={banner} className="h-full w-full" />
+        <Animated.View className="h-full w-full" style={bannerStyle}>
+          <Kind0TrackedImage uri={banner} className="h-full w-full" />
+        </Animated.View>
         <View
           className="absolute left-0 right-0 top-0 h-20 flex-row items-center justify-between px-4"
           style={{ paddingTop: topInset + 24 }}
@@ -863,15 +785,18 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
           Recent activity
         </Text>
         <View className="mt-3">
-          <AnimatedSegmentedTabs
-            tabs={activityTabs}
-            selectedId={selectedActivityId}
-            onSelect={id => {
-              if (id === 'all') {
+          <FeedKindNavigator
+            selectedKinds={selectedActivityKinds}
+            onSelectKinds={kinds => {
+              const nextFilter = PROFILE_KIND_FILTERS.find(filter =>
+                filter.kinds.length === kinds.length &&
+                filter.kinds.every((kind, index) => kind === kinds[index]),
+              );
+              if (!nextFilter) {
                 if (selectedKind) onKindPress(selectedKind);
                 return;
               }
-              if (selectedKind !== id) onKindPress(id);
+              if (selectedKind !== nextFilter.id) onKindPress(nextFilter.id);
             }}
           />
         </View>
@@ -1579,7 +1504,7 @@ export function Kind0Sub({
   );
 
   const header = useCallback(
-    () => (
+    ({scrollY}: {scrollY: SharedValue<number>}) => (
       <Kind0ProfileHeader
         about={about}
         aboutContent={aboutContent}
@@ -1596,6 +1521,7 @@ export function Kind0Sub({
         onZapPress={handleZapPress}
         picture={picture}
         pubkey={pubkey}
+        scrollY={scrollY}
         selectedKind={selectedKind}
         followPending={followPending}
         following={following}

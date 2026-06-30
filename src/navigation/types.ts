@@ -37,6 +37,7 @@ export type RootStackParamList = {
   PublicProfile: { pubkey: string };
   Kind1Thread: { nevent: string };
   Kind30023Thread: { naddr: string };
+  LiveStream: { nevent: string };
   Kind1111Comments: { nevent: string };
   Tags: { tags: string[] };
   ChatThread: { peerPubkey: string };

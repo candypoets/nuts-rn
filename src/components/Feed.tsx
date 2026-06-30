@@ -16,11 +16,16 @@ import {
 import {
   LegendList,
   type LegendListRef,
-  type LegendListRenderItemProps,
 } from '@legendapp/list/react-native';
-import {KeyboardAwareLegendList} from '@legendapp/list/keyboard';
+import {AnimatedLegendList} from '@legendapp/list/reanimated';
+import {
+  FlashList,
+  type FlashListRef,
+  type ListRenderItemInfo as FlashListRenderItemInfo,
+} from '@shopify/flash-list';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -28,13 +33,20 @@ import Animated, {
 import {useAppTheme} from '../theme';
 
 type FeedChromeProps = {
+  scrollY: SharedValue<number>;
   scrollToTop: () => void;
+  safeAreaTop: number;
   visible: boolean;
   scrolled: boolean;
   start: number;
 };
 
-export type FeedRenderItemInfo<T> = LegendListRenderItemProps<T> & {
+export type FeedRenderItemInfo<T> = {
+  data: readonly T[];
+  extraData?: unknown;
+  index: number;
+  item: T;
+  type?: string | number;
   visible: boolean;
 };
 
@@ -51,6 +63,7 @@ export type FeedProps<T> = {
   stickyFooter?: (props: FeedChromeProps) => ReactNode;
   fixedHeader?: (props: FeedChromeProps) => ReactNode;
   headerSafeArea?: boolean;
+  headerOwnsSafeArea?: boolean;
   empty?: ReactNode;
   loading?: boolean;
   refreshing?: boolean;
@@ -58,7 +71,7 @@ export type FeedProps<T> = {
   pullToRefresh?: boolean;
   bottom?: boolean;
   bottomAutoScroll?: boolean | 'initial';
-  maintainVisibleContentPosition?: boolean;
+  disableMaintainVisibleContentPosition?: boolean;
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   onRefresh?: () => void | Promise<void>;
@@ -111,6 +124,7 @@ export function Feed<T>({
   stickyFooter,
   fixedHeader,
   headerSafeArea = true,
+  headerOwnsSafeArea = false,
   empty,
   loading = false,
   refreshing = false,
@@ -118,7 +132,7 @@ export function Feed<T>({
   pullToRefresh = false,
   bottom = false,
   bottomAutoScroll = true,
-  maintainVisibleContentPosition = true,
+  disableMaintainVisibleContentPosition = false,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   onRefresh,
@@ -131,6 +145,7 @@ export function Feed<T>({
   const [end, setEnd] = useState(0);
   const [down, setDown] = useState(true);
   const listRef = useRef<LegendListRef>(null);
+  const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
@@ -139,21 +154,46 @@ export function Feed<T>({
   const didInitialBottomScrollRef = useRef(false);
   const headerVisible = useSharedValue(0);
   const footerVisible = useSharedValue(1);
+  const scrollY = useSharedValue(0);
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
   const refreshInset = headerSafeArea ? topInset : 0;
+  const headerSafeAreaTop = headerSafeArea ? topInset : 0;
+  const outerHeaderSafeAreaTop = headerOwnsSafeArea ? 0 : headerSafeAreaTop;
+  const innerHeaderSafeAreaTop = headerOwnsSafeArea ? headerSafeAreaTop : 0;
   const refreshColor = getRefreshControlColor(theme);
   const listItems = useMemo(
-    () => (bottom ? [...items].reverse() : items),
-    [bottom, items],
+    () => items,
+    [items],
   );
+  const shouldMaintainVisibleContentPosition =
+    !disableMaintainVisibleContentPosition && (items.length > 0 || !loading);
 
   const scrollToTop = useCallback(() => {
-    listRef.current?.scrollToOffset({offset: 0, animated: true});
-  }, []);
+    if (bottom) {
+      bottomListRef.current?.scrollToOffset({offset: 0, animated: true});
+    } else {
+      listRef.current?.scrollToOffset({offset: 0, animated: true});
+    }
+  }, [bottom]);
+
+  const scrollToBottom = useCallback((animated: boolean) => {
+    if (bottom) {
+      bottomListRef.current?.scrollToOffset({offset: 0, animated});
+    } else {
+      listRef.current?.scrollToEnd({animated});
+    }
+  }, [bottom]);
 
   const chromeProps = useMemo(
-    () => ({visible: true, scrolled: start >= 1, start, scrollToTop}),
-    [scrollToTop, start],
+    () => ({
+      visible: true,
+      scrolled: start >= 1,
+      scrollY,
+      safeAreaTop: innerHeaderSafeAreaTop,
+      start,
+      scrollToTop,
+    }),
+    [innerHeaderSafeAreaTop, scrollToTop, scrollY, start],
   );
 
   useEffect(() => {
@@ -164,22 +204,22 @@ export function Feed<T>({
   }, [items.length, start]);
 
   useEffect(() => {
+    if (!bottom) return;
     const shouldInitialScroll =
       (bottomAutoScroll === 'initial' || bottomAutoScroll === true) &&
       !didInitialBottomScrollRef.current;
     const shouldContinuousScroll = bottomAutoScroll === true && start <= 1;
     if (
-      !bottom ||
       items.length === 0 ||
       (!shouldInitialScroll && !shouldContinuousScroll)
     ) {
       return;
     }
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({animated: false});
+      scrollToBottom(false);
       didInitialBottomScrollRef.current = true;
     });
-  }, [bottom, bottomAutoScroll, items.length, start]);
+  }, [bottom, bottomAutoScroll, items.length, scrollToBottom, start]);
 
   useEffect(() => {
     if (resetScrollKey === undefined || bottom) return;
@@ -193,11 +233,11 @@ export function Feed<T>({
   useEffect(() => {
     if (scrollToBottomKey === undefined) return;
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({animated: true});
+      scrollToBottom(true);
       lastOffsetRef.current = 0;
       setDown(true);
     });
-  }, [bottom, scrollToBottomKey]);
+  }, [scrollToBottom, scrollToBottomKey]);
 
   useEffect(() => {
     onViewportChange?.({start, end, down});
@@ -220,9 +260,9 @@ export function Feed<T>({
   const stickyHeaderStyle = useAnimatedStyle(() => ({
     opacity: headerVisible.value,
     backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base100,
-    paddingTop: topInset,
+    paddingTop: outerHeaderSafeAreaTop,
     transform: [{translateY: (1 - headerVisible.value) * -(72 + topInset)}],
-  }), [stickyHeaderSafeAreaColor, theme.colors.base100, topInset]);
+  }), [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base100, topInset]);
 
   const stickyFooterStyle = useAnimatedStyle(() => ({
     opacity: footerVisible.value,
@@ -235,7 +275,6 @@ export function Feed<T>({
       const indexes = viewableItems
         .map(item => item.index)
         .filter((index): index is number => typeof index === 'number')
-        .map(index => bottom ? items.length - 1 - index : index)
         .sort((a, b) => a - b);
       if (!indexes.length) return;
       const nextStart = indexes[0] ?? 0;
@@ -248,7 +287,7 @@ export function Feed<T>({
       }
 
     },
-    [bottom, items.length, nearBottomThreshold],
+    [items.length, nearBottomThreshold],
   );
 
   const handleScroll = useCallback((event: {nativeEvent: {contentOffset: {y: number}}}) => {
@@ -263,6 +302,18 @@ export function Feed<T>({
   const keyExtractor = useCallback(
     (item: T, index: number) => String(getItemId(item, index)),
     [getItemId],
+  );
+  const renderBottomItem = useCallback(
+    (info: FlashListRenderItemInfo<T>) => (
+      renderItem({
+        item: info.item,
+        index: info.index,
+        extraData: info.extraData,
+        data: items,
+        visible: visible && info.index >= start - 5,
+      })
+    ),
+    [items, renderItem, start, visible],
   );
   const handleEndReached = useCallback(() => {
     if (
@@ -283,17 +334,17 @@ export function Feed<T>({
   const listHeader = useMemo(() => {
     if (!header) return null;
     return (
-      <View className="w-full">
-        {headerSafeArea && topInset > 0 ? (
-          <View
-            pointerEvents="none"
-            style={{height: topInset}}
-          />
-        ) : null}
+      <View
+        className="w-full"
+        style={{
+          backgroundColor: theme.colors.base100,
+          paddingTop: outerHeaderSafeAreaTop,
+        }}
+      >
         {header({...chromeProps, scrolled: false})}
       </View>
     );
-  }, [chromeProps, header, headerSafeArea, topInset]);
+  }, [chromeProps, header, outerHeaderSafeAreaTop, theme.colors.base100]);
 
   const listFooter = useMemo(() => {
     if (!footer) return null;
@@ -310,7 +361,6 @@ export function Feed<T>({
     }
     return empty ? <View className="px-6 py-12">{empty}</View> : null;
   }, [empty, loading]);
-  const ListComponent = bottom ? KeyboardAwareLegendList : LegendList;
   return (
     <View className="relative flex-1">
       {fixedHeader ? (
@@ -330,68 +380,101 @@ export function Feed<T>({
           <Pressable onPress={scrollToTop}>{stickyHeader(chromeProps)}</Pressable>
         </Animated.View>
       ) : null}
-      <ListComponent
-        ref={listRef}
-        data={listItems}
-        keyExtractor={keyExtractor}
-        renderItem={info => {
-          const index = bottom ? items.length - 1 - info.index : info.index;
-          const item = items[index];
-          if (item === undefined) return null;
-          return (
-            renderItem({
-              ...info,
-              item,
-              index,
-              data: items,
-              visible: visible && index >= start - 5,
-            })
-          );
-        }}
-        ListHeaderComponent={listHeader}
-        ListFooterComponent={listFooter}
-        ListEmptyComponent={listEmpty}
-        className="flex-1"
-        contentContainerClassName={contentContainerClassName}
-        alignItemsAtEnd={bottom}
-        keyboardLiftBehavior={bottom ? 'whenAtEnd' : undefined}
-        initialScrollAtEnd={bottom && items.length > 0}
-        maintainVisibleContentPosition={
-          maintainVisibleContentPosition
-            ? bottom
-              ? {size: true, data: true}
-              : true
-            : false
-        }
-        maintainScrollAtEnd={
-          bottom && bottomAutoScroll === true ? {animated: true} : false
-        }
-        maintainScrollAtEndThreshold={0.2}
-        recycleItems
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.35}
-        onStartReached={bottom ? handleEndReached : undefined}
-        onStartReachedThreshold={0.35}
-        onScroll={handleScroll}
-        onViewableItemsChanged={handleViewableItemsChanged}
-        refreshControl={
-          pullToRefresh && onRefresh ? (
-            <RefreshControl
-              colors={[refreshColor]}
-              progressViewOffset={refreshInset}
-              progressBackgroundColor={theme.colors.base200}
-              refreshing={refreshing}
-              tintColor={refreshColor}
-              onRefresh={onRefresh}
-            />
-          ) : undefined
-        }
-        scrollEventThrottle={16}
-        viewabilityConfig={{
-          itemVisiblePercentThreshold: 1,
-          minimumViewTime: 40,
-        }}
-      />
+      {bottom ? (
+        <FlashList
+          ref={bottomListRef}
+          data={items}
+          keyExtractor={keyExtractor}
+          renderItem={renderBottomItem}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          ListEmptyComponent={listEmpty}
+          className="flex-1"
+          contentContainerClassName={contentContainerClassName}
+          inverted
+          initialScrollIndex={items.length ? 0 : undefined}
+          maintainVisibleContentPosition={
+            shouldMaintainVisibleContentPosition
+              ? bottomAutoScroll === true
+                ? {
+                  startRenderingFromBottom: true,
+                  autoscrollToBottomThreshold: 0.2,
+                  animateAutoScrollToBottom: true,
+                }
+                : undefined
+              : {disabled: true}
+          }
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.35}
+          onScroll={handleScroll}
+          onViewableItemsChanged={handleViewableItemsChanged}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={[refreshColor]}
+                progressViewOffset={refreshInset}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          scrollEventThrottle={16}
+        />
+      ) : (
+        <AnimatedLegendList
+          ref={listRef}
+          data={listItems}
+          keyExtractor={keyExtractor}
+          renderItem={info => {
+            const item = items[info.index];
+            if (item === undefined) return null;
+            return (
+              renderItem({
+                ...info,
+                item,
+                data: items,
+                visible: visible && info.index >= start - 5,
+              })
+            );
+          }}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          ListEmptyComponent={listEmpty}
+          className="flex-1"
+          contentContainerClassName={contentContainerClassName}
+          initialScrollAtEnd={false}
+          maintainVisibleContentPosition={
+            shouldMaintainVisibleContentPosition ? true : false
+          }
+          maintainScrollAtEnd={false}
+          maintainScrollAtEndThreshold={0.2}
+          recycleItems
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.35}
+          onScroll={handleScroll}
+          sharedValues={{scrollOffset: scrollY}}
+          onViewableItemsChanged={handleViewableItemsChanged}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={[refreshColor]}
+                progressViewOffset={refreshInset}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          scrollEventThrottle={16}
+          viewabilityConfig={{
+            itemVisiblePercentThreshold: 1,
+            minimumViewTime: 40,
+          }}
+        />
+      )}
       {stickyFooter ? (
         <Animated.View
           pointerEvents="box-none"

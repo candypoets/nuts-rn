@@ -1,10 +1,14 @@
-import React, {memo, useMemo} from 'react';
+import React, {memo, useCallback, useMemo} from 'react';
 import {Linking, Pressable, Text, View} from 'react-native';
 import {Image} from 'expo-image';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {asPreGeneric, fbArray} from '@candypoets/nipworker/utils';
 import {Calendar, CheckCircle2, Play, Radio, Users, Video} from 'lucide-react-native';
-import {formatTimestamp, stringValue} from './kindHelpers';
+import {neventEncode} from 'nostr-tools/nip19';
+import type {RootStackParamList} from '../../navigation/types';
+import {eventTags, formatTimestamp, stringValue, tagValues} from './kindHelpers';
 
 type KindPreGenericContentProps = {
   note: ParsedEvent;
@@ -23,6 +27,7 @@ function statusIcon(status: string) {
 }
 
 function KindPreGenericContentComponent({note}: KindPreGenericContentProps) {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const generic = useMemo(() => asPreGeneric(note), [note]);
   const title = stringValue(generic?.title()) || stringValue(generic?.content());
   const description = stringValue(generic?.description());
@@ -40,6 +45,19 @@ function KindPreGenericContentComponent({note}: KindPreGenericContentProps) {
     : '';
   const currentParticipants = generic?.currentParticipants?.() ?? BigInt(0);
   const label = note.kind() === 34235 ? 'Video' : statusLabel(status);
+  const relays = useMemo(() => tagValues(eventTags(note), 'r'), [note]);
+  const openLiveStream = useCallback(() => {
+    const id = note.id();
+    if (!id) return;
+    navigation.navigate('LiveStream', {
+      nevent: neventEncode({
+        id,
+        author: note.pubkey() || undefined,
+        kind: note.kind(),
+        relays,
+      }),
+    });
+  }, [navigation, note, relays]);
 
   if (!generic || (!title && !streamUrl)) {
     return (
@@ -61,7 +79,11 @@ function KindPreGenericContentComponent({note}: KindPreGenericContentProps) {
       className="mt-2 min-h-[220px] overflow-hidden rounded-lg border border-base-200 bg-slate-950"
       onPress={event => {
         event.stopPropagation();
-        if (streamUrl) Linking.openURL(streamUrl).catch(() => {});
+        if (note.kind() === 30311) {
+          openLiveStream();
+        } else if (streamUrl) {
+          Linking.openURL(streamUrl).catch(() => {});
+        }
       }}
     >
       {image ? (

@@ -9,8 +9,14 @@ import {
   Text,
   View,
   type ViewStyle,
-  useWindowDimensions,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import {useSharedVideoPlayer} from '../../media/videoPlayers';
 import {useUIStore} from '../../stores/uiStore';
 
@@ -21,10 +27,51 @@ export type ImageGridLink = {
   dim?: string | null;
 };
 
+type ImageGridProps = {
+  links: ImageGridLink[];
+  note?: ParsedEvent;
+  containerWidth?: number;
+  className?: string;
+};
+
 const MAX_IMAGE_HEIGHT = 384;
 const IMAGE_GRID_HEIGHT = 192;
 const IMAGE_GRID_GAP = 4;
 const MAX_DISPLAY_LINKS = 6;
+
+export function MediaShimmerPlaceholder() {
+  const viewportWidth = useUIStore(state => state.dimensions.width);
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withRepeat(
+      withTiming(1, {duration: 1200, easing: Easing.inOut(Easing.quad)}),
+      -1,
+      false,
+    );
+  }, [progress]);
+
+  const travelDistance = Math.max(240, viewportWidth);
+  const shimmerStyle = useAnimatedStyle(
+    () => ({
+      opacity: 0.14 + progress.value * 0.08,
+      transform: [
+        {translateX: progress.value * travelDistance - travelDistance * 0.35},
+        {skewX: '-18deg'},
+      ],
+    }),
+    [travelDistance],
+  );
+
+  return (
+    <View pointerEvents="none" style={styles.loadingOverlay}>
+      <View style={styles.shimmerBase}>
+        <View style={styles.shimmerIcon} />
+        <Animated.View style={[styles.shimmerBand, shimmerStyle]} />
+      </View>
+    </View>
+  );
+}
 
 function formatRemaining(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
@@ -138,6 +185,7 @@ function VideoTile({
   const zoomOwnsPlayer = zoomedVideoSrc === src;
   const [firstFrameRendered, setFirstFrameRendered] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [posterLoading, setPosterLoading] = useState(Boolean(poster));
   const [playRequested, setPlayRequested] = useState(autoplay);
   const [muted, setMuted] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -163,6 +211,11 @@ function VideoTile({
       player.currentTime = 0;
     }
   }, [autoplay, player, zoomOwnsPlayer]);
+
+  useEffect(() => {
+    setPosterLoading(Boolean(poster));
+    setFailed(false);
+  }, [poster]);
 
   useEffect(() => {
     const timeSub = player.addListener('timeUpdate', event => {
@@ -203,6 +256,9 @@ function VideoTile({
         handleVideoPress();
       }}
     >
+      {posterLoading && poster && !firstFrameRendered && !failed ? (
+        <MediaShimmerPlaceholder />
+      ) : null}
       {zoomOwnsPlayer ? null : (
         <VideoView
           player={player}
@@ -215,13 +271,18 @@ function VideoTile({
         />
       )}
       {poster && !firstFrameRendered && !failed ? (
-        <Image
-          source={{uri: poster}}
-          contentFit={single ? 'contain' : 'cover'}
-          cachePolicy="memory-disk"
-          style={styles.posterImage}
-          onError={() => setFailed(true)}
-        />
+        <>
+          <Image
+            source={{uri: poster}}
+            contentFit={single ? 'contain' : 'cover'}
+            cachePolicy="memory-disk"
+            style={styles.posterImage}
+            onLoadEnd={() => setPosterLoading(false)}
+            onError={() => {
+              setFailed(true);
+            }}
+          />
+        </>
       ) : null}
       {!playRequested ? (
         <Pressable
@@ -271,6 +332,36 @@ const styles = StyleSheet.create({
     height: '100%',
     width: '100%',
   },
+  loadingOverlay: {
+    bottom: 2,
+    left: 2,
+    overflow: 'hidden',
+    position: 'absolute',
+    right: 2,
+    top: 2,
+  },
+  shimmerBand: {
+    backgroundColor: 'rgba(255, 255, 255, 0.42)',
+    height: '100%',
+    position: 'absolute',
+    width: '28%',
+  },
+  shimmerBase: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(226, 232, 240, 0.56)',
+    height: '100%',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: '100%',
+  },
+  shimmerIcon: {
+    borderColor: 'rgba(100, 116, 139, 0.12)',
+    borderRadius: 10,
+    borderWidth: 2,
+    height: 34,
+    opacity: 0.75,
+    width: 44,
+  },
   posterImage: {
     bottom: 0,
     height: '100%',
@@ -319,8 +410,42 @@ const styles = StyleSheet.create({
   },
 });
 
-export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedEvent}) {
-  const {width} = useWindowDimensions();
+function GridImage({
+  sourceUri,
+  contentFit,
+}: {
+  sourceUri: string;
+  contentFit: 'contain' | 'cover';
+}) {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+  }, [sourceUri]);
+
+  return (
+    <>
+      {loading ? (
+        <MediaShimmerPlaceholder />
+      ) : null}
+      <Image
+        source={{uri: sourceUri}}
+        contentFit={contentFit}
+        cachePolicy="memory-disk"
+        style={styles.fill}
+        onLoadEnd={() => setLoading(false)}
+      />
+    </>
+  );
+}
+
+export function ImageGrid({
+  links,
+  note,
+  containerWidth,
+  className,
+}: ImageGridProps) {
+  const viewportWidth = useUIStore(state => state.dimensions.width);
   const setImageZoom = useUIStore(state => state.setImageZoom);
   const validLinks = useMemo(() => links.filter(link => link.src), [links]);
   const displayLinks = useMemo(
@@ -328,7 +453,7 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
     [validLinks],
   );
   const remainingCount = Math.max(0, validLinks.length - displayLinks.length);
-  const containerWidth = Math.max(160, width - 88);
+  const resolvedContainerWidth = Math.max(160, containerWidth ?? viewportWidth - 88);
 
   useEffect(() => {
     for (const link of displayLinks) {
@@ -341,21 +466,21 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
 
   return (
     <View
-      className="mb-2 overflow-hidden rounded-lg"
-      style={{width: containerWidth}}
+      className={className ?? 'mb-2 overflow-hidden rounded-lg'}
+      style={{width: resolvedContainerWidth}}
     >
       <View
         style={
           displayLinks.length === 1
-            ? {height: getImageHeight(displayLinks[0]?.dim, containerWidth)}
+            ? {height: getImageHeight(displayLinks[0]?.dim, resolvedContainerWidth)}
             : {height: IMAGE_GRID_HEIGHT}
         }
       >
         {displayLinks.map((link, index) => {
           const single = displayLinks.length === 1;
           const tileStyle: ViewStyle = single
-            ? {height: '100%', left: 0, top: 0, width: containerWidth}
-            : getGridTileLayout(displayLinks.length, index, containerWidth);
+            ? {height: '100%', left: 0, top: 0, width: resolvedContainerWidth}
+            : getGridTileLayout(displayLinks.length, index, resolvedContainerWidth);
           const imageUri = link.type === 'video' && link.blurhash ? link.blurhash : link.src;
           const autoplay = link.type === 'video' && (single || index === 0);
           const openZoom = () => {
@@ -402,11 +527,9 @@ export function ImageGrid({links, note}: {links: ImageGridLink[]; note?: ParsedE
                 openZoom();
               }}
             >
-              <Image
-                source={{uri: imageUri}}
+              <GridImage
+                sourceUri={imageUri}
                 contentFit={single ? 'contain' : 'cover'}
-                cachePolicy="memory-disk"
-                style={styles.fill}
               />
               {remainingCount > 0 && index === displayLinks.length - 1 ? (
                 <View className="absolute inset-0 items-center justify-center bg-black/60">

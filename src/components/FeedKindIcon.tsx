@@ -15,7 +15,7 @@ const KIND_ICONS: Record<FeedKind, LucideIcon> = {
   1: FileText,
   6: Repeat2,
   20: Images,
-  34235: Video,
+  22: Video,
   1068: ListChecks,
   30023: Newspaper,
   30311: Radio,

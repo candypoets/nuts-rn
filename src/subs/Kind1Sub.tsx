@@ -990,7 +990,6 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
       stickyHeader={stickyHeader}
       visible={visible}
       loading={false}
-      maintainVisibleContentPosition={false}
       onNearBottom={handleNearBottom}
       removeClippedSubviews={false}
       empty={headerItem ? (

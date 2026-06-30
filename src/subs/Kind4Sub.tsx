@@ -8,7 +8,10 @@ import {
   View,
 } from 'react-native';
 import {useReanimatedKeyboardAnimation} from 'react-native-keyboard-controller';
-import Animated, {interpolate, useAnimatedStyle} from 'react-native-reanimated';
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import {
   type ConnectionStatus,
   Kind4ParsedT,
@@ -404,7 +407,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         visible={visible}
         scrollToBottomKey={scrollToBottomKey}
         bottom
-        bottomAutoScroll
+        bottomAutoScroll="initial"
         fixedHeader={fixedHeader}
         stickyFooter={useKeyboardAccessory ? undefined : stickyFooter}
         stickyFooterVisible={!useKeyboardAccessory}

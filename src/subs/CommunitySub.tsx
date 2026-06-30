@@ -97,7 +97,7 @@ const COMMUNITY_TABS: CommunityTab[] = [
   {id: 'all', kinds: ALL_FEED_KINDS, label: 'All'},
   {id: 'notes', kinds: [1, 6], label: 'Notes'},
   {id: 'polls', kinds: [1068], label: 'Polls'},
-  {id: 'media', kinds: [20, 34235], label: 'Media'},
+  {id: 'media', kinds: [20, 22], label: 'Media'},
   {id: 'articles', kinds: [30023], label: 'Articles'},
 ];
 const COMMUNITY_EMPTY_TIMEOUT_MS = 2400;

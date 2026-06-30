@@ -6,18 +6,12 @@ import React, {
   useState,
 } from 'react';
 import {
-  Animated as RNAnimated,
-  Easing,
   Pressable,
-  ScrollView,
-  StyleSheet,
   Text,
   View,
-  type LayoutChangeEvent,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { BlurView } from 'expo-blur';
 import type {
   ParsedEvent,
   RequestObject,
@@ -34,16 +28,13 @@ import {
   ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import {ComposerFooter} from '../components/ComposerFooter';
 import { Feed } from '../components/Feed';
+import {FeedKindNavigator, type FeedKindTabId} from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
-import { ChevronDown, PenLine, Search } from 'lucide-react-native';
+import { ChevronDown, Search } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
   KIND_LABELS,
@@ -75,24 +66,17 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
-type ExploreKindTabId =
-  | 'all'
-  | 'notes'
-  | 'articles'
-  | 'polls'
-  | 'media'
-  | 'events';
-type ExploreKindTab = {
-  id: ExploreKindTabId;
+const APP_FOOTER_HEIGHT = 56;
+const EXPLORE_KIND_TABS: Array<{
+  id: FeedKindTabId;
   label: string;
   kinds?: FeedKind[];
-};
-const EXPLORE_KIND_TABS: ExploreKindTab[] = [
+}> = [
   {id: 'all', label: 'All'},
   {id: 'notes', label: 'Notes', kinds: [1, 6]},
   {id: 'articles', label: 'Articles', kinds: [30023]},
   {id: 'polls', label: 'Polls', kinds: [1068]},
-  {id: 'media', label: 'Media', kinds: [20, 34235]},
+  {id: 'media', label: 'Media', kinds: [20, 22]},
   {id: 'events', label: 'Events', kinds: [30311]},
 ];
 
@@ -125,7 +109,6 @@ export function ExploreFeed({
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const startRef = useRef(0);
-  const lastSeenTopItemRef = useRef<number | null>(null);
   const rootSubIdRef = useRef<string | null>(null);
   const liveSubIdRef = useRef<string | null>(null);
   const prevPaginationSubIdRef = useRef<string | null>(null);
@@ -150,13 +133,11 @@ export function ExploreFeed({
   const unsubscribeLiveRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
-  const deferredNewItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [newPostsCount, setNewPostsCount] = useState(0);
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
   const loadingRef = useRef(false);
   const refreshingRef = useRef(false);
@@ -212,8 +193,9 @@ export function ExploreFeed({
   const [, setItemsVersion] = useState(0);
 
   const defaultHeader = useCallback(
-    () => (
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <ExploreHeader
+        safeAreaTop={safeAreaTop}
         pubkey={authPubkey}
         relays={feedRelays}
         relayStatuses={relayStatuses}
@@ -235,8 +217,9 @@ export function ExploreFeed({
   );
 
   const defaultStickyHeader = useCallback(
-    () => (
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <ExploreHeader
+        safeAreaTop={safeAreaTop}
         pubkey={authPubkey}
         relays={feedRelays}
         relayStatuses={relayStatuses}
@@ -244,6 +227,8 @@ export function ExploreFeed({
         setSelectedKinds={setSelectedKinds}
         selectedPacks={selectedPacks}
         showKindIndicators={false}
+        showKindSelector
+        showRelayList={false}
         surfaceClassName="bg-base-100"
       />
     ),
@@ -333,16 +318,13 @@ export function ExploreFeed({
     itemsRef.current = [];
     seenIdsRef.current.clear();
     startRef.current = 0;
-    lastSeenTopItemRef.current = null;
     untilRef.current = undefined;
     paginationCounterRef.current = 0;
     setHasMore(true);
     itemsBeforePaginationRef.current = 0;
     prevPaginationSubIdRef.current = null;
     rootSubIdRef.current = null;
-    setNewPostsCount(0);
     pendingItemsRef.current = [];
-    deferredNewItemsRef.current = [];
     connectionTrackerRef.current.reset();
     setItemsVersion(version => version + 1);
   }, []);
@@ -383,35 +365,10 @@ export function ExploreFeed({
     if (!pending.length) return;
     pendingItemsRef.current = [];
 
-    const headCreatedAt = itemsRef.current[0]?.createdAt() ?? 0;
-    const nearTop = startRef.current === 0;
-    const deferred =
-      !nearTop && lastSeenTopItemRef.current !== null
-        ? pending.filter(event => event.createdAt() > headCreatedAt)
-        : [];
-    const immediate =
-      deferred.length > 0
-        ? pending.filter(event => event.createdAt() <= headCreatedAt)
-        : pending;
-
-    if (immediate.length > 0) {
-      itemsRef.current = [...itemsRef.current, ...immediate].sort(
-        (left, right) => right.createdAt() - left.createdAt(),
-      );
-    }
-    if (nearTop) {
-      lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
-      setNewPostsCount(0);
-    } else if (deferred.length > 0) {
-      deferredNewItemsRef.current = [
-        ...deferredNewItemsRef.current,
-        ...deferred,
-      ].sort((left, right) => right.createdAt() - left.createdAt());
-      setNewPostsCount(count => count + deferred.length);
-    }
-    if (immediate.length > 0) {
-      setItemsVersion(version => version + 1);
-    }
+    itemsRef.current = [...itemsRef.current, ...pending].sort(
+      (left, right) => right.createdAt() - left.createdAt(),
+    );
+    setItemsVersion(version => version + 1);
   }, []);
 
   const scheduleCommitPendingItems = useCallback(() => {
@@ -757,40 +714,9 @@ export function ExploreFeed({
     };
   }, [canStartExplore, enabled, feedKey, followsReadyForExplore, visible]);
 
-  const mergePendingItems = useCallback(() => {
-    const deferred = deferredNewItemsRef.current;
-    if (deferred.length > 0) {
-      deferredNewItemsRef.current = [];
-      itemsRef.current = [...itemsRef.current, ...deferred].sort(
-        (left, right) => right.createdAt() - left.createdAt(),
-      );
-      setItemsVersion(version => version + 1);
-    }
-    setNewPostsCount(0);
-    lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
-  }, []);
-
-  const renderNewNotesBanner = useCallback(
-    ({ scrollToTop }: { scrollToTop: () => void }) =>
-      newPostsCount > 0 ? (
-        <NewNotesBanner
-          count={newPostsCount}
-          onPress={() => {
-            mergePendingItems();
-            scrollToTop();
-          }}
-        />
-      ) : null,
-    [mergePendingItems, newPostsCount],
-  );
-
   const handleViewportChange = useCallback(
     ({ start }: { start: number; end: number; down: boolean }) => {
       startRef.current = start;
-      if (start === 0) {
-        lastSeenTopItemRef.current = itemsRef.current[0]?.createdAt() ?? null;
-        setNewPostsCount(0);
-      }
     },
     [],
   );
@@ -830,7 +756,7 @@ export function ExploreFeed({
         header={listHeader}
         pullToRefresh
         stickyHeader={stickyHeader ?? defaultStickyHeader}
-        fixedHeader={renderNewNotesBanner}
+        headerOwnsSafeArea
         stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
         loading={loading || refreshing}
@@ -840,51 +766,19 @@ export function ExploreFeed({
         onViewportChange={handleViewportChange}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}
-        contentContainerClassName="pb-28"
+        contentContainerClassName="pb-44"
       />
     </View>
   );
 }
 
 function ExploreComposerFooter() {
-  const theme = useAppTheme();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const openPost = useCallback(() => navigation.navigate('Post'), [navigation]);
-
-  return (
-    <View className="items-end px-4">
-      <Pressable
-        hitSlop={8}
-        onPress={openPost}
-        style={[
-          styles.composerButton,
-          {
-            backgroundColor: `${theme.colors.primary}4D`,
-            borderColor: `${theme.colors.primary}CC`,
-          },
-        ]}
-      >
-        <BlurView
-          intensity={36}
-          tint="dark"
-          style={[
-            styles.composerBlur,
-            { backgroundColor: `${theme.colors.primary}26` },
-          ]}
-        >
-          <PenLine size={17} color="#ffffff" strokeWidth={2.1} />
-          <Text style={[styles.composerText, { color: '#ffffff' }]}>
-            What's up?
-          </Text>
-        </BlurView>
-      </Pressable>
-    </View>
-  );
+  return <ComposerFooter bottomOffset={APP_FOOTER_HEIGHT + 8} floating={false} />;
 }
 
 function ExploreHeader({
   mini = false,
+  safeAreaTop = 0,
   pubkey,
   relayStatuses,
   relays,
@@ -893,9 +787,11 @@ function ExploreHeader({
   selectedPacks,
   showKindIndicators = true,
   showKindSelector = false,
+  showRelayList = true,
   surfaceClassName,
 }: {
   mini?: boolean;
+  safeAreaTop?: number;
   pubkey: string | null;
   relayStatuses: Record<string, string>;
   relays: string[];
@@ -904,6 +800,7 @@ function ExploreHeader({
   selectedPacks: FeedPackSelection[];
   showKindIndicators?: boolean;
   showKindSelector?: boolean;
+  showRelayList?: boolean;
   surfaceClassName: string;
 }) {
   const visibleKinds =
@@ -912,7 +809,10 @@ function ExploreHeader({
       : [];
 
   return (
-    <View className={mini ? 'border-b border-base-200 bg-base-100/95' : ''}>
+    <View
+      className={mini ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}
+      style={mini && safeAreaTop > 0 ? {paddingTop: safeAreaTop} : undefined}
+    >
       <View
         className={
           mini
@@ -921,6 +821,7 @@ function ExploreHeader({
                 showKindSelector ? 'pb-0' : 'pb-3'
               }`
         }
+        style={!mini && safeAreaTop > 0 ? {paddingTop: safeAreaTop + 12} : undefined}
       >
         <View
           className={
@@ -949,158 +850,24 @@ function ExploreHeader({
             />
           </View>
         </View>
-        <HeaderRelaysList
-          relays={relays}
-          statuses={relayStatuses}
-          mini={mini}
-        />
+        {showRelayList ? (
+          <HeaderRelaysList
+            relays={relays}
+            statuses={relayStatuses}
+            mini={mini}
+          />
+        ) : null}
         {showKindSelector ? (
           <View className="mt-4">
-            <ExploreKindSelector
+            <FeedKindNavigator
               selectedKinds={selectedKinds}
               onSelectKinds={setSelectedKinds}
+              tabs={EXPLORE_KIND_TABS}
+              deferSelection
             />
           </View>
         ) : null}
       </View>
-    </View>
-  );
-}
-
-function sameKinds(left: FeedKind[], right: FeedKind[]) {
-  if (left.length !== right.length) return false;
-  return left.every((kind, index) => kind === right[index]);
-}
-
-function selectedExploreKindTab(selectedKinds: FeedKind[]): ExploreKindTabId {
-  if (
-    selectedKinds.length === 0 ||
-    sameKinds(selectedKinds, ALL_FEED_KINDS)
-  ) {
-    return 'all';
-  }
-
-  return (
-    EXPLORE_KIND_TABS.find(tab =>
-      tab.kinds ? sameKinds(selectedKinds, tab.kinds) : false,
-    )?.id ?? 'all'
-  );
-}
-
-function ExploreKindSelector({
-  selectedKinds,
-  onSelectKinds,
-}: {
-  selectedKinds: FeedKind[];
-  onSelectKinds: (kinds: FeedKind[]) => void;
-}) {
-  const selectedId = selectedExploreKindTab(selectedKinds);
-
-  return (
-    <View className="w-full">
-      <ExploreSegmentedTabs
-        tabs={EXPLORE_KIND_TABS}
-        selectedId={selectedId}
-        onSelect={id => {
-          const tab = EXPLORE_KIND_TABS.find(item => item.id === id);
-          onSelectKinds(tab?.kinds ?? []);
-        }}
-      />
-    </View>
-  );
-}
-
-function ExploreSegmentedTabs<T extends string>({
-  tabs,
-  selectedId,
-  onSelect,
-}: {
-  tabs: Array<{id: T; label: string}>;
-  selectedId: T;
-  onSelect: (id: T) => void;
-}) {
-  const [tabLayouts, setTabLayouts] = useState<
-    Partial<Record<T, {x: number; width: number}>>
-  >({});
-  const underlineX = useRef(new RNAnimated.Value(0)).current;
-  const underlineWidth = useRef(new RNAnimated.Value(0)).current;
-  const selectedLayout = tabLayouts[selectedId];
-
-  const handleTabLayout = useCallback(
-    (id: T, event: LayoutChangeEvent) => {
-      const {x, width} = event.nativeEvent.layout;
-      setTabLayouts(current => {
-        const previous = current[id];
-        if (
-          previous &&
-          Math.abs(previous.x - x) < 0.5 &&
-          Math.abs(previous.width - width) < 0.5
-        ) {
-          return current;
-        }
-        return {...current, [id]: {x, width}};
-      });
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!selectedLayout) return;
-    RNAnimated.parallel([
-      RNAnimated.timing(underlineX, {
-        toValue: selectedLayout.x,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-      RNAnimated.timing(underlineWidth, {
-        toValue: selectedLayout.width,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-    ]).start();
-  }, [selectedLayout, underlineWidth, underlineX]);
-
-  return (
-    <View className="relative w-full">
-      <ScrollView
-        horizontal
-        bounces={false}
-        showsHorizontalScrollIndicator={false}
-        contentContainerClassName="flex-row"
-      >
-        <RNAnimated.View
-          className="absolute bottom-0 left-0 h-0.5 rounded-full bg-primary"
-          style={{
-            width: underlineWidth,
-            transform: [{translateX: underlineX}],
-          }}
-        />
-        {tabs.map(tab => {
-          const selected = tab.id === selectedId;
-          return (
-            <Pressable
-              key={tab.id}
-              accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
-              accessibilityState={{selected}}
-              className="h-11 min-w-20 items-center justify-center px-3 pb-2 pt-1"
-              onLayout={event => handleTabLayout(tab.id, event)}
-              onPress={() => {
-                if (!selected) onSelect(tab.id);
-              }}
-            >
-              <Text
-                className={`text-base font-semibold ${
-                  selected ? 'text-base-content' : 'text-base-content/60'
-                }`}
-              >
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
     </View>
   );
 }
@@ -1230,85 +997,6 @@ function hashKey(value: string) {
   return hash.toString(36);
 }
 
-const styles = StyleSheet.create({
-  composerButton: {
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-  },
-  composerBlur: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  composerText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  newNotesButton: {
-    borderColor: 'rgba(255, 255, 255, 0.72)',
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-  },
-  newNotesBlur: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-  },
-  newNotesText: {
-    color: '#334155',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-});
-
 function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
-}
-
-function NewNotesBanner({
-  count,
-  onPress,
-}: {
-  count: number;
-  onPress: () => void;
-}) {
-  const shown = useSharedValue(0);
-
-  useEffect(() => {
-    shown.value = withTiming(1, { duration: 180 });
-  }, [shown]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: shown.value,
-    transform: [{ translateY: -36 + shown.value * 36 }],
-  }));
-
-  return (
-    <Animated.View
-      pointerEvents="box-none"
-      className="items-center pt-3"
-      style={style}
-    >
-      <Pressable hitSlop={8} onPress={onPress} style={styles.newNotesButton}>
-        <BlurView intensity={30} tint="light" style={styles.newNotesBlur}>
-          <Text style={styles.newNotesText}>
-            {count} new {count === 1 ? 'note' : 'notes'}
-          </Text>
-        </BlurView>
-      </Pressable>
-    </Animated.View>
-  );
 }

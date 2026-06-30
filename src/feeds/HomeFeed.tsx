@@ -611,8 +611,9 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   );
 
   const renderHeader = useCallback(
-    () => (
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <HomeHeader
+        safeAreaTop={safeAreaTop}
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={walletMintUrls}
@@ -635,8 +636,9 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   );
 
   const renderStickyHeader = useCallback(
-    () => (
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <HomeHeader
+        safeAreaTop={safeAreaTop}
         viewHidden={viewHidden}
         pubkey={authPubkey}
         mintUrls={[]}
@@ -663,11 +665,12 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       <Feed
         items={[]}
         header={renderHeader}
+        headerOwnsSafeArea
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<LoggedOutHome />}
-        contentContainerClassName="pb-28"
+        contentContainerClassName="pb-44"
       />
     );
   }
@@ -677,11 +680,12 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       <Feed
         items={[]}
         header={renderHeader}
+        headerOwnsSafeArea
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<ReadOnlyWalletStub />}
-        contentContainerClassName="pb-28"
+        contentContainerClassName="pb-44"
       />
     );
   }
@@ -692,6 +696,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       getItemId={item => item.id}
       pullToRefresh
       header={renderHeader}
+      headerOwnsSafeArea
       stickyHeader={renderStickyHeader}
       renderItem={({ item }) => (
         <WalletActivityRow activity={item} currentPubkey={authPubkey} />
@@ -701,13 +706,14 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       onRefresh={handleRefresh}
       onChromeVisibilityChange={onChromeVisibilityChange}
       empty={<EmptyWalletStub />}
-      contentContainerClassName="pb-28"
+      contentContainerClassName="pb-44"
     />
   );
 }
 
 function HomeHeader({
   compact = false,
+  safeAreaTop = 0,
   viewHidden,
   pubkey,
   mintUrls,
@@ -719,6 +725,7 @@ function HomeHeader({
   readOnly = false,
 }: {
   compact?: boolean;
+  safeAreaTop?: number;
   viewHidden: boolean;
   pubkey: string | null;
   mintUrls: string[];
@@ -739,11 +746,13 @@ function HomeHeader({
       className={`${
         compact ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'
       }`}
+      style={compact && safeAreaTop > 0 ? {paddingTop: safeAreaTop} : undefined}
     >
       <View
         className={`${
           compact ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'
         }`}
+        style={!compact && safeAreaTop > 0 ? {paddingTop: safeAreaTop + 12} : undefined}
       >
         <View className="h-14 flex-row items-center justify-between">
           <Text className="text-2xl font-semibold text-base-content">Home</Text>

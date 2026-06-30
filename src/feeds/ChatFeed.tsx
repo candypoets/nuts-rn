@@ -361,8 +361,9 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
     navigation.navigate('NewChat');
   }, [navigation]);
   const header = useCallback(
-    () => (
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <ChatHeader
+        safeAreaTop={safeAreaTop}
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
@@ -379,8 +380,9 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
   );
 
   const stickyHeader = useCallback(
-    () => (
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <ChatHeader
+        safeAreaTop={safeAreaTop}
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
@@ -427,6 +429,7 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
       getItemId={item => item.chatId}
       pullToRefresh
       header={header}
+      headerOwnsSafeArea
       stickyHeader={stickyHeader}
       renderItem={({item}) => (
         <ChatRow
@@ -439,13 +442,14 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
       onRefresh={handleRefresh}
       onChromeVisibilityChange={onChromeVisibilityChange}
       empty={empty}
-      contentContainerClassName="pb-28"
+      contentContainerClassName="pb-44"
     />
   );
 }
 
 function ChatHeader({
   activeTab,
+  safeAreaTop = 0,
   messagesCount,
   requestsCount,
   onSelectTab,
@@ -453,6 +457,7 @@ function ChatHeader({
   sticky = false,
 }: {
   activeTab: ChatListTab;
+  safeAreaTop?: number;
   messagesCount: number;
   requestsCount: number;
   onSelectTab: (tab: ChatListTab) => void;
@@ -461,8 +466,14 @@ function ChatHeader({
 }) {
   const theme = useAppTheme();
   return (
-    <View className={`${sticky ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}`}>
-      <View className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}>
+    <View
+      className={`${sticky ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}`}
+      style={sticky && safeAreaTop > 0 ? {paddingTop: safeAreaTop} : undefined}
+    >
+      <View
+        className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}
+        style={!sticky && safeAreaTop > 0 ? {paddingTop: safeAreaTop + 12} : undefined}
+      >
         <View className="h-14 flex-row items-center justify-between">
           <Text className="text-2xl font-bold text-base-content">Messages</Text>
           <Pressable

@@ -46,34 +46,78 @@ function hexToRgbChannels(hex: string) {
   const normalized = hex.replace('#', '').slice(0, 6);
   const value = Number.parseInt(normalized, 16);
   if (!Number.isFinite(value)) return '0 0 0';
-  return `${(value >> 16) & 255} ${(value >> 8) & 255} ${value & 255}`;
+  const { red, green, blue } = parseHexRgb(hex);
+  return `${red} ${green} ${blue}`;
 }
 
 function isDarkHex(hex: string) {
-  return getHexLuminance(hex) < 140;
+  return getHexPerceivedLuminance(hex) < 140;
 }
 
-function getHexLuminance(hex: string) {
+function parseHexRgb(hex: string) {
   const normalized = hex.replace('#', '').slice(0, 6);
   const value = Number.parseInt(normalized, 16);
-  if (!Number.isFinite(value)) return 0;
-  const red = (value >> 16) & 255;
-  const green = (value >> 8) & 255;
-  const blue = value & 255;
+  if (!Number.isFinite(value)) return { red: 0, green: 0, blue: 0 };
+  return {
+    red: Math.floor(value / 65536) % 256,
+    green: Math.floor(value / 256) % 256,
+    blue: value % 256,
+  };
+}
+
+function getHexPerceivedLuminance(hex: string) {
+  const { red, green, blue } = parseHexRgb(hex);
   return (red * 299 + green * 587 + blue * 114) / 1000;
 }
 
+function getHexRelativeLuminance(hex: string) {
+  const { red, green, blue } = parseHexRgb(hex);
+  const channels = [red, green, blue].map(channel => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function getContrastRatio(foreground: string, background: string) {
+  const foregroundLuminance = getHexRelativeLuminance(foreground);
+  const backgroundLuminance = getHexRelativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function readableTextColor(background: string) {
+  const darkText = '#111827';
+  const lightText = '#f8fafc';
+  return getContrastRatio(darkText, background) >= getContrastRatio(lightText, background)
+    ? darkText
+    : lightText;
+}
+
+function ensureReadableTextColor(foreground: string, background: string, fallback?: string) {
+  if (getContrastRatio(foreground, background) >= 4.5) {
+    return foreground;
+  }
+  if (fallback && getContrastRatio(fallback, background) >= 4.5) {
+    return fallback;
+  }
+  return readableTextColor(background);
+}
+
 function getBaseContentColor(theme: AppTheme) {
-  return isDarkHex(theme.colors.base100) ? '#ffffff' : '#1a1a1a';
+  return readableTextColor(theme.colors.base100);
 }
 
 function getMutedContentColor(theme: AppTheme) {
-  return theme.colors.primaryContent;
+  return ensureReadableTextColor(theme.colors.primaryContent, theme.colors.base100);
 }
 
 function getOrderedBaseColors(colors: AppThemeColors) {
-  const base100Luminance = getHexLuminance(colors.base100);
-  const base300Luminance = getHexLuminance(colors.base300);
+  const base100Luminance = getHexPerceivedLuminance(colors.base100);
+  const base300Luminance = getHexPerceivedLuminance(colors.base300);
   const shouldBase300BeDarker = isDarkHex(colors.base100);
   const isOrdered = shouldBase300BeDarker
     ? base300Luminance < base100Luminance
@@ -92,98 +136,98 @@ function getOrderedBaseColors(colors: AppThemeColors) {
 
 const builtInThemeColors: Record<AppThemeId, AppThemeColors> = {
   touchgrass: {
-    primary: '#158777',
-    primaryContent: '#9b9ea4',
-    secondary: '#D926AA',
-    secondaryContent: '#c1cad6',
+    primary: '#137568',
+    primaryContent: '#52616f',
+    secondary: '#b7318f',
+    secondaryContent: '#475569',
     base100: '#f9fafb',
     base200: '#f2f2f3',
     base300: '#f8fdfd',
-    accent: '#6d28d9',
+    accent: '#5b35b1',
     neutral: '#2a323c',
-    info: '#00b5ff',
-    success: '#00a96e',
-    warning: '#ffbe00',
-    error: '#ff5861',
+    info: '#2563eb',
+    success: '#168456',
+    warning: '#b7791f',
+    error: '#dc2626',
     highlight: '#ffffff',
   },
   nightsky: {
     primary: '#1fb092',
-    primaryContent: '#48505a',
-    secondary: '#D926AA',
-    secondaryContent: '#c1cad6',
+    primaryContent: '#d3dce7',
+    secondary: '#b7318f',
+    secondaryContent: '#d3dce7',
     base100: '#1f2937',
     base200: '#2a3442',
     base300: '#101722',
-    accent: '#c19bfd',
+    accent: '#9f7aea',
     neutral: '#2a323c',
-    info: '#00b5ff',
-    success: '#00a96e',
-    warning: '#ffbe00',
-    error: '#ff5861',
+    info: '#38bdf8',
+    success: '#34d399',
+    warning: '#fbbf24',
+    error: '#f87171',
     highlight: '#000000',
   },
   matteblack: {
     primary: '#1fb092',
-    primaryContent: '#a0a0a0',
+    primaryContent: '#d1d5db',
     secondary: '#333333',
-    secondaryContent: '#b0b0b0',
+    secondaryContent: '#d1d5db',
     base100: '#111111',
     base200: '#242424',
     base300: '#181818',
-    accent: '#a855f7',
+    accent: '#7c3aed',
     neutral: '#1a1a1a',
-    info: '#4d4d4d',
-    success: '#00ff66',
-    warning: '#cc6600',
-    error: '#990000',
+    info: '#60a5fa',
+    success: '#22c55e',
+    warning: '#f59e0b',
+    error: '#ef4444',
     highlight: '#333333',
   },
   snowwhite: {
-    primary: '#158777',
-    primaryContent: '#e0e0e0',
+    primary: '#137568',
+    primaryContent: '#475569',
     secondary: '#d4d4d4',
     secondaryContent: '#343434',
-    base100: '#e8e8e8',
-    base200: '#f8f8f8',
+    base100: '#f8fafc',
+    base200: '#eef2f7',
     base300: '#ffffff',
-    accent: '#3366ff',
+    accent: '#3454d1',
     neutral: '#f0f0f0',
-    info: '#99ddff',
-    success: '#aaffaa',
-    warning: '#ffdd99',
-    error: '#ff9999',
-    highlight: '#d4d4d4',
+    info: '#2563eb',
+    success: '#15803d',
+    warning: '#b45309',
+    error: '#dc2626',
+    highlight: '#e2e8f0',
   },
   downfox: {
-    primary: '#ADD8E6',
-    primaryContent: '#999999',
+    primary: '#7cc8dd',
+    primaryContent: '#d9e7f2',
     secondary: '#282828',
-    secondaryContent: '#b3b3b3',
+    secondaryContent: '#d9e7f2',
     base100: '#00213f',
     base200: '#161616',
     base300: '#1f2a3d',
     accent: '#f7931a',
     neutral: '#141414',
-    info: '#336699',
-    success: '#004d00',
-    warning: '#996600',
-    error: '#660000',
+    info: '#60a5fa',
+    success: '#22c55e',
+    warning: '#f59e0b',
+    error: '#ef4444',
     highlight: '#282828',
   },
   sunset: {
-    primary: '#ff6347',
-    primaryContent: '#f5f5dc',
-    secondary: '#ffb347',
-    secondaryContent: '#4a4a4a',
+    primary: '#b94738',
+    primaryContent: '#5f4934',
+    secondary: '#d8842b',
+    secondaryContent: '#4a3828',
     base100: '#f4e4bc',
     base200: '#e8d5a8',
-    base300: '#f7f2f3d9',
-    accent: '#1e90ff',
-    neutral: '#daa520',
-    info: '#87ceeb',
-    success: '#32cd32',
-    warning: '#ffa500',
+    base300: '#fff8ea',
+    accent: '#2563eb',
+    neutral: '#9a6b22',
+    info: '#2563eb',
+    success: '#15803d',
+    warning: '#b45309',
     error: '#dc143c',
     highlight: '#ffe4b5',
   },
@@ -202,9 +246,16 @@ function createAppTheme(id: AppThemeId): AppTheme {
   const sourceColors = builtInThemeColors[id];
   const colors = getOrderedBaseColors({
     ...sourceColors,
-    primaryContent: isDarkHex(sourceColors.base100)
-      ? sourceColors.primaryContent
-      : '#52616f',
+    primaryContent: ensureReadableTextColor(
+      sourceColors.primaryContent,
+      sourceColors.base100,
+      isDarkHex(sourceColors.base100) ? '#d1d5db' : '#52616f',
+    ),
+    secondaryContent: ensureReadableTextColor(
+      sourceColors.secondaryContent,
+      sourceColors.base300,
+      isDarkHex(sourceColors.base300) ? '#d1d5db' : '#475569',
+    ),
   });
 
   return {
@@ -215,22 +266,22 @@ function createAppTheme(id: AppThemeId): AppTheme {
       primary: {
         background: colors.primary,
         border: colors.primary,
-        text: '#ffffff',
+        text: readableTextColor(colors.primary),
       },
       secondary: {
         background: colors.base300,
         border: colors.base200,
-        text: colors.secondaryContent,
+        text: ensureReadableTextColor(colors.secondaryContent, colors.base300),
       },
       info: {
         background: colors.accent,
         border: colors.accent,
-        text: '#ffffff',
+        text: readableTextColor(colors.accent),
       },
       disabled: {
         background: colors.base200,
         border: colors.base200,
-        text: colors.primaryContent,
+        text: ensureReadableTextColor(colors.primaryContent, colors.base200),
       },
     },
   };
@@ -288,4 +339,8 @@ export function getAppThemeVars(theme: AppTheme) {
 export function useAppTheme() {
   const themeId = useUIStore(state => state.themeId);
   return getAppTheme(themeId);
+}
+
+export function isAppThemeDark(theme: AppTheme) {
+  return isDarkHex(theme.colors.base100);
 }

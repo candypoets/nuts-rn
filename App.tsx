@@ -7,9 +7,10 @@ import {
   Easing,
   Keyboard,
   Platform,
+  Pressable,
   StatusBar,
   StyleSheet,
-  useColorScheme,
+  Text,
   useWindowDimensions,
   View,
   type KeyboardEvent,
@@ -21,6 +22,7 @@ import {
   NavigationContainer,
   useIsFocused,
 } from '@react-navigation/native';
+import {BlurView} from 'expo-blur';
 import {
   createNativeStackNavigator,
   type NativeStackScreenProps,
@@ -31,7 +33,8 @@ import {
   configureReanimatedLogger,
   useSharedValue,
 } from 'react-native-reanimated';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {Home, MessageCircle, SquareStack} from 'lucide-react-native';
 import type { NostrManagerLike } from '@candypoets/nipworker';
 import {MintQuoteState, Wallet as CashuWallet} from '@cashu/cashu-ts';
 import {
@@ -72,7 +75,7 @@ import {
   ThemeModal,
   WalletModal,
 } from './src/modals';
-import { CommunitySub, Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, NotificationsSub, TagsSub } from './src/subs';
+import { CommunitySub, Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, LiveStreamSub, NotificationsSub, TagsSub } from './src/subs';
 import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
 import { CarouselAnimator } from './src/components/CarouselAnimator';
 import { ImageZoom } from './src/components/ImageZoom';
@@ -80,7 +83,7 @@ import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
 import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
-import { getAppThemeVars, useAppTheme } from './src/theme';
+import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
 
 enableScreens(true);
 enableFreeze(true);
@@ -91,11 +94,12 @@ configureReanimatedLogger({
 });
 
 type RouteId = 'home' | 'explore' | 'chat';
-const ROUTES: Array<{ id: RouteId; label: string }> = [
-  { id: 'home', label: 'Home' },
-  { id: 'explore', label: 'Explore' },
-  { id: 'chat', label: 'Chat' },
+const ROUTES: Array<{ id: RouteId; label: string; footerLabel: string }> = [
+  { id: 'home', label: 'Home', footerLabel: 'Home' },
+  { id: 'explore', label: 'Explore', footerLabel: 'Feed' },
+  { id: 'chat', label: 'Chat', footerLabel: 'Chats' },
 ];
+const APP_FOOTER_HEIGHT = 56;
 
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
 const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
@@ -157,8 +161,8 @@ async function retryMintNetworkCall<T>(
 }
 
 function App() {
-  const isDarkMode = useColorScheme() === 'dark';
   const theme = useAppTheme();
+  const isDarkMode = isAppThemeDark(theme);
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const [manager, setManagerInstance] = useState<NostrManagerLike | null>(null);
   const keyboardResizeStyle = useKeyboardResizeStyle();
@@ -332,6 +336,11 @@ function RootNavigator({
           name="Kind30023Thread"
           component={Kind30023ThreadScreen}
           options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
+          name="LiveStream"
+          component={LiveStreamScreen}
+          options={{ presentation: 'modal', gestureEnabled: true }}
         />
         <NativeStack.Screen
           name="Kind1111Comments"
@@ -772,6 +781,7 @@ function MainTabs({
     (nextVisible: boolean) => setRouteChromeVisible('chat', nextVisible),
     [setRouteChromeVisible],
   );
+  const footerVisible = chromeVisibleByRoute[activeRoute.id];
 
   return (
     <View
@@ -821,9 +831,148 @@ function MainTabs({
           </FeedPage>
         )}
       />
+      <MainFooter
+        activeRouteId={activeRoute.id}
+        routes={ROUTES}
+        visible={footerVisible}
+        onSelectRoute={routeId => {
+          const index = ROUTES.findIndex(route => route.id === routeId);
+          if (index >= 0) changeRouteIndex(index);
+        }}
+      />
     </View>
   );
 }
+
+function MainFooter({
+  activeRouteId,
+  routes,
+  visible,
+  onSelectRoute,
+}: {
+  activeRouteId: RouteId;
+  routes: typeof ROUTES;
+  visible: boolean;
+  onSelectRoute: (routeId: RouteId) => void;
+}) {
+  const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const visibility = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const darkMaterial =
+    theme.id === 'nightsky' ||
+    theme.id === 'matteblack' ||
+    theme.id === 'downfox';
+
+  useEffect(() => {
+    Animated.timing(visibility, {
+      toValue: visible ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visibility, visible]);
+
+  const animatedStyle = {
+    opacity: visibility,
+    transform: [
+      {
+        translateY: visibility.interpolate({
+          inputRange: [0, 1],
+          outputRange: [APP_FOOTER_HEIGHT + insets.bottom + 12, 0],
+        }),
+      },
+    ],
+  };
+
+  return (
+    <Animated.View
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[
+        styles.mainFooter,
+        animatedStyle,
+        {
+          backgroundColor: `${theme.colors.base100}F2`,
+          borderTopColor: `${theme.colors.primary}33`,
+          paddingBottom: Math.max(insets.bottom - 18, 0),
+        },
+      ]}
+    >
+      {Platform.OS === 'ios' ? (
+        <>
+          <BlurView
+            intensity={70}
+            tint={darkMaterial ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {backgroundColor: `${theme.colors.base100}CC`},
+            ]}
+          />
+        </>
+      ) : null}
+      {routes.map(route => {
+        const active = route.id === activeRouteId;
+        const color = active ? theme.colors.primary : theme.colors.primaryContent;
+        return (
+          <Pressable
+            key={route.id}
+            accessibilityRole="tab"
+            accessibilityLabel={route.footerLabel}
+            accessibilityState={{selected: active}}
+            hitSlop={8}
+            style={styles.mainFooterItem}
+            onPress={() => onSelectRoute(route.id)}
+          >
+            <FooterIcon routeId={route.id} active={active} color={color} />
+            <Text
+              style={[
+                styles.mainFooterText,
+                {
+                  color,
+                  opacity: active ? 1 : 0.62,
+                },
+              ]}
+            >
+              {route.footerLabel}
+            </Text>
+            <View
+              style={[
+                styles.mainFooterDot,
+                {
+                  backgroundColor: active ? theme.colors.primary : 'transparent',
+                },
+              ]}
+            />
+          </Pressable>
+        );
+      })}
+    </Animated.View>
+  );
+}
+
+function FooterIcon({
+  routeId,
+  active,
+  color,
+}: {
+  routeId: RouteId;
+  active: boolean;
+  color: string;
+}) {
+  const commonProps = {
+    color,
+    size: 26,
+    strokeWidth: active ? 2.4 : 2,
+  };
+
+  if (routeId === 'home') return <Home {...commonProps} />;
+  if (routeId === 'chat') return <MessageCircle {...commonProps} />;
+  return <SquareStack {...commonProps} />;
+}
+
 function useAuthValue() {
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
@@ -1168,6 +1317,19 @@ function Kind30023ThreadScreen({
   );
 }
 
+function LiveStreamScreen({
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'LiveStream'>) {
+  const isFocused = useIsFocused();
+
+  return (
+    <LiveStreamSub
+      nevent={route.params.nevent}
+      visible={isFocused}
+    />
+  );
+}
+
 function Kind1111CommentsScreen({
   navigation,
   route,
@@ -1222,6 +1384,40 @@ const styles = StyleSheet.create({
   navigator: {
     flex: 1,
     overflow: 'hidden',
+  },
+  mainFooter: {
+    alignItems: 'flex-start',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    bottom: 0,
+    elevation: 30,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    left: 0,
+    minHeight: APP_FOOTER_HEIGHT,
+    paddingTop: 7,
+    position: 'absolute',
+    right: 0,
+    shadowColor: '#020617',
+    shadowOffset: {width: 0, height: -8},
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    zIndex: 60,
+  },
+  mainFooterItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 1,
+    justifyContent: 'center',
+  },
+  mainFooterText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  mainFooterDot: {
+    borderRadius: 999,
+    height: 7,
+    marginTop: 1,
+    width: 7,
   },
   page: {
     flex: 1,

@@ -211,6 +211,7 @@ export function SendModal({onClose}: SendModalProps) {
         getItemId={item => item.pubkey}
         header={renderHeader}
         headerSafeArea
+        disableMaintainVisibleContentPosition
         renderItem={({item, index}) => (
           <ContactRow
             contact={item}

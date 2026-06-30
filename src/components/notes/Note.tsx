@@ -77,6 +77,10 @@ function isUserEntity(entity?: string | null) {
   return !!entity?.match(/n(profile|pub)/);
 }
 
+function isMediaEventKind(kind?: number) {
+  return kind === 20 || kind === 22;
+}
+
 function sameStringArray(left: string[], right: string[]) {
   return (
     left.length === right.length &&
@@ -469,7 +473,7 @@ function NoteComponent({
       return;
     }
     if (!effectiveId) return;
-    if (displayNote?.kind() === 20) return;
+    if (isMediaEventKind(displayNote?.kind())) return;
     const kind = displayNote?.kind() || 1;
     const nevent = neventEncode({
       id: displayId,
@@ -612,7 +616,7 @@ function NoteComponent({
   );
   const contentOverride = useMemo(() => {
     if (!displayNote) return null;
-    if (displayNote.kind() === 20) {
+    if (isMediaEventKind(displayNote.kind())) {
       return <Kind20Content note={displayNote} />;
     }
     if (displayNote.kind() === 1068) {
@@ -621,16 +625,16 @@ function NoteComponent({
     if (displayNote.kind() === 30023) {
       return <Kind30023Content note={displayNote} />;
     }
-    if (displayNote.kind() === 30311 || displayNote.kind() === 34235) {
+    if (displayNote.kind() === 30311) {
       return <KindPreGenericContent note={displayNote} />;
     }
     return null;
   }, [displayNote, visible]);
-  const isKind20 = displayNote?.kind() === 20;
+  const isMediaEvent = isMediaEventKind(displayNote?.kind());
   const isKind30023 = displayNote?.kind() === 30023;
-  const effectiveMain = main || ((isKind20 || isKind30023) && depth === 0);
+  const effectiveMain = main || ((isMediaEvent || isKind30023) && depth === 0);
   const cardlessMain = main && depth === 0;
-  const fullWidthCardMain = !cardlessMain && effectiveMain && isKind20;
+  const fullWidthCardMain = !cardlessMain && effectiveMain && isMediaEvent;
   const replyId = kind1?.reply()?.id();
   const allMentionIds = useMemo(() => {
     if (!kind1 || typeof kind1.mentionsLength !== 'function') {
@@ -776,7 +780,7 @@ function NoteComponent({
         <View
           className={[
             'absolute bottom-0 left-7 top-8 w-0.5',
-            isKind20 ? 'hidden' : '',
+            isMediaEvent ? 'hidden' : '',
           ].join(' ')}
           style={threadConnectorStyle}
         />
@@ -785,7 +789,7 @@ function NoteComponent({
         <View
           className={[
             'absolute left-7 top-0 h-8 w-0.5',
-            isKind20 ? 'hidden' : '',
+            isMediaEvent ? 'hidden' : '',
           ].join(' ')}
           style={threadConnectorStyle}
         />
@@ -1004,7 +1008,7 @@ function NoteComponent({
       relayStatusSink={relayStatusSink}
       reposterPubkey={reposterPubkey}
       contentOverride={contentOverride}
-      fullBleedContent={isKind20}
+      fullBleedContent={isMediaEvent}
     />
   );
 }

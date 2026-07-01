@@ -698,8 +698,19 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       header={renderHeader}
       headerOwnsSafeArea
       stickyHeader={renderStickyHeader}
-      renderItem={({ item }) => (
-        <WalletActivityRow activity={item} currentPubkey={authPubkey} />
+      renderItem={({ item, index }) => (
+        <WalletActivityRow
+          activity={item}
+          currentPubkey={authPubkey}
+          isFirst={
+            getActivityDateKey(item.createdAt) !==
+            getActivityDateKey(activities[index - 1]?.createdAt)
+          }
+          isLast={
+            getActivityDateKey(item.createdAt) !==
+            getActivityDateKey(activities[index + 1]?.createdAt)
+          }
+        />
       )}
       loading={loading && activities.length === 0}
       refreshing={refreshing}
@@ -939,9 +950,13 @@ function HeaderIconButton({
 function WalletActivityRow({
   activity,
   currentPubkey,
+  isFirst,
+  isLast,
 }: {
   activity: WalletActivity;
   currentPubkey: string;
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -982,9 +997,20 @@ function WalletActivityRow({
 
   return (
     <Pressable
-      className="mt-1 rounded-lg border border-base-200 bg-base-300/95 px-4 py-4 shadow-sm"
+      className={[
+        'relative bg-base-300/95 px-4 py-4',
+        isFirst ? 'mt-1 rounded-t-lg' : '',
+        isLast ? 'rounded-b-lg' : 'border-b border-base-100',
+      ].join(' ')}
       onPress={openActivity}
     >
+      {isFirst ? (
+        <View className="absolute left-0 right-0 top-1 z-10 items-center">
+          <Text className="bg-base-300/95 px-2 text-xs font-bold text-base-content/70">
+            {formatActivityDate(activity.createdAt)}
+          </Text>
+        </View>
+      ) : null}
       <View className="flex-row items-center justify-between gap-3">
         <View className="min-w-0 flex-1 flex-row items-center gap-3">
           <View>
@@ -1027,10 +1053,14 @@ function WalletActivityRow({
                 </>
               )}
             </View>
-            <Text className="mt-1 text-xs text-primary-content">
-              {formatActivityDate(activity.createdAt)} · NIP-
-              {activity.kind === 9321 ? '61' : '57'}
-            </Text>
+            {activity.comment ? (
+              <Text
+                className="mt-1 text-xs text-primary-content"
+                numberOfLines={2}
+              >
+                "{activity.comment}"
+              </Text>
+            ) : null}
           </View>
         </View>
         <View className="shrink-0 flex-row items-center gap-1">
@@ -1040,11 +1070,6 @@ function WalletActivityRow({
           </Text>
         </View>
       </View>
-      {activity.comment ? (
-        <Text className="ml-13 mt-3 text-sm text-primary-content">
-          "{activity.comment}"
-        </Text>
-      ) : null}
     </Pressable>
   );
 }
@@ -1236,6 +1261,16 @@ function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
 }
 
+function getActivityDateKey(timestamp?: number) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp * 1000);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
 function formatActivityDate(timestamp: number) {
   const date = new Date(timestamp * 1000);
   const today = new Date();
@@ -1243,7 +1278,7 @@ function formatActivityDate(timestamp: number) {
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
 
-  if (date.getTime() >= today.getTime()) return 'Today';
+  if (date.getTime() >= today.getTime()) return 'TODAY';
   if (date.getTime() >= yesterday.getTime()) return 'Yesterday';
   return date.toLocaleDateString(undefined, {
     month: 'short',

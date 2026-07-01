@@ -1,4 +1,5 @@
 export { CmdKModal } from './CmdKModal';
+export { CalendarEventModal } from './CalendarEventModal';
 export { FeedBuilderModal } from './FeedBuilderModal';
 export { Kind1111CommentsModal } from './Kind1111CommentsModal';
 export { NewChatModal } from './NewChatModal';

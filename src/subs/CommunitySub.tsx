@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import {Image} from 'expo-image';
 import {MenuView} from '@react-native-menu/menu';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
   NpubLimiterPipeConfigT,
   ParsePipeConfigT,
@@ -45,6 +47,7 @@ import {Note} from '../components/notes';
 import {Avatar} from '../components/notes/Avatar';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
+import type {RootStackParamList} from '../navigation/types';
 import {ALL_FEED_KINDS, useRelayStore, type FeedKind} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -73,8 +76,10 @@ type CommunityCalendarEvent = {
   capacity: number;
   image?: string;
   location: string;
+  relays: string[];
   start: number;
   title: string;
+  description: string;
 };
 
 type CommunityRsvpStatus = 'accepted' | 'declined' | 'tentative';
@@ -165,20 +170,25 @@ function parseCalendarEvent(event: ParsedEvent): CommunityCalendarEvent | null {
   const participants = pre ? fbArray(pre, 'participants') : [];
   const currentParticipants = Number(pre?.currentParticipants?.() ?? 0);
   const capacity = Number(tagValue(tags, 'capacity') || 0);
+  const description =
+    tagValue(tags, 'summary').trim() ||
+    stringValue(pre?.description()).trim() ||
+    stringValue(pre?.content()).trim();
   return {
     id,
     address: `${event.kind()}:${event.pubkey()}:${d}`,
     attendeeCount: currentParticipants || participants.length,
     capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : 0,
+    description,
     image: stringValue(pre?.image()) || tagValue(tags, 'image') || undefined,
     location: stringValue(pre?.location()) || tagValue(tags, 'location'),
+    relays: [],
     start,
     title:
       stringValue(pre?.title()).trim() ||
       tagValue(tags, 'title').trim() ||
       tagValue(tags, 'name').trim() ||
-      stringValue(pre?.description()).trim() ||
-      stringValue(pre?.content()).trim() ||
+      description ||
       'Community event',
   };
 }
@@ -269,6 +279,8 @@ function EventCard({
   rsvpSummary: CommunityRsvpSummary;
 }) {
   const theme = useAppTheme();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const goingCount = rsvpSummary.accepted || event.attendeeCount;
   const acceptedPubkeys = rsvpSummary.acceptedPubkeys.slice(0, 3);
   const spotsLeft = event.capacity
@@ -276,7 +288,14 @@ function EventCard({
     : null;
 
   return (
-    <Pressable className="w-60 overflow-hidden rounded-lg border border-base-200 bg-base-300">
+    <Pressable
+      className="w-60 overflow-hidden rounded-lg border border-base-200 bg-base-300"
+      onPress={() => {
+        const relay = event.relays[0] || '';
+        if (!relay || !event.address) return;
+        navigation.navigate('CalendarEvent', {relay, address: event.address});
+      }}
+    >
       <View className="h-28 bg-base-200">
         {event.image ? (
           <Image
@@ -771,6 +790,7 @@ export function CommunitySub({
         if (!parsed) return;
         const event = parseCalendarEvent(parsed);
         if (!event) return;
+        event.relays = [normalizedRelay];
         events.set(event.id, event);
         setUpcomingEvents(
           Array.from(events.values()).sort((left, right) => left.start - right.start),

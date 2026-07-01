@@ -52,6 +52,7 @@ import { useRelayTracking } from './src/hooks/useRelayTracking';
 import { useRootNostrSubscriptions } from './src/hooks/useRootNostrSubscriptions';
 import {
   FeedBuilderModal,
+  CalendarEventModal,
   Kind1111CommentsModal,
   KeysModal,
   CmdKModal,
@@ -321,6 +322,11 @@ function RootNavigator({
           name="Community"
           component={CommunityScreen}
           options={{ animation: 'slide_from_right' }}
+        />
+        <NativeStack.Screen
+          name="CalendarEvent"
+          component={CalendarEventScreen}
+          options={{ presentation: 'modal' }}
         />
         <NativeStack.Screen
           name="ChatThread"
@@ -1268,6 +1274,19 @@ function CommunityScreen({
       relationship={route.params.relationship}
       relay={route.params.relay}
       visible={isFocused && subVisible}
+      onClose={navigation.goBack}
+    />
+  );
+}
+
+function CalendarEventScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'CalendarEvent'>) {
+  return (
+    <CalendarEventModal
+      relay={route.params.relay}
+      address={route.params.address}
       onClose={navigation.goBack}
     />
   );

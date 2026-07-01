@@ -13,14 +13,17 @@ import {
 import {Image} from 'expo-image';
 import {BlurView} from 'expo-blur';
 import {
+  CalendarPlus,
   Camera,
   ChevronDown,
   Film,
+  Globe2,
   Image as ImageIcon,
   ListChecks,
   Plus,
   Search,
   Send,
+  Users,
   X,
 } from 'lucide-react-native';
 import {KeyboardStickyView, useKeyboardState} from 'react-native-keyboard-controller';
@@ -87,6 +90,9 @@ function usePostModalStyles() {
 }
 
 type PollType = 'singlechoice' | 'multiplechoice';
+type ComposerStep = 'setup' | 'compose';
+type ComposeMode = 'note' | 'media' | 'event' | 'poll';
+type EventCategory = 'training' | 'match' | 'meeting' | 'social';
 type ComposerPanel = 'gif';
 type TenorGif = {
   id: string;
@@ -120,6 +126,12 @@ const now = () => Math.floor(Date.now() / 1000);
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 const TENOR_API_KEY = 'AIzaSyB692q5nvoGphnMusHRvm1D_98a-DSQJRA';
 const TENOR_LIMIT = 24;
+const EVENT_CATEGORIES: EventCategory[] = [
+  'training',
+  'match',
+  'meeting',
+  'social',
+];
 
 function mentionHandle(value: string) {
   return value.replace(/\s+/g, '');
@@ -256,6 +268,62 @@ function waitForNextFrame() {
   return new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 }
 
+function normalizeRelayUrl(url: string) {
+  return url.trim().replace(/\/$/, '');
+}
+
+function relayLabel(url: string) {
+  return normalizeRelayUrl(url)
+    .replace(/^wss?:\/\//, '')
+    .replace(/^relay\./, '')
+    .replace(/\/$/, '');
+}
+
+function communityList(readRelays: string[], writeRelays: string[]) {
+  const writeSet = new Set(writeRelays.map(normalizeRelayUrl));
+  const belongCommunities = writeRelays.map(relay => {
+    const url = normalizeRelayUrl(relay);
+    return {url, role: 'Belong' as const};
+  });
+  const followCommunities = readRelays
+    .map(normalizeRelayUrl)
+    .filter(relay => !writeSet.has(relay))
+    .map(url => ({url, role: 'Follow' as const}));
+
+  return [...belongCommunities, ...followCommunities];
+}
+
+function defaultDateTimeLocal(hoursFromNow: number) {
+  const date = new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    '-',
+    pad(date.getMonth() + 1),
+    '-',
+    pad(date.getDate()),
+    'T',
+    pad(date.getHours()),
+    ':',
+    pad(date.getMinutes()),
+  ].join('');
+}
+
+function timestampFromLocal(value: string) {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : now();
+}
+
+function slugFromTitle(title: string) {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug || `event-${Date.now()}`;
+}
+
 export function PostModal({ reply, quote, onClose }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createPostModalStyles(theme), [theme]);
@@ -321,9 +389,35 @@ export function PostModal({ reply, quote, onClose }: Props) {
   );
   const mediaServerType = uploadPreference?.type || 'blossom';
   const mediaServer = uploadPreference?.servers[0] || DEFAULT_UPLOAD_SERVER;
+  const communityOptions = useMemo(
+    () => communityList(readRelays, writeRelays),
+    [readRelays, writeRelays],
+  );
   const validPollOptions = useMemo(
     () => pollOptions.map(option => option.trim()).filter(Boolean),
     [pollOptions],
+  );
+  const [step, setStep] = useState<ComposerStep>(
+    reply || quote ? 'compose' : 'setup',
+  );
+  const [composeMode, setComposeMode] = useState<ComposeMode>('note');
+  const [selectedRelay, setSelectedRelay] = useState('');
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventSummary, setEventSummary] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventCategory, setEventCategory] = useState<EventCategory>('social');
+  const [eventStartsAt, setEventStartsAt] = useState(defaultDateTimeLocal(24));
+  const [eventEndsAt, setEventEndsAt] = useState('');
+  const [eventCapacity, setEventCapacity] = useState('');
+  const destinationLabel = selectedRelay ? relayLabel(selectedRelay) : 'Public';
+  const isEventMode = composeMode === 'event';
+  const isMediaMode = composeMode === 'media';
+  const canSubmitEvent = Boolean(
+    selectedRelay && eventTitle.trim() && eventStartsAt,
+  );
+  const effectivePublishRelays = useMemo(
+    () => (selectedRelay ? [selectedRelay] : publishRelays),
+    [publishRelays, selectedRelay],
   );
 
   useEffect(() => {
@@ -369,11 +463,14 @@ export function PostModal({ reply, quote, onClose }: Props) {
     Boolean(pubkey && hasSigner) &&
     !isSubmitting &&
     quoteReady &&
-    Boolean(
-      text.trim() ||
-        quoteTarget?.id ||
-        selectedImages.length ||
-        (pollEnabled && validPollOptions.length >= 2),
+    (isEventMode
+      ? canSubmitEvent
+      : Boolean(
+          text.trim() ||
+            quoteTarget?.id ||
+            selectedImages.length ||
+            (pollEnabled && validPollOptions.length >= 2),
+        )
     );
   const submitLabel = isSubmitting
     ? submitStatus?.startsWith('Uploading')
@@ -381,12 +478,16 @@ export function PostModal({ reply, quote, onClose }: Props) {
       : submitStatus?.startsWith('Publishing')
         ? 'Publishing'
         : 'Signing'
+    : isEventMode
+      ? 'Event'
     : pollEnabled
       ? 'Poll'
-      : reply
+    : reply
         ? 'Reply'
-        : quote
+      : quote
           ? 'Quote'
+      : isMediaMode
+          ? 'Media'
           : 'Post';
 
   useEffect(
@@ -610,6 +711,21 @@ export function PostModal({ reply, quote, onClose }: Props) {
     });
   }, []);
 
+  const selectDestination = useCallback((relay: string) => {
+    setSelectedRelay(relay);
+    setStep('compose');
+  }, []);
+
+  const selectComposeMode = useCallback((mode: ComposeMode) => {
+    setComposeMode(mode);
+    setPollEnabled(mode === 'poll');
+    if (mode !== 'poll') {
+      setPollType('singlechoice');
+      setPollOptions(['', '']);
+      setPollEndsAt(null);
+    }
+  }, []);
+
   const selectMention = useCallback((event: ParsedEvent) => {
     const candidatePubkey = event.pubkey();
     if (!candidatePubkey) return;
@@ -631,8 +747,88 @@ export function PostModal({ reply, quote, onClose }: Props) {
     setMentionQuery(null);
   }, []);
 
+  const submitEvent = useCallback(() => {
+    if (!canSubmitEvent || !pubkey || !hasSigner) return;
+    setIsSubmitting(true);
+    setSubmitStatusIfMounted('Publishing event...');
+
+    try {
+      const title = eventTitle.trim();
+      const summary = eventSummary.trim();
+      const capacity = eventCapacity
+        ? Math.max(1, Math.floor(Number(eventCapacity)))
+        : 0;
+      const tags: string[][] = [
+        ['d', slugFromTitle(title)],
+        ['title', title],
+        ['summary', summary],
+        ['start', String(timestampFromLocal(eventStartsAt))],
+        ['t', eventCategory],
+        ['client', 'nutscash'],
+      ];
+      if (eventEndsAt) tags.push(['end', String(timestampFromLocal(eventEndsAt))]);
+      if (eventLocation.trim()) tags.push(['location', eventLocation.trim()]);
+      if (capacity) tags.push(['capacity', String(capacity)]);
+
+      const event: EventTemplate = {
+        kind: 31923,
+        content: summary,
+        created_at: now(),
+        tags,
+      };
+      const sendId = `community_event_${Date.now()}`;
+      const sendStatus: Record<string, ConnectionStatus> = {};
+
+      publishToNostr(
+        sendId,
+        event,
+        (message: WorkerMessage) => {
+          const status = isConnectionStatus(message);
+          const relayUrl = status?.relayUrl();
+          if (!status || !relayUrl) return;
+          sendStatus[relayUrl] = status;
+          updateSendStatus(sendId, sendStatus);
+        },
+        {defaultRelays: [selectedRelay], trackStatus: true},
+      );
+
+      if (mountedRef.current) {
+        setEventTitle('');
+        setEventSummary('');
+        setEventLocation('');
+        setEventCapacity('');
+        setEventCategory('social');
+        setEventStartsAt(defaultDateTimeLocal(24));
+        setEventEndsAt('');
+        setSubmitStatus(null);
+        onClose();
+      }
+    } finally {
+      if (mountedRef.current) setIsSubmitting(false);
+    }
+  }, [
+    canSubmitEvent,
+    eventCapacity,
+    eventCategory,
+    eventEndsAt,
+    eventLocation,
+    eventStartsAt,
+    eventSummary,
+    eventTitle,
+    hasSigner,
+    onClose,
+    pubkey,
+    selectedRelay,
+    setSubmitStatusIfMounted,
+    updateSendStatus,
+  ]);
+
   const submit = useCallback(async () => {
     if (!canSubmit) return;
+    if (isEventMode) {
+      submitEvent();
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -788,7 +984,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
           updateSendStatus(sendId, sendStatus);
         },
         {
-          defaultRelays: publishRelays,
+          defaultRelays: effectivePublishRelays,
           trackStatus: true,
           subId: noteTarget?.id
             ? [`f_${noteTarget.id}`, `replies_${noteTarget.id}`]
@@ -824,7 +1020,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
     quoteTarget,
     noteTarget,
     replyTarget,
-    publishRelays,
+    effectivePublishRelays,
     text,
     updateSendStatus,
     validPollOptions,
@@ -834,6 +1030,8 @@ export function PostModal({ reply, quote, onClose }: Props) {
     updateSelectedImagesIfMounted,
     mediaServer,
     mediaServerType,
+    isEventMode,
+    submitEvent,
   ]);
 
   const insertImage = useCallback(
@@ -980,7 +1178,10 @@ export function PostModal({ reply, quote, onClose }: Props) {
         </View>
       ) : null}
       {activePanel !== 'gif' ? (
-        <PublishRelayList relays={publishRelays} subId={publishRelaySubId} />
+        <PublishRelayList
+          relays={effectivePublishRelays}
+          subId={selectedRelay ? undefined : publishRelaySubId}
+        />
       ) : null}
 
       <ScrollView
@@ -995,6 +1196,77 @@ export function PostModal({ reply, quote, onClose }: Props) {
               Connect a signer before publishing posts.
             </Text>
           </View>
+        ) : null}
+
+        {step === 'setup' ? (
+          <ComposerSetup
+            communities={communityOptions}
+            onSelect={selectDestination}
+          />
+        ) : !noteTarget?.id ? (
+          <View style={styles.destinationPanel}>
+            <View style={styles.destinationHeader}>
+              <View style={styles.destinationCopy}>
+                <Text style={styles.destinationKicker}>Publishing to</Text>
+                <Text style={styles.destinationTitle} numberOfLines={1}>
+                  {destinationLabel}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.changeDestination}
+                onPress={() => setStep('setup')}
+              >
+                <Text style={styles.changeDestinationText}>Change</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modeGrid}>
+              <ModeButton
+                icon="note"
+                label="Note"
+                active={composeMode === 'note'}
+                onPress={() => selectComposeMode('note')}
+              />
+              <ModeButton
+                icon="media"
+                label="Media"
+                active={composeMode === 'media'}
+                onPress={() => selectComposeMode('media')}
+              />
+              <ModeButton
+                icon="event"
+                label="Event"
+                active={composeMode === 'event'}
+                disabled={!selectedRelay}
+                onPress={() => selectComposeMode('event')}
+              />
+              <ModeButton
+                icon="poll"
+                label="Poll"
+                active={composeMode === 'poll'}
+                onPress={() => selectComposeMode('poll')}
+              />
+            </View>
+          </View>
+        ) : null}
+
+        {step === 'compose' && isEventMode ? (
+          <EventComposer
+            category={eventCategory}
+            capacity={eventCapacity}
+            endsAt={eventEndsAt}
+            location={eventLocation}
+            startsAt={eventStartsAt}
+            summary={eventSummary}
+            title={eventTitle}
+            destinationLabel={destinationLabel}
+            onChangeCategory={setEventCategory}
+            onChangeCapacity={setEventCapacity}
+            onChangeEndsAt={setEventEndsAt}
+            onChangeLocation={setEventLocation}
+            onChangeStartsAt={setEventStartsAt}
+            onChangeSummary={setEventSummary}
+            onChangeTitle={setEventTitle}
+          />
         ) : null}
 
         {noteTarget?.id ? (
@@ -1018,6 +1290,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
           )
         ) : null}
 
+        {step === 'compose' && !isEventMode ? (
         <View
           style={[styles.editorShell, noteTarget && styles.replyEditorShell]}
           onLayout={event => {
@@ -1064,12 +1337,13 @@ export function PostModal({ reply, quote, onClose }: Props) {
             style={noteTarget ? styles.replyEditor : styles.editor}
           />
         </View>
+        ) : null}
 
-        {selectedImages.length ? (
+        {step === 'compose' && selectedImages.length ? (
           <SelectedMediaGrid images={selectedImages} onRemove={removeImage} />
         ) : null}
 
-        {pollEnabled ? (
+        {step === 'compose' && pollEnabled ? (
           <PollComposer
             endsAt={pollEndsAt}
             options={pollOptions}
@@ -1120,6 +1394,213 @@ export function PostModal({ reply, quote, onClose }: Props) {
       ) : null}
     </View>
     </PostModalStylesContext.Provider>
+  );
+}
+
+function ComposerSetup({
+  communities,
+  onSelect,
+}: {
+  communities: Array<{url: string; role: 'Belong' | 'Follow'}>;
+  onSelect: (relay: string) => void;
+}) {
+  const styles = usePostModalStyles();
+  const theme = useAppTheme();
+  return (
+    <View style={styles.setupPanel}>
+      <View>
+        <Text style={styles.setupKicker}>New post</Text>
+        <Text style={styles.setupTitle}>Where should it go?</Text>
+      </View>
+      <View style={styles.destinationGrid}>
+        <Pressable style={styles.destinationCardPrimary} onPress={() => onSelect('')}>
+          <Globe2 size={22} color={theme.colors.primary} strokeWidth={2.3} />
+          <View>
+            <Text style={styles.destinationCardTitle}>Public</Text>
+            <Text style={styles.destinationCardMeta}>Your write relays</Text>
+          </View>
+        </Pressable>
+        {communities.map(community => (
+          <Pressable
+            key={community.url}
+            style={styles.destinationCard}
+            onPress={() => onSelect(community.url)}
+          >
+            <Users size={22} color={theme.colors.primaryContent} strokeWidth={2.3} />
+            <View style={styles.destinationCardCopy}>
+              <Text style={styles.destinationCardTitle} numberOfLines={1}>
+                {relayLabel(community.url)}
+              </Text>
+              <Text style={styles.destinationCardMeta}>{community.role}</Text>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+      {!communities.length ? (
+        <Text style={styles.setupEmpty}>No communities found yet. Public is available.</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function ModeButton({
+  active,
+  disabled,
+  icon,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  icon: 'note' | 'media' | 'event' | 'poll';
+  label: string;
+  onPress: () => void;
+}) {
+  const styles = usePostModalStyles();
+  const theme = useAppTheme();
+  const color = active ? theme.button.primary.text : theme.colors.primaryContent;
+  const IconComponent =
+    icon === 'media'
+      ? ImageIcon
+      : icon === 'event'
+        ? CalendarPlus
+        : icon === 'poll'
+          ? ListChecks
+          : Film;
+  return (
+    <Pressable
+      style={[
+        styles.modeButton,
+        active && styles.modeButtonActive,
+        disabled && styles.modeButtonDisabled,
+      ]}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <IconComponent size={16} color={color} strokeWidth={2.4} />
+      <Text style={[styles.modeButtonText, active && styles.modeButtonTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function EventComposer({
+  category,
+  capacity,
+  destinationLabel,
+  endsAt,
+  location,
+  onChangeCapacity,
+  onChangeCategory,
+  onChangeEndsAt,
+  onChangeLocation,
+  onChangeStartsAt,
+  onChangeSummary,
+  onChangeTitle,
+  startsAt,
+  summary,
+  title,
+}: {
+  category: EventCategory;
+  capacity: string;
+  destinationLabel: string;
+  endsAt: string;
+  location: string;
+  onChangeCapacity: (value: string) => void;
+  onChangeCategory: (value: EventCategory) => void;
+  onChangeEndsAt: (value: string) => void;
+  onChangeLocation: (value: string) => void;
+  onChangeStartsAt: (value: string) => void;
+  onChangeSummary: (value: string) => void;
+  onChangeTitle: (value: string) => void;
+  startsAt: string;
+  summary: string;
+  title: string;
+}) {
+  const styles = usePostModalStyles();
+  const theme = useAppTheme();
+  return (
+    <View style={styles.eventBox}>
+      <View style={styles.eventIntro}>
+        <View style={styles.eventIcon}>
+          <CalendarPlus size={24} color={theme.colors.primary} strokeWidth={2.4} />
+        </View>
+        <View style={styles.eventIntroCopy}>
+          <Text style={styles.eventTitle}>Community event</Text>
+          <Text style={styles.eventText}>Publish a dated event to {destinationLabel}.</Text>
+        </View>
+      </View>
+      <TextInput
+        value={title}
+        onChangeText={onChangeTitle}
+        placeholder="Event title"
+        placeholderTextColor={theme.colors.primaryContent}
+        style={styles.eventInput}
+      />
+      <TextInput
+        value={summary}
+        onChangeText={onChangeSummary}
+        placeholder="Short summary"
+        placeholderTextColor={theme.colors.primaryContent}
+        multiline
+        style={[styles.eventInput, styles.eventSummary]}
+      />
+      <View style={styles.eventTwoColumn}>
+        <TextInput
+          value={startsAt}
+          onChangeText={onChangeStartsAt}
+          placeholder="Starts: 2026-06-30T18:00"
+          placeholderTextColor={theme.colors.primaryContent}
+          style={[styles.eventInput, styles.eventHalfInput]}
+        />
+        <TextInput
+          value={endsAt}
+          onChangeText={onChangeEndsAt}
+          placeholder="Ends"
+          placeholderTextColor={theme.colors.primaryContent}
+          style={[styles.eventInput, styles.eventHalfInput]}
+        />
+      </View>
+      <View style={styles.eventTwoColumn}>
+        <TextInput
+          value={location}
+          onChangeText={onChangeLocation}
+          placeholder="Location"
+          placeholderTextColor={theme.colors.primaryContent}
+          style={[styles.eventInput, styles.eventHalfInput]}
+        />
+        <TextInput
+          value={capacity}
+          onChangeText={onChangeCapacity}
+          placeholder="Capacity"
+          placeholderTextColor={theme.colors.primaryContent}
+          keyboardType="number-pad"
+          style={[styles.eventInput, styles.eventHalfInput]}
+        />
+      </View>
+      <View style={styles.categoryRow}>
+        {EVENT_CATEGORIES.map(item => (
+          <Pressable
+            key={item}
+            style={[
+              styles.categoryButton,
+              category === item && styles.categoryButtonActive,
+            ]}
+            onPress={() => onChangeCategory(item)}
+          >
+            <Text
+              style={[
+                styles.categoryText,
+                category === item && styles.categoryTextActive,
+              ]}
+            >
+              {item}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -1282,7 +1763,7 @@ function SelectedMediaGrid({
   );
 }
 
-function PublishRelayList({relays, subId}: {relays: string[]; subId: string}) {
+function PublishRelayList({relays, subId}: {relays: string[]; subId?: string}) {
   const styles = usePostModalStyles();
   if (!relays.length) return null;
 
@@ -1759,6 +2240,220 @@ function createPostModalStyles(theme: AppTheme) {
   },
   contentWithKeyboardAccessory: {
     paddingBottom: 86,
+  },
+  setupPanel: {
+    gap: 14,
+  },
+  setupKicker: {
+    color: theme.colors.primaryContent,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  setupTitle: {
+    marginTop: 2,
+    color: contentColor,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  setupEmpty: {
+    color: theme.colors.primaryContent,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  destinationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  destinationCard: {
+    width: '48%',
+    minHeight: 108,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  destinationCardPrimary: {
+    width: '48%',
+    minHeight: 108,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.base300,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  destinationCardCopy: {
+    minWidth: 0,
+  },
+  destinationCardTitle: {
+    color: contentColor,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  destinationCardMeta: {
+    marginTop: 3,
+    color: theme.colors.primaryContent,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  destinationPanel: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
+    padding: 10,
+    gap: 10,
+  },
+  destinationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  destinationCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  destinationKicker: {
+    color: theme.colors.primaryContent,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  destinationTitle: {
+    marginTop: 2,
+    color: contentColor,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  changeDestination: {
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.base200,
+  },
+  changeDestinationText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  modeGrid: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 7,
+    backgroundColor: theme.colors.base100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  modeButtonActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  modeButtonDisabled: {
+    opacity: 0.4,
+  },
+  modeButtonText: {
+    color: theme.colors.primaryContent,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  modeButtonTextActive: {
+    color: theme.button.primary.text,
+  },
+  eventBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
+    padding: 12,
+    gap: 10,
+  },
+  eventIntro: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  eventIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.base100,
+  },
+  eventIntroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  eventTitle: {
+    color: contentColor,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  eventText: {
+    marginTop: 2,
+    color: theme.colors.primaryContent,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  eventInput: {
+    minHeight: 44,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base100,
+    color: contentColor,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  eventSummary: {
+    minHeight: 92,
+    textAlignVertical: 'top',
+  },
+  eventTwoColumn: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  eventHalfInput: {
+    flex: 1,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    gap: 5,
+    borderRadius: 8,
+    backgroundColor: theme.colors.base100,
+    padding: 4,
+  },
+  categoryButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryButtonActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  categoryText: {
+    color: theme.colors.primaryContent,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'capitalize',
+  },
+  categoryTextActive: {
+    color: theme.button.primary.text,
   },
   notice: {
     borderRadius: 8,

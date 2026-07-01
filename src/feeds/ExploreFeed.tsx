@@ -149,6 +149,7 @@ export function ExploreFeed({
   const authPubkey = useAuthStore(state => state.pubkey);
   const authResolved = useAuthStore(state => state.authResolved);
   const readRelays = useNostrStore(state => state.readRelays);
+  const relayDirectoryUrls = useNostrStore(state => state.relayDirectoryUrls);
   const follows = useNostrStore(state => state.follows);
   const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
   const nostrHydrated = useNostrStore(state => state.hydrated);
@@ -169,11 +170,13 @@ export function ExploreFeed({
   const feedRelays = useMemo(
     () =>
       authPubkey
-        ? readRelays.length
-          ? readRelays
+        ? relayDirectoryUrls.length
+          ? relayDirectoryUrls
+          : readRelays.length
+            ? readRelays
           : DEFAULT_FEED_RELAYS
         : GUEST_EXPLORE_RELAYS,
-    [authPubkey, readRelays],
+    [authPubkey, readRelays, relayDirectoryUrls],
   );
   const authReadyForExplore = Boolean(authPubkey) || authResolved;
   const followsReadyForExplore =

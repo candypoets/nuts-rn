@@ -34,6 +34,13 @@ export type ProfileSnapshot = {
   updatedAt: number;
 };
 
+export type RelayRoleSetSnapshot = {
+  address: string;
+  createdAt: number;
+  d: string;
+  relays: string[];
+};
+
 export type NostrStore = {
   kind0UpdatedAt: number;
   kind3UpdatedAt: number;
@@ -44,6 +51,9 @@ export type NostrStore = {
   kind10096UpdatedAt: number;
   follows: string[];
   relayMarkers: RelayMarker[];
+  relayDirectoryAddresses: string[];
+  relayRoleSets: RelayRoleSetSnapshot[];
+  relayDirectoryUrls: string[];
   readRelays: string[];
   writeRelays: string[];
   mutedPubkeys: string[];
@@ -60,6 +70,9 @@ export type NostrStore = {
   setProfile(profile: ProfileSnapshot): void;
   setFollows(follows: string[]): void;
   setRelayMarkers(relays: RelayMarker[]): void;
+  setRelayDirectoryAddresses(addresses: string[]): void;
+  setRelayRoleSet(roleSet: RelayRoleSetSnapshot): void;
+  resetRelayDirectory(): void;
   setMutes(
     mutes: Partial<
       Pick<
@@ -87,6 +100,9 @@ const initialState = {
   kind10096UpdatedAt: 0,
   follows: [],
   relayMarkers: [],
+  relayDirectoryAddresses: [],
+  relayRoleSets: [],
+  relayDirectoryUrls: [],
   readRelays: [],
   writeRelays: [],
   mutedPubkeys: [],
@@ -120,6 +136,10 @@ function sameRelayMarkers(left: RelayMarker[], right: RelayMarker[]) {
       );
     })
   );
+}
+
+function relayDirectoryUrls(roleSets: RelayRoleSetSnapshot[]) {
+  return Array.from(new Set(roleSets.flatMap(roleSet => roleSet.relays)));
 }
 
 export const useNostrStore = create<NostrStore>()(
@@ -160,6 +180,37 @@ export const useNostrStore = create<NostrStore>()(
               .filter(relay => relay.write)
               .map(relay => relay.url),
           };
+        }),
+      setRelayDirectoryAddresses: relayDirectoryAddresses =>
+        set(current =>
+          sameStringArray(current.relayDirectoryAddresses, relayDirectoryAddresses)
+            ? current
+            : {relayDirectoryAddresses, relayRoleSets: [], relayDirectoryUrls: []},
+        ),
+      setRelayRoleSet: roleSet =>
+        set(current => {
+          const existing = current.relayRoleSets.find(
+            item => item.address === roleSet.address,
+          );
+          if (existing && roleSet.createdAt <= existing.createdAt) {
+            return current;
+          }
+          const relayRoleSets = [
+            ...current.relayRoleSets.filter(
+              item => item.address !== roleSet.address,
+            ),
+            roleSet,
+          ];
+          return {
+            relayRoleSets,
+            relayDirectoryUrls: relayDirectoryUrls(relayRoleSets),
+          };
+        }),
+      resetRelayDirectory: () =>
+        set({
+          relayDirectoryAddresses: [],
+          relayRoleSets: [],
+          relayDirectoryUrls: [],
         }),
       setMutes: mutes =>
         set(current => {
@@ -222,6 +273,9 @@ export const useNostrStore = create<NostrStore>()(
         kind10096UpdatedAt: state.kind10096UpdatedAt,
         follows: state.follows,
         relayMarkers: state.relayMarkers,
+        relayDirectoryAddresses: state.relayDirectoryAddresses,
+        relayRoleSets: state.relayRoleSets,
+        relayDirectoryUrls: state.relayDirectoryUrls,
         readRelays: state.readRelays,
         writeRelays: state.writeRelays,
         mutedPubkeys: state.mutedPubkeys,

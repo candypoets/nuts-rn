@@ -2,7 +2,6 @@ import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 're
 import {
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   Text,
@@ -27,6 +26,8 @@ import {
 import {decode, type EventPointer} from 'nostr-tools/nip19';
 import type {EventTemplate} from 'nostr-tools';
 import {Heart, MessageCircle, Send} from 'lucide-react-native';
+import {StackActions, useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Animated, {
   useAnimatedStyle,
   withSequence,
@@ -39,6 +40,8 @@ import {ContentBlocks} from '../components/notes/ContentBlocks';
 import {formatTimeShort, shortPubkey} from '../components/notes/time';
 import {useKind0Value} from '../hooks/useKind0Value';
 import {useAppTheme} from '../theme';
+import type {RootStackParamList} from '../navigation/types';
+import {rootNavigationRef} from '../navigation/rootNavigation';
 
 type Kind1111CommentsModalProps = {
   nevent: string;
@@ -134,12 +137,14 @@ const CommentItem = memo(function CommentItem({
   isLiked,
   isReplyTarget,
   onLike,
+  onProfileOpen,
   onReply,
 }: {
   item: FlatComment;
   isLiked: boolean;
   isReplyTarget: boolean;
   onLike: (event: ParsedEvent) => void;
+  onProfileOpen: (pubkey: string) => void;
   onReply: (event: ParsedEvent, name: string) => void;
 }) {
   const kind1111 = asKind1111(item.event);
@@ -174,10 +179,15 @@ const CommentItem = memo(function CommentItem({
       style={[{marginLeft: item.depth * 24}, highlightStyle]}
     >
       <View className="flex-row items-start gap-2">
-        <Avatar pubkey={pubkey} size="sm" link />
+        <Avatar pubkey={pubkey} size="sm" link onProfileOpen={onProfileOpen} />
         <View className="min-w-0 flex-1">
           <View className="mb-1 flex-row items-center gap-2">
-            <User pubkey={pubkey} link className="text-sm font-semibold text-base-content" />
+            <User
+              pubkey={pubkey}
+              link
+              className="text-sm font-semibold text-base-content"
+              onProfileOpen={onProfileOpen}
+            />
             <Text className="text-xs text-primary-content">
               {formatTimeShort(item.event.createdAt())}
             </Text>
@@ -238,6 +248,7 @@ export function Kind1111CommentsModal({
   onClose: _onClose,
 }: Kind1111CommentsModalProps) {
   const theme = useAppTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const target = useMemo(() => decodeTarget(nevent), [nevent]);
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
@@ -408,6 +419,15 @@ export function Kind1111CommentsModal({
     });
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
+  const openProfile = useCallback((nextPubkey: string) => {
+    navigation.goBack();
+    setTimeout(() => {
+      if (!rootNavigationRef.isReady()) return;
+      rootNavigationRef.dispatch(
+        StackActions.push('PublicProfile', {pubkey: nextPubkey}),
+      );
+    }, 350);
+  }, [navigation]);
   const emptyContent = !target ? (
     <View className="flex-1 items-center justify-center py-8">
       <Text className="text-primary-content">Invalid note id</Text>
@@ -423,113 +443,98 @@ export function Kind1111CommentsModal({
     </View>
   );
 
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      className="flex-1 bg-base-100"
-    >
-      <Pressable className="flex-1 bg-base-100" onPress={dismissComposer}>
-        <View className="flex-row items-center justify-between px-4 py-3">
-          <View className="flex-row items-center gap-2">
-            <MessageCircle size={22} color={theme.colors.primary} />
-            <Text className="text-xl font-bold text-base-content">Comments</Text>
-            <Text className="text-sm text-primary-content">({comments.length})</Text>
-          </View>
+  const headerContent = (
+    <>
+      <View className="flex-row items-center justify-between px-4 py-3">
+        <View className="flex-row items-center gap-2">
+          <MessageCircle size={22} color={theme.colors.primary} />
+          <Text className="text-xl font-bold text-base-content">Comments</Text>
+          <Text className="text-sm text-primary-content">({comments.length})</Text>
         </View>
+      </View>
 
-        <Pressable
-          className="border-b border-base-200 px-4 pb-3"
-          onPress={event => event.stopPropagation()}
-        >
-          <View className="rounded-lg border border-base-200 bg-base-100/80 px-3 py-2">
-            <TextInput
-              ref={inputRef}
-              value={text}
-              onChangeText={setText}
-              placeholder={replyTarget ? `Reply to ${replyTarget.name}` : 'Add a comment'}
-              placeholderTextColor={theme.colors.primaryContent}
-              multiline
-              className="min-h-10 text-base text-base-content"
-            />
-            {replyTarget ? (
-              <View className="mt-2 flex-row items-center justify-between">
-                <Text className="text-xs text-primary-content">
-                  Replying to {replyTarget.name}
-                </Text>
-                <Pressable
-                  hitSlop={8}
-                  onPress={event => {
-                    event.stopPropagation();
-                    setReplyTarget(null);
-                  }}
-                >
-                  <Text className="text-xs font-semibold text-primary">Cancel</Text>
-                </Pressable>
-              </View>
-            ) : null}
-            {(text.trim() || isSubmitting) ? (
-              <View className="mt-2 flex-row justify-end">
-                <Pressable
-                  className={[
-                    'flex-row items-center gap-2 rounded-full px-4 py-2',
-                    canSubmit ? 'bg-primary' : 'bg-base-200',
-                  ].join(' ')}
-                  disabled={!canSubmit}
-                  onPress={event => {
-                    event.stopPropagation();
-                    submit();
-                  }}
-                >
-                  <Text className={canSubmit ? 'font-semibold text-white' : 'font-semibold text-primary-content'}>
-                    {isSubmitting ? 'Signing...' : 'Comment'}
-                  </Text>
-                  <Send size={16} color={canSubmit ? '#ffffff' : theme.colors.primaryContent} />
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-        </Pressable>
-
-        <View
-          className="min-h-0 flex-1 overflow-hidden px-2"
-          onStartShouldSetResponderCapture={() => {
-            dismissComposer();
-            return false;
-          }}
-          onTouchStart={dismissComposer}
-          onTouchEnd={dismissComposer}
-        >
-          <FlatList
-            className="flex-1 bg-base-100"
-            data={flatComments}
-            keyExtractor={item => item.event.id() || `${item.event.createdAt()}-${item.depth}`}
-            renderItem={({item}) => (
-              <CommentItem
-                item={item}
-                isLiked={likedCommentIds.has(item.event.id() || '')}
-                isReplyTarget={replyTarget?.id === item.event.id()}
-                onLike={sendReaction}
-                onReply={startReply}
-              />
-            )}
-            ListEmptyComponent={emptyContent}
-            contentContainerStyle={{
-              flexGrow: 1,
-              paddingHorizontal: 8,
-              paddingBottom: 20,
-            }}
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            keyboardShouldPersistTaps="never"
-            onStartShouldSetResponderCapture={() => {
-              dismissComposer();
-              return false;
-            }}
-            onScrollBeginDrag={dismissComposer}
-            onTouchEnd={dismissComposer}
-            removeClippedSubviews
+      <Pressable
+        className="border-b border-base-200 px-4 pb-3"
+        onPress={event => event.stopPropagation()}
+      >
+        <View className="rounded-lg border border-base-200 bg-base-100/80 px-3 py-2">
+          <TextInput
+            ref={inputRef}
+            value={text}
+            onChangeText={setText}
+            placeholder={replyTarget ? `Reply to ${replyTarget.name}` : 'Add a comment'}
+            placeholderTextColor={theme.colors.primaryContent}
+            multiline
+            className="min-h-10 text-base text-base-content"
           />
+          {replyTarget ? (
+            <View className="mt-2 flex-row items-center justify-between">
+              <Text className="text-xs text-primary-content">
+                Replying to {replyTarget.name}
+              </Text>
+              <Pressable
+                hitSlop={8}
+                onPress={event => {
+                  event.stopPropagation();
+                  setReplyTarget(null);
+                }}
+              >
+                <Text className="text-xs font-semibold text-primary">Cancel</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {(text.trim() || isSubmitting) ? (
+            <View className="mt-2 flex-row justify-end">
+              <Pressable
+                className={[
+                  'flex-row items-center gap-2 rounded-full px-4 py-2',
+                  canSubmit ? 'bg-primary' : 'bg-base-200',
+                ].join(' ')}
+                disabled={!canSubmit}
+                onPress={event => {
+                  event.stopPropagation();
+                  submit();
+                }}
+              >
+                <Text className={canSubmit ? 'font-semibold text-white' : 'font-semibold text-primary-content'}>
+                  {isSubmitting ? 'Signing...' : 'Comment'}
+                </Text>
+                <Send size={16} color={canSubmit ? '#ffffff' : theme.colors.primaryContent} />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       </Pressable>
-    </KeyboardAvoidingView>
+    </>
+  );
+
+  return (
+    <FlatList
+      className="flex-1 bg-base-100"
+      data={flatComments}
+      keyExtractor={item => item.event.id() || `${item.event.createdAt()}-${item.depth}`}
+      renderItem={({item}) => (
+        <CommentItem
+          item={item}
+          isLiked={likedCommentIds.has(item.event.id() || '')}
+          isReplyTarget={replyTarget?.id === item.event.id()}
+          onLike={sendReaction}
+          onProfileOpen={openProfile}
+          onReply={startReply}
+        />
+      )}
+      ListHeaderComponent={headerContent}
+      ListEmptyComponent={emptyContent}
+      automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+      contentContainerStyle={{
+        flexGrow: 1,
+        paddingHorizontal: 8,
+        paddingBottom: 20,
+      }}
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      keyboardShouldPersistTaps="handled"
+      onScrollBeginDrag={Platform.OS === 'ios' ? undefined : dismissComposer}
+      removeClippedSubviews
+    />
   );
 }

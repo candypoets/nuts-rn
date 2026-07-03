@@ -90,6 +90,7 @@ import { CarouselAnimator } from './src/components/CarouselAnimator';
 import { ImageZoom } from './src/components/ImageZoom';
 import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
+import {rootNavigationRef} from './src/navigation/rootNavigation';
 import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
@@ -312,6 +313,7 @@ function RootNavigator({
 
   return (
     <NavigationContainer
+      ref={rootNavigationRef}
       theme={navigationTheme}
       onStateChange={() => scheduleCleanup()}
     >

@@ -343,7 +343,7 @@ function RootNavigator({
         <NativeStack.Screen
           name="CalendarEvent"
           component={CalendarEventScreen}
-          options={{ presentation: 'modal' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="ChatThread"
@@ -977,7 +977,7 @@ function MainFooter({
           borderTopColor: canUseLiquidGlass
             ? 'transparent'
             : `${theme.colors.primary}33`,
-          bottom: canUseLiquidGlass ? Math.max(insets.bottom, 12) : 0,
+          bottom: canUseLiquidGlass ? Math.max(insets.bottom - 10, 8) : 0,
           left: canUseLiquidGlass ? floatingInset : 0,
           paddingBottom: canUseLiquidGlass ? 0 : Math.max(insets.bottom - 18, 0),
           right: canUseLiquidGlass ? floatingInset : 0,

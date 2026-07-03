@@ -1,4 +1,10 @@
-import React, {useCallback, useEffect, useState, type ReactNode} from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   Pressable,
   ScrollView,
@@ -24,6 +30,7 @@ type SegmentedTabsProps<T extends string> = {
   onSelect: (id: T) => void;
   variant?: 'underline' | 'pill';
   layout?: 'scroll' | 'equal';
+  labelWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
   className?: string;
   renderCount?: (count: number) => ReactNode;
 };
@@ -34,6 +41,7 @@ export function SegmentedTabs<T extends string>({
   onSelect,
   variant = 'underline',
   layout = 'equal',
+  labelWeight,
   className,
   renderCount,
 }: SegmentedTabsProps<T>) {
@@ -42,6 +50,7 @@ export function SegmentedTabs<T extends string>({
   >({});
   const indicatorX = useSharedValue(0);
   const indicatorWidth = useSharedValue(0);
+  const previousSelectedIdRef = useRef<T | null>(null);
   const selectedLayout = tabLayouts[selectedId];
   const pillInset = variant === 'pill' ? 1 : 0;
 
@@ -65,14 +74,44 @@ export function SegmentedTabs<T extends string>({
 
   useEffect(() => {
     if (!selectedLayout) return;
+    const previousSelectedId = previousSelectedIdRef.current;
+    const previousLayout =
+      previousSelectedId && previousSelectedId !== selectedId
+        ? tabLayouts[previousSelectedId]
+        : undefined;
+    const nextWidth = Math.max(0, selectedLayout.width - pillInset * 2);
+
+    if (!previousSelectedId) {
+      indicatorX.value = selectedLayout.x;
+      indicatorWidth.value = nextWidth;
+      previousSelectedIdRef.current = selectedId;
+      return;
+    }
+
+    if (previousLayout) {
+      indicatorX.value = previousLayout.x;
+      indicatorWidth.value = Math.max(0, previousLayout.width - pillInset * 2);
+    }
+
     indicatorX.value = withTiming(selectedLayout.x, {duration: 220});
-    indicatorWidth.value = withTiming(selectedLayout.width, {duration: 220});
-  }, [indicatorWidth, indicatorX, selectedLayout]);
+    indicatorWidth.value = withTiming(nextWidth, {duration: 220});
+    previousSelectedIdRef.current = selectedId;
+  }, [indicatorWidth, indicatorX, pillInset, selectedId, selectedLayout, tabLayouts]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
     transform: [{translateX: indicatorX.value}],
-    width: Math.max(0, indicatorWidth.value - pillInset * 2),
+    width: indicatorWidth.value,
   }));
+  const effectiveLabelWeight =
+    labelWeight ?? (variant === 'pill' ? 'bold' : 'semibold');
+  const labelWeightClass =
+    effectiveLabelWeight === 'regular'
+      ? 'font-normal'
+      : effectiveLabelWeight === 'medium'
+        ? 'font-medium'
+        : effectiveLabelWeight === 'bold'
+          ? 'font-bold'
+          : 'font-semibold';
 
   const content = (
     <View
@@ -86,7 +125,7 @@ export function SegmentedTabs<T extends string>({
         className={
           variant === 'pill'
             ? 'absolute rounded-full border border-primary bg-base-200'
-            : 'absolute bottom-0 left-0 h-0.5 rounded-full bg-primary'
+            : 'absolute bottom-0 left-0 h-px rounded-full bg-primary'
         }
         style={[
           variant === 'pill'
@@ -113,8 +152,8 @@ export function SegmentedTabs<T extends string>({
             <Text
               className={`${
                 variant === 'pill'
-                  ? 'text-xs font-bold uppercase'
-                  : 'text-base font-semibold'
+                  ? `text-xs ${labelWeightClass} uppercase`
+                  : `text-base ${labelWeightClass}`
               } ${selected ? 'text-base-content' : 'text-base-content/60'}`}
             >
               {tab.label}

@@ -18,7 +18,6 @@ import { Check } from 'lucide-react-native';
 import { useRelayStore } from '../stores';
 import {
   fetchRelayInfosForRelays,
-  isHiddenAdminRelay,
   normalizeRelayUrl,
 } from '../nostr/nip11';
 import { type AppTheme, type AppThemeColors, useAppTheme } from '../theme';
@@ -91,7 +90,7 @@ function uniqueRelays(relays: string[]) {
     ...new Set(
       relays
         .map(normalizeRelayUrl)
-        .filter(url => Boolean(url) && !isHiddenAdminRelay(url)),
+        .filter(Boolean),
     ),
   ];
 }

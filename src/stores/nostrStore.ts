@@ -3,7 +3,6 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 export const BOOTSTRAP_RELAYS = [
-  'wss://relay.thibautduchene.fr',
   'wss://relay.damus.io',
   'wss://nos.lol',
   'wss://purplepag.es',

@@ -112,10 +112,23 @@ function handleRootMessage(message: WorkerMessage) {
   });
 
   const state = useNostrStore.getState();
+  const previousKind0UpdatedAt = state.kind0UpdatedAt;
   const previousKind3UpdatedAt = state.kind3UpdatedAt;
+  const previousKind10000UpdatedAt = state.kind10000UpdatedAt;
+  const previousKind10002UpdatedAt = state.kind10002UpdatedAt;
+  const previousKind10019UpdatedAt = state.kind10019UpdatedAt;
+  const previousKind10063UpdatedAt = state.kind10063UpdatedAt;
+  const previousKind10096UpdatedAt = state.kind10096UpdatedAt;
   state.setKindTimestamp(event.kind(), event.createdAt());
 
   if (event.kind() === 0) {
+    if (previousKind0UpdatedAt > 0 && event.createdAt() <= previousKind0UpdatedAt) {
+      rootDebug('kind0 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind0UpdatedAt,
+      });
+      return;
+    }
     const kind0 = asKind0(event);
     rootDebug('kind0 parse', {
       ok: !!kind0,
@@ -154,6 +167,16 @@ function handleRootMessage(message: WorkerMessage) {
   }
 
   if (event.kind() === 10002) {
+    if (
+      previousKind10002UpdatedAt > 0 &&
+      event.createdAt() <= previousKind10002UpdatedAt
+    ) {
+      rootDebug('kind10002 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind10002UpdatedAt,
+      });
+      return;
+    }
     const kind10002 = asKind10002(event);
     rootDebug('kind10002 parse', {
       ok: !!kind10002,
@@ -183,6 +206,16 @@ function handleRootMessage(message: WorkerMessage) {
   }
 
   if (event.kind() === 10000) {
+    if (
+      previousKind10000UpdatedAt > 0 &&
+      event.createdAt() <= previousKind10000UpdatedAt
+    ) {
+      rootDebug('kind10000 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind10000UpdatedAt,
+      });
+      return;
+    }
     state.setMutes({
       mutedPubkeys: tagValues(event, 'p'),
       mutedHashtags: tagValues(event, 't'),
@@ -193,6 +226,16 @@ function handleRootMessage(message: WorkerMessage) {
   }
 
   if (event.kind() === 10019) {
+    if (
+      previousKind10019UpdatedAt > 0 &&
+      event.createdAt() <= previousKind10019UpdatedAt
+    ) {
+      rootDebug('kind10019 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind10019UpdatedAt,
+      });
+      return;
+    }
     const kind10019 = asKind10019(event);
     rootDebug('kind10019 parse', {
       ok: !!kind10019,
@@ -214,11 +257,31 @@ function handleRootMessage(message: WorkerMessage) {
   }
 
   if (event.kind() === 10063) {
+    if (
+      previousKind10063UpdatedAt > 0 &&
+      event.createdAt() <= previousKind10063UpdatedAt
+    ) {
+      rootDebug('kind10063 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind10063UpdatedAt,
+      });
+      return;
+    }
     state.setUploadServers({ blossomServers: tagValues(event, 'server') });
     return;
   }
 
   if (event.kind() === 10096) {
+    if (
+      previousKind10096UpdatedAt > 0 &&
+      event.createdAt() <= previousKind10096UpdatedAt
+    ) {
+      rootDebug('kind10096 ignored older event', {
+        createdAt: event.createdAt(),
+        current: previousKind10096UpdatedAt,
+      });
+      return;
+    }
     state.setUploadServers({ nip96Servers: tagValues(event, 'server') });
   }
 }

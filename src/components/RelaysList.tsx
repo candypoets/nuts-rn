@@ -64,7 +64,6 @@ const relayNames: Record<string, string> = {
   'wss://relay.nuts.cash': 'Nuts',
   'wss://relay.damus.io': 'Damus',
   'wss://nos.lol': 'Nos',
-  'wss://relay.thibautduchene.fr': 'Thibaut',
   'wss://purplepag.es': 'Purple Pages',
   'wss://user.kindpag.es': 'Kind Pages',
 };

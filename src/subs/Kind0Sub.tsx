@@ -81,9 +81,9 @@ const PROFILE_KIND_FILTERS: Array<{
   label: string;
 }> = [
   { id: 'notes', kinds: [1, 6], label: 'Notes' },
-  { id: 'articles', kinds: [30023], label: 'Articles' },
-  { id: 'polls', kinds: [1068], label: 'Polls' },
   { id: 'media', kinds: [20, 22], label: 'Media' },
+  { id: 'polls', kinds: [1068], label: 'Polls' },
+  { id: 'articles', kinds: [30023], label: 'Articles' },
 ];
 
 type Kind0ProfileHeaderProps = {
@@ -286,7 +286,6 @@ const communityNames: Record<string, string> = {
   'wss://relay.nuts.cash': 'Nuts',
   'wss://relay.damus.io': 'Damus',
   'wss://nos.lol': 'Nos',
-  'wss://relay.thibautduchene.fr': 'Thibaut',
   'wss://purplepag.es': 'Purple Pages',
   'wss://user.kindpag.es': 'Kind Pages',
 };
@@ -360,14 +359,6 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
       fetchRelayInfosForRelays(communities.map(community => community.url));
     }
   }, [communities]);
-
-  useEffect(() => {
-    setSelectedRelationship(current => {
-      if (current === 'belong' && belongCount) return current;
-      if (current === 'follow' && followCount) return current;
-      return belongCount ? 'belong' : 'follow';
-    });
-  }, [belongCount, followCount]);
 
   useEffect(() => {
     if (!communities.length) return undefined;

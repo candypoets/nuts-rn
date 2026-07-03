@@ -22,10 +22,7 @@ import {
   useSendStatusStore,
   type RelayMarker,
 } from '../stores';
-import {
-  fetchRelayInfosForRelays,
-  isHiddenAdminRelay,
-} from '../nostr/nip11';
+import { fetchRelayInfosForRelays } from '../nostr/nip11';
 import {type AppTheme, type AppThemeColors, useAppTheme} from '../theme';
 
 type RelayMode = 'read' | 'write';
@@ -67,7 +64,7 @@ function uniqueRelays(relays: string[]) {
     new Set(
       relays
         .map(normalizeRelayUrl)
-        .filter(url => Boolean(url) && !isHiddenAdminRelay(url)),
+        .filter(Boolean),
     ),
   );
 }

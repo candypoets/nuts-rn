@@ -7,6 +7,8 @@
     "android": "expo run:android",
     "android:expo": "expo run:android",
     "android:rn": "react-native run-android",
+    "android:release:apk": "cd android && NODE_ENV=production ./gradlew assembleRelease",
+    "android:release:aab": "cd android && NODE_ENV=production ./gradlew bundleRelease",
     "ios": "expo run:ios",
     "ios:expo": "node scripts/ios-expo-device.mjs",
     "ios:rn": "react-native run-ios",

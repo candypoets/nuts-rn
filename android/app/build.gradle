@@ -70,6 +70,11 @@ react {
  */
 def enableProguardInReleaseBuilds = false
 def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBuilds') ?: false).toBoolean()
+def releaseStoreFile = findProperty('NUTS_UPLOAD_STORE_FILE') ?: System.getenv('NUTS_UPLOAD_STORE_FILE')
+def releaseStorePassword = findProperty('NUTS_UPLOAD_STORE_PASSWORD') ?: System.getenv('NUTS_UPLOAD_STORE_PASSWORD')
+def releaseKeyAlias = findProperty('NUTS_UPLOAD_KEY_ALIAS') ?: System.getenv('NUTS_UPLOAD_KEY_ALIAS')
+def releaseKeyPassword = findProperty('NUTS_UPLOAD_KEY_PASSWORD') ?: System.getenv('NUTS_UPLOAD_KEY_PASSWORD')
+def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -105,15 +110,21 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds || enableProguardInReleaseBuilds

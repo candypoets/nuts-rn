@@ -23,7 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentData } from '@candypoets/nipworker';
-import { asKind1, fbArray } from '@candypoets/nipworker/utils';
+import { asKind1, asKind20, asKind22, fbArray } from '@candypoets/nipworker/utils';
 
 import { useSharedVideoPlayer } from '../media/videoPlayers';
 import { useUIStore, type UIStore } from '../stores/uiStore';
@@ -37,6 +37,18 @@ const OrientationGate = NativeModules.OrientationGate as
   | undefined;
 
 function zoomNoteText(note: NonNullable<UIStore['imageZoom']['note']>) {
+  const kind20 = asKind20(note);
+  const kind22 = asKind22(note);
+  const mediaTitle = kind20?.title?.() || kind22?.title?.() || '';
+  const mediaDescription =
+    kind20?.description?.() || kind22?.description?.() || '';
+  const mediaText = [mediaTitle, mediaDescription]
+    .map(value => value.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  if (mediaText) return mediaText;
+
   const kind1 = asKind1(note);
   if (!kind1) return '';
 

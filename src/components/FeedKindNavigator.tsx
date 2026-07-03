@@ -1,14 +1,13 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {InteractionManager, View} from 'react-native';
-import {ALL_FEED_KINDS, type FeedKind} from '../stores';
+import {type FeedKind} from '../stores';
 import {SegmentedTabs, type SegmentedTab} from './SegmentedTabs';
 
 export type FeedKindTabId =
-  | 'all'
   | 'notes'
-  | 'articles'
-  | 'polls'
   | 'media'
+  | 'polls'
+  | 'articles'
   | 'events';
 
 export type FeedKindTab = SegmentedTab<FeedKindTabId> & {
@@ -16,11 +15,10 @@ export type FeedKindTab = SegmentedTab<FeedKindTabId> & {
 };
 
 export const FEED_KIND_TABS: FeedKindTab[] = [
-  {id: 'all', label: 'All'},
   {id: 'notes', label: 'Notes', kinds: [1, 6]},
-  {id: 'articles', label: 'Articles', kinds: [30023]},
-  {id: 'polls', label: 'Polls', kinds: [1068]},
   {id: 'media', label: 'Media', kinds: [20, 22]},
+  {id: 'polls', label: 'Polls', kinds: [1068]},
+  {id: 'articles', label: 'Articles', kinds: [30023]},
 ];
 
 function sameKinds(left: FeedKind[], right: FeedKind[]) {
@@ -32,16 +30,13 @@ export function selectedFeedKindTab(
   selectedKinds: FeedKind[],
   tabs: FeedKindTab[] = FEED_KIND_TABS,
 ): FeedKindTabId {
-  if (
-    selectedKinds.length === 0 ||
-    sameKinds(selectedKinds, ALL_FEED_KINDS)
-  ) {
-    return 'all';
+  if (selectedKinds.length === 0) {
+    return tabs[0]?.id ?? 'notes';
   }
 
   return (
     tabs.find(tab => (tab.kinds ? sameKinds(selectedKinds, tab.kinds) : false))
-      ?.id ?? 'all'
+      ?.id ?? tabs[0]?.id ?? 'notes'
   );
 }
 
@@ -97,6 +92,7 @@ export function FeedKindNavigator({
           );
         }}
         layout="scroll"
+        labelWeight="regular"
       />
     </View>
   );

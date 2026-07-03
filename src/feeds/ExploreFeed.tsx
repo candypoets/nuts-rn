@@ -1,11 +1,14 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type {
@@ -19,8 +22,10 @@ import {
   asEoce,
   asKind1,
   asKind20,
+  asKind22,
   asKind6,
   asParsedEvent,
+  asPreGeneric,
   ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
@@ -33,7 +38,7 @@ import {
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
-import { ChevronDown, Search } from 'lucide-react-native';
+import { CalendarDays, ChevronDown, Play, Search, Users } from 'lucide-react-native';
 import {
   ALL_FEED_KINDS,
   KIND_LABELS,
@@ -49,6 +54,10 @@ import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
 import type { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { FeedKindIcon } from '../components/FeedKindIcon';
+import { Avatar } from '../components/notes/Avatar';
+import { User } from '../components/notes/User';
+import { useUIStore } from '../stores/uiStore';
+import { eventTags, stringValue, tagValue } from '../components/notes/kindHelpers';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -59,6 +68,19 @@ type ExploreFeedProps = {
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
+type ExploreCalendarEvent = {
+  id: string;
+  address: string;
+  attendeeCount: number;
+  capacity: number;
+  description: string;
+  image?: string;
+  location: string;
+  relays: string[];
+  start: number;
+  title: string;
+};
+
 const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.wine',
   'wss://pyramid.fiatjaf.com',
@@ -66,17 +88,19 @@ const GUEST_EXPLORE_RELAYS = [
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
 const APP_FOOTER_HEIGHT = 56;
+const MEDIA_GRID_COLUMNS = 2;
+const MEDIA_TILE_HEIGHT = 286;
+const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6];
 const EXPLORE_KIND_TABS: Array<{
   id: FeedKindTabId;
   label: string;
   kinds?: FeedKind[];
 }> = [
-  { id: 'all', label: 'All' },
   { id: 'notes', label: 'Notes', kinds: [1, 6] },
-  { id: 'articles', label: 'Articles', kinds: [30023] },
-  { id: 'polls', label: 'Polls', kinds: [1068] },
   { id: 'media', label: 'Media', kinds: [20, 22] },
-  { id: 'events', label: 'Events', kinds: [30311] },
+  { id: 'polls', label: 'Polls', kinds: [1068] },
+  { id: 'articles', label: 'Articles', kinds: [30023] },
+  { id: 'events', label: 'Events', kinds: [31922, 31923] },
 ];
 
 export function ExploreFeed({
@@ -142,7 +166,7 @@ export function ExploreFeed({
   const relaySelectionSubId = `feed${exploreAudienceMode}`;
   const selectedSubRelays = relaySubs[relaySelectionSubId];
   const requestKinds = useMemo(
-    () => (selectedKinds.length ? selectedKinds : ALL_FEED_KINDS),
+    () => (selectedKinds.length ? selectedKinds : DEFAULT_EXPLORE_KINDS),
     [selectedKinds],
   );
   const requestAuthors = useMemo(
@@ -187,6 +211,14 @@ export function ExploreFeed({
     [baseSubId, relayKey],
   );
   const [, setItemsVersion] = useState(0);
+  const mediaGrid =
+    selectedKinds.length === 2 &&
+    selectedKinds.includes(20) &&
+    selectedKinds.includes(22);
+  const eventCards =
+    selectedKinds.length === 2 &&
+    selectedKinds.includes(31922) &&
+    selectedKinds.includes(31923);
 
   const defaultHeader = useCallback(
     ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
@@ -687,8 +719,15 @@ export function ExploreFeed({
     }: {
       item: ParsedEvent;
       visible: boolean;
-    }) => <Note note={item} visible={visible && itemVisible} />,
-    [visible],
+    }) =>
+      mediaGrid ? (
+        <MediaGridNote note={item} visible={visible && itemVisible} />
+      ) : eventCards ? (
+        <ExploreEventCard note={item} relays={feedRelays} />
+      ) : (
+        <Note note={item} visible={visible && itemVisible} />
+      ),
+    [eventCards, feedRelays, mediaGrid, visible],
   );
   const getItemId = useCallback(
     (item: ParsedEvent, index: number) => item.id() || `missing:${index}`,
@@ -697,13 +736,25 @@ export function ExploreFeed({
   const listHeader = header ?? defaultHeader;
 
   const empty = (
-    <View className="px-6 py-16">
+    <View className="items-center px-6 py-12">
       <Text className="text-center text-base font-semibold text-primary-content">
-        Explore feed
+        No notes here yet
       </Text>
-      <Text className="mt-2 text-center text-sm text-primary-content">
-        Loading explore notes...
+      <Text className="mt-2 max-w-72 text-center text-sm text-primary-content">
+        Try another community relay or switch scope from contacts to all.
       </Text>
+      {exploreAudienceMode === 'contacts' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Switch Explore feed scope to all"
+          className="mt-5 rounded-full bg-primary px-5 py-2"
+          onPress={() => setExploreAudienceMode('all')}
+        >
+          <Text className="text-sm font-semibold text-primary-content">
+            Switch to all
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 
@@ -725,10 +776,355 @@ export function ExploreFeed({
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}
         contentContainerClassName="pb-44"
+        numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
+        columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
       />
     </View>
   );
 }
+
+type MediaGridLink = {
+  src: string;
+  poster?: string;
+  type: 'image' | 'video';
+  blurhash?: string;
+  dim?: string | null;
+};
+
+function parseExploreCalendarEvent(
+  note: ParsedEvent,
+  relays: string[],
+): ExploreCalendarEvent | null {
+  const kind = note.kind();
+  if (kind !== 31922 && kind !== 31923) return null;
+  const id = note.id();
+  const pubkey = note.pubkey();
+  const tags = eventTags(note);
+  const pre = asPreGeneric(note);
+  const d = stringValue(pre?.d()) || tagValue(tags, 'd');
+  const startTag = tagValue(tags, 'start') || tagValue(tags, 'starts');
+  const start =
+    kind === 31922
+      ? Math.floor(Date.parse(`${startTag}T00:00:00`) / 1000)
+      : pre
+        ? Number(pre.starts())
+        : Number(startTag);
+  if (!id || !pubkey || !d || !start) return null;
+
+  const participants = pre ? fbArray(pre, 'participants') : [];
+  const capacity = Number(tagValue(tags, 'capacity') || 0);
+  const description =
+    tagValue(tags, 'summary').trim() ||
+    stringValue(pre?.description()).trim() ||
+    stringValue(pre?.content()).trim();
+
+  return {
+    id,
+    address: `${kind}:${pubkey}:${d}`,
+    attendeeCount: Number(pre?.currentParticipants?.() ?? 0) || participants.length,
+    capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : 0,
+    description,
+    image: stringValue(pre?.image()) || tagValue(tags, 'image') || undefined,
+    location: stringValue(pre?.location()) || tagValue(tags, 'location'),
+    relays,
+    start,
+    title:
+      stringValue(pre?.title()).trim() ||
+      tagValue(tags, 'title').trim() ||
+      tagValue(tags, 'name').trim() ||
+      description ||
+      'Community event',
+  };
+}
+
+function formatEventMonth(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, {month: 'short'})
+    .format(new Date(timestamp * 1000))
+    .toUpperCase();
+}
+
+function formatEventDay(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, {day: 'numeric'}).format(
+    new Date(timestamp * 1000),
+  );
+}
+
+function formatEventTime(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(timestamp * 1000));
+}
+
+function ExploreEventCard({
+  note,
+  relays,
+}: {
+  note: ParsedEvent;
+  relays: string[];
+}) {
+  const theme = useAppTheme();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const event = useMemo(
+    () => parseExploreCalendarEvent(note, relays),
+    [note, relays],
+  );
+
+  if (!event) return <Note note={note} />;
+
+  const spotsLeft = event.capacity
+    ? Math.max(0, event.capacity - event.attendeeCount)
+    : null;
+
+  return (
+    <Pressable
+      className="mx-3 mt-2 overflow-hidden rounded-lg border border-base-200 bg-base-300"
+      onPress={() => {
+        const relay = event.relays[0] || '';
+        if (!relay || !event.address) return;
+        navigation.navigate('CalendarEvent', {relay, address: event.address});
+      }}
+    >
+      <View className="h-36 bg-base-200">
+        {event.image ? (
+          <Image
+            source={{uri: event.image}}
+            style={styles.fill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <View className="h-full w-full items-center justify-center bg-base-200">
+            <CalendarDays size={38} color={theme.colors.primary} />
+          </View>
+        )}
+        <View className="absolute inset-0 bg-black/25" />
+        <View className="absolute left-3 top-3 overflow-hidden rounded-md bg-white">
+          <Text className="bg-base-300 px-2 py-1 text-center text-[10px] font-black uppercase text-base-content">
+            {formatEventMonth(event.start)}
+          </Text>
+          <Text className="px-2 py-1 text-center text-xl font-black text-black">
+            {formatEventDay(event.start)}
+          </Text>
+        </View>
+      </View>
+
+      <View className="p-3">
+        <Text className="text-base font-bold text-base-content" numberOfLines={1}>
+          {event.title}
+        </Text>
+        <Text className="mt-2 text-sm font-medium text-primary-content" numberOfLines={1}>
+          {formatEventTime(event.start)}
+        </Text>
+        {event.location ? (
+          <Text className="mt-1 text-sm font-medium text-primary-content" numberOfLines={1}>
+            {event.location}
+          </Text>
+        ) : null}
+        {event.description ? (
+          <Text className="mt-2 text-sm leading-5 text-primary-content" numberOfLines={2}>
+            {event.description}
+          </Text>
+        ) : null}
+        <View className="mt-4 flex-row items-center">
+          <View className="mr-2 h-6 w-6 items-center justify-center rounded-full bg-primary/20">
+            <Users size={12} color={theme.colors.primary} />
+          </View>
+          <Text className="text-sm font-semibold text-primary">
+            {event.attendeeCount} going
+          </Text>
+        </View>
+        {spotsLeft !== null ? (
+          <Text
+            className={`mt-2 text-xs font-semibold ${
+              spotsLeft ? 'text-primary-content' : 'text-error'
+            }`}
+            numberOfLines={1}
+          >
+            {spotsLeft ? `${spotsLeft} spots left` : 'Full'}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function mediaEventData(note: ParsedEvent) {
+  const kind20 = asKind20(note);
+  const kind22 = asKind22(note);
+
+  if (kind20) {
+    const media = fbArray(kind20, 'images')
+      .map(image => ({
+        src: image.url() || '',
+        poster: image.blurhash() || undefined,
+        blurhash: image.blurhash() || undefined,
+        dim: image.dim() || undefined,
+        type: 'image' as const,
+      }))
+      .filter(item => item.src);
+    return {
+      media,
+      title: kind20.title?.() || '',
+      description: kind20.description?.() || '',
+    };
+  }
+
+  if (kind22) {
+    const media = fbArray(kind22, 'videos')
+      .map(video => ({
+        src: video.url() || '',
+        poster: video.image() || undefined,
+        blurhash: video.image() || undefined,
+        dim: video.dim() || undefined,
+        type: 'video' as const,
+      }))
+      .filter(item => item.src || item.poster);
+    return {
+      media,
+      title: kind22.title?.() || '',
+      description: kind22.description?.() || '',
+    };
+  }
+
+  return {media: [] as MediaGridLink[], title: '', description: ''};
+}
+
+function MediaGridNoteComponent({
+  note,
+  visible,
+}: {
+  note: ParsedEvent;
+  visible: boolean;
+}) {
+  const {media} = useMemo(() => mediaEventData(note), [note]);
+  const primary = media[0];
+  const theme = useAppTheme();
+  const setImageZoom = useUIStore(state => state.setImageZoom);
+  const pubkey = note.pubkey() || '';
+  const openNote = useCallback(() => {
+    const links = media.filter(item => item.src);
+    if (!links.length) return;
+    setImageZoom({
+      links: links.map(item => ({
+        src: item.src,
+        type: item.type,
+        blurhash: item.blurhash,
+        dim: item.dim,
+      })),
+      note,
+      zoomed: 0,
+      gridId: `${links[0]?.src || note.id() || 'media'}-${links.length}`,
+      videoTime: 0,
+    });
+  }, [media, note, setImageZoom]);
+  const overlayTextClassName =
+    theme.id === 'snowwhite' ? 'text-neutral-950' : 'text-white';
+
+  return (
+    <Pressable
+      className="relative overflow-hidden bg-base-200"
+      style={styles.mediaTile}
+      onPress={openNote}
+    >
+      <View className="relative h-full w-full bg-base-200">
+        {visible && primary?.type === 'video' && primary.src ? (
+          <MediaGridVideoPreview src={primary.src} poster={primary.poster} />
+        ) : visible && primary ? (
+          <Image
+            source={{uri: primary.poster || primary.src}}
+            placeholder={
+              primary.type === 'image' && primary.poster ? primary.poster : undefined
+            }
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            style={styles.fill}
+          />
+        ) : null}
+        {primary?.type === 'video' ? (
+          <View className="absolute inset-0 items-center justify-center">
+            <View className="h-8 w-8 items-center justify-center rounded-full bg-black/55">
+              <Play size={14} color="#ffffff" fill="#ffffff" />
+            </View>
+          </View>
+        ) : null}
+      </View>
+      <View
+        className="absolute bottom-0 left-0 right-0 px-1.5 py-1.5"
+      >
+        <View className="min-w-0 flex-row items-center gap-2">
+          <Avatar pubkey={pubkey} size="xxs" />
+          <User
+            pubkey={pubkey}
+            className={`min-w-0 flex-1 text-[11px] font-semibold ${overlayTextClassName}`}
+          />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function MediaGridVideoPreview({
+  poster,
+  src,
+}: {
+  poster?: string;
+  src: string;
+}) {
+  const [firstFrameRendered, setFirstFrameRendered] = useState(false);
+  const [posterFailed, setPosterFailed] = useState(false);
+  const player = useVideoPlayer(src, nextPlayer => {
+    nextPlayer.muted = true;
+    nextPlayer.volume = 0;
+    nextPlayer.loop = false;
+    nextPlayer.showNowPlayingNotification = false;
+    nextPlayer.staysActiveInBackground = false;
+    nextPlayer.currentTime = 0;
+    nextPlayer.pause();
+  });
+
+  useEffect(() => {
+    setFirstFrameRendered(false);
+    setPosterFailed(false);
+    player.muted = true;
+    player.volume = 0;
+    player.currentTime = 0;
+    player.pause();
+  }, [player, src]);
+
+  return (
+    <>
+      <VideoView
+        player={player}
+        nativeControls={false}
+        contentFit="cover"
+        allowsPictureInPicture={false}
+        startsPictureInPictureAutomatically={false}
+        useExoShutter={false}
+        style={styles.fill}
+        onFirstFrameRender={() => setFirstFrameRendered(true)}
+      />
+      {poster && !firstFrameRendered && !posterFailed ? (
+        <Image
+          source={{uri: poster}}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          style={styles.posterImage}
+          onError={() => setPosterFailed(true)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+const MediaGridNote = memo(
+  MediaGridNoteComponent,
+  (previous, next) =>
+    previous.note.id() === next.note.id() &&
+    previous.visible === next.visible,
+);
 
 function ExploreComposerFooter() {
   return (
@@ -942,6 +1338,22 @@ function ExploreScopeToggle({
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  fill: {
+    height: '100%',
+    width: '100%',
+  },
+  mediaGridColumns: {
+    columnGap: 0,
+  },
+  mediaTile: {
+    height: MEDIA_TILE_HEIGHT,
+  },
+  posterImage: {
+    ...StyleSheet.absoluteFill,
+  },
+});
 
 function hashKey(value: string) {
   let hash = 0;

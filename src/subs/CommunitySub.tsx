@@ -48,10 +48,10 @@ import {Avatar} from '../components/notes/Avatar';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
 import type {RootStackParamList} from '../navigation/types';
-import {ALL_FEED_KINDS, useRelayStore, type FeedKind} from '../stores';
+import {useRelayStore, type FeedKind} from '../stores';
 import {useAppTheme} from '../theme';
 
-type CommunityKindFilterId = 'all' | 'notes' | 'polls' | 'media' | 'articles';
+type CommunityKindFilterId = 'notes' | 'media' | 'polls' | 'articles';
 
 type CommunitySubProps = {
   description?: string;
@@ -99,10 +99,9 @@ type CommunityRsvp = {
 };
 
 const COMMUNITY_TABS: CommunityTab[] = [
-  {id: 'all', kinds: ALL_FEED_KINDS, label: 'All'},
   {id: 'notes', kinds: [1, 6], label: 'Notes'},
-  {id: 'polls', kinds: [1068], label: 'Polls'},
   {id: 'media', kinds: [20, 22], label: 'Media'},
+  {id: 'polls', kinds: [1068], label: 'Polls'},
   {id: 'articles', kinds: [30023], label: 'Articles'},
 ];
 const COMMUNITY_EMPTY_TIMEOUT_MS = 2400;
@@ -630,7 +629,7 @@ export function CommunitySub({
   const relayInfo = relayInfos[normalizedRelay]?.info;
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
-  const [selectedTab, setSelectedTab] = useState<CommunityKindFilterId>('all');
+  const [selectedTab, setSelectedTab] = useState<CommunityKindFilterId>('notes');
   const [items, setItems] = useState<ParsedEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [emptyTimedOut, setEmptyTimedOut] = useState(false);
@@ -649,7 +648,7 @@ export function CommunitySub({
     [],
   );
   const requestKinds = useMemo(
-    () => COMMUNITY_TABS.find(tab => tab.id === selectedTab)?.kinds ?? ALL_FEED_KINDS,
+    () => COMMUNITY_TABS.find(tab => tab.id === selectedTab)?.kinds ?? [1, 6],
     [selectedTab],
   );
   const name = nameParam || relayInfo?.name || relayLabel(normalizedRelay);

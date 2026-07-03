@@ -1,10 +1,10 @@
 import React from 'react';
 import {
+  Calendar,
   FileText,
   Images,
   ListChecks,
   Newspaper,
-  Radio,
   Repeat2,
   Video,
   type LucideIcon,
@@ -18,7 +18,8 @@ const KIND_ICONS: Record<FeedKind, LucideIcon> = {
   22: Video,
   1068: ListChecks,
   30023: Newspaper,
-  30311: Radio,
+  31922: Calendar,
+  31923: Calendar,
 };
 
 export function FeedKindIcon({

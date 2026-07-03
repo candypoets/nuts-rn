@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type FeedKind = 1 | 6 | 20 | 22 | 1068 | 30023 | 30311;
+export type FeedKind = 1 | 6 | 20 | 22 | 1068 | 30023 | 31922 | 31923;
 
 export const ALL_FEED_KINDS: FeedKind[] = [
   1,
@@ -11,7 +11,8 @@ export const ALL_FEED_KINDS: FeedKind[] = [
   22,
   1068,
   30023,
-  30311,
+  31922,
+  31923,
 ];
 
 export type AppStore = {

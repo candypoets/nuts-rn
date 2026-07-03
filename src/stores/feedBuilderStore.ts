@@ -12,7 +12,8 @@ export const KIND_LABELS: Record<FeedKind, string> = {
   22: 'Short Videos',
   1068: 'Polls',
   30023: 'Articles',
-  30311: 'Live',
+  31922: 'Date Events',
+  31923: 'Time Events',
 };
 
 export const KIND_DESCRIPTIONS: Record<FeedKind, string> = {
@@ -22,7 +23,8 @@ export const KIND_DESCRIPTIONS: Record<FeedKind, string> = {
   22: 'Short-form video posts.',
   1068: 'Poll events.',
   30023: 'Long-form articles.',
-  30311: 'Live activity events.',
+  31922: 'Date-based calendar events.',
+  31923: 'Time-based calendar events.',
 };
 
 export type FeedPackSelection = {
@@ -61,8 +63,29 @@ function uniqueAuthors(packs: FeedPackSelection[]) {
   return Array.from(authors);
 }
 
-function normalizeKinds(kinds: FeedKind[]) {
-  return Array.from(new Set(kinds)).sort((left, right) => left - right);
+const SELECTABLE_FEED_KINDS = new Set<FeedKind>([
+  1,
+  6,
+  20,
+  22,
+  1068,
+  30023,
+  31922,
+  31923,
+]);
+
+function normalizeKinds(kinds: number[]) {
+  const normalized: FeedKind[] = [];
+  kinds.forEach(kind => {
+    if (kind === 30311) {
+      normalized.push(31922, 31923);
+      return;
+    }
+    if (SELECTABLE_FEED_KINDS.has(kind as FeedKind)) {
+      normalized.push(kind as FeedKind);
+    }
+  });
+  return Array.from(new Set(normalized)).sort((left, right) => left - right);
 }
 
 export const useFeedBuilderStore = create<FeedBuilderStore>()(
@@ -150,7 +173,9 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
         exploreAudienceMode: state.exploreAudienceMode,
       }),
       onRehydrateStorage: () => state => {
-        state?.setHydrated(true);
+        if (!state) return;
+        state.setSelectedKinds(state.selectedKinds);
+        state.setHydrated(true);
       },
     },
   ),

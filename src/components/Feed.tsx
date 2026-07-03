@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import {
-  LegendList,
+  type ColumnWrapperStyle,
   type LegendListRef,
 } from '@legendapp/list/react-native';
 import {AnimatedLegendList} from '@legendapp/list/reanimated';
@@ -74,6 +74,8 @@ export type FeedProps<T> = {
   disableMaintainVisibleContentPosition?: boolean;
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
+  numColumns?: number;
+  columnWrapperStyle?: ColumnWrapperStyle;
   onRefresh?: () => void | Promise<void>;
   onNearBottom?: (event: {distance: number}) => void;
   onChromeVisibilityChange?: (visible: boolean) => void;
@@ -134,6 +136,8 @@ export function Feed<T>({
   disableMaintainVisibleContentPosition = false,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
+  numColumns = 1,
+  columnWrapperStyle,
   onRefresh,
   onNearBottom,
   onChromeVisibilityChange,
@@ -413,6 +417,7 @@ export function Feed<T>({
         />
       ) : (
         <AnimatedLegendList
+          key={`columns:${numColumns}`}
           ref={listRef}
           data={listItems}
           keyExtractor={keyExtractor}
@@ -433,6 +438,8 @@ export function Feed<T>({
           ListEmptyComponent={listEmpty}
           className="flex-1"
           contentContainerClassName={contentContainerClassName}
+          numColumns={numColumns}
+          columnWrapperStyle={columnWrapperStyle}
           initialScrollAtEnd={false}
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition ? true : false

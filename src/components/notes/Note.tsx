@@ -613,7 +613,11 @@ function NoteComponent({
     if (displayNote.kind() === 30023) {
       return <Kind30023Content note={displayNote} />;
     }
-    if (displayNote.kind() === 30311) {
+    if (
+      displayNote.kind() === 30311 ||
+      displayNote.kind() === 31922 ||
+      displayNote.kind() === 31923
+    ) {
       return <KindPreGenericContent note={displayNote} />;
     }
     return null;

@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { type FeedKind } from './appStore';
 
+export type ExploreAudienceMode = 'contacts' | 'all';
+
 export const KIND_LABELS: Record<FeedKind, string> = {
   1: 'Notes',
   6: 'Reposts',
@@ -38,9 +40,11 @@ type FeedBuilderStore = {
   selectedKinds: FeedKind[];
   selectedPacks: FeedPackSelection[];
   selectedAuthors: string[];
+  exploreAudienceMode: ExploreAudienceMode;
   hydrated: boolean;
   applySelection(kinds: FeedKind[], packs: FeedPackSelection[]): void;
   setSelectedKinds(kinds: FeedKind[]): void;
+  setExploreAudienceMode(mode: ExploreAudienceMode): void;
   setFollowListPack(pack: FeedPackSelection): void;
   toggleKind(kind: FeedKind): void;
   togglePack(pack: FeedPackSelection): void;
@@ -67,6 +71,7 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
       selectedKinds: [],
       selectedPacks: [],
       selectedAuthors: [],
+      exploreAudienceMode: 'contacts',
       hydrated: false,
       applySelection: (kinds, packs) =>
         set({
@@ -78,6 +83,8 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
         set({
           selectedKinds: normalizeKinds(kinds),
         }),
+      setExploreAudienceMode: exploreAudienceMode =>
+        set({ exploreAudienceMode }),
       setFollowListPack: pack =>
         set(state => {
           const existingIndex = state.selectedPacks.findIndex(
@@ -140,6 +147,7 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
         selectedKinds: state.selectedKinds,
         selectedPacks: state.selectedPacks,
         selectedAuthors: state.selectedAuthors,
+        exploreAudienceMode: state.exploreAudienceMode,
       }),
       onRehydrateStorage: () => state => {
         state?.setHydrated(true);

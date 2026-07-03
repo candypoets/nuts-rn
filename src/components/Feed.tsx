@@ -76,7 +76,6 @@ export type FeedProps<T> = {
   nearBottomThreshold?: number;
   onRefresh?: () => void | Promise<void>;
   onNearBottom?: (event: {distance: number}) => void;
-  onViewportChange?: (state: {start: number; end: number; down: boolean}) => void;
   onChromeVisibilityChange?: (visible: boolean) => void;
   contentContainerClassName?: string;
   removeClippedSubviews?: boolean;
@@ -137,12 +136,10 @@ export function Feed<T>({
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   onRefresh,
   onNearBottom,
-  onViewportChange,
   onChromeVisibilityChange,
   contentContainerClassName = 'pb-28',
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
-  const [end, setEnd] = useState(0);
   const [down, setDown] = useState(true);
   const listRef = useRef<LegendListRef>(null);
   const bottomListRef = useRef<FlashListRef<T>>(null);
@@ -240,10 +237,6 @@ export function Feed<T>({
   }, [scrollToBottom, scrollToBottomKey]);
 
   useEffect(() => {
-    onViewportChange?.({start, end, down});
-  }, [down, end, onViewportChange, start]);
-
-  useEffect(() => {
     onChromeVisibilityChange?.(!down || start < 1);
   }, [down, onChromeVisibilityChange, start]);
 
@@ -280,7 +273,6 @@ export function Feed<T>({
       const nextStart = indexes[0] ?? 0;
       const nextEnd = (indexes[indexes.length - 1] ?? nextStart) + 1;
       setStart(nextStart);
-      setEnd(nextEnd);
       const distance = Math.max(0, items.length - nextEnd);
       if (nextStart === 0 || distance > nearBottomThreshold) {
         nearBottomTriggeredRef.current = false;
@@ -310,12 +302,12 @@ export function Feed<T>({
         index: info.index,
         extraData: info.extraData,
         data: items,
-        visible: visible && info.index >= start - 5,
+        visible,
       })
     ),
-    [items, renderItem, start, visible],
+    [items, renderItem, visible],
   );
-  const handleEndReached = useCallback(() => {
+  const handleEndReached = useCallback((event?: {distanceFromEnd?: number}) => {
     if (
       !onNearBottom ||
       items.length === 0 ||
@@ -324,12 +316,9 @@ export function Feed<T>({
     ) {
       return;
     }
-    const distance = Math.max(0, items.length - end);
-    if (distance <= nearBottomThreshold) {
-      nearBottomTriggeredRef.current = true;
-      onNearBottom({distance});
-    }
-  }, [end, items.length, nearBottomThreshold, onNearBottom, start]);
+    nearBottomTriggeredRef.current = true;
+    onNearBottom({distance: Math.max(0, event?.distanceFromEnd ?? 0)});
+  }, [items.length, onNearBottom, start]);
 
   const listHeader = useMemo(() => {
     if (!header) return null;
@@ -435,7 +424,7 @@ export function Feed<T>({
                 ...info,
                 item,
                 data: items,
-                visible: visible && info.index >= start - 5,
+                visible,
               })
             );
           }}

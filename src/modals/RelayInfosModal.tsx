@@ -5,11 +5,22 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  InteractionManager,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Image } from 'expo-image';
-import { Check, ChevronDown, RadioTower } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import { useRelayStore } from '../stores';
-import { fetchRelayInfosForRelays, normalizeRelayUrl } from '../nostr/nip11';
+import {
+  fetchRelayInfosForRelays,
+  isHiddenAdminRelay,
+  normalizeRelayUrl,
+} from '../nostr/nip11';
 import { type AppTheme, type AppThemeColors, useAppTheme } from '../theme';
 
 type RelayInfosModalProps = {
@@ -29,6 +40,17 @@ function relayLabel(url: string) {
   }
 }
 
+function relayInitials(name: string) {
+  const words = name
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0]}${words[1][0]}`.toUpperCase();
+}
+
 function statusColor(status: string | undefined, colors: AppThemeColors) {
   switch (status) {
     case 'EOSE':
@@ -46,36 +68,32 @@ function statusColor(status: string | undefined, colors: AppThemeColors) {
 }
 
 function statusLabel(status?: string) {
-  return status || 'unknown';
-}
-
-function shortPubkey(pubkey?: string) {
-  if (!pubkey) return '';
-  return pubkey.length > 18
-    ? `${pubkey.slice(0, 10)}...${pubkey.slice(-8)}`
-    : pubkey;
-}
-
-function formatValue(value: unknown) {
-  if (typeof value === 'boolean') return value ? 'yes' : 'no';
-  if (typeof value === 'number') return String(value);
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value))
-    return `${value.length} item${value.length === 1 ? '' : 's'}`;
+  if (!status) return '';
+  if (status === 'open' || status === 'connected' || status === 'EOSE' || status === 'OK') return 'live';
+  if (status === 'SUBSCRIBED') return 'sub';
+  if (status === 'connecting') return 'sync';
+  if (status === 'failed' || status === 'FAILED') return 'fail';
+  if (status === 'close' || status === 'CLOSED') return 'idle';
   return '';
 }
 
-function limitationRows(limitation?: Record<string, unknown>) {
-  if (!limitation) return [];
-  return Object.entries(limitation)
-    .map(
-      ([key, value]) => [key.replace(/_/g, ' '), formatValue(value)] as const,
-    )
-    .filter(([, value]) => Boolean(value));
+function softwareLabel(software?: string) {
+  if (!software) return '';
+  return software
+    .replace(/^https?:\/\/github\.com\//, '')
+    .replace(/^nostr-/, '')
+    .replace(/-relay$/, '')
+    .replace(/\.git$/, '');
 }
 
-function hasFees(fees?: Record<string, unknown>) {
-  return Boolean(fees && Object.keys(fees).length);
+function uniqueRelays(relays: string[]) {
+  return [
+    ...new Set(
+      relays
+        .map(normalizeRelayUrl)
+        .filter(url => Boolean(url) && !isHiddenAdminRelay(url)),
+    ),
+  ];
 }
 
 function hexLuminance(hex: string) {
@@ -108,16 +126,15 @@ export function RelayInfosModal({
   );
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const [selectedRelays, setSelectedRelays] = useState(() =>
-    (storeRelays ?? relays).map(normalizeRelayUrl).filter(Boolean),
+    uniqueRelays(storeRelays ?? relays),
   );
-  const [expandedRelay, setExpandedRelay] = useState<string | null>(null);
   const selectedRelaysRef = useRef(selectedRelays);
+  const initialSelectedRelaysRef = useRef(selectedRelays);
+  const itemOrderRef = useRef<string[] | null>(null);
   const communityMode = mode === 'communities';
 
   useEffect(() => {
-    setSelectedRelays(
-      (storeRelays ?? relays).map(normalizeRelayUrl).filter(Boolean),
-    );
+    setSelectedRelays(uniqueRelays(storeRelays ?? relays));
   }, [relays, storeRelays]);
 
   useEffect(() => {
@@ -146,18 +163,29 @@ export function RelayInfosModal({
 
   const items = useMemo(() => {
     const selectedRelaySet = new Set(selectedRelays);
-    const routeRelays = relays.map(normalizeRelayUrl).filter(Boolean);
-    const allRelays = communityMode
+    const routeRelays = uniqueRelays(relays);
+    const candidateRelays = communityMode
       ? routeRelays
-      : [
-          ...new Set([
-            ...routeRelays,
-            ...selectedRelaySet,
-            ...Object.keys(relayStatuses),
-            ...Object.keys(statuses).map(normalizeRelayUrl),
-            ...Object.keys(relayInfos),
-          ]),
-        ];
+      : uniqueRelays([
+          ...routeRelays,
+          ...selectedRelays,
+          ...Object.keys(relayStatuses),
+          ...Object.keys(statuses),
+          ...Object.keys(relayInfos),
+        ]);
+    const currentOrder = itemOrderRef.current;
+    const initialSelectedRelaySet = new Set(initialSelectedRelaysRef.current);
+    const allRelays =
+      currentOrder === null
+        ? [
+            ...candidateRelays.filter(url => initialSelectedRelaySet.has(url)),
+            ...candidateRelays.filter(url => !initialSelectedRelaySet.has(url)),
+          ]
+        : [
+            ...currentOrder.filter(url => candidateRelays.includes(url)),
+            ...candidateRelays.filter(url => !currentOrder.includes(url)),
+          ];
+    itemOrderRef.current = allRelays;
 
     return allRelays
       .map(url => ({
@@ -169,9 +197,17 @@ export function RelayInfosModal({
       }));
   }, [communityMode, relayInfos, relayStatuses, relays, selectedRelays, statuses]);
 
+  const itemUrls = useMemo(() => items.map(item => item.url), [items]);
+
   useEffect(() => {
-    fetchRelayInfosForRelays(items.map(item => item.url));
-  }, [items]);
+    const task = InteractionManager.runAfterInteractions(() => {
+      fetchRelayInfosForRelays(itemUrls);
+    });
+
+    return () => {
+      task.cancel();
+    };
+  }, [itemUrls]);
 
   return (
     <View style={styles.modalBody}>
@@ -193,24 +229,20 @@ export function RelayInfosModal({
         >
           {items.length ? (
             items.map(item => {
-              const expanded = expandedRelay === item.url;
-              const infoStatus = item.infoEntry?.status ?? 'idle';
-              const limitation = limitationRows(item.info?.limitation);
-              const paid =
-                item.info?.limitation?.payment_required === true ||
-                Boolean(item.info?.payments_url) ||
-                hasFees(item.info?.fees);
-              const badges = [
-                paid ? 'paid' : null,
-                item.info?.limitation?.auth_required === true ? 'auth' : null,
-                item.info?.supported_nips?.includes(42) ? 'nip42' : null,
-              ].filter((badge): badge is string => Boolean(badge));
+              const name = item.info?.name || relayLabel(item.url);
+              const nips = Array.isArray(item.info?.supported_nips)
+                ? item.info.supported_nips
+                : [];
+              const software = softwareLabel(item.info?.software);
+              const label = statusLabel(item.status);
 
               return (
                 <Pressable
                   key={item.url}
                   style={[styles.card, item.selected && styles.selectedRow]}
-                  onPress={() => setExpandedRelay(expanded ? null : item.url)}
+                  onPress={() => {
+                    if (!communityMode) toggleRelay(item.url);
+                  }}
                 >
                   <View style={styles.row}>
                     {communityMode ? null : (
@@ -236,194 +268,80 @@ export function RelayInfosModal({
                         ) : null}
                       </Pressable>
                     )}
-                    {item.info?.icon ? (
-                      <Image
-                        source={{ uri: item.info.icon }}
-                        style={styles.relayIcon}
-                        contentFit="cover"
-                      />
-                    ) : (
-                      <View style={styles.relayIconFallback}>
-                        <RadioTower
-                          size={15}
-                          color={theme.colors.primary}
-                          strokeWidth={2.2}
+                    <View style={styles.relayIconWrap}>
+                      {item.info?.icon ? (
+                        <Image
+                          source={{ uri: item.info.icon }}
+                          style={styles.relayIcon}
+                          contentFit="cover"
                         />
-                      </View>
-                    )}
-                    <View
-                      style={[
-                        styles.statusDot,
-                        {
-                          backgroundColor: statusColor(
-                            item.status,
-                            theme.colors,
-                          ),
-                        },
-                      ]}
-                    />
+                      ) : (
+                        <View style={styles.relayIconFallback}>
+                          <Text style={styles.relayInitials}>
+                            {relayInitials(name)}
+                          </Text>
+                        </View>
+                      )}
+                      <View
+                        style={[
+                          styles.statusDot,
+                          {
+                            backgroundColor: statusColor(
+                              item.status,
+                              theme.colors,
+                            ),
+                          },
+                        ]}
+                      />
+                    </View>
                     <View style={styles.textBlock}>
-                      <Text style={styles.relayName} numberOfLines={1}>
-                        {item.info?.name || relayLabel(item.url)}
-                      </Text>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.relayName} numberOfLines={1}>
+                          {name}
+                        </Text>
+                        {label ? (
+                          <Text style={styles.inlineStatus}>{label}</Text>
+                        ) : null}
+                      </View>
                       <Text style={styles.relayUrl} numberOfLines={1}>
                         {communityMode
                           ? item.info?.description || 'Public community'
-                          : item.url}
+                          : item.info?.description || relayLabel(item.url)}
                       </Text>
                     </View>
-                    {communityMode ? (
-                      <Text style={styles.statusText}>Public</Text>
-                    ) : item.status === 'EOSE' || item.status === 'OK' ? (
-                      <Check
-                        size={18}
-                        color={theme.colors.success}
-                        strokeWidth={2.4}
-                      />
-                    ) : (
-                      <Text style={styles.statusText}>
-                        {statusLabel(item.status)}
-                      </Text>
-                    )}
-                    <ChevronDown
-                      size={17}
-                      color={theme.colors.primaryContent}
-                      strokeWidth={2.2}
-                      style={expanded ? styles.chevronExpanded : undefined}
-                    />
+                    <View style={styles.badges}>
+                      {nips.includes(50) ? (
+                        <Text style={[styles.badge, styles.searchBadge]}>
+                          search
+                        </Text>
+                      ) : null}
+                      {nips.includes(42) ? (
+                        <Text style={[styles.badge, styles.authBadge]}>
+                          auth
+                        </Text>
+                      ) : null}
+                      {nips.length ? (
+                        <Text
+                          style={[
+                            styles.badge,
+                            item.selected
+                              ? styles.selectedNipBadge
+                              : styles.nipBadge,
+                          ]}
+                        >
+                          {nips.length}
+                        </Text>
+                      ) : null}
+                      {software ? (
+                        <Text
+                          style={[styles.badge, styles.softwareBadge]}
+                          numberOfLines={1}
+                        >
+                          {software}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
-
-                  {expanded ? (
-                    <View style={styles.details}>
-                      {item.info?.description && !communityMode ? (
-                        <Text style={styles.description}>
-                          {item.info.description}
-                        </Text>
-                      ) : null}
-
-                      <View style={styles.infoStatusRow}>
-                        <Text style={styles.metaLabel}>
-                          {communityMode ? 'visibility' : 'NIP-11'}
-                        </Text>
-                        <Text style={styles.metaValue}>
-                          {communityMode
-                            ? 'public'
-                            : infoStatus === 'ok'
-                            ? 'metadata loaded'
-                            : infoStatus === 'loading'
-                            ? 'loading metadata'
-                            : infoStatus === 'failed'
-                            ? item.infoEntry?.error || 'metadata unavailable'
-                            : 'metadata not loaded'}
-                        </Text>
-                      </View>
-
-                      {badges.length ? (
-                        <View style={styles.chips}>
-                          {badges.map(badge => (
-                            <Text key={badge} style={styles.badge}>
-                              {badge}
-                            </Text>
-                          ))}
-                        </View>
-                      ) : null}
-
-                      {item.info?.supported_nips?.length ? (
-                        <View style={styles.section}>
-                          <Text style={styles.sectionTitle}>
-                            Supported NIPs
-                          </Text>
-                          <View style={styles.chips}>
-                            {item.info.supported_nips.slice(0, 28).map(nip => (
-                              <Text key={nip} style={styles.chip}>
-                                {nip}
-                              </Text>
-                            ))}
-                          </View>
-                        </View>
-                      ) : null}
-
-                      {limitation.length ? (
-                        <View style={styles.section}>
-                          <Text style={styles.sectionTitle}>Limits</Text>
-                          {limitation.slice(0, 10).map(([label, value]) => (
-                            <View key={label} style={styles.metaRow}>
-                              <Text style={styles.metaLabel}>{label}</Text>
-                              <Text style={styles.metaValue} numberOfLines={2}>
-                                {value}
-                              </Text>
-                            </View>
-                          ))}
-                        </View>
-                      ) : null}
-
-                      <View style={styles.section}>
-                        {item.info?.software ? (
-                          <View style={styles.metaRow}>
-                            <Text style={styles.metaLabel}>software</Text>
-                            <Text style={styles.metaValue} numberOfLines={1}>
-                              {item.info.software}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {item.info?.version ? (
-                          <View style={styles.metaRow}>
-                            <Text style={styles.metaLabel}>version</Text>
-                            <Text style={styles.metaValue}>
-                              {item.info.version}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {item.info?.contact ? (
-                          <View style={styles.metaRow}>
-                            <Text style={styles.metaLabel}>contact</Text>
-                            <Text style={styles.metaValue} numberOfLines={1}>
-                              {item.info.contact}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {item.info?.pubkey || item.info?.self ? (
-                          <View style={styles.metaRow}>
-                            <Text style={styles.metaLabel}>pubkey</Text>
-                            <Text style={styles.metaValue}>
-                              {shortPubkey(item.info.self || item.info.pubkey)}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {item.info?.posting_policy ? (
-                          <View style={styles.metaRow}>
-                            <Text style={styles.metaLabel}>policy</Text>
-                            <Text style={styles.metaValue} numberOfLines={1}>
-                              {item.info.posting_policy}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {item.info?.payments_url ? (
-                          <View style={styles.metaRow}>
-                            <Text style={styles.metaLabel}>payments</Text>
-                            <Text style={styles.metaValue} numberOfLines={1}>
-                              {item.info.payments_url}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-
-                      {item.info?.relay_countries?.length ||
-                      item.info?.language_tags?.length ||
-                      item.info?.tags?.length ? (
-                        <View style={styles.section}>
-                          <Text style={styles.sectionTitle}>Community</Text>
-                          <Text style={styles.metaValue}>
-                            {[
-                              ...(item.info.relay_countries ?? []),
-                              ...(item.info.language_tags ?? []),
-                              ...(item.info.tags ?? []),
-                            ].join('  ')}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  ) : null}
                 </Pressable>
               );
             })
@@ -490,19 +408,20 @@ function createRelayInfosStyles(theme: AppTheme) {
     card: {
       borderRadius: 8,
       backgroundColor: theme.colors.base300,
+      borderWidth: 1,
+      borderColor: 'transparent',
       overflow: 'hidden',
     },
     row: {
-      minHeight: 58,
+      minHeight: 64,
       paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingVertical: 10,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
     },
     selectedRow: {
       backgroundColor: theme.colors.base300,
-      borderWidth: 1,
       borderColor: theme.colors.primary,
     },
     selectionBox: {
@@ -521,31 +440,52 @@ function createRelayInfosStyles(theme: AppTheme) {
       backgroundColor: theme.colors.base300,
     },
     statusDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
+      position: 'absolute',
+      right: -2,
+      bottom: -2,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: theme.colors.base300,
+    },
+    relayIconWrap: {
+      position: 'relative',
+      flexShrink: 0,
     },
     relayIcon: {
-      width: 28,
-      height: 28,
-      borderRadius: 6,
+      width: 36,
+      height: 36,
+      borderRadius: 8,
       backgroundColor: theme.colors.base200,
     },
     relayIconFallback: {
-      width: 28,
-      height: 28,
-      borderRadius: 6,
-      backgroundColor: theme.colors.base200,
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      backgroundColor: theme.colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    relayInitials: {
+      color: theme.colors.primaryContent,
+      fontSize: 11,
+      fontWeight: '900',
     },
     textBlock: {
       flex: 1,
       minWidth: 0,
     },
+    nameRow: {
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
     relayName: {
       color: cardTextColor,
-      fontSize: 14,
+      flexShrink: 1,
+      fontSize: 15,
       fontWeight: '700',
     },
     relayUrl: {
@@ -553,91 +493,49 @@ function createRelayInfosStyles(theme: AppTheme) {
       fontSize: 12,
       marginTop: 2,
     },
-    statusText: {
+    inlineStatus: {
       color: theme.colors.primaryContent,
       fontSize: 11,
       fontWeight: '700',
       textTransform: 'lowercase',
     },
-    chevronExpanded: {
-      transform: [{ rotate: '180deg' }],
-    },
-    details: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: theme.colors.base200,
-      paddingHorizontal: 12,
-      paddingTop: 10,
-      paddingBottom: 12,
-      gap: 10,
-    },
-    description: {
-      color: cardTextColor,
-      fontSize: 13,
-      lineHeight: 18,
-    },
-    infoStatusRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 12,
-    },
-    section: {
-      gap: 7,
-    },
-    sectionTitle: {
-      color: cardTextColor,
-      fontSize: 12,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-    },
-    chips: {
+    badges: {
+      maxWidth: 118,
+      flexShrink: 0,
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 6,
-    },
-    chip: {
-      minWidth: 28,
-      borderRadius: 5,
-      overflow: 'hidden',
-      backgroundColor: theme.colors.base200,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      color: theme.colors.primaryContent,
-      fontSize: 11,
-      fontWeight: '800',
-      textAlign: 'center',
+      justifyContent: 'flex-end',
+      gap: 5,
     },
     badge: {
       borderRadius: 5,
       overflow: 'hidden',
-      backgroundColor: theme.colors.primary,
-      paddingHorizontal: 8,
+      paddingHorizontal: 7,
       paddingVertical: 4,
-      color: theme.button.primary.text,
-      fontSize: 11,
-      fontWeight: '800',
+      fontSize: 10,
+      fontWeight: '900',
+      lineHeight: 11,
     },
-    metaRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      gap: 12,
+    searchBadge: {
+      backgroundColor: theme.colors.info,
+      color: readableTextColor(theme.colors.info),
     },
-    metaLabel: {
-      width: 92,
+    authBadge: {
+      backgroundColor: theme.colors.warning,
+      color: readableTextColor(theme.colors.warning),
+    },
+    nipBadge: {
+      backgroundColor: theme.colors.base100,
+      color: surfaceTextColor,
+    },
+    selectedNipBadge: {
+      backgroundColor: theme.colors.primary,
       color: theme.colors.primaryContent,
-      fontSize: 12,
-      fontWeight: '700',
-      textTransform: 'lowercase',
     },
-    metaValue: {
-      flex: 1,
-      minWidth: 0,
-      color: cardTextColor,
-      fontSize: 12,
-      lineHeight: 16,
-      fontWeight: '600',
-      textAlign: 'right',
+    softwareBadge: {
+      maxWidth: 72,
+      backgroundColor: theme.colors.base100,
+      color: theme.colors.primaryContent,
     },
     empty: {
       color: theme.colors.primaryContent,

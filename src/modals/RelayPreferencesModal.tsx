@@ -22,7 +22,10 @@ import {
   useSendStatusStore,
   type RelayMarker,
 } from '../stores';
-import {fetchRelayInfosForRelays} from '../nostr/nip11';
+import {
+  fetchRelayInfosForRelays,
+  isHiddenAdminRelay,
+} from '../nostr/nip11';
 import {type AppTheme, type AppThemeColors, useAppTheme} from '../theme';
 
 type RelayMode = 'read' | 'write';
@@ -61,7 +64,11 @@ function sameStringArray(left: string[], right: string[]) {
 
 function uniqueRelays(relays: string[]) {
   return Array.from(
-    new Set(relays.map(normalizeRelayUrl).filter(Boolean)),
+    new Set(
+      relays
+        .map(normalizeRelayUrl)
+        .filter(url => Boolean(url) && !isHiddenAdminRelay(url)),
+    ),
   );
 }
 

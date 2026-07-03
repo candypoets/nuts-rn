@@ -10,9 +10,14 @@ const NIP11_TIMEOUT_MS = 5000;
 const NIP11_CONCURRENCY = 3;
 
 const pendingFetches = new Map<string, Promise<void>>();
+const HIDDEN_ADMIN_RELAY_URLS = new Set(['wss://miss-tourisma.relays.nuts.cash']);
 
 export function normalizeRelayUrl(url: string) {
   return url.trim().replace(/\/$/, '');
+}
+
+export function isHiddenAdminRelay(url: string) {
+  return HIDDEN_ADMIN_RELAY_URLS.has(normalizeRelayUrl(url));
 }
 
 function relayHttpUrl(url: string) {

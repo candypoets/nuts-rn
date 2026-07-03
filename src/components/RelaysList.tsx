@@ -128,13 +128,21 @@ export function RelaysList({
       statuses,
     });
   };
+  const openCommunityRelay = (relay: string) => {
+    const key = normalizeRelayUrl(relay);
+    const info = relayInfos[key]?.info;
+    navigation.navigate('Community', {
+      description: info?.description,
+      icon: info?.icon,
+      name: communityName(relay, info?.name),
+      relay: key,
+    });
+  };
 
   useEffect(() => {
     if (mini || !displayRelays.length) return;
     fetchRelayInfosForRelays(displayRelays);
   }, [displayRelays, mini]);
-
-  if (!displayRelays.length) return null;
 
   if (!mini) {
     return (
@@ -150,6 +158,19 @@ export function RelaysList({
           showsHorizontalScrollIndicator={false}
           contentContainerClassName="flex-row items-center gap-2"
         >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Manage relays"
+            className="items-center justify-center rounded-full border border-dashed border-base-200 bg-base-300"
+            hitSlop={8}
+            onPress={event => {
+              event.stopPropagation();
+              openRelayInfos();
+            }}
+            style={styles.fullManageButton}
+          >
+            <Plus size={22} color={theme.colors.primaryContent} />
+          </Pressable>
           {displayRelays.map(relay => {
             const key = normalizeRelayUrl(relay);
             const status = statuses[key];
@@ -171,7 +192,7 @@ export function RelaysList({
                 hitSlop={8}
                 onPress={event => {
                   event.stopPropagation();
-                  openRelayInfos();
+                  openCommunityRelay(relay);
                 }}
                 style={[
                   styles.fullRelayButton,
@@ -205,19 +226,6 @@ export function RelaysList({
               </Pressable>
             );
           })}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Manage relays"
-            className="items-center justify-center rounded-full border border-dashed border-base-200 bg-base-300"
-            hitSlop={8}
-            onPress={event => {
-              event.stopPropagation();
-              openRelayInfos();
-            }}
-            style={styles.fullManageButton}
-          >
-            <Plus size={22} color={theme.colors.primaryContent} />
-          </Pressable>
         </ScrollView>
       </View>
     );
@@ -229,11 +237,7 @@ export function RelaysList({
       hitSlop={10}
       onPress={event => {
         event.stopPropagation();
-        navigation.navigate('RelayInfos', {
-          subId,
-          relays: displayRelays,
-          statuses,
-        });
+        openRelayInfos();
       }}
       style={styles.container}
     >
@@ -251,6 +255,12 @@ export function RelaysList({
           mini ? '' : 'px-4'
         }`}
       >
+        <View
+          className="items-center justify-center rounded-full border border-dashed border-base-200 bg-base-300"
+          style={styles.miniManageButton}
+        >
+          <Plus size={12} color={theme.colors.primaryContent} />
+        </View>
         {displayRelays.map(relay => {
           const key = normalizeRelayUrl(relay);
           const status = statuses[key];
@@ -306,6 +316,10 @@ const styles = StyleSheet.create({
   fullManageButton: {
     width: 48,
     height: 48,
+  },
+  miniManageButton: {
+    width: 22,
+    height: 22,
   },
   iconImage: {
     height: '100%',

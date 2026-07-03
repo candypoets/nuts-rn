@@ -5,11 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type {
@@ -28,9 +24,12 @@ import {
   ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
-import {ComposerFooter} from '../components/ComposerFooter';
+import { ComposerFooter } from '../components/ComposerFooter';
 import { Feed } from '../components/Feed';
-import {FeedKindNavigator, type FeedKindTabId} from '../components/FeedKindNavigator';
+import {
+  FeedKindNavigator,
+  type FeedKindTabId,
+} from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
@@ -39,7 +38,7 @@ import {
   ALL_FEED_KINDS,
   KIND_LABELS,
   type FeedKind,
-  type FeedPackSelection,
+  type ExploreAudienceMode,
   useAuthStore,
   useFeedBuilderStore,
   useRelayStore,
@@ -72,31 +71,13 @@ const EXPLORE_KIND_TABS: Array<{
   label: string;
   kinds?: FeedKind[];
 }> = [
-  {id: 'all', label: 'All'},
-  {id: 'notes', label: 'Notes', kinds: [1, 6]},
-  {id: 'articles', label: 'Articles', kinds: [30023]},
-  {id: 'polls', label: 'Polls', kinds: [1068]},
-  {id: 'media', label: 'Media', kinds: [20, 22]},
-  {id: 'events', label: 'Events', kinds: [30311]},
+  { id: 'all', label: 'All' },
+  { id: 'notes', label: 'Notes', kinds: [1, 6] },
+  { id: 'articles', label: 'Articles', kinds: [30023] },
+  { id: 'polls', label: 'Polls', kinds: [1068] },
+  { id: 'media', label: 'Media', kinds: [20, 22] },
+  { id: 'events', label: 'Events', kinds: [30311] },
 ];
-
-function authorsForExplorePacks(
-  packs: FeedPackSelection[],
-  follows: string[],
-  hasResolvedFollows: boolean,
-) {
-  const authors = new Set<string>();
-  packs.forEach(pack => {
-    const people =
-      pack.id === 'followlist' && hasResolvedFollows ? follows : pack.people;
-    people.forEach(author => authors.add(author));
-  });
-  return Array.from(authors);
-}
-
-function hasFollowListPack(packs: FeedPackSelection[]) {
-  return packs.some(pack => pack.id === 'followlist');
-}
 
 export function ExploreFeed({
   enabled,
@@ -108,9 +89,7 @@ export function ExploreFeed({
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
-  const startRef = useRef(0);
   const rootSubIdRef = useRef<string | null>(null);
-  const liveSubIdRef = useRef<string | null>(null);
   const prevPaginationSubIdRef = useRef<string | null>(null);
   const paginationCounterRef = useRef(0);
   const requestCacheRef = useRef(0);
@@ -130,7 +109,6 @@ export function ExploreFeed({
     typeof requestAnimationFrame
   > | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const unsubscribeLiveRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
@@ -143,8 +121,12 @@ export function ExploreFeed({
   const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
-  const selectedAuthors = useFeedBuilderStore(state => state.selectedAuthors);
-  const selectedPacks = useFeedBuilderStore(state => state.selectedPacks);
+  const exploreAudienceMode = useFeedBuilderStore(
+    state => state.exploreAudienceMode,
+  );
+  const setExploreAudienceMode = useFeedBuilderStore(
+    state => state.setExploreAudienceMode,
+  );
   const feedBuilderHydrated = useFeedBuilderStore(state => state.hydrated);
   const authPubkey = useAuthStore(state => state.pubkey);
   const authResolved = useAuthStore(state => state.authResolved);
@@ -154,44 +136,55 @@ export function ExploreFeed({
   const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
   const nostrHydrated = useNostrStore(state => state.hydrated);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
+  const relaySubs = useRelayStore(state => state.relaySubs);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
+  const relaySelectionSubId = `feed${exploreAudienceMode}`;
+  const selectedSubRelays = relaySubs[relaySelectionSubId];
   const requestKinds = useMemo(
     () => (selectedKinds.length ? selectedKinds : ALL_FEED_KINDS),
     [selectedKinds],
   );
   const requestAuthors = useMemo(
-    () =>
-      selectedPacks.length
-        ? authorsForExplorePacks(selectedPacks, follows, kind3UpdatedAt > 0)
-        : selectedAuthors,
-    [follows, kind3UpdatedAt, selectedAuthors, selectedPacks],
+    () => (exploreAudienceMode === 'contacts' ? follows : []),
+    [exploreAudienceMode, follows],
   );
-  const feedRelays = useMemo(
+  const accountRelays = useMemo(
     () =>
-      authPubkey
-        ? relayDirectoryUrls.length
-          ? relayDirectoryUrls
-          : readRelays.length
-            ? readRelays
-          : DEFAULT_FEED_RELAYS
-        : GUEST_EXPLORE_RELAYS,
-    [authPubkey, readRelays, relayDirectoryUrls],
+      relayDirectoryUrls.length
+        ? relayDirectoryUrls
+        : readRelays.length
+        ? readRelays
+        : DEFAULT_FEED_RELAYS,
+    [readRelays, relayDirectoryUrls],
   );
+  const feedRelays = useMemo(() => {
+    const relays =
+      selectedSubRelays ?? (authPubkey ? accountRelays : GUEST_EXPLORE_RELAYS);
+    return relays.map(normalizeRelayUrl).filter(Boolean);
+  }, [accountRelays, authPubkey, selectedSubRelays]);
   const authReadyForExplore = Boolean(authPubkey) || authResolved;
   const followsReadyForExplore =
-    !hasFollowListPack(selectedPacks) || kind3UpdatedAt > 0;
+    exploreAudienceMode !== 'contacts' || kind3UpdatedAt > 0;
   const canStartExplore =
     feedBuilderHydrated &&
     nostrHydrated &&
     followsReadyForExplore &&
     (authReadyForExplore || allowGuestExplore);
+  const feedRelayKey = feedRelays.join('|');
+  const relayKey = `${feedRelays.length}_${hashKey(feedRelayKey)}`;
+  const contactFeedKey =
+    exploreAudienceMode === 'contacts'
+      ? `${kind3UpdatedAt > 0 ? 'kind3-ready' : 'kind3-pending'}${hashKey(
+          requestAuthors.join(','),
+        )}`
+      : '';
+  const baseSubId = `feed${exploreAudienceMode}${contactFeedKey}${selectedKinds.join(
+    ',',
+  )}`;
   const feedKey = useMemo(
-    () =>
-      `${requestKinds.join(',') || 'kind1'}:${
-        requestAuthors.join(',') || 'global'
-      }:${feedRelays.join(',')}`,
-    [feedRelays, requestAuthors, requestKinds],
+    () => `${baseSubId}_${relayKey}`,
+    [baseSubId, relayKey],
   );
   const [, setItemsVersion] = useState(0);
 
@@ -204,7 +197,9 @@ export function ExploreFeed({
         relayStatuses={relayStatuses}
         selectedKinds={selectedKinds}
         setSelectedKinds={setSelectedKinds}
-        selectedPacks={selectedPacks}
+        audienceMode={exploreAudienceMode}
+        setAudienceMode={setExploreAudienceMode}
+        relaySelectionSubId={relaySelectionSubId}
         showKindSelector
         surfaceClassName="bg-base-100"
       />
@@ -212,9 +207,11 @@ export function ExploreFeed({
     [
       authPubkey,
       feedRelays,
+      exploreAudienceMode,
       relayStatuses,
+      relaySelectionSubId,
       selectedKinds,
-      selectedPacks,
+      setExploreAudienceMode,
       setSelectedKinds,
     ],
   );
@@ -228,7 +225,9 @@ export function ExploreFeed({
         relayStatuses={relayStatuses}
         selectedKinds={selectedKinds}
         setSelectedKinds={setSelectedKinds}
-        selectedPacks={selectedPacks}
+        audienceMode={exploreAudienceMode}
+        setAudienceMode={setExploreAudienceMode}
+        relaySelectionSubId={relaySelectionSubId}
         showKindIndicators={false}
         showKindSelector
         showRelayList={false}
@@ -238,9 +237,11 @@ export function ExploreFeed({
     [
       authPubkey,
       feedRelays,
+      exploreAudienceMode,
       relayStatuses,
+      relaySelectionSubId,
       selectedKinds,
-      selectedPacks,
+      setExploreAudienceMode,
       setSelectedKinds,
     ],
   );
@@ -273,6 +274,12 @@ export function ExploreFeed({
       limit?: number;
     }): RequestObject[] => {
       const forPagination = options?.forPagination ?? false;
+      if (
+        exploreAudienceMode === 'contacts' &&
+        (kind3UpdatedAt <= 0 || requestAuthors.length === 0)
+      ) {
+        return [];
+      }
       return [
         {
           kinds: requestKinds,
@@ -283,12 +290,18 @@ export function ExploreFeed({
             : options?.since ??
               Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
           until: forPagination ? untilRef.current : undefined,
-          noCache: !!requestCacheRef.current,
+          noCache: true,
           relays: feedRelays,
         },
       ];
     },
-    [feedRelays, requestAuthors, requestKinds],
+    [
+      exploreAudienceMode,
+      feedRelays,
+      kind3UpdatedAt,
+      requestAuthors,
+      requestKinds,
+    ],
   );
 
   const shouldIncludeKind = useCallback(
@@ -320,7 +333,6 @@ export function ExploreFeed({
   const resetItems = useCallback(() => {
     itemsRef.current = [];
     seenIdsRef.current.clear();
-    startRef.current = 0;
     untilRef.current = undefined;
     paginationCounterRef.current = 0;
     setHasMore(true);
@@ -343,10 +355,7 @@ export function ExploreFeed({
       }
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
-      unsubscribeLiveRef.current?.();
-      unsubscribeLiveRef.current = null;
       rootSubIdRef.current = null;
-      liveSubIdRef.current = null;
       prevPaginationSubIdRef.current = null;
       unsubscribePaginationRef.current?.();
       unsubscribePaginationRef.current = null;
@@ -493,13 +502,11 @@ export function ExploreFeed({
 
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
-    rootSubIdRef.current = `feed_explore_${hashKey(
-      `${feedKey}:${requestCacheRef.current}`,
-    )}`;
+    rootSubIdRef.current = `${baseSubId}_${relayKey}_${requestCacheRef.current}`;
     pendingItemsRef.current = [];
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = true;
-    setSubRelays(rootSubIdRef.current, feedRelays.map(normalizeRelayUrl));
+    setSubRelays(relaySelectionSubId, feedRelays.map(normalizeRelayUrl));
     feedRelays.forEach(relay => {
       setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED');
     });
@@ -518,45 +525,16 @@ export function ExploreFeed({
     }, 1500);
   }, [
     completeResolvingSubscription,
-    feedKey,
+    baseSubId,
     feedRelays,
     handleEvents,
     requestList,
+    relayKey,
+    relaySelectionSubId,
     setRelayStatus,
     setSubRelays,
     setLoadingState,
     setRefreshingState,
-  ]);
-
-  const stopLiveSubscription = useCallback(() => {
-    unsubscribeLiveRef.current?.();
-    unsubscribeLiveRef.current = null;
-    liveSubIdRef.current = null;
-  }, []);
-
-  const startLiveSubscription = useCallback(() => {
-    const since = Math.floor(Date.now() / 1000);
-    const requests = requestList({ since, limit: 20 });
-    if (!requests.length) return;
-
-    stopLiveSubscription();
-    liveSubIdRef.current = `feed_explore_live_${hashKey(
-      `${feedKey}:${since}:${requestCacheRef.current}`,
-    )}`;
-    setSubRelays(liveSubIdRef.current, feedRelays.map(normalizeRelayUrl));
-    unsubscribeLiveRef.current = subscribeToNostr(
-      liveSubIdRef.current,
-      requests,
-      handleEvents,
-      { bytesPerEvent: 10 * 1024 },
-    );
-  }, [
-    feedKey,
-    feedRelays,
-    handleEvents,
-    requestList,
-    setSubRelays,
-    stopLiveSubscription,
   ]);
 
   const handleRefresh = useCallback(() => {
@@ -574,19 +552,15 @@ export function ExploreFeed({
     clearTimers();
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
-    stopLiveSubscription();
     unsubscribePaginationRef.current?.();
     unsubscribePaginationRef.current = null;
     startRootSubscription();
-    startLiveSubscription();
   }, [
     canStartExplore,
     clearTimers,
     refreshing,
     setRefreshingState,
-    startLiveSubscription,
     startRootSubscription,
-    stopLiveSubscription,
   ]);
 
   const handleNearBottom = useCallback(() => {
@@ -604,7 +578,7 @@ export function ExploreFeed({
 
     if (requests.length > 0) {
       unsubscribePaginationRef.current?.();
-      const pageSubId = `${feedKey}_page_${paginationCounterRef.current}_${untilRef.current}`;
+      const pageSubId = `${baseSubId}_${relayKey}_page_${paginationCounterRef.current}_${untilRef.current}`;
       unsubscribePaginationRef.current = subscribeToNostr(
         pageSubId,
         requests,
@@ -623,34 +597,25 @@ export function ExploreFeed({
       setHasMore(false);
     }
   }, [
+    baseSubId,
     completeResolvingSubscription,
-    feedKey,
     handleEvents,
     hasMore,
     loading,
+    relayKey,
     requestList,
     setLoadingState,
   ]);
 
   const resetFeedRef = useRef(resetFeed);
-  const startLiveSubscriptionRef = useRef(startLiveSubscription);
   const startRootSubscriptionRef = useRef(startRootSubscription);
-  const stopLiveSubscriptionRef = useRef(stopLiveSubscription);
   const stopRootSubscriptionRef = useRef(stopRootSubscription);
 
   useEffect(() => {
     resetFeedRef.current = resetFeed;
-    startLiveSubscriptionRef.current = startLiveSubscription;
     startRootSubscriptionRef.current = startRootSubscription;
-    stopLiveSubscriptionRef.current = stopLiveSubscription;
     stopRootSubscriptionRef.current = stopRootSubscription;
-  }, [
-    resetFeed,
-    startLiveSubscription,
-    startRootSubscription,
-    stopLiveSubscription,
-    stopRootSubscription,
-  ]);
+  }, [resetFeed, startRootSubscription, stopRootSubscription]);
 
   useEffect(() => {
     if (!loading) {
@@ -709,20 +674,11 @@ export function ExploreFeed({
 
     resetFeedRef.current();
     startRootSubscriptionRef.current();
-    startLiveSubscriptionRef.current();
 
     return () => {
-      stopLiveSubscriptionRef.current();
       stopRootSubscriptionRef.current();
     };
   }, [canStartExplore, enabled, feedKey, followsReadyForExplore, visible]);
-
-  const handleViewportChange = useCallback(
-    ({ start }: { start: number; end: number; down: boolean }) => {
-      startRef.current = start;
-    },
-    [],
-  );
 
   const renderItem = useCallback(
     ({
@@ -766,7 +722,6 @@ export function ExploreFeed({
         refreshing={refreshing}
         onRefresh={handleRefresh}
         onNearBottom={handleNearBottom}
-        onViewportChange={handleViewportChange}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}
         contentContainerClassName="pb-44"
@@ -776,7 +731,9 @@ export function ExploreFeed({
 }
 
 function ExploreComposerFooter() {
-  return <ComposerFooter bottomOffset={APP_FOOTER_HEIGHT + 8} floating={false} />;
+  return (
+    <ComposerFooter bottomOffset={APP_FOOTER_HEIGHT + 8} floating={false} />
+  );
 }
 
 function ExploreHeader({
@@ -787,7 +744,9 @@ function ExploreHeader({
   relays,
   selectedKinds,
   setSelectedKinds,
-  selectedPacks,
+  audienceMode,
+  setAudienceMode,
+  relaySelectionSubId,
   showKindIndicators = true,
   showKindSelector = false,
   showRelayList = true,
@@ -800,7 +759,9 @@ function ExploreHeader({
   relays: string[];
   selectedKinds: FeedKind[];
   setSelectedKinds: (kinds: FeedKind[]) => void;
-  selectedPacks: FeedPackSelection[];
+  audienceMode: ExploreAudienceMode;
+  setAudienceMode: (mode: ExploreAudienceMode) => void;
+  relaySelectionSubId: string;
   showKindIndicators?: boolean;
   showKindSelector?: boolean;
   showRelayList?: boolean;
@@ -813,8 +774,10 @@ function ExploreHeader({
 
   return (
     <View
-      className={mini ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}
-      style={mini && safeAreaTop > 0 ? {paddingTop: safeAreaTop} : undefined}
+      className={
+        mini ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'
+      }
+      style={mini && safeAreaTop > 0 ? { paddingTop: safeAreaTop } : undefined}
     >
       <View
         className={
@@ -824,7 +787,11 @@ function ExploreHeader({
                 showKindSelector ? 'pb-0' : 'pb-3'
               }`
         }
-        style={!mini && safeAreaTop > 0 ? {paddingTop: safeAreaTop + 12} : undefined}
+        style={
+          !mini && safeAreaTop > 0
+            ? { paddingTop: safeAreaTop + 12 }
+            : undefined
+        }
       >
         <View
           className={
@@ -834,7 +801,10 @@ function ExploreHeader({
           }
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            <ExploreScopeToggle packs={selectedPacks} />
+            <ExploreScopeToggle
+              audienceMode={audienceMode}
+              setAudienceMode={setAudienceMode}
+            />
             {showKindIndicators ? (
               <FeedKindHeaderButtons
                 kinds={showKindSelector ? [] : visibleKinds}
@@ -855,6 +825,7 @@ function ExploreHeader({
         </View>
         {showRelayList ? (
           <HeaderRelaysList
+            subId={relaySelectionSubId}
             relays={relays}
             statuses={relayStatuses}
             mini={mini}
@@ -937,40 +908,22 @@ function HeaderSearchButton({
 }
 
 function ExploreScopeToggle({
-  packs,
+  audienceMode,
+  setAudienceMode,
 }: {
-  packs: FeedPackSelection[];
+  audienceMode: ExploreAudienceMode;
+  setAudienceMode: (mode: ExploreAudienceMode) => void;
 }) {
   const theme = useAppTheme();
-  const follows = useNostrStore(state => state.follows);
-  const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);
-  const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
-  const applySelection = useFeedBuilderStore(state => state.applySelection);
-  const clearPacks = useFeedBuilderStore(state => state.clearPacks);
-  const contactsSelected = packs.some(pack => pack.id === 'followlist');
-  const label = contactsSelected ? 'Contacts' : 'Everyone';
+  const contactsSelected = audienceMode === 'contacts';
+  const label = contactsSelected ? 'Contacts' : 'All';
   const accessibilityLabel = contactsSelected
     ? 'Showing contacts. Switch to everyone.'
     : 'Showing everyone. Switch to contacts.';
 
   const toggleScope = useCallback(() => {
-    if (contactsSelected) {
-      clearPacks();
-      return;
-    }
-    applySelection(selectedKinds, [
-      {
-        id: 'followlist',
-        kind: 39089,
-        title: 'Follow List',
-        description: 'People you follow',
-        image: null,
-        localImage: 'followlist',
-        people: kind3UpdatedAt > 0 ? follows : [],
-        dTag: 'followlist',
-      },
-    ]);
-  }, [applySelection, clearPacks, contactsSelected, follows, kind3UpdatedAt, selectedKinds]);
+    setAudienceMode(contactsSelected ? 'all' : 'contacts');
+  }, [contactsSelected, setAudienceMode]);
 
   return (
     <Pressable
@@ -980,9 +933,7 @@ function ExploreScopeToggle({
       hitSlop={12}
       onPress={toggleScope}
     >
-      <Text className="text-2xl font-semibold text-base-content">
-        {label}
-      </Text>
+      <Text className="text-2xl font-semibold text-base-content">{label}</Text>
       <ChevronDown
         size={19}
         color={theme.colors.primaryContent}

@@ -105,6 +105,9 @@ const APP_FOOTER_HEIGHT = 56;
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
 const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
 const MINT_QUOTE_RETRY_DELAY_MS = 1200;
+const PUSH_SCREEN_OPTIONS = {
+  animation: 'simple_push' as const,
+};
 const navigationTheme = {
   ...DefaultTheme,
   colors: {
@@ -316,12 +319,12 @@ function RootNavigator({
         <NativeStack.Screen
           name="PublicProfile"
           component={PublicProfileScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="Community"
           component={CommunityScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="CalendarEvent"
@@ -331,17 +334,17 @@ function RootNavigator({
         <NativeStack.Screen
           name="ChatThread"
           component={ChatThreadScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="Kind1Thread"
           component={Kind1ThreadScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="Kind30023Thread"
           component={Kind30023ThreadScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="LiveStream"
@@ -362,12 +365,12 @@ function RootNavigator({
         <NativeStack.Screen
           name="Tags"
           component={TagsScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="Notifications"
           component={NotificationsScreen}
-          options={{ animation: 'slide_from_right' }}
+          options={PUSH_SCREEN_OPTIONS}
         />
         <NativeStack.Screen
           name="Profile"

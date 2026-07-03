@@ -94,6 +94,11 @@ function publishWithStatus(
   updateSendStatus: (sendId: string, status: Record<string, ConnectionStatus>) => void,
 ) {
   const sendStatus: Record<string, ConnectionStatus> = {};
+  console.log('[signup-publish] start', {
+    sendId,
+    kind: event.kind,
+    relays,
+  });
   publishToNostr(
     sendId,
     event,
@@ -102,6 +107,13 @@ function publishWithStatus(
       const relayUrl = status?.relayUrl();
       if (!status || !relayUrl) return;
       sendStatus[relayUrl] = status;
+      console.log('[signup-publish] relay status', {
+        sendId,
+        kind: event.kind,
+        relay: relayUrl,
+        status: status.status()?.toString(),
+        message: status.message?.(),
+      });
       updateSendStatus(sendId, sendStatus);
     },
     {defaultRelays: relays, trackStatus: true},
@@ -301,7 +313,17 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
           created_at: now(),
           tags: [],
         };
-        publishWithStatus(`signup_profile_${Date.now()}`, event, publishRelays, updateSendStatus);
+        console.log('[signup-publish] prepared kind0 profile', {
+          pubkey: keypair.pubkey,
+          relays: publishRelays,
+          hasPicture: !!metadata.picture,
+        });
+        publishWithStatus(
+          `signup_profile_${Date.now()}`,
+          event,
+          publishRelays,
+          updateSendStatus,
+        );
         publishWithStatus(
           `signup_wallet_${Date.now()}`,
           {

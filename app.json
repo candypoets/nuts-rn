@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "Nuts Dev",
-    "slug": "nuts-rn",
+    "name": "Nuts",
+    "slug": "nuts",
     "scheme": "nutsrn",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.nutsrn"
     },
@@ -16,26 +17,26 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow NutsRn to scan payment and profile QR codes."
+          "cameraPermission": "Allow Nuts to scan payment and profile QR codes."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow NutsRn to choose a profile picture and attach images to posts."
+          "photosPermission": "Allow Nuts to choose a profile picture and attach images to posts."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow NutsRn to show recent photos and videos in the post composer.",
-          "savePhotosPermission": "Allow NutsRn to save media to your library."
+          "photosPermission": "Allow Nuts to show recent photos and videos in the post composer.",
+          "savePhotosPermission": "Allow Nuts to save media to your library."
         }
       ],
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Allow NutsRn to use Face ID before copying your private key."
+          "faceIDPermission": "Allow Nuts to use Face ID before copying your private key."
         }
       ],
       [

@@ -897,7 +897,8 @@ function MainFooter({
     theme.id === 'downfox';
   const canUseLiquidGlass =
     IOS_LIQUID_GLASS_AVAILABLE;
-  const composeVisible = canUseLiquidGlass && activeRouteId === 'explore';
+  const composeAvailable = canUseLiquidGlass && activeRouteId === 'explore';
+  const composeVisible = composeAvailable && visible;
   const composeProgress = useRef(
     new Animated.Value(composeVisible ? 1 : 0),
   ).current;

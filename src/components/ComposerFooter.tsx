@@ -1,9 +1,14 @@
 import React, {useCallback} from 'react';
-import {Platform, Pressable, StyleSheet, Text, View} from 'react-native';
+import {Platform, Pressable, StyleSheet, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {BlurView} from 'expo-blur';
-import {PenLine} from 'lucide-react-native';
+import {
+  GlassView,
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+} from 'expo-glass-effect';
+import {Plus} from 'lucide-react-native';
 
 import type {RootStackParamList} from '../navigation/types';
 import {useAppTheme} from '../theme';
@@ -27,7 +32,15 @@ export function ComposerFooter({
     theme.id === 'nightsky' ||
     theme.id === 'matteblack' ||
     theme.id === 'downfox';
-  const contentColor = darkMaterial ? '#ffffff' : theme.button.primary.text;
+  const canUseLiquidGlass =
+    Platform.OS === 'ios' &&
+    isLiquidGlassAvailable() &&
+    isGlassEffectAPIAvailable();
+  const contentColor = canUseLiquidGlass
+    ? theme.colors.primary
+    : darkMaterial
+      ? '#ffffff'
+      : theme.button.primary.text;
 
   if (!visible) return null;
 
@@ -48,33 +61,48 @@ export function ComposerFooter({
         onPress={openPost}
         style={[
           styles.button,
+          canUseLiquidGlass && styles.glassButton,
           {
             backgroundColor:
-              Platform.OS === 'ios'
-                ? `${theme.colors.primary}D9`
-                : `${theme.colors.primary}E6`,
-            borderColor: darkMaterial ? '#8ff7df' : theme.button.primary.border,
+              canUseLiquidGlass
+                ? 'transparent'
+                : Platform.OS === 'ios'
+                  ? `${theme.colors.primary}D9`
+                  : `${theme.colors.primary}E6`,
+            borderColor: canUseLiquidGlass
+              ? `${theme.colors.primaryContent}38`
+              : darkMaterial
+                ? '#8ff7df'
+                : theme.button.primary.border,
           },
         ]}
       >
-        <BlurView
-          intensity={Platform.OS === 'ios' ? 32 : 28}
-          tint={Platform.OS === 'ios' && !darkMaterial ? 'light' : 'dark'}
-          style={[
-            styles.blur,
-            {
-              backgroundColor:
-                Platform.OS === 'ios'
-                  ? `${theme.colors.primary}73`
-                  : `${theme.colors.primary}66`,
-            },
-          ]}
-        >
-          <PenLine size={18} color={contentColor} strokeWidth={2.3} />
-          <Text style={[styles.text, {color: contentColor}]}>
-            What's up?
-          </Text>
-        </BlurView>
+        {canUseLiquidGlass ? (
+          <GlassView
+            colorScheme="dark"
+            glassEffectStyle="regular"
+            isInteractive
+            style={styles.glassSurface}
+          >
+            <Plus size={29} color={contentColor} strokeWidth={2.5} />
+          </GlassView>
+        ) : (
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 32 : 28}
+            tint={Platform.OS === 'ios' && !darkMaterial ? 'light' : 'dark'}
+            style={[
+              styles.blur,
+              {
+                backgroundColor:
+                  Platform.OS === 'ios'
+                    ? `${theme.colors.primary}73`
+                    : `${theme.colors.primary}66`,
+              },
+            ]}
+          >
+            <Plus size={28} color={contentColor} strokeWidth={2.5} />
+          </BlurView>
+        )}
       </Pressable>
     </View>
   );
@@ -106,16 +134,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.82,
     shadowRadius: 28,
   },
+  glassButton: {
+    borderWidth: 1,
+    shadowColor: '#020617',
+    shadowOpacity: 0.34,
+    shadowRadius: 24,
+  },
   blur: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 7,
-    minHeight: 40,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    height: 58,
+    justifyContent: 'center',
+    width: 58,
   },
-  text: {
-    fontSize: 15,
-    fontWeight: '700',
+  glassSurface: {
+    alignItems: 'center',
+    height: 58,
+    justifyContent: 'center',
+    width: 58,
   },
 });

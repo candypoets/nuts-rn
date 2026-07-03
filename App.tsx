@@ -20,9 +20,17 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
   DefaultTheme,
   NavigationContainer,
+  useNavigation,
   useIsFocused,
 } from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {BlurView} from 'expo-blur';
+import {
+  GlassContainer,
+  GlassView,
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+} from 'expo-glass-effect';
 import {
   createNativeStackNavigator,
   type NativeStackScreenProps,
@@ -34,7 +42,7 @@ import {
   useSharedValue,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import {Home, MessageCircle, SquareStack} from 'lucide-react-native';
+import {Home, MessageCircle, Plus, SquareStack} from 'lucide-react-native';
 import type { NostrManagerLike } from '@candypoets/nipworker';
 import {MintQuoteState, Wallet as CashuWallet} from '@cashu/cashu-ts';
 import {
@@ -101,6 +109,10 @@ const ROUTES: Array<{ id: RouteId; label: string; footerLabel: string }> = [
   { id: 'chat', label: 'Chat', footerLabel: 'Chats' },
 ];
 const APP_FOOTER_HEIGHT = 56;
+const IOS_LIQUID_GLASS_AVAILABLE =
+  Platform.OS === 'ios' &&
+  isLiquidGlassAvailable() &&
+  isGlassEffectAPIAvailable();
 
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
 const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
@@ -722,6 +734,8 @@ function MainTabs({
   nostrEnabled: boolean;
 }) {
   const theme = useAppTheme();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const [activeRouteId, setActiveRouteId] = useState<RouteId>('explore');
   const [activatedRoutes, setActivatedRoutes] = useState<
@@ -808,8 +822,6 @@ function MainTabs({
         stackDepth={stackDepth}
         dismissProgress={dismissProgress}
         stackPresentation="flat"
-        indicatorColor={theme.colors.primaryContent}
-        indicatorVisible={chromeVisibleByRoute[activeRoute.id]}
         onIndexChange={changeRouteIndex}
         renderPage={({ index, width }) => (
           <FeedPage
@@ -828,6 +840,9 @@ function MainTabs({
               <ExploreFeed
                 enabled={nostrEnabled}
                 visible={activatedRoutes.explore}
+                stickyFooter={
+                  IOS_LIQUID_GLASS_AVAILABLE ? () => null : undefined
+                }
                 onChromeVisibilityChange={handleExploreChromeVisibility}
               />
             ) : (
@@ -848,6 +863,7 @@ function MainTabs({
           const index = ROUTES.findIndex(route => route.id === routeId);
           if (index >= 0) changeRouteIndex(index);
         }}
+        onCompose={() => navigation.navigate('Post')}
       />
     </View>
   );
@@ -858,19 +874,33 @@ function MainFooter({
   routes,
   visible,
   onSelectRoute,
+  onCompose,
 }: {
   activeRouteId: RouteId;
   routes: typeof ROUTES;
   visible: boolean;
   onSelectRoute: (routeId: RouteId) => void;
+  onCompose: () => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
+  const {width: windowWidth} = useWindowDimensions();
   const visibility = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const activeRouteIndex = Math.max(
+    0,
+    routes.findIndex(route => route.id === activeRouteId),
+  );
+  const selectedProgress = useRef(new Animated.Value(activeRouteIndex)).current;
   const darkMaterial =
     theme.id === 'nightsky' ||
     theme.id === 'matteblack' ||
     theme.id === 'downfox';
+  const canUseLiquidGlass =
+    IOS_LIQUID_GLASS_AVAILABLE;
+  const composeVisible = canUseLiquidGlass && activeRouteId === 'explore';
+  const composeProgress = useRef(
+    new Animated.Value(composeVisible ? 1 : 0),
+  ).current;
 
   useEffect(() => {
     Animated.timing(visibility, {
@@ -881,8 +911,45 @@ function MainFooter({
     }).start();
   }, [visibility, visible]);
 
+  useEffect(() => {
+    Animated.timing(selectedProgress, {
+      toValue: activeRouteIndex,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [activeRouteIndex, selectedProgress]);
+
+  useEffect(() => {
+    Animated.timing(composeProgress, {
+      toValue: composeVisible ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [composeProgress, composeVisible]);
+
+  const floatingInset = 42;
+  const floatingPadding = 5;
+  const floatingWidth = Math.max(0, windowWidth - floatingInset * 2);
+  const floatingItemWidth = Math.max(
+    0,
+    (floatingWidth - floatingPadding * 2) / routes.length,
+  );
+  const selectedGlassStyle = {
+    width: floatingItemWidth,
+    transform: [
+      {
+        translateX: selectedProgress.interpolate({
+          inputRange: routes.map((_, index) => index),
+          outputRange: routes.map((_, index) => index * floatingItemWidth),
+        }),
+      },
+    ],
+  };
+
   const animatedStyle = {
-    opacity: visibility,
+    opacity: canUseLiquidGlass ? 1 : visibility,
     transform: [
       {
         translateY: visibility.interpolate({
@@ -898,29 +965,44 @@ function MainFooter({
       pointerEvents={visible ? 'auto' : 'none'}
       style={[
         styles.mainFooter,
+        canUseLiquidGlass && styles.mainFooterFloating,
         animatedStyle,
         {
-          backgroundColor: `${theme.colors.base100}F2`,
-          borderTopColor: `${theme.colors.primary}33`,
-          paddingBottom: Math.max(insets.bottom - 18, 0),
+          backgroundColor: canUseLiquidGlass
+            ? 'transparent'
+            : `${theme.colors.base100}F2`,
+          borderTopColor: canUseLiquidGlass
+            ? 'transparent'
+            : `${theme.colors.primary}33`,
+          bottom: canUseLiquidGlass ? Math.max(insets.bottom, 12) : 0,
+          left: canUseLiquidGlass ? floatingInset : 0,
+          paddingBottom: canUseLiquidGlass ? 0 : Math.max(insets.bottom - 18, 0),
+          right: canUseLiquidGlass ? floatingInset : 0,
         },
       ]}
     >
       {Platform.OS === 'ios' ? (
-        <>
-          <BlurView
-            intensity={70}
-            tint={darkMaterial ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
+        canUseLiquidGlass ? (
+          <MainFooterGlassBackground
+            selectedGlassStyle={selectedGlassStyle}
+            visible={visible}
           />
-          <View
-            pointerEvents="none"
-            style={[
-              StyleSheet.absoluteFill,
-              {backgroundColor: `${theme.colors.base100}CC`},
-            ]}
-          />
-        </>
+        ) : (
+          <>
+            <BlurView
+              intensity={70}
+              tint={darkMaterial ? 'dark' : 'light'}
+              style={StyleSheet.absoluteFill}
+            />
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                {backgroundColor: `${theme.colors.base100}CC`},
+              ]}
+            />
+          </>
+        )
       ) : null}
       {routes.map(route => {
         const active = route.id === activeRouteId;
@@ -932,7 +1014,13 @@ function MainFooter({
             accessibilityLabel={route.footerLabel}
             accessibilityState={{selected: active}}
             hitSlop={8}
-            style={styles.mainFooterItem}
+            style={[
+              styles.mainFooterItem,
+              canUseLiquidGlass && {
+                flex: 0,
+                width: floatingItemWidth,
+              },
+            ]}
             onPress={() => onSelectRoute(route.id)}
           >
             <FooterIcon routeId={route.id} active={active} color={color} />
@@ -950,15 +1038,106 @@ function MainFooter({
             <View
               style={[
                 styles.mainFooterDot,
+                canUseLiquidGlass && styles.mainFooterDotFloating,
                 {
-                  backgroundColor: active ? theme.colors.primary : 'transparent',
+                  backgroundColor:
+                    active && !canUseLiquidGlass
+                      ? theme.colors.primary
+                      : 'transparent',
                 },
               ]}
             />
           </Pressable>
         );
       })}
+      {canUseLiquidGlass ? (
+        <Animated.View
+          pointerEvents={composeVisible ? 'auto' : 'none'}
+          style={[
+            styles.mainFooterDetachedCompose,
+            {
+              opacity: composeProgress,
+              transform: [
+                {
+                  translateY: composeProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [10, 0],
+                  }),
+                },
+                {
+                  scale: composeProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.92, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Pressable
+            accessibilityLabel="Compose"
+            accessibilityRole="button"
+            hitSlop={8}
+            style={styles.mainFooterDetachedComposeButton}
+            onPress={onCompose}
+          >
+            <GlassView
+              colorScheme="dark"
+              glassEffectStyle="clear"
+              isInteractive
+              style={styles.mainFooterDetachedComposeGlass}
+            >
+              <Plus size={31} color="#ffffff" strokeWidth={2.5} />
+            </GlassView>
+          </Pressable>
+        </Animated.View>
+      ) : null}
     </Animated.View>
+  );
+}
+
+function MainFooterGlassBackground({
+  selectedGlassStyle,
+  visible,
+}: {
+  selectedGlassStyle: {
+    width: number;
+    transform: Array<{translateX: Animated.AnimatedInterpolation<number>}>;
+  };
+  visible: boolean;
+}) {
+  return (
+    <GlassContainer
+      pointerEvents="box-none"
+      spacing={10}
+      style={StyleSheet.absoluteFill}
+    >
+      <GlassView
+        pointerEvents="none"
+        colorScheme="dark"
+        glassEffectStyle={{
+          style: visible ? 'regular' : 'none',
+          animate: true,
+          animationDuration: 0.18,
+        }}
+        style={styles.mainFooterGlass}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.mainFooterSelectedSlot, selectedGlassStyle]}
+      >
+        <GlassView
+          colorScheme="dark"
+          glassEffectStyle={{
+            style: 'clear',
+            animate: true,
+            animationDuration: 0.18,
+          }}
+          isInteractive
+          style={styles.mainFooterSelectedGlass}
+        />
+      </Animated.View>
+    </GlassContainer>
   );
 }
 
@@ -1425,11 +1604,47 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     zIndex: 60,
   },
+  mainFooterFloating: {
+    alignItems: 'center',
+    borderRadius: 28,
+    borderTopWidth: 0,
+    height: 62,
+    minHeight: 62,
+    overflow: 'visible',
+    paddingHorizontal: 5,
+    paddingTop: 0,
+    shadowOffset: {width: 0, height: 10},
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+  },
+  mainFooterGlass: {
+    bottom: 0,
+    borderRadius: 28,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
   mainFooterItem: {
     alignItems: 'center',
     flex: 1,
     gap: 1,
+    height: '100%',
     justifyContent: 'center',
+  },
+  mainFooterSelectedSlot: {
+    bottom: 0,
+    left: 5,
+    position: 'absolute',
+    top: 0,
+  },
+  mainFooterSelectedGlass: {
+    borderRadius: 23,
+    bottom: 5,
+    left: 4,
+    position: 'absolute',
+    right: 4,
+    top: 5,
   },
   mainFooterText: {
     fontSize: 12,
@@ -1440,6 +1655,35 @@ const styles = StyleSheet.create({
     height: 7,
     marginTop: 1,
     width: 7,
+  },
+  mainFooterDotFloating: {
+    height: 5,
+    width: 5,
+  },
+  mainFooterDetachedCompose: {
+    position: 'absolute',
+    right: -14,
+    top: -72,
+  },
+  mainFooterDetachedComposeButton: {
+    borderColor: 'rgba(214, 226, 240, 0.38)',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 58,
+    overflow: 'hidden',
+    shadowColor: '#020617',
+    shadowOffset: {width: 0, height: 10},
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    width: 58,
+  },
+  mainFooterDetachedComposeGlass: {
+    alignItems: 'center',
+    borderRadius: 999,
+    height: 58,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 58,
   },
   page: {
     flex: 1,

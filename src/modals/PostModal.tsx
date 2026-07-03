@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,13 +14,11 @@ import {
 import {Image} from 'expo-image';
 import {BlurView} from 'expo-blur';
 import {
-  CalendarPlus,
   Camera,
   ChevronDown,
   Film,
   Globe2,
   Image as ImageIcon,
-  ListChecks,
   Plus,
   Search,
   Send,
@@ -66,11 +65,11 @@ import {
   SEARCH_RELAYS,
   useAuthStore,
   useNostrStore,
-  useRelayStore,
+  type RelayRoleSetSnapshot,
   useSendStatusStore,
 } from '../stores';
 import { Note } from '../components/notes/Note';
-import { RelaysList } from '../components/RelaysList';
+import {SegmentedTabs, type SegmentedTab} from '../components/SegmentedTabs';
 import { useKind0Value } from '../hooks/useKind0Value';
 import {type AppTheme, useAppTheme} from '../theme';
 
@@ -94,6 +93,8 @@ type ComposerStep = 'setup' | 'compose';
 type ComposeMode = 'note' | 'media' | 'event' | 'poll';
 type EventCategory = 'training' | 'match' | 'meeting' | 'social';
 type ComposerPanel = 'gif';
+type CommunityRole = 'Admin' | 'Member' | 'Following';
+type ComposerKindTabId = ComposeMode;
 type TenorGif = {
   id: string;
   content_description?: string;
@@ -126,6 +127,12 @@ const now = () => Math.floor(Date.now() / 1000);
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 const TENOR_API_KEY = 'AIzaSyB692q5nvoGphnMusHRvm1D_98a-DSQJRA';
 const TENOR_LIMIT = 24;
+const COMPOSER_KIND_TABS: Array<SegmentedTab<ComposerKindTabId>> = [
+  {id: 'note', label: 'Note'},
+  {id: 'media', label: 'Media'},
+  {id: 'event', label: 'Events'},
+  {id: 'poll', label: 'Poll'},
+];
 const EVENT_CATEGORIES: EventCategory[] = [
   'training',
   'match',
@@ -279,18 +286,27 @@ function relayLabel(url: string) {
     .replace(/\/$/, '');
 }
 
-function communityList(readRelays: string[], writeRelays: string[]) {
-  const writeSet = new Set(writeRelays.map(normalizeRelayUrl));
-  const belongCommunities = writeRelays.map(relay => {
-    const url = normalizeRelayUrl(relay);
-    return {url, role: 'Belong' as const};
-  });
-  const followCommunities = readRelays
-    .map(normalizeRelayUrl)
-    .filter(relay => !writeSet.has(relay))
-    .map(url => ({url, role: 'Follow' as const}));
+function relaySetRole(d: string): CommunityRole {
+  if (d.includes('admin')) return 'Admin';
+  if (d.includes('member')) return 'Member';
+  return 'Following';
+}
 
-  return [...belongCommunities, ...followCommunities];
+function communityList(roleSets: RelayRoleSetSnapshot[]) {
+  const seen = new Set<string>();
+  const communities: Array<{url: string; role: CommunityRole}> = [];
+
+  roleSets.forEach(roleSet => {
+    const role = relaySetRole(roleSet.d);
+    roleSet.relays.forEach(relay => {
+      const url = normalizeRelayUrl(relay);
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      communities.push({url, role});
+    });
+  });
+
+  return communities;
 }
 
 function defaultDateTimeLocal(hoursFromNow: number) {
@@ -339,7 +355,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
   const hasSigner = useAuthStore(state => state.hasSigner);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
-  const setSubRelays = useRelayStore(state => state.setSubRelays);
+  const relayRoleSets = useNostrStore(state => state.relayRoleSets);
   const uploadPreference = useNostrStore(selectPreferredUploadServer);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const [text, setText] = useState('');
@@ -367,15 +383,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
   );
-  const publishRelaySubId = useMemo(
-    () => `composer_publish_${pubkey || 'anon'}`,
-    [pubkey],
-  );
-  const selectedPublishRelays = useRelayStore(
-    state => state.relaySubs[publishRelaySubId],
-  );
-  const publishRelays =
-    selectedPublishRelays !== undefined ? selectedPublishRelays : relays;
   const lookupRelays = useMemo(
     () => [
       ...new Set([
@@ -390,8 +397,8 @@ export function PostModal({ reply, quote, onClose }: Props) {
   const mediaServerType = uploadPreference?.type || 'blossom';
   const mediaServer = uploadPreference?.servers[0] || DEFAULT_UPLOAD_SERVER;
   const communityOptions = useMemo(
-    () => communityList(readRelays, writeRelays),
-    [readRelays, writeRelays],
+    () => communityList(relayRoleSets),
+    [relayRoleSets],
   );
   const validPollOptions = useMemo(
     () => pollOptions.map(option => option.trim()).filter(Boolean),
@@ -416,14 +423,10 @@ export function PostModal({ reply, quote, onClose }: Props) {
     selectedRelay && eventTitle.trim() && eventStartsAt,
   );
   const effectivePublishRelays = useMemo(
-    () => (selectedRelay ? [selectedRelay] : publishRelays),
-    [publishRelays, selectedRelay],
+    () => (selectedRelay ? [selectedRelay] : relays),
+    [relays, selectedRelay],
   );
 
-  useEffect(() => {
-    if (selectedPublishRelays !== undefined) return;
-    setSubRelays(publishRelaySubId, relays);
-  }, [publishRelaySubId, relays, selectedPublishRelays, setSubRelays]);
   const mentionSuggestions = useMemo(() => {
     if (mentionQuery === null || !mentionQuery.trim()) return [];
     const query = mentionQuery.trim().toLowerCase();
@@ -468,7 +471,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       : Boolean(
           text.trim() ||
             quoteTarget?.id ||
-            selectedImages.length ||
+            (isMediaMode && selectedImages.length) ||
             (pollEnabled && validPollOptions.length >= 2),
         )
     );
@@ -478,17 +481,11 @@ export function PostModal({ reply, quote, onClose }: Props) {
       : submitStatus?.startsWith('Publishing')
         ? 'Publishing'
         : 'Signing'
-    : isEventMode
-      ? 'Event'
-    : pollEnabled
-      ? 'Poll'
     : reply
         ? 'Reply'
       : quote
           ? 'Quote'
-      : isMediaMode
-          ? 'Media'
-          : 'Post';
+      : `Post to ${destinationLabel}`;
 
   useEffect(
     () => () => {
@@ -700,17 +697,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
     );
   }, []);
 
-  const togglePoll = useCallback(() => {
-    setPollEnabled(current => {
-      if (current) {
-        setPollType('singlechoice');
-        setPollOptions(['', '']);
-        setPollEndsAt(null);
-      }
-      return !current;
-    });
-  }, []);
-
   const selectDestination = useCallback((relay: string) => {
     setSelectedRelay(relay);
     setStep('compose');
@@ -719,6 +705,9 @@ export function PostModal({ reply, quote, onClose }: Props) {
   const selectComposeMode = useCallback((mode: ComposeMode) => {
     setComposeMode(mode);
     setPollEnabled(mode === 'poll');
+    if (mode !== 'media') {
+      setSelectedImages([]);
+    }
     if (mode !== 'poll') {
       setPollType('singlechoice');
       setPollOptions(['', '']);
@@ -832,8 +821,9 @@ export function PostModal({ reply, quote, onClose }: Props) {
     setIsSubmitting(true);
 
     try {
-      const localImages = selectedImages.filter(image => !image.remote);
-      const remoteImages = selectedImages
+      const activeImages = isMediaMode ? selectedImages : [];
+      const localImages = activeImages.filter(image => !image.remote);
+      const remoteImages = activeImages
         .filter(image => image.remote)
         .map(image => ({
           ...image,
@@ -899,8 +889,8 @@ export function PostModal({ reply, quote, onClose }: Props) {
       );
       const mediaImages = [...uploadedImages, ...remoteImages].sort(
         (left, right) =>
-          selectedImages.findIndex(image => image.uri === left.uri) -
-          selectedImages.findIndex(image => image.uri === right.uri),
+          activeImages.findIndex(image => image.uri === left.uri) -
+          activeImages.findIndex(image => image.uri === right.uri),
       );
 
       setSubmitStatusIfMounted('Publishing post...');
@@ -1031,6 +1021,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
     mediaServer,
     mediaServerType,
     isEventMode,
+    isMediaMode,
     submitEvent,
   ]);
 
@@ -1042,6 +1033,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       mimeType?: string | null,
       fileName?: string | null,
     ) => {
+      setComposeMode('media');
       setSelectedImages(current =>
         current.some(image => image.uri === uri)
           ? current
@@ -1067,6 +1059,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
 
   const insertRemoteImage = useCallback(
     (uri: string, width: number, height: number) => {
+      setComposeMode('media');
       setSelectedImages(current =>
         current.some(image => image.uri === uri)
           ? current
@@ -1099,6 +1092,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
   );
 
   const openNativeMediaPicker = useCallback(async () => {
+    setComposeMode('media');
     setActivePanel(null);
     editorRef.current?.focus();
 
@@ -1138,6 +1132,52 @@ export function PostModal({ reply, quote, onClose }: Props) {
 
   const showComposerAccessory = activePanel !== 'gif';
 
+  const editorPlaceholder = reply
+    ? replyNote
+      ? `Reply to ${replyAuthorName}`
+      : 'Write your reply...'
+      : quote
+      ? 'Add a quote?'
+      : composeMode === 'media'
+        ? 'Caption this.'
+        : composeMode === 'poll'
+          ? 'Ask your friends'
+          : "What's up?";
+
+  const mediaCaptionInput = (
+    <View style={styles.mediaCaptionAccessory}>
+      <EnrichedTextInput
+        ref={editorRef}
+        autoFocus
+        autoCapitalize="sentences"
+        mentionIndicators={['@']}
+        placeholder={editorPlaceholder}
+        placeholderTextColor={theme.colors.primaryContent}
+        selectionColor={theme.colors.primary}
+        cursorColor={theme.colors.primary}
+        linkRegex={/(https?:\/\/|nostr:)[^\s]+/}
+        scrollEnabled
+        onChangeText={(event: NativeSyntheticEvent<{ value: string }>) =>
+          setText(event.nativeEvent.value)
+        }
+        onStartMention={indicator => {
+          if (indicator === '@') setMentionQuery('');
+        }}
+        onChangeMention={event => {
+          if (event.indicator === '@') setMentionQuery(event.text);
+        }}
+        onEndMention={indicator => {
+          if (indicator === '@') setMentionQuery(null);
+        }}
+        onPasteImages={event => {
+          console.log('[post] pasted images', event.nativeEvent);
+        }}
+        htmlStyle={editorHtmlStyle}
+        style={styles.mediaCaptionEditor}
+      />
+    </View>
+  );
+
   const composerAccessory = (
     <>
       {showMentionPanel ? (
@@ -1148,14 +1188,20 @@ export function PostModal({ reply, quote, onClose }: Props) {
           onSelect={selectMention}
         />
       ) : null}
+      {step === 'compose' && composeMode === 'note' ? (
         <ComposerToolbar
           activePanel={activePanel}
           onInsertImage={insertImage}
-          pollEnabled={pollEnabled}
           onMediaPress={openNativeMediaPicker}
-        onGifPress={() => openComposerPanel('gif')}
-        onTogglePoll={togglePoll}
-      />
+          onGifPress={() => {
+            setComposeMode('media');
+            openComposerPanel('gif');
+          }}
+        />
+      ) : null}
+      {step === 'compose' && composeMode === 'media' ? (
+        mediaCaptionInput
+      ) : null}
     </>
   );
 
@@ -1163,31 +1209,48 @@ export function PostModal({ reply, quote, onClose }: Props) {
     <PostModalStylesContext.Provider value={styles}>
       <View style={styles.root}>
       {activePanel !== 'gif' ? (
-        <View style={styles.header}>
-          <Pressable style={styles.iconButton} hitSlop={12} onPress={onClose}>
-            <ChevronDown size={23} color={iconColor} strokeWidth={2.3} />
-          </Pressable>
-          <Pressable
-            style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
-            disabled={!canSubmit}
-            onPress={submit}
-          >
-            <Text style={styles.submitText}>{submitLabel}</Text>
-            <Send size={16} color={theme.button.primary.text} strokeWidth={2.4} />
-          </Pressable>
-        </View>
+        <>
+          <View style={styles.header}>
+            <Pressable
+              style={styles.iconButton}
+              hitSlop={12}
+              onPress={() => {
+                if (keyboardOpen) {
+                  Keyboard.dismiss();
+                  return;
+                }
+                onClose();
+              }}
+            >
+              <ChevronDown size={23} color={iconColor} strokeWidth={2.3} />
+            </Pressable>
+            <Pressable
+              style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
+              disabled={!canSubmit}
+              onPress={submit}
+            >
+              <Text style={styles.submitText} numberOfLines={1}>
+                {submitLabel}
+              </Text>
+              <Send size={16} color={theme.button.primary.text} strokeWidth={2.4} />
+            </Pressable>
+          </View>
+          {step === 'compose' && !noteTarget?.id ? (
+            <View style={styles.topModeBar}>
+              <ModeSelector
+                activeMode={composeMode}
+                onSelectMode={selectComposeMode}
+              />
+            </View>
+          ) : null}
+        </>
       ) : null}
-      {activePanel !== 'gif' ? (
-        <PublishRelayList
-          relays={effectivePublishRelays}
-          subId={selectedRelay ? undefined : publishRelaySubId}
-        />
-      ) : null}
-
       <ScrollView
         ref={scrollRef}
+        keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={contentContainerStyle}
+        onScrollBeginDrag={Keyboard.dismiss}
         scrollEventThrottle={16}
       >
         {!pubkey || !hasSigner ? (
@@ -1203,50 +1266,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
             communities={communityOptions}
             onSelect={selectDestination}
           />
-        ) : !noteTarget?.id ? (
-          <View style={styles.destinationPanel}>
-            <View style={styles.destinationHeader}>
-              <View style={styles.destinationCopy}>
-                <Text style={styles.destinationKicker}>Publishing to</Text>
-                <Text style={styles.destinationTitle} numberOfLines={1}>
-                  {destinationLabel}
-                </Text>
-              </View>
-              <Pressable
-                style={styles.changeDestination}
-                onPress={() => setStep('setup')}
-              >
-                <Text style={styles.changeDestinationText}>Change</Text>
-              </Pressable>
-            </View>
-            <View style={styles.modeGrid}>
-              <ModeButton
-                icon="note"
-                label="Note"
-                active={composeMode === 'note'}
-                onPress={() => selectComposeMode('note')}
-              />
-              <ModeButton
-                icon="media"
-                label="Media"
-                active={composeMode === 'media'}
-                onPress={() => selectComposeMode('media')}
-              />
-              <ModeButton
-                icon="event"
-                label="Event"
-                active={composeMode === 'event'}
-                disabled={!selectedRelay}
-                onPress={() => selectComposeMode('event')}
-              />
-              <ModeButton
-                icon="poll"
-                label="Poll"
-                active={composeMode === 'poll'}
-                onPress={() => selectComposeMode('poll')}
-              />
-            </View>
-          </View>
         ) : null}
 
         {step === 'compose' && isEventMode ? (
@@ -1258,7 +1277,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
             startsAt={eventStartsAt}
             summary={eventSummary}
             title={eventTitle}
-            destinationLabel={destinationLabel}
             onChangeCategory={setEventCategory}
             onChangeCapacity={setEventCapacity}
             onChangeEndsAt={setEventEndsAt}
@@ -1290,9 +1308,13 @@ export function PostModal({ reply, quote, onClose }: Props) {
           )
         ) : null}
 
-        {step === 'compose' && !isEventMode ? (
+        {step === 'compose' && !isEventMode && composeMode !== 'media' ? (
         <View
-          style={[styles.editorShell, noteTarget && styles.replyEditorShell]}
+          style={[
+            styles.editorShell,
+            composeMode === 'poll' && styles.pollEditorShell,
+            noteTarget && styles.replyEditorShell,
+          ]}
           onLayout={event => {
             editorYRef.current = event.nativeEvent.layout.y;
             editorHeightRef.current = event.nativeEvent.layout.height;
@@ -1304,15 +1326,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
             autoFocus
             autoCapitalize="sentences"
             mentionIndicators={['@']}
-            placeholder={
-              reply
-                ? replyNote
-                  ? `Reply to ${replyAuthorName}`
-                  : 'Write your reply...'
-                : quote
-                  ? 'Add a quote?'
-                : "What's up?"
-            }
+            placeholder={editorPlaceholder}
             placeholderTextColor={theme.colors.primaryContent}
             selectionColor={theme.colors.primary}
             cursorColor={theme.colors.primary}
@@ -1334,13 +1348,27 @@ export function PostModal({ reply, quote, onClose }: Props) {
               console.log('[post] pasted images', event.nativeEvent);
             }}
             htmlStyle={editorHtmlStyle}
-            style={noteTarget ? styles.replyEditor : styles.editor}
+            style={
+              noteTarget
+                ? styles.replyEditor
+                : composeMode === 'poll'
+                    ? styles.pollEditor
+                    : styles.editor
+            }
           />
         </View>
         ) : null}
 
-        {step === 'compose' && selectedImages.length ? (
+        {step === 'compose' && isMediaMode && !selectedImages.length ? (
+          <MediaComposerPrompt onPickMedia={openNativeMediaPicker} />
+        ) : null}
+
+        {step === 'compose' && isMediaMode && selectedImages.length ? (
           <SelectedMediaGrid images={selectedImages} onRemove={removeImage} />
+        ) : null}
+
+        {step === 'compose' && isMediaMode && !keyboardOpen ? (
+          mediaCaptionInput
         ) : null}
 
         {step === 'compose' && pollEnabled ? (
@@ -1401,7 +1429,7 @@ function ComposerSetup({
   communities,
   onSelect,
 }: {
-  communities: Array<{url: string; role: 'Belong' | 'Follow'}>;
+  communities: Array<{url: string; role: CommunityRole}>;
   onSelect: (relay: string) => void;
 }) {
   const styles = usePostModalStyles();
@@ -1414,11 +1442,11 @@ function ComposerSetup({
       </View>
       <View style={styles.destinationGrid}>
         <Pressable style={styles.destinationCardPrimary} onPress={() => onSelect('')}>
-          <Globe2 size={22} color={theme.colors.primary} strokeWidth={2.3} />
           <View>
+            <Globe2 size={20} color={theme.colors.info} strokeWidth={2.3} />
             <Text style={styles.destinationCardTitle}>Public</Text>
-            <Text style={styles.destinationCardMeta}>Your write relays</Text>
           </View>
+          <Text style={styles.destinationCardMeta}>Your write relays</Text>
         </Pressable>
         {communities.map(community => (
           <Pressable
@@ -1426,13 +1454,15 @@ function ComposerSetup({
             style={styles.destinationCard}
             onPress={() => onSelect(community.url)}
           >
-            <Users size={22} color={theme.colors.primaryContent} strokeWidth={2.3} />
             <View style={styles.destinationCardCopy}>
+              <Users size={20} color={theme.colors.primaryContent} strokeWidth={2.3} />
               <Text style={styles.destinationCardTitle} numberOfLines={1}>
                 {relayLabel(community.url)}
               </Text>
-              <Text style={styles.destinationCardMeta}>{community.role}</Text>
             </View>
+            <Text style={styles.destinationCardMeta} numberOfLines={1}>
+              {community.role}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -1443,44 +1473,35 @@ function ComposerSetup({
   );
 }
 
-function ModeButton({
-  active,
-  disabled,
-  icon,
-  label,
-  onPress,
+function ModeSelector({
+  activeMode,
+  onSelectMode,
 }: {
-  active: boolean;
-  disabled?: boolean;
-  icon: 'note' | 'media' | 'event' | 'poll';
-  label: string;
-  onPress: () => void;
+  activeMode: ComposeMode;
+  onSelectMode: (mode: ComposeMode) => void;
 }) {
+  return (
+    <SegmentedTabs
+      tabs={COMPOSER_KIND_TABS}
+      selectedId={activeMode}
+      onSelect={onSelectMode}
+      layout="scroll"
+    />
+  );
+}
+
+function MediaComposerPrompt({onPickMedia}: {onPickMedia: () => void}) {
   const styles = usePostModalStyles();
   const theme = useAppTheme();
-  const color = active ? theme.button.primary.text : theme.colors.primaryContent;
-  const IconComponent =
-    icon === 'media'
-      ? ImageIcon
-      : icon === 'event'
-        ? CalendarPlus
-        : icon === 'poll'
-          ? ListChecks
-          : Film;
   return (
-    <Pressable
-      style={[
-        styles.modeButton,
-        active && styles.modeButtonActive,
-        disabled && styles.modeButtonDisabled,
-      ]}
-      disabled={disabled}
-      onPress={onPress}
-    >
-      <IconComponent size={16} color={color} strokeWidth={2.4} />
-      <Text style={[styles.modeButtonText, active && styles.modeButtonTextActive]}>
-        {label}
-      </Text>
+    <Pressable style={styles.mediaPrompt} onPress={onPickMedia}>
+      <View style={styles.mediaPromptFrame}>
+        <View style={styles.mediaPromptIcon}>
+          <ImageIcon size={28} color={theme.colors.primary} strokeWidth={2.2} />
+        </View>
+      </View>
+      <Text style={styles.mediaPromptTitle}>Add photos or GIFs</Text>
+      <Text style={styles.mediaPromptText}>Choose from your library, open camera, or search GIFs below.</Text>
     </Pressable>
   );
 }
@@ -1488,7 +1509,6 @@ function ModeButton({
 function EventComposer({
   category,
   capacity,
-  destinationLabel,
   endsAt,
   location,
   onChangeCapacity,
@@ -1504,7 +1524,6 @@ function EventComposer({
 }: {
   category: EventCategory;
   capacity: string;
-  destinationLabel: string;
   endsAt: string;
   location: string;
   onChangeCapacity: (value: string) => void;
@@ -1522,16 +1541,8 @@ function EventComposer({
   const theme = useAppTheme();
   return (
     <View style={styles.eventBox}>
-      <View style={styles.eventIntro}>
-        <View style={styles.eventIcon}>
-          <CalendarPlus size={24} color={theme.colors.primary} strokeWidth={2.4} />
-        </View>
-        <View style={styles.eventIntroCopy}>
-          <Text style={styles.eventTitle}>Community event</Text>
-          <Text style={styles.eventText}>Publish a dated event to {destinationLabel}.</Text>
-        </View>
-      </View>
       <TextInput
+        autoFocus
         value={title}
         onChangeText={onChangeTitle}
         placeholder="Event title"
@@ -1763,24 +1774,11 @@ function SelectedMediaGrid({
   );
 }
 
-function PublishRelayList({relays, subId}: {relays: string[]; subId?: string}) {
-  const styles = usePostModalStyles();
-  if (!relays.length) return null;
-
-  return (
-    <View style={styles.publishRelays}>
-      <RelaysList relays={relays} subId={subId} mini />
-    </View>
-  );
-}
-
 function ComposerToolbar({
   activePanel,
   onInsertImage,
-  pollEnabled,
   onMediaPress,
   onGifPress,
-  onTogglePoll,
 }: {
   activePanel: ComposerPanel | null;
   onInsertImage: (
@@ -1790,10 +1788,8 @@ function ComposerToolbar({
     mimeType?: string | null,
     fileName?: string | null,
   ) => void;
-  pollEnabled: boolean;
   onMediaPress: () => void;
   onGifPress: () => void;
-  onTogglePoll: () => void;
 }) {
   const styles = usePostModalStyles();
   const theme = useAppTheme();
@@ -1846,14 +1842,6 @@ function ComposerToolbar({
           />
         }
         onPress={onGifPress}
-      />
-      <ToolbarButton
-        accessibilityLabel="Create poll"
-        active={pollEnabled}
-        icon={
-          <ListChecks size={18} color={pollEnabled ? activeIconColor : inactiveIconColor} />
-        }
-        onPress={onTogglePoll}
       />
     </View>
   );
@@ -2181,7 +2169,9 @@ const editorHtmlStyle = {
 };
 
 function readableContentColor(theme: AppTheme) {
-  return theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a';
+  return theme.id === 'snowwhite' || theme.id === 'touchgrass'
+    ? '#1a1a1a'
+    : '#f8fafc';
 }
 
 function createPostModalStyles(theme: AppTheme) {
@@ -2194,13 +2184,20 @@ function createPostModalStyles(theme: AppTheme) {
   header: {
     minHeight: 72,
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 10,
     paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.base200,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  topModeBar: {
+    paddingTop: 10,
+    paddingBottom: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.base200,
+    backgroundColor: theme.colors.base100,
   },
   iconButton: {
     width: 40,
@@ -2213,6 +2210,8 @@ function createPostModalStyles(theme: AppTheme) {
     justifyContent: 'center',
   },
   submitButton: {
+    flexShrink: 1,
+    maxWidth: '78%',
     minWidth: 82,
     height: 38,
     borderRadius: 19,
@@ -2230,6 +2229,7 @@ function createPostModalStyles(theme: AppTheme) {
     backgroundColor: theme.button.disabled.background,
   },
   submitText: {
+    flexShrink: 1,
     color: theme.button.primary.text,
     fontSize: 14,
     fontWeight: '700',
@@ -2242,46 +2242,47 @@ function createPostModalStyles(theme: AppTheme) {
     paddingBottom: 86,
   },
   setupPanel: {
-    gap: 14,
+    gap: 16,
+    paddingBottom: 16,
   },
   setupKicker: {
     color: theme.colors.primaryContent,
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '600',
   },
   setupTitle: {
     marginTop: 2,
     color: contentColor,
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '700',
   },
   setupEmpty: {
     color: theme.colors.primaryContent,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   destinationGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
   },
   destinationCard: {
-    width: '48%',
-    minHeight: 108,
+    width: '48.5%',
+    minHeight: 112,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
+    backgroundColor: theme.colors.base200,
     padding: 12,
     justifyContent: 'space-between',
   },
   destinationCardPrimary: {
-    width: '48%',
-    minHeight: 108,
+    width: '48.5%',
+    minHeight: 112,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.base300,
+    borderColor: theme.colors.info,
+    backgroundColor: theme.colors.base200,
     padding: 12,
     justifyContent: 'space-between',
   },
@@ -2289,122 +2290,21 @@ function createPostModalStyles(theme: AppTheme) {
     minWidth: 0,
   },
   destinationCardTitle: {
+    marginTop: 8,
     color: contentColor,
     fontSize: 15,
-    fontWeight: '900',
-  },
-  destinationCardMeta: {
-    marginTop: 3,
-    color: theme.colors.primaryContent,
-    fontSize: 12,
     fontWeight: '700',
   },
-  destinationPanel: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
-    padding: 10,
-    gap: 10,
-  },
-  destinationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  destinationCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  destinationKicker: {
-    color: theme.colors.primaryContent,
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  destinationTitle: {
-    marginTop: 2,
-    color: contentColor,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  changeDestination: {
-    minHeight: 32,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.base200,
-  },
-  changeDestinationText: {
-    color: theme.colors.primary,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  modeGrid: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  modeButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 7,
-    backgroundColor: theme.colors.base100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 5,
-  },
-  modeButtonActive: {
-    backgroundColor: theme.colors.primary,
-  },
-  modeButtonDisabled: {
-    opacity: 0.4,
-  },
-  modeButtonText: {
+  destinationCardMeta: {
     color: theme.colors.primaryContent,
     fontSize: 12,
-    fontWeight: '900',
-  },
-  modeButtonTextActive: {
-    color: theme.button.primary.text,
+    lineHeight: 16,
+    fontWeight: '500',
   },
   eventBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
-    padding: 12,
+    alignSelf: 'stretch',
+    width: '100%',
     gap: 10,
-  },
-  eventIntro: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  eventIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.base100,
-  },
-  eventIntroCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  eventTitle: {
-    color: contentColor,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  eventText: {
-    marginTop: 2,
-    color: theme.colors.primaryContent,
-    fontSize: 13,
-    lineHeight: 18,
   },
   eventInput: {
     minHeight: 44,
@@ -2487,8 +2387,18 @@ function createPostModalStyles(theme: AppTheme) {
   replyEditorShell: {
     height: 104,
   },
+  pollEditorShell: {
+    height: 86,
+  },
   editor: {
     height: 128,
+    padding: 14,
+    fontSize: 17,
+    lineHeight: 24,
+    color: contentColor,
+  },
+  pollEditor: {
+    height: 86,
     padding: 14,
     fontSize: 17,
     lineHeight: 24,
@@ -2501,6 +2411,25 @@ function createPostModalStyles(theme: AppTheme) {
     fontSize: 16,
     lineHeight: 22,
     color: contentColor,
+  },
+  mediaCaptionAccessory: {
+    minHeight: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base300,
+    overflow: 'hidden',
+  },
+  mediaCaptionEditor: {
+    minHeight: 52,
+    maxHeight: 112,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
+    fontSize: 15,
+    lineHeight: 20,
+    color: contentColor,
+    textAlignVertical: 'top',
   },
   mentionBox: {
     maxHeight: 216,
@@ -2781,6 +2710,50 @@ function createPostModalStyles(theme: AppTheme) {
     fontSize: 9,
     fontWeight: '900',
   },
+  mediaPrompt: {
+    minHeight: 260,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.base200,
+    backgroundColor: theme.colors.base200,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  mediaPromptFrame: {
+    width: '100%',
+    aspectRatio: 1,
+    maxHeight: 178,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colors.primaryContent,
+    backgroundColor: theme.colors.base300,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPromptIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.base100,
+  },
+  mediaPromptTitle: {
+    color: contentColor,
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  mediaPromptText: {
+    maxWidth: 260,
+    color: theme.colors.primaryContent,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   mediaSelectBadge: {
     position: 'absolute',
     top: 5,
@@ -2804,17 +2777,15 @@ function createPostModalStyles(theme: AppTheme) {
     lineHeight: 16,
   },
   selectedMediaBlock: {
-    gap: 8,
+    gap: 10,
   },
   selectedMediaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   selectedMediaTile: {
-    width: 88,
-    height: 88,
-    borderRadius: 8,
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 14,
     backgroundColor: theme.colors.base200,
     overflow: 'hidden',
   },
@@ -2848,19 +2819,19 @@ function createPostModalStyles(theme: AppTheme) {
   },
   selectedMediaBadge: {
     position: 'absolute',
-    left: 5,
-    bottom: 5,
-    minWidth: 22,
-    maxWidth: 76,
-    height: 22,
-    borderRadius: 11,
+    left: 10,
+    top: 10,
+    minWidth: 28,
+    maxWidth: 84,
+    height: 28,
+    borderRadius: 14,
     overflow: 'hidden',
-    paddingHorizontal: 5,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
     color: '#ffffff',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
-    lineHeight: 22,
+    lineHeight: 28,
     textAlign: 'center',
   },
   selectedMediaErrors: {
@@ -2872,28 +2843,20 @@ function createPostModalStyles(theme: AppTheme) {
     fontWeight: '700',
     lineHeight: 16,
   },
-  publishRelays: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    alignItems: 'flex-end',
-  },
   mediaRemove: {
     position: 'absolute',
-    top: 5,
-    right: 5,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   pollBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.base200,
-    backgroundColor: theme.colors.base300,
-    padding: 12,
+    alignSelf: 'stretch',
+    width: '100%',
     gap: 10,
   },
   segmented: {

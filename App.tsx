@@ -1087,7 +1087,7 @@ function MainFooter({
               isInteractive
               style={styles.mainFooterDetachedComposeGlass}
             >
-              <Plus size={31} color="#ffffff" strokeWidth={2.5} />
+              <Plus size={31} color={theme.colors.primaryContent} strokeWidth={2.5} />
             </GlassView>
           </Pressable>
         </Animated.View>

@@ -44,8 +44,8 @@ function eventTags(event: ParsedEvent) {
 
 function isMention(event: ParsedEvent, pubkey: string) {
   const kind1 = asKind1(event);
-  const mentions = kind1 ? fbArray(kind1, 'mentions') : [];
-  return mentions.some(mention => mention.author() === pubkey);
+  const mentions = kind1 ? fbArray(kind1, 'profileMentions') : [];
+  return mentions.some(mention => mention.publicKey() === pubkey);
 }
 
 function firstTaggedEventId(event: ParsedEvent) {
@@ -76,12 +76,15 @@ export function processNotifications(
     if (kind === 1) {
       const kind1 = asKind1(event);
       const replyId = kind1?.reply()?.id();
-      if (replyId) {
-        notificationType = 'reply';
-        referencedPostId = replyId;
-      } else if (isMention(event, pubkey)) {
+      if (isMention(event, pubkey)) {
         notificationType = 'mention';
         referencedPostId = `mention-${event.id()}`;
+      } else if (replyId && kind1 && fbArray(kind1, 'eventRefs').length) {
+        notificationType = 'mention';
+        referencedPostId = `mention-${event.id()}`;
+      } else if (replyId) {
+        notificationType = 'reply';
+        referencedPostId = replyId;
       }
     } else if (kind === 7) {
       const kind7 = asKind7(event);

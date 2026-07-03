@@ -10,23 +10,23 @@ import { Keyboard, Pressable, Text, View, type ViewStyle } from 'react-native';
 import { CloudOff, RefreshCw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { ContentBlock, ParsedEvent, WorkerMessage } from '@candypoets/nipworker';
+import type {
+  ContentBlock,
+  ParsedEvent,
+  Request,
+  RequestObject,
+  WorkerMessage,
+} from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
   asKind6,
-  asNostrData,
   asParsedEvent,
   fbArray,
-  isKind10002,
 } from '@candypoets/nipworker/utils';
-import { ContentData } from '@candypoets/nipworker';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
-import {
-  relaysFromKind10002,
-  useEffectiveAuthorRelays,
-} from '../../hooks/useAuthorRelays';
+import { useEffectiveAuthorRelays } from '../../hooks/useAuthorRelays';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
 import {useAppTheme} from '../../theme';
@@ -64,17 +64,41 @@ function relayList(values: unknown[]) {
   return [...new Set(values.filter(isRelayUrl))];
 }
 
-function nostrDataRelays(nostr: ReturnType<typeof asNostrData>) {
-  if (!nostr) return [];
-  return relayList(
-    Array.from({ length: nostr.relaysLength() }, (_, index) =>
-      nostr.relays(index),
+function toRequestObject(request: Request): RequestObject {
+  return {
+    ids: fbArray(request, 'ids').map(id => String(id)),
+    authors: fbArray(request, 'authors').map(author => String(author)),
+    kinds: fbArray(request, 'kinds').filter(
+      (kind): kind is number => typeof kind === 'number',
     ),
-  );
+    tags: fbArray(request, 'tags').reduce<Record<string, string[]>>(
+      (tags, tag) => {
+        const items = fbArray(tag, 'items');
+        if (items.length >= 2) {
+          const key = String(items[0]);
+          if (key) tags[key] = items.slice(1).map(item => String(item));
+        }
+        return tags;
+      },
+      {},
+    ),
+    limit: request.limit() || undefined,
+    since: request.since() || undefined,
+    until: request.until() || undefined,
+    search: request.search() || undefined,
+    relays: fbArray(request, 'relays').map(relay => String(relay)),
+    closeOnEOSE: request.closeOnEose(),
+    cacheFirst: request.cacheFirst(),
+    noCache: request.noCache(),
+    maxRelays: request.maxRelays() || undefined,
+  };
 }
 
-function isUserEntity(entity?: string | null) {
-  return !!entity?.match(/n(profile|pub)/);
+function withKnownRelays(request: RequestObject, relays: string[]): RequestObject {
+  return {
+    ...request,
+    relays: relayList([...(request.relays || []), ...relays]),
+  };
 }
 
 function isMediaEventKind(kind?: number) {
@@ -419,9 +443,6 @@ function NoteComponent({
     null,
   );
   const [contextVersion, setContextVersion] = useState(0);
-  const [quoteAuthorRelays, setQuoteAuthorRelays] = useState<
-    Record<string, string[]>
-  >({});
   const readRelays = useNostrStore(state => state.readRelays);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const [extraSearchRelays, setExtraSearchRelays] = useState<string[]>([]);
@@ -577,39 +598,6 @@ function NoteComponent({
     setRetryNonce(nonce => nonce + 1);
   }, [extraSearchRelays, readRelays, relayStatuses]);
 
-  useEffect(() => {
-    if (note || contextNote || fetchedNote || !noteId || !visible)
-      return;
-
-    const unsubscribe = subscribeToNostr(
-      `note_${noteId}_${retryNonce}_${lookupRelayKey}`,
-      [{ ids: [noteId], limit: 1, relays: lookupRelays }],
-      message => {
-        if (handleRelayStatus(message)) return;
-        const parsed = asParsedEvent(message);
-        if (!parsed || parsed.id() !== noteId) return;
-        fetchedRef.current = parsed;
-        addContextEvent(parsed);
-      },
-      { bytesPerEvent: NOTE_BYTES_PER_EVENT },
-    );
-
-    return () => {
-      unsubscribe();
-    };
-  }, [
-    addContextEvent,
-    contextNote,
-    fetchedNote,
-    handleRelayStatus,
-    lookupRelayKey,
-    lookupRelays,
-    note,
-    noteId,
-    retryNonce,
-    visible,
-  ]);
-
   const kind1 = useMemo(
     () => (displayNote ? asKind1(displayNote) : null),
     [displayNote],
@@ -636,32 +624,20 @@ function NoteComponent({
   const cardlessMain = main && depth === 0;
   const fullWidthCardMain = !cardlessMain && effectiveMain && isMediaEvent;
   const replyId = kind1?.reply()?.id();
-  const allMentionIds = useMemo(() => {
-    if (!kind1 || typeof kind1.mentionsLength !== 'function') {
-      return [];
-    }
-
-    const ids: string[] = [];
-    for (let index = 0; index < kind1.mentionsLength(); index += 1) {
-      const id = kind1.mentions(index)?.id?.();
-      if (id) ids.push(id);
-    }
-    return [...new Set(ids)];
-  }, [kind1]);
-  const mentionQuotes = useMemo(() => {
-    if (!kind1 || typeof kind1.mentionsLength !== 'function') {
-      return [];
-    }
-
-    const quotes: Array<{ id: string; author?: string }> = [];
-    for (let index = 0; index < kind1.mentionsLength(); index += 1) {
-      const mention = kind1.mentions(index);
-      const id = mention?.id?.();
-      if (!id) continue;
-      quotes.push({ id, author: mention?.author?.() || undefined });
-    }
-    return quotes;
-  }, [kind1]);
+  const eventRefs = useMemo(
+    () => (kind1 ? fbArray(kind1, 'eventRefs') : []),
+    [kind1],
+  );
+  const eventRefIds = useMemo(
+    () => [
+      ...new Set(
+        eventRefs
+          .map(ref => ref.id?.())
+          .filter((id): id is string => !!id),
+      ),
+    ],
+    [eventRefs],
+  );
   const parsedContent = useMemo(
     () => (kind1 ? fbArray(kind1, 'parsedContent') : []),
     [kind1],
@@ -670,58 +646,12 @@ function NoteComponent({
     () => (kind1 ? fbArray(kind1, 'shortenedContent') : []),
     [kind1],
   );
-  const contentQuotes = useMemo(() => {
-    const blocks = shortContent.length ? shortContent : parsedContent;
-    const quotes: Array<{ id: string; author?: string; relays: string[] }> = [];
-    blocks.forEach(block => {
-      if (block.dataType() !== ContentData.NostrData) return;
-      const nostr = asNostrData(block);
-      const id = nostr?.id?.();
-      if (!id) return;
-      if (nostr?.author?.() && isUserEntity(nostr?.entity?.())) return;
-      quotes.push({
-        id,
-        author: nostr?.author?.() || undefined,
-        relays: nostrDataRelays(nostr),
-      });
-    });
-    return quotes;
-  }, [parsedContent, shortContent]);
-  const quoteAuthors = useMemo(
-    () => [
-      ...new Set(
-        [...mentionQuotes, ...contentQuotes]
-          .map(quote => quote.author)
-          .filter((author): author is string => !!author),
-      ),
-    ],
-    [contentQuotes, mentionQuotes],
-  );
-  const discoveredQuoteRelays = useMemo(
-    () => [
-      ...new Set(
-        quoteAuthors.flatMap(author => quoteAuthorRelays[author] ?? []),
-      ),
-    ],
-    [quoteAuthorRelays, quoteAuthors],
-  );
-  const quoteIds = useMemo(() => {
-    contextVersion;
-    if (!showQuote) return [];
-    return [
-      ...new Set([...mentionQuotes, ...contentQuotes].map(quote => quote.id)),
-    ].filter(
-      id =>
-        id !== displayId &&
-        !contextRef.current.some(event => event?.id?.() === id),
-    );
-  }, [contentQuotes, contextVersion, displayId, mentionQuotes, showQuote]);
   const shouldRenderAncestor = !!(
     showRoot &&
     replyId &&
     replyId !== displayId &&
     depth === 0 &&
-    !allMentionIds.includes(replyId) &&
+    !eventRefIds.includes(replyId) &&
     !ancestorIds.includes(replyId)
   );
   const ancestorRelays = useEffectiveAuthorRelays({
@@ -730,6 +660,66 @@ function NoteComponent({
     marker: 'read',
     fallbackRelays: noteRelays,
   });
+  const noteSubscriptionId = displayId || effectiveId;
+  const noteSubscriptionRequests = useMemo<RequestObject[]>(() => {
+    if (!noteSubscriptionId) return [];
+
+    const mainRequest: RequestObject | null = effectiveNote
+      ? null
+      : {
+          ids: [noteSubscriptionId],
+          limit: 5,
+          relays: lookupRelays,
+          cacheFirst: true,
+        };
+    const ancestorRequestIds = replyId
+      ? [replyId].filter(
+          id =>
+            !eventRefIds.includes(id) &&
+            !ancestorIds.includes(id) &&
+            !contextRef.current.some(event => event?.id?.() === id),
+        )
+      : [];
+    const ancestorRequests: RequestObject[] = ancestorRequestIds.length
+      ? [
+          {
+            ids: ancestorRequestIds,
+            limit: ancestorRequestIds.length * 2,
+            relays: ancestorRelays.length ? ancestorRelays : noteRelays,
+          },
+        ]
+      : [];
+    const replyRequest: RequestObject = {
+      limit: 10,
+      tags: { '#e': [noteSubscriptionId] },
+      relays: noteRelays,
+    };
+    const parsedEventRequests = displayNote
+      ? fbArray(displayNote, 'requests').map(request =>
+          withKnownRelays(toRequestObject(request), noteRelays),
+        )
+      : [];
+
+    return [
+      ...(mainRequest ? [mainRequest] : []),
+      ...ancestorRequests,
+      replyRequest,
+      ...parsedEventRequests,
+    ];
+  }, [
+    ancestorIds,
+    ancestorRelays,
+    contextVersion,
+    displayNote,
+    effectiveNote,
+    effectiveId,
+    eventRefIds,
+    lookupRelayKey,
+    lookupRelays,
+    noteRelays,
+    noteSubscriptionId,
+    replyId,
+  ]);
   const isQuote = depth > 0;
   const hasTopThreadConnector = shouldRenderAncestor || tailing;
   const hasBottomThreadConnector = leading;
@@ -798,85 +788,22 @@ function NoteComponent({
   );
 
   useEffect(() => {
-    if (!visible || !showQuote || !quoteAuthors.length) return;
-    const missingAuthors = quoteAuthors.filter(
-      author => quoteAuthorRelays[author] === undefined,
-    );
-    if (!missingAuthors.length) return;
-
-    const timeout = setTimeout(() => {
-      setQuoteAuthorRelays(current => {
-        const next = { ...current };
-        let changed = false;
-        missingAuthors.forEach(author => {
-          if (next[author] !== undefined) return;
-          next[author] = [];
-          changed = true;
-        });
-        return changed ? next : current;
-      });
-    }, 1000);
+    if (!visible || !noteSubscriptionId || !noteSubscriptionRequests.length)
+      return;
 
     const unsubscribe = subscribeToNostr(
-      `quote_relays_${displayId}`,
-      [
-        {
-          kinds: [10002],
-          authors: missingAuthors,
-          limit: missingAuthors.length,
-          relays: BOOTSTRAP_RELAYS,
-          cacheFirst: true,
-        },
-      ],
-      message => {
-        if (handleRelayStatus(message)) return;
-        const kind10002 = isKind10002(message);
-        if (!kind10002) return;
-        const author = asParsedEvent(message)?.pubkey();
-        if (!author) return;
-        const writeRelays = relaysFromKind10002(kind10002, 'write', 3);
-        setQuoteAuthorRelays(current =>
-          sameStringArray(current[author] ?? [], writeRelays)
-            ? current
-            : {
-                ...current,
-                [author]: writeRelays,
-              },
-        );
-      },
-      { closeOnEose: false },
-    );
-
-    return () => {
-      clearTimeout(timeout);
-      unsubscribe();
-    };
-  }, [displayId, handleRelayStatus, quoteAuthorRelays, quoteAuthors, showQuote, visible]);
-
-  useEffect(() => {
-    if (!visible || !showQuote || !quoteIds.length) return;
-
-    const unsubscribe = subscribeToNostr(
-      `note_quotes_${displayId}_${noteRelayKey}`,
-      [
-        {
-          ids: quoteIds,
-          limit: 5 * quoteIds.length,
-          relays: [
-            ...relayList([
-              ...noteRelays,
-              ...discoveredQuoteRelays,
-              ...contentQuotes.flatMap(quote => quote.relays),
-            ]),
-          ],
-        },
-      ],
+      noteSubscriptionId,
+      noteSubscriptionRequests,
       message => {
         if (handleRelayStatus(message)) return;
         const parsed = asParsedEvent(message);
-        if (parsed) addContextEvent(parsed);
+        if (!parsed) return;
+        if (noteId && parsed.id() === noteId) {
+          fetchedRef.current = parsed;
+        }
+        addContextEvent(parsed);
       },
-      { closeOnEose: false },
+      { bytesPerEvent: NOTE_BYTES_PER_EVENT },
     );
 
     return () => {
@@ -884,21 +811,16 @@ function NoteComponent({
     };
   }, [
     addContextEvent,
-    displayId,
-    noteRelayKey,
-    noteRelays,
-    discoveredQuoteRelays,
-    contentQuotes,
-    quoteIds,
     handleRelayStatus,
-    showQuote,
+    noteId,
+    noteSubscriptionId,
+    noteSubscriptionRequests,
     visible,
   ]);
 
   const renderQuote = useCallback(
     ({
       id,
-      author,
       relays: quoteRelays,
       depth: quoteDepth,
       key,
@@ -918,14 +840,13 @@ function NoteComponent({
         relays={[
           ...relayList([
             ...quoteRelays,
-            ...(author ? quoteAuthorRelays[author] ?? [] : []),
             ...noteRelays,
           ]),
         ]}
         footer={false}
       />
     ),
-    [noteRelays, quoteAuthorRelays, visible],
+    [noteRelays, visible],
   );
 
   if (depth > 3) {

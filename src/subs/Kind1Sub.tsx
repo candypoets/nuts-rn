@@ -81,31 +81,6 @@ function pointerRelays(data: EventPointer) {
   return [...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl))];
 }
 
-function readTagVec(tag: {
-  items(index: number): string | Uint8Array | null;
-  itemsLength(): number;
-}) {
-  const items: string[] = [];
-  for (let index = 0; index < tag.itemsLength(); index += 1) {
-    const value = tag.items(index);
-    if (typeof value === 'string') items.push(value);
-  }
-  return items;
-}
-
-function eventTags(event: ParsedEvent) {
-  const tags: string[][] = [];
-  for (let index = 0; index < event.tagsLength(); index += 1) {
-    const tag = event.tags(index);
-    if (tag) tags.push(readTagVec(tag));
-  }
-  return tags;
-}
-
-function hasTagValue(event: ParsedEvent, tagName: string, value: string) {
-  return eventTags(event).some(tag => tag[0] === tagName && tag[1] === value);
-}
-
 function oldestVisibleChildReply(
   replies: ParsedEvent[],
   item: ParsedEvent,
@@ -431,11 +406,22 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
         statsRef.current.dropKind += 1;
         return;
       }
-      if (!hasTagValue(event, 'e', rootId)) {
+      const kind1 = asKind1(event);
+      if (!kind1) {
+        statsRef.current.dropKind += 1;
+        return;
+      }
+      const replyId = kind1.reply()?.id();
+      const rootRefId = kind1.root()?.id();
+      if (replyId && replyId !== rootId) {
         statsRef.current.dropNoRootTag += 1;
         return;
       }
-      if (hasTagValue(event, 'q', rootId)) {
+      if ((!replyId || replyId === rootRefId) && rootRefId !== rootId) {
+        statsRef.current.dropNoRootTag += 1;
+        return;
+      }
+      if (fbArray(kind1, 'eventRefs').some(eventRef => eventRef.id() === rootId)) {
         statsRef.current.dropQuote += 1;
         return;
       }
@@ -460,9 +446,7 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
         });
       }
       allRepliesRef.current.push(event);
-      const kind1 = asKind1(event);
-      const reply = kind1?.reply()?.id();
-      if (!reply || reply === rootId) {
+      if (!replyId || replyId === rootId) {
         itemsRef.current.push(event);
       }
       scheduleCommit();

@@ -35,6 +35,8 @@ type ZoomLink = UIStore['imageZoom']['links'][number];
 const OrientationGate = NativeModules.OrientationGate as
   | { setImageZoomActive?: (active: boolean) => void }
   | undefined;
+const DISMISS_DIRECTION_THRESHOLD = 10;
+const DISMISS_VERTICAL_BIAS = 1.25;
 
 function zoomNoteText(note: NonNullable<UIStore['imageZoom']['note']>) {
   const kind20 = asKind20(note);
@@ -139,6 +141,7 @@ export function ImageZoom() {
       visible={visible}
       statusBarTranslucent
       animationType="fade"
+      onRequestClose={dismiss}
       supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}
     >
       <View style={styles.modal}>
@@ -324,6 +327,8 @@ function ZoomImage({
   const savedY = useSharedValue(0);
   const touchStartX = useSharedValue(0);
   const touchStartY = useSharedValue(0);
+  const dismissStartX = useSharedValue(0);
+  const dismissStartY = useSharedValue(0);
   const zoomState = useSharedValue(false);
 
   const syncZoomState = useCallback(
@@ -390,8 +395,34 @@ function ZoomImage({
     });
 
   const dismissPan = Gesture.Pan()
-    .activeOffsetY([-14, 14])
-    .failOffsetX([-26, 26])
+    .manualActivation(true)
+    .onTouchesDown(event => {
+      const touch = event.allTouches[0];
+      if (!touch) return;
+      dismissStartX.value = touch.absoluteX;
+      dismissStartY.value = touch.absoluteY;
+    })
+    .onTouchesMove((event, state) => {
+      const touch = event.allTouches[0];
+      if (!touch) return;
+      if (scale.value > 1.02) {
+        state.fail();
+        return;
+      }
+
+      const movedX = Math.abs(touch.absoluteX - dismissStartX.value);
+      const movedY = Math.abs(touch.absoluteY - dismissStartY.value);
+      if (
+        movedY > DISMISS_DIRECTION_THRESHOLD &&
+        movedY > movedX * DISMISS_VERTICAL_BIAS
+      ) {
+        state.activate();
+        return;
+      }
+      if (movedX > DISMISS_DIRECTION_THRESHOLD && movedX > movedY) {
+        state.fail();
+      }
+    })
     .onUpdate(event => {
       if (scale.value > 1.02) return;
       overlayTranslateY.value = event.translationY;
@@ -485,6 +516,8 @@ function ZoomVideo({
   backgroundOpacity: SharedValue<number>;
 }) {
   const player = useSharedVideoPlayer(link.src);
+  const dismissStartX = useSharedValue(0);
+  const dismissStartY = useSharedValue(0);
 
   useEffect(() => {
     player.loop = false;
@@ -497,8 +530,30 @@ function ZoomVideo({
   }, [player]);
 
   const dismissPan = Gesture.Pan()
-    .activeOffsetY([-14, 14])
-    .failOffsetX([-26, 26])
+    .manualActivation(true)
+    .onTouchesDown(event => {
+      const touch = event.allTouches[0];
+      if (!touch) return;
+      dismissStartX.value = touch.absoluteX;
+      dismissStartY.value = touch.absoluteY;
+    })
+    .onTouchesMove((event, state) => {
+      const touch = event.allTouches[0];
+      if (!touch) return;
+
+      const movedX = Math.abs(touch.absoluteX - dismissStartX.value);
+      const movedY = Math.abs(touch.absoluteY - dismissStartY.value);
+      if (
+        movedY > DISMISS_DIRECTION_THRESHOLD &&
+        movedY > movedX * DISMISS_VERTICAL_BIAS
+      ) {
+        state.activate();
+        return;
+      }
+      if (movedX > DISMISS_DIRECTION_THRESHOLD && movedX > movedY) {
+        state.fail();
+      }
+    })
     .onUpdate(event => {
       overlayTranslateY.value = event.translationY;
       backgroundOpacity.value = Math.max(

@@ -31,7 +31,9 @@ local.properties
 *.iml
 *.hprof
 .cxx/
+*.jks
 *.keystore
+*.p12
 !debug.keystore
 .kotlin/
 

@@ -7,17 +7,17 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import * as ReactNative from 'react-native';
 import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   RefreshControl,
+  ScrollView,
   Text,
   View,
 } from 'react-native';
-import {
-  type ColumnWrapperStyle,
-  type LegendListRef,
-} from '@legendapp/list/react-native';
-import {AnimatedLegendList} from '@legendapp/list/reanimated';
+import type {ColumnWrapperStyle} from '@legendapp/list/react-native';
 import {
   FlashList,
   type FlashListRef,
@@ -86,6 +86,38 @@ export type FeedProps<T> = {
 const NEAR_BOTTOM_THRESHOLD = 10;
 const TOP_SAFE_AREA_OFFSET = 8;
 
+type FeedVirtualItem<T> = {
+  key: string;
+  item: T;
+  index: number;
+};
+
+type FeedVirtualRow<T> = {
+  key: string;
+  items: FeedVirtualItem<T>[];
+};
+
+type VirtualCollection<T> = {
+  readonly size: number;
+  at(index: number): T;
+};
+
+type VirtualColumnProps<TItem> = {
+  children: (item: TItem, key: string) => ReactNode;
+  items: VirtualCollection<TItem>;
+  itemToKey?: (item: TItem) => string;
+  removeClippedSubviews?: boolean;
+  testID?: null | string;
+};
+
+const VirtualColumn = (
+  ReactNative as typeof ReactNative & {
+    unstable_VirtualColumn: <TItem>(
+      props: VirtualColumnProps<TItem>,
+    ) => ReactNode;
+  }
+).unstable_VirtualColumn;
+
 function isDarkHex(hex: string) {
   const normalized = hex.replace('#', '').slice(0, 6);
   const value = Number.parseInt(normalized, 16);
@@ -142,14 +174,17 @@ export function Feed<T>({
   onNearBottom,
   onChromeVisibilityChange,
   contentContainerClassName = 'pb-28',
+  removeClippedSubviews = false,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
-  const listRef = useRef<LegendListRef>(null);
+  const listRef = useRef<ScrollView>(null);
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
+  const scrollViewportHeightRef = useRef(0);
+  const scrollContentHeightRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
   const lastItemsLengthRef = useRef(items.length);
   const didInitialBottomScrollRef = useRef(false);
@@ -166,6 +201,40 @@ export function Feed<T>({
     () => items,
     [items],
   );
+  const virtualRows = useMemo<FeedVirtualRow<T>[]>(() => {
+    const columns = Math.max(1, numColumns);
+    const rows: FeedVirtualRow<T>[] = [];
+    for (let index = 0; index < listItems.length; index += columns) {
+      const rowItems = listItems
+        .slice(index, index + columns)
+        .map((item, columnIndex) => {
+          const itemIndex = index + columnIndex;
+          return {
+            key: String(getItemId(item, itemIndex)),
+            item,
+            index: itemIndex,
+          };
+        });
+      rows.push({
+        key: rowItems.map(item => item.key).join(':'),
+        items: rowItems,
+      });
+    }
+    return rows;
+  }, [getItemId, listItems, numColumns]);
+  const virtualRowsCollection = useMemo<VirtualCollection<FeedVirtualRow<T>>>(
+    () => ({
+      size: virtualRows.length,
+      at(index: number) {
+        const row = virtualRows[index];
+        if (!row) {
+          throw new RangeError(`Cannot get feed row ${index}`);
+        }
+        return row;
+      },
+    }),
+    [virtualRows],
+  );
   const shouldMaintainVisibleContentPosition =
     !disableMaintainVisibleContentPosition && (items.length > 0 || !loading);
 
@@ -173,7 +242,7 @@ export function Feed<T>({
     if (bottom) {
       bottomListRef.current?.scrollToOffset({offset: 0, animated: true});
     } else {
-      listRef.current?.scrollToOffset({offset: 0, animated: true});
+      listRef.current?.scrollTo({y: 0, animated: true});
     }
   }, [bottom]);
 
@@ -225,7 +294,7 @@ export function Feed<T>({
   useEffect(() => {
     if (resetScrollKey === undefined || bottom) return;
     requestAnimationFrame(() => {
-      listRef.current?.scrollToOffset({offset: 0, animated: false});
+      listRef.current?.scrollTo({y: 0, animated: false});
       lastOffsetRef.current = 0;
       setDown(true);
     });
@@ -286,14 +355,53 @@ export function Feed<T>({
     [items.length, nearBottomThreshold],
   );
 
-  const handleScroll = useCallback((event: {nativeEvent: {contentOffset: {y: number}}}) => {
-    const offset = event.nativeEvent.contentOffset.y;
+  const maybeTriggerNearBottom = useCallback((distance: number, offset: number) => {
+    if (
+      !onNearBottom ||
+      items.length === 0 ||
+      offset <= 0 ||
+      distance > nearBottomThreshold ||
+      nearBottomTriggeredRef.current
+    ) {
+      return;
+    }
+    nearBottomTriggeredRef.current = true;
+    onNearBottom({distance: Math.max(0, distance)});
+  }, [items.length, nearBottomThreshold, onNearBottom]);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
+    const offset = contentOffset.y;
+    scrollY.value = offset;
+    scrollViewportHeightRef.current = layoutMeasurement.height;
+    scrollContentHeightRef.current = contentSize.height;
+    setStart(offset >= 1 ? 1 : 0);
+    const distanceFromBottom = Math.max(
+      0,
+      contentSize.height - layoutMeasurement.height - offset,
+    );
+    if (offset <= 0 || distanceFromBottom > nearBottomThreshold) {
+      nearBottomTriggeredRef.current = false;
+    }
+    maybeTriggerNearBottom(distanceFromBottom, offset);
     const delta = offset - lastOffsetRef.current;
     if (Math.abs(delta) > 4) {
       setDown(delta > 0);
       lastOffsetRef.current = offset;
     }
-  }, []);
+  }, [maybeTriggerNearBottom, nearBottomThreshold, scrollY]);
+
+  const handleContentSizeChange = useCallback((_width: number, height: number) => {
+    scrollContentHeightRef.current = height;
+    const distanceFromBottom = Math.max(
+      0,
+      height - scrollViewportHeightRef.current - lastOffsetRef.current,
+    );
+    if (lastOffsetRef.current <= 0 || distanceFromBottom > nearBottomThreshold) {
+      nearBottomTriggeredRef.current = false;
+    }
+    maybeTriggerNearBottom(distanceFromBottom, lastOffsetRef.current);
+  }, [maybeTriggerNearBottom, nearBottomThreshold]);
 
   const keyExtractor = useCallback(
     (item: T, index: number) => String(getItemId(item, index)),
@@ -323,6 +431,33 @@ export function Feed<T>({
     nearBottomTriggeredRef.current = true;
     onNearBottom({distance: Math.max(0, event?.distanceFromEnd ?? 0)});
   }, [items.length, onNearBottom, start]);
+
+  const renderVirtualRowContent = useCallback(
+    (row: FeedVirtualRow<T>) => {
+      const rowContent = row.items.map(({key, item, index}) => (
+        <View
+          key={key}
+          className={numColumns > 1 ? 'flex-1' : undefined}
+        >
+          {renderItem({
+            item,
+            index,
+            data: items,
+            visible,
+          })}
+        </View>
+      ));
+      if (numColumns <= 1) {
+        return rowContent[0] ?? null;
+      }
+      return (
+        <View style={columnWrapperStyle}>
+          {rowContent}
+        </View>
+      );
+    },
+    [columnWrapperStyle, items, numColumns, renderItem, visible],
+  );
 
   const listHeader = useMemo(() => {
     if (!header) return null;
@@ -416,42 +551,15 @@ export function Feed<T>({
           scrollEventThrottle={16}
         />
       ) : (
-        <AnimatedLegendList
-          key={`columns:${numColumns}`}
+        <ScrollView
           ref={listRef}
-          data={listItems}
-          keyExtractor={keyExtractor}
-          renderItem={info => {
-            const item = items[info.index];
-            if (item === undefined) return null;
-            return (
-              renderItem({
-                ...info,
-                item,
-                data: items,
-                visible,
-              })
-            );
-          }}
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={listFooter}
-          ListEmptyComponent={listEmpty}
           className="flex-1"
           contentContainerClassName={contentContainerClassName}
-          numColumns={numColumns}
-          columnWrapperStyle={columnWrapperStyle}
-          initialScrollAtEnd={false}
           maintainVisibleContentPosition={
-            shouldMaintainVisibleContentPosition ? true : false
+            shouldMaintainVisibleContentPosition ? {minIndexForVisible: 0} : undefined
           }
-          maintainScrollAtEnd={false}
-          maintainScrollAtEndThreshold={0.2}
-          recycleItems
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.35}
+          onContentSizeChange={handleContentSizeChange}
           onScroll={handleScroll}
-          sharedValues={{scrollOffset: scrollY}}
-          onViewableItemsChanged={handleViewableItemsChanged}
           refreshControl={
             pullToRefresh && onRefresh ? (
               <RefreshControl
@@ -465,11 +573,22 @@ export function Feed<T>({
             ) : undefined
           }
           scrollEventThrottle={16}
-          viewabilityConfig={{
-            itemVisiblePercentThreshold: 1,
-            minimumViewTime: 40,
-          }}
-        />
+        >
+          {listHeader}
+          {items.length === 0 ? (
+            listEmpty
+          ) : (
+            <VirtualColumn
+              items={virtualRowsCollection}
+              itemToKey={row => row.key}
+              removeClippedSubviews={removeClippedSubviews}
+              testID={`feed-virtual-column:${numColumns}`}
+            >
+              {renderVirtualRowContent}
+            </VirtualColumn>
+          )}
+          {listFooter}
+        </ScrollView>
       )}
       {stickyFooter ? (
         <Animated.View

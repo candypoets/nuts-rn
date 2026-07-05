@@ -15,3 +15,5 @@ gem 'logger'
 gem 'benchmark'
 gem 'mutex_m'
 gem 'nkf'
+
+gem "base64", "~> 0.3.0"

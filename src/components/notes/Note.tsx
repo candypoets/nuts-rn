@@ -56,6 +56,8 @@ const NOTE_FALLBACK_RELAYS = [
   'wss://nos.lol',
 ];
 
+function keepForPlaceholderExperiment(..._values: unknown[]) {}
+
 function isRelayUrl(value: unknown): value is string {
   return typeof value === 'string' && /^wss?:\/\//.test(value);
 }
@@ -190,6 +192,14 @@ type UnsupportedNoteBodyProps = {
   visible: boolean;
 };
 
+type PlaceholderNoteBodyProps = {
+  containerClassName: string;
+  cardStyle?: ViewStyle;
+  effectiveNote: ParsedEvent;
+  threadConnectors: React.ReactNode;
+  visible: boolean;
+};
+
 function NoteVisibilityDebug({visible}: {visible: boolean}) {
   if (!__DEV__) return null;
   return (
@@ -283,6 +293,31 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
       <Text className="text-sm text-primary-content">
         Kind {effectiveNote.kind()} is not supported yet.
       </Text>
+    </View>
+  );
+});
+
+const PlaceholderNoteBody = memo(function PlaceholderNoteBody({
+  cardStyle,
+  containerClassName,
+  effectiveNote,
+  threadConnectors,
+  visible,
+}: PlaceholderNoteBodyProps) {
+  return (
+    <View className={containerClassName} style={cardStyle}>
+      {threadConnectors}
+      <View className="gap-1">
+        <Text className="text-sm font-semibold text-base-content">
+          Placeholder note
+        </Text>
+        <Text className="font-mono text-[11px] text-primary-content opacity-60">
+          {effectiveNote.kind()} / {effectiveNote.id()?.slice(0, 12) || 'missing'}
+        </Text>
+        <Text className="text-xs text-primary-content opacity-50">
+          {visible ? 'visible lifecycle active' : 'hidden lifecycle paused'}
+        </Text>
+      </View>
     </View>
   );
 });
@@ -415,6 +450,7 @@ const NoteBody = memo(
     previous.contentOverride === next.contentOverride &&
     previous.fullBleedContent === next.fullBleedContent,
 );
+keepForPlaceholderExperiment(NoteBody);
 
 function NoteComponent({
   note,
@@ -852,6 +888,17 @@ function NoteComponent({
     ),
     [noteRelays, visible],
   );
+  keepForPlaceholderExperiment(
+    footer,
+    showQuote,
+    showMedia,
+    reposterPubkey,
+    noteRelayKey,
+    openNote,
+    parsedContent,
+    shortContent,
+    renderQuote,
+  );
 
   if (depth > 3) {
     return null;
@@ -895,45 +942,13 @@ function NoteComponent({
     );
   }
 
-  const ancestor = shouldRenderAncestor ? (
-    <Note
-      noteId={replyId}
-      context={contextRef.current}
-      visible={visible}
-      relays={ancestorRelays}
-        showQuote={showQuote}
-        showMedia={showMedia}
-        leading
-      depth={depth}
-      ancestorIds={displayId ? [...ancestorIds, displayId] : ancestorIds}
-    />
-  ) : null;
-
   return (
-    <NoteBody
-      ancestor={ancestor}
+    <PlaceholderNoteBody
       cardStyle={cardStyle}
       containerClassName={containerClassName}
-      depth={depth}
       effectiveNote={displayNote}
-      subId={displayId}
-      footer={footer}
-      main={effectiveMain}
-      isQuote={isQuote}
-      parsedContent={parsedContent}
-      renderQuote={renderQuote}
-      shortContent={shortContent}
-      showQuote={showQuote}
-      showMedia={showMedia}
       threadConnectors={threadConnectors}
       visible={visible}
-      onOpen={openNote}
-      relays={noteRelays}
-      showRelays={!!noteRelays.length}
-      relayStatusSink={relayStatusSink}
-      reposterPubkey={reposterPubkey}
-      contentOverride={contentOverride}
-      fullBleedContent={isMediaEvent}
     />
   );
 }

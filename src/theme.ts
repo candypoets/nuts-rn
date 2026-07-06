@@ -107,11 +107,11 @@ function ensureReadableTextColor(foreground: string, background: string, fallbac
   return readableTextColor(background);
 }
 
-function getBaseContentColor(theme: AppTheme) {
+export function getBaseContentColor(theme: AppTheme) {
   return readableTextColor(theme.colors.base100);
 }
 
-function getMutedContentColor(theme: AppTheme) {
+export function getMutedContentColor(theme: AppTheme) {
   return ensureReadableTextColor(theme.colors.primaryContent, theme.colors.base100);
 }
 

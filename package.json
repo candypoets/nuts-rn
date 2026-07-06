@@ -11,6 +11,8 @@
     "android:release:aab": "cd android && NODE_ENV=production ./gradlew bundleRelease",
     "ios": "expo run:ios",
     "ios:expo": "node scripts/ios-expo-device.mjs",
+    "ios:expo:fast": "node scripts/ios-expo-device.mjs",
+    "ios:build:fast": "bash scripts/ios-build-fast.sh",
     "ios:rn": "react-native run-ios",
     "lint": "eslint .",
     "start": "expo start --dev-client",
@@ -95,5 +97,21 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "NutsRnAppSpec",
+    "type": "components",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "com.nutsrn"
+    },
+    "ios": {
+      "componentProvider": {
+        "NativeAvatar": "NativeAvatarComponentView",
+        "NativeNote": "NativeNoteComponentView",
+        "NativeNoteHeader": "NativeNoteHeaderComponentView",
+        "NativeNoteFooter": "NativeNoteFooterComponentView"
+      }
+    }
   }
 }

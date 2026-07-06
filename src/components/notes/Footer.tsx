@@ -33,6 +33,7 @@ import Animated, {
 import { SvgXml } from 'react-native-svg';
 import { kinds, type EventTemplate } from 'nostr-tools';
 import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
+import { NativeNoteFooter } from '../native/NativeNoteFooter';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuthStore, useNostrStore, useSendStatusStore } from '../../stores';
 import { IconComment, IconLike, IconReply, IconRepost, IconShare } from './ActionIcons';
@@ -90,6 +91,8 @@ const emptyActive: ActiveState = {
 function countLabel(count: number) {
   return count > 0 ? String(count) : undefined;
 }
+
+function keepFooterPlaceholderExperiment(..._values: unknown[]) {}
 
 function createCounterOptions(
   targetKinds: number[],
@@ -738,61 +741,40 @@ export function Footer({
     visible,
   ]);
 
+  keepFooterPlaceholderExperiment(
+    openReply,
+    openComments,
+    openQuote,
+    openShare,
+    openZap,
+    sendReaction,
+    main,
+    mode,
+    supportsKind1111,
+    countLabel,
+    Action,
+    ZapAction,
+    primary,
+    accent,
+  );
+
   return (
-    <View
-      accessibilityLabel={`Actions for note ${note.id() || ''}`}
-      className={[
-        mode === 'zoom'
-          ? 'relative z-30 mt-3 w-full flex-row items-center justify-between'
-          : 'relative z-30 mt-2 h-6 w-full flex-row items-center px-2',
-        mode === 'zoom' ? '' : main ? 'pl-2' : 'pl-10',
-      ].join(' ')}
-    >
-      <View
-        className={
-          mode === 'zoom'
-            ? 'flex-1 flex-row items-center justify-between gap-3'
-            : 'flex-1 flex-row items-center gap-2'
-        }
-      >
-        {supportsKind1111 ? (
-          <Action
-            kind="comment"
-            label={countLabel(counts.comments)}
-            activeColor={accent}
-            mode={mode}
-            onPress={openComments}
-          />
-        ) : (
-          <Action
-            kind="reply"
-            label={countLabel(counts.replies)}
-            activeColor={accent}
-            activeState={active.replied}
-            mode={mode}
-            onPress={openReply}
-          />
-        )}
-        <Action
-          kind="repost"
-          label={countLabel(counts.reposts + counts.quotes)}
-          activeColor={primary}
-          activeState={active.reposted}
-          animation="repost"
-          mode={mode}
-          onPress={openQuote}
-        />
-        <Action
-          kind="like"
-          label={countLabel(counts.reactions)}
-          activeColor={accent}
-          activeState={active.reacted}
-          mode={mode}
-          onPress={sendReaction}
-        />
-        <Action kind="share" animation="share" mode={mode} onPress={openShare} />
-      </View>
-      {mode === 'zoom' ? null : <ZapAction onPress={openZap} />}
-    </View>
+    <NativeNoteFooter
+      note={note}
+      relays={relays}
+      currentUserPubkey={pubkey || undefined}
+      visible={visible}
+      main={main}
+      mode={mode}
+      tintColor={tint}
+      primaryColor={primary}
+      accentColor={accent}
+      onReply={openReply}
+      onComments={openComments}
+      onQuote={openQuote}
+      onLike={sendReaction}
+      onShare={openShare}
+      onZap={openZap}
+    />
   );
 }

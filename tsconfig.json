@@ -12,6 +12,9 @@
   ],
   "exclude": [
     "**/node_modules",
-    "**/Pods"
+    "**/Pods",
+    "android/build",
+    "android/app/build",
+    "ios/build"
   ]
 }

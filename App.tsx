@@ -94,6 +94,7 @@ import {rootNavigationRef} from './src/navigation/rootNavigation';
 import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
+import { startNativeDebugLogRelay } from './src/debug/nativeDebugBridge';
 
 enableScreens(true);
 enableFreeze(true);
@@ -143,6 +144,19 @@ function scheduleNostrCleanup(manager: NostrManagerLike | null, delay = 1000) {
   return () => clearTimeout(timeout);
 }
 
+function createSharedNostrManager(): NostrManagerLike | null {
+  if (!hasReactNativeModule()) return null;
+
+  // This must run before Swift/Kotlin native components use Nipworker hooks.
+  // The RN manager initializes the Rust runtime that native components borrow.
+  const manager = __DEV__
+    ? new ReactNativeBackend()
+    : createNostrManager();
+
+  setManager(manager);
+  return manager;
+}
+
 function isRetryableMintNetworkError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /cancelled|canceled|network request failed|fetch failed/i.test(message);
@@ -181,22 +195,24 @@ function App() {
   const theme = useAppTheme();
   const isDarkMode = isAppThemeDark(theme);
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
-  const [manager, setManagerInstance] = useState<NostrManagerLike | null>(null);
-  const keyboardResizeStyle = useKeyboardResizeStyle();
-
-  useEffect(() => {
-    if (!hasReactNativeModule()) return;
-
+  const [manager] = useState<NostrManagerLike | null>(() => {
     try {
-      const nextManager = __DEV__
-        ? new ReactNativeBackend()
-        : createNostrManager();
-      setManager(nextManager);
-      setManagerInstance(nextManager);
+      return createSharedNostrManager();
     } catch (error) {
       console.warn('[app] failed to initialize nostr manager', error);
+      return null;
     }
+  });
+  const keyboardResizeStyle = useKeyboardResizeStyle();
+  useEffect(() => {
+    return startNativeDebugLogRelay(event => {
+      console.log('[native-debug]', event);
+    });
   }, []);
+
+  if (!manager) {
+    return null;
+  }
 
   return (
     <GestureHandlerRootView

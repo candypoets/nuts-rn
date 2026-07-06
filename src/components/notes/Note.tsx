@@ -17,11 +17,13 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
+import { ContentData } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
   asKind6,
+  asNostrData,
   asParsedEvent,
   fbArray,
 } from '@candypoets/nipworker/utils';
@@ -57,6 +59,7 @@ const NOTE_FALLBACK_RELAYS = [
 ];
 
 function keepForPlaceholderExperiment(..._values: unknown[]) {}
+const fbArrayLoose = fbArray as (value: unknown, key: string) => unknown[];
 
 function isRelayUrl(value: unknown): value is string {
   return typeof value === 'string' && /^wss?:\/\//.test(value);
@@ -112,6 +115,10 @@ function sameStringArray(left: string[], right: string[]) {
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+function shouldUseString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
 type NoteProps = {
@@ -195,7 +202,15 @@ type UnsupportedNoteBodyProps = {
 type PlaceholderNoteBodyProps = {
   containerClassName: string;
   cardStyle?: ViewStyle;
+  depth: number;
   effectiveNote: ParsedEvent;
+  footer: boolean;
+  main: boolean;
+  relays?: string[];
+  relayStatusSink: RelayStatusSink;
+  reposterPubkey?: string;
+  showRelays: boolean;
+  subId: string;
   threadConnectors: React.ReactNode;
   visible: boolean;
 };
@@ -300,14 +315,38 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
 const PlaceholderNoteBody = memo(function PlaceholderNoteBody({
   cardStyle,
   containerClassName,
+  depth,
   effectiveNote,
+  footer,
+  main,
+  relays,
+  relayStatusSink,
+  reposterPubkey,
+  showRelays,
+  subId,
   threadConnectors,
   visible,
 }: PlaceholderNoteBodyProps) {
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      <View className="gap-1">
+      <Header
+        note={effectiveNote}
+        subId={subId}
+        depth={depth}
+        main={main}
+        relays={relays}
+        showRelays={showRelays}
+        relayStatusSink={relayStatusSink}
+        reposterPubkey={reposterPubkey}
+      />
+      <View
+        className={[
+          main ? 'mt-2' : depth > 0 ? 'mt-1' : '-mt-1',
+          depth > 0 || main ? 'ml-0' : 'ml-10',
+          'gap-1',
+        ].join(' ')}
+      >
         <Text className="text-sm font-semibold text-base-content">
           Placeholder note
         </Text>
@@ -318,6 +357,26 @@ const PlaceholderNoteBody = memo(function PlaceholderNoteBody({
           {visible ? 'visible lifecycle active' : 'hidden lifecycle paused'}
         </Text>
       </View>
+      {depth === 0 ? (
+        <ZapSummary
+          note={effectiveNote}
+          visible={visible}
+          relays={relays}
+          className={[
+            '-mt-1 -mb-5 w-full pl-2 pr-2.5',
+            main ? 'pl-2' : 'pl-10',
+          ].join(' ')}
+        />
+      ) : null}
+      {footer && depth === 0 ? (
+        <Footer
+          note={effectiveNote}
+          visible={visible}
+          main={main}
+          relays={relays ?? EMPTY_RELAYS}
+          relayStatusSink={relayStatusSink}
+        />
+      ) : null}
     </View>
   );
 });
@@ -664,6 +723,7 @@ function NoteComponent({
   const cardlessMain = main && depth === 0;
   const fullWidthCardMain = !cardlessMain && effectiveMain && isMediaEvent;
   const replyId = kind1?.reply()?.id();
+  const ancestorReplyId = shouldUseString(replyId) ? replyId : undefined;
   const eventRefs = useMemo(
     () => (kind1 ? fbArray(kind1, 'eventRefs') : []),
     [kind1],
@@ -688,14 +748,14 @@ function NoteComponent({
   );
   const shouldRenderAncestor = !!(
     showRoot &&
-    replyId &&
-    replyId !== displayId &&
+    ancestorReplyId &&
+    ancestorReplyId !== displayId &&
     depth === 0 &&
-    !eventRefIds.includes(replyId) &&
-    !ancestorIds.includes(replyId)
+    !eventRefIds.includes(ancestorReplyId as string) &&
+    !ancestorIds.includes(ancestorReplyId as string)
   );
   const ancestorRelays = useEffectiveAuthorRelays({
-    subId: shouldRenderAncestor ? replyId : undefined,
+    subId: shouldRenderAncestor ? (ancestorReplyId as string) : undefined,
     pubkey: shouldRenderAncestor ? kind1?.reply()?.author() : undefined,
     marker: 'read',
     fallbackRelays: noteRelays,
@@ -888,16 +948,49 @@ function NoteComponent({
     ),
     [noteRelays, visible],
   );
+  const quotePlaceholders = useMemo(
+    () => {
+      if (!showQuote || depth >= 3) return [];
+      return parsedContent.flatMap((block, index) => {
+        if (block.dataType() !== ContentData.NostrData) return [];
+        const nostr = asNostrData(block);
+        const id = nostr?.id?.();
+        if (!id) return [];
+        const entityRelays = fbArrayLoose(nostr, 'relays').map(relay =>
+          String(relay),
+        );
+        const key = `placeholder-quote-${index}-${id}`;
+        return [
+          renderQuote({
+            id,
+            author: nostr?.author?.() || undefined,
+            relays: entityRelays,
+            depth: depth + 1,
+            key,
+          }),
+        ];
+      });
+    },
+    [depth, parsedContent, renderQuote, showQuote],
+  );
+  const ancestor = shouldRenderAncestor ? (
+    <Note
+      noteId={ancestorReplyId as string}
+      context={contextRef.current}
+      visible={visible}
+      relays={ancestorRelays}
+      showQuote={showQuote}
+      showMedia={showMedia}
+      leading
+      depth={depth}
+      ancestorIds={displayId ? [...ancestorIds, displayId] : ancestorIds}
+    />
+  ) : null;
   keepForPlaceholderExperiment(
-    footer,
-    showQuote,
-    showMedia,
-    reposterPubkey,
     noteRelayKey,
     openNote,
-    parsedContent,
     shortContent,
-    renderQuote,
+    contentOverride,
   );
 
   if (depth > 3) {
@@ -930,12 +1023,17 @@ function NoteComponent({
     );
   }
 
-  if (!displayNote || (!contentOverride && (displayNote.kind() !== 1 || !kind1))) {
+  const supportedDisplayNote = displayNote;
+
+  if (
+    supportedDisplayNote == null ||
+    (!contentOverride && (supportedDisplayNote?.kind() !== 1 || !kind1))
+  ) {
     return (
       <UnsupportedNoteBody
         cardStyle={cardStyle}
         containerClassName={containerClassName}
-        effectiveNote={displayNote ?? effectiveNote}
+        effectiveNote={(supportedDisplayNote ?? effectiveNote) as ParsedEvent}
         threadConnectors={threadConnectors}
         visible={visible}
       />
@@ -943,13 +1041,25 @@ function NoteComponent({
   }
 
   return (
-    <PlaceholderNoteBody
-      cardStyle={cardStyle}
-      containerClassName={containerClassName}
-      effectiveNote={displayNote}
-      threadConnectors={threadConnectors}
-      visible={visible}
-    />
+    <>
+      {ancestor}
+      <PlaceholderNoteBody
+        cardStyle={cardStyle}
+        containerClassName={containerClassName}
+        depth={depth}
+        effectiveNote={supportedDisplayNote as ParsedEvent}
+        footer={footer}
+        main={effectiveMain || isMediaEvent}
+        relays={noteRelays}
+        relayStatusSink={relayStatusSink}
+        reposterPubkey={reposterPubkey}
+        showRelays={!!noteRelays.length}
+        subId={displayId}
+        threadConnectors={threadConnectors}
+        visible={visible}
+      />
+      {quotePlaceholders}
+    </>
   );
 }
 

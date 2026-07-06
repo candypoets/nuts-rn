@@ -3,34 +3,59 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02691882C4EC18849FF2427E /* NativeNoteHeaderContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F08309C84E299801EA6BB8 /* NativeNoteHeaderContentView.swift */; };
+		06BA45682B6742610F5A8D40 /* NativeNoteFooterComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = DA42CA430619B3EE60E90CF8 /* NativeNoteFooterComponentView.mm */; };
+		0AA010010000000000000001 /* NativeNoteContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA010040000000000000001 /* NativeNoteContentView.swift */; };
+		0AA010020000000000000001 /* NativeNoteComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0AA010060000000000000001 /* NativeNoteComponentView.mm */; };
+		0AA020010000000000000001 /* NativeAvatarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA020040000000000000001 /* NativeAvatarContentView.swift */; };
+		0AA020020000000000000001 /* NativeAvatarComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0AA020060000000000000001 /* NativeAvatarComponentView.mm */; };
+		0AA030010000000000000001 /* NativeDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA030020000000000000001 /* NativeDebug.swift */; };
+		0AA030030000000000000001 /* NativeDebugBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 0AA030040000000000000001 /* NativeDebugBridge.m */; };
 		0C80B921A6F3F58F76C31292 /* libPods-NutsRn.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-NutsRn.a */; };
+		1073D645C3CEBCDE5B6B15FF /* NativeNoteFooterContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5475857E998A8EE023C381DB /* NativeNoteFooterContentView.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2BE7C6CE4A0AFD8E29A98249 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5927D864CB9F4E4BCDE112B4 /* ExpoModulesProvider.swift */; };
 		3A3B6C2E2D7F4115A8B9C001 /* OrientationGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A3B6C2D2D7F4115A8B9C001 /* OrientationGate.swift */; };
 		3A3B6C302D7F4115A8B9C001 /* OrientationGateBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */; };
+		4E2A6B122D2F4C2A00FB0001 /* NipworkerSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4E2A6B112D2F4C2A00FB0001 /* NipworkerSwift */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		AA2A2CEFDEE8F0004EC0D87D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		DEC793C5A9C2CF7C409337FA /* NativeNoteHeaderComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = FA91351551C9B9DDDD514CE5 /* NativeNoteHeaderComponentView.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0AA010040000000000000001 /* NativeNoteContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeNoteContentView.swift; path = NutsRn/NativeNoteContentView.swift; sourceTree = "<group>"; };
+		0AA010050000000000000001 /* NativeNoteComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeNoteComponentView.h; path = NutsRn/NativeNoteComponentView.h; sourceTree = "<group>"; };
+		0AA010060000000000000001 /* NativeNoteComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeNoteComponentView.mm; path = NutsRn/NativeNoteComponentView.mm; sourceTree = "<group>"; };
+		0AA020040000000000000001 /* NativeAvatarContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeAvatarContentView.swift; path = NutsRn/NativeAvatarContentView.swift; sourceTree = "<group>"; };
+		0AA020050000000000000001 /* NativeAvatarComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeAvatarComponentView.h; path = NutsRn/NativeAvatarComponentView.h; sourceTree = "<group>"; };
+		0AA020060000000000000001 /* NativeAvatarComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeAvatarComponentView.mm; path = NutsRn/NativeAvatarComponentView.mm; sourceTree = "<group>"; };
+		0AA030020000000000000001 /* NativeDebug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NativeDebug.swift; path = NutsRn/NativeDebug.swift; sourceTree = "<group>"; };
+		0AA030040000000000000001 /* NativeDebugBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NativeDebugBridge.m; path = NutsRn/NativeDebugBridge.m; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* NutsRn.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NutsRn.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = NutsRn/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = NutsRn/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = NutsRn/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		18F08309C84E299801EA6BB8 /* NativeNoteHeaderContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeNoteHeaderContentView.swift; path = NutsRn/NativeNoteHeaderContentView.swift; sourceTree = "<group>"; };
+		1E4D2CD386E1D07FF923856A /* NativeNoteHeaderComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeNoteHeaderComponentView.h; path = NutsRn/NativeNoteHeaderComponentView.h; sourceTree = "<group>"; };
 		3A3B6C2D2D7F4115A8B9C001 /* OrientationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OrientationGate.swift; path = NutsRn/OrientationGate.swift; sourceTree = "<group>"; };
 		3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = OrientationGateBridge.m; path = NutsRn/OrientationGateBridge.m; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-NutsRn.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NutsRn.debug.xcconfig"; path = "Target Support Files/Pods-NutsRn/Pods-NutsRn.debug.xcconfig"; sourceTree = "<group>"; };
+		5475857E998A8EE023C381DB /* NativeNoteFooterContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeNoteFooterContentView.swift; path = NutsRn/NativeNoteFooterContentView.swift; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-NutsRn.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-NutsRn.release.xcconfig"; path = "Target Support Files/Pods-NutsRn/Pods-NutsRn.release.xcconfig"; sourceTree = "<group>"; };
 		5927D864CB9F4E4BCDE112B4 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-NutsRn/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-NutsRn.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-NutsRn.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = NutsRn/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = NutsRn/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		835C5C10AA9DDC405DF55EFF /* NativeNoteFooterComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeNoteFooterComponentView.h; path = NutsRn/NativeNoteFooterComponentView.h; sourceTree = "<group>"; };
+		DA42CA430619B3EE60E90CF8 /* NativeNoteFooterComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeNoteFooterComponentView.mm; path = NutsRn/NativeNoteFooterComponentView.mm; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		FA91351551C9B9DDDD514CE5 /* NativeNoteHeaderComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeNoteHeaderComponentView.mm; path = NutsRn/NativeNoteHeaderComponentView.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -39,6 +64,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C80B921A6F3F58F76C31292 /* libPods-NutsRn.a in Frameworks */,
+				4E2A6B122D2F4C2A00FB0001 /* NipworkerSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -52,9 +78,23 @@
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				3A3B6C2D2D7F4115A8B9C001 /* OrientationGate.swift */,
 				3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */,
+				0AA030020000000000000001 /* NativeDebug.swift */,
+				0AA030040000000000000001 /* NativeDebugBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				0AA020040000000000000001 /* NativeAvatarContentView.swift */,
+				0AA020050000000000000001 /* NativeAvatarComponentView.h */,
+				0AA020060000000000000001 /* NativeAvatarComponentView.mm */,
+				0AA010040000000000000001 /* NativeNoteContentView.swift */,
+				0AA010050000000000000001 /* NativeNoteComponentView.h */,
+				0AA010060000000000000001 /* NativeNoteComponentView.mm */,
+				18F08309C84E299801EA6BB8 /* NativeNoteHeaderContentView.swift */,
+				1E4D2CD386E1D07FF923856A /* NativeNoteHeaderComponentView.h */,
+				FA91351551C9B9DDDD514CE5 /* NativeNoteHeaderComponentView.mm */,
+				5475857E998A8EE023C381DB /* NativeNoteFooterContentView.swift */,
+				835C5C10AA9DDC405DF55EFF /* NativeNoteFooterComponentView.h */,
+				DA42CA430619B3EE60E90CF8 /* NativeNoteFooterComponentView.mm */,
 			);
 			name = NutsRn;
 			sourceTree = "<group>";
@@ -144,6 +184,9 @@
 			dependencies = (
 			);
 			name = NutsRn;
+			packageProductDependencies = (
+				4E2A6B112D2F4C2A00FB0001 /* NipworkerSwift */,
+			);
 			productName = NutsRn;
 			productReference = 13B07F961A680F5B00A75B9A /* NutsRn.app */;
 			productType = "com.apple.product-type.application";
@@ -172,6 +215,9 @@
 				Base,
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
+			packageReferences = (
+				4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "../../nipworker/swift" */,
+			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -197,6 +243,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -219,9 +266,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -281,9 +332,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -300,7 +355,17 @@
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				3A3B6C2E2D7F4115A8B9C001 /* OrientationGate.swift in Sources */,
 				3A3B6C302D7F4115A8B9C001 /* OrientationGateBridge.m in Sources */,
+				0AA030010000000000000001 /* NativeDebug.swift in Sources */,
+				0AA030030000000000000001 /* NativeDebugBridge.m in Sources */,
 				2BE7C6CE4A0AFD8E29A98249 /* ExpoModulesProvider.swift in Sources */,
+				0AA020010000000000000001 /* NativeAvatarContentView.swift in Sources */,
+				0AA020020000000000000001 /* NativeAvatarComponentView.mm in Sources */,
+				0AA010010000000000000001 /* NativeNoteContentView.swift in Sources */,
+				0AA010020000000000000001 /* NativeNoteComponentView.mm in Sources */,
+				02691882C4EC18849FF2427E /* NativeNoteHeaderContentView.swift in Sources */,
+				DEC793C5A9C2CF7C409337FA /* NativeNoteHeaderComponentView.mm in Sources */,
+				1073D645C3CEBCDE5B6B15FF /* NativeNoteFooterContentView.swift in Sources */,
+				06BA45682B6742610F5A8D40 /* NativeNoteFooterComponentView.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -561,6 +626,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "../../nipworker/swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../nipworker/swift;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4E2A6B112D2F4C2A00FB0001 /* NipworkerSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "../../nipworker/swift" */;
+			productName = NipworkerSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }

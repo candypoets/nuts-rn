@@ -1,11 +1,10 @@
-import React, { memo, useCallback, useContext, useMemo } from 'react';
+import React, { memo, useCallback, useContext } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Image } from 'expo-image';
 import { NavigationContext } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useKind0Value } from '../../hooks/useKind0Value';
 import { pushDistinct } from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
+import { NativeAvatar } from '../native/NativeAvatar';
 
 type AvatarSize =
   | 'xxs'
@@ -38,8 +37,6 @@ const sizeClass: Record<AvatarSize, string> = {
   fill: 'h-full w-full',
 };
 
-const fallbackProfileImage = require('../../../assets/miss-profile.png');
-
 function AvatarComponent({
   pubkey,
   size = 'md',
@@ -50,20 +47,6 @@ function AvatarComponent({
   const navigation = useContext(NavigationContext) as
     | NativeStackNavigationProp<RootStackParamList>
     | undefined;
-  const selectPicture = useCallback(
-    (profile: import('@candypoets/nipworker').Kind0Parsed) =>
-      profile.picture?.() || null,
-    [],
-  );
-  const picture = useKind0Value(pubkey, {
-    enabled: query,
-    fallback: null,
-    selector: selectPicture,
-  });
-  const imageSource = useMemo(
-    () => (picture ? { uri: picture } : fallbackProfileImage),
-    [picture],
-  );
   const openProfile = useCallback(() => {
     if (onProfileOpen) {
       onProfileOpen(pubkey);
@@ -77,12 +60,7 @@ function AvatarComponent({
     <View
       className={`${sizeClass[size]} overflow-hidden rounded-full border border-base-200 bg-base-200`}
     >
-      <Image
-        source={imageSource}
-        style={styles.fill}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-      />
+      <NativeAvatar pubkey={pubkey} query={query} style={styles.fill} />
     </View>
   );
 

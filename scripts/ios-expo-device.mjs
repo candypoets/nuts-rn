@@ -6,6 +6,11 @@ import process from 'node:process';
 const args = process.argv.slice(2);
 const deviceIndex = args.findIndex((arg) => arg === '--device' || arg === '-d');
 const device = deviceIndex >= 0 ? args[deviceIndex + 1] : undefined;
+const DERIVED_DATA = 'ios/build/NativeAvatarFooterCheck';
+const WORKSPACE = 'ios/NutsRn.xcworkspace';
+const SCHEME = 'NutsRn';
+const CONFIGURATION = 'Debug';
+const SDK = 'iphoneos';
 
 function run(command, commandArgs, env = {}) {
   const result = spawnSync(command, commandArgs, {
@@ -63,14 +68,17 @@ if (device && device !== 'generic') {
   run(
     'xcodebuild',
     [
-      '-workspace',
-      'ios/NutsRn.xcworkspace',
-      '-scheme',
-      'NutsRn',
-      '-configuration',
-      'Debug',
+      '-workspace', WORKSPACE,
+      '-scheme', SCHEME,
+      '-configuration', CONFIGURATION,
+      '-sdk', SDK,
       '-destination',
       destination,
+      '-derivedDataPath',
+      DERIVED_DATA,
+      'ONLY_ACTIVE_ARCH=YES',
+      'BUILD_LIBRARY_FOR_DISTRIBUTION=NO',
+      'SWIFT_COMPILATION_MODE=incremental',
       'DEVELOPMENT_TEAM=4P9DXSMKF2',
       '-allowProvisioningUpdates',
       '-allowProvisioningDeviceRegistration',

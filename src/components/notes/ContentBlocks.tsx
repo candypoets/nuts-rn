@@ -438,10 +438,16 @@ function ContentBlocksComponent({
             key: blockKey,
           }),
         );
-      } else {
+      } else if (isUserEntity(entity)) {
         renderedBlocks.push(
           <Text key={blockKey} className="text-[15px] font-medium text-primary">
             {entity || id || block.text()}
+          </Text>,
+        );
+      } else {
+        renderedBlocks.push(
+          <Text key={blockKey} className="text-[15px] font-normal text-base-content">
+            {block.text() || entity || id || ''}
           </Text>,
         );
       }

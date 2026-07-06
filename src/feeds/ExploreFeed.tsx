@@ -37,6 +37,7 @@ import {
 } from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes';
+import { NativeNote } from '../components/native/NativeNote';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { CalendarDays, ChevronDown, Play, Search, Users } from 'lucide-react-native';
 import {
@@ -725,7 +726,7 @@ export function ExploreFeed({
       ) : eventCards ? (
         <ExploreEventCard note={item} relays={feedRelays} />
       ) : (
-        <Note note={item} visible={visible && itemVisible} />
+        <NativeNote note={item} relays={feedRelays} visible={visible && itemVisible} />
       ),
     [eventCards, feedRelays, mediaGrid, visible],
   );
@@ -1053,7 +1054,7 @@ function MediaGridNoteComponent({
       </View>
       <View
         className="absolute bottom-0 left-0 right-0 px-1.5 py-1.5"
-      >
+      >,
         <View className="min-w-0 flex-row items-center gap-2">
           <Avatar pubkey={pubkey} size="xxs" />
           <User

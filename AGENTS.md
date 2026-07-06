@@ -72,3 +72,51 @@ Lessons from debugging carousel, native-stack subs, `Kind0Sub`, `Avatar`, `User`
 - Be careful with synchronous work on selection actions. Dedupe is fine, but sorting thousands of pubkeys on every followpack toggle is unnecessary when request semantics do not depend on order.
 - Relay status updates can legitimately rerender relay UI once per relay. Treat that as expected if the UI displays live per-relay state; optimize only if it affects unrelated parent trees.
 - Use render diagnostics temporarily and remove them after the issue is understood. Good signals are mounts/unmounts, value changes per instance, and whether list item arrival remounts headers/images.
+
+## iOS Native Iteration Workflow
+
+Goal: minimize rebuild time when editing `.swift`, `.mm`, `.m`, `.h` and shared-native interfaces.
+
+### Fast path (incremental)
+
+- Do **not** run `xcodebuild clean` for normal `.swift/.mm/.h` changes.
+- Reuse a stable build directory:
+  ```sh
+  # one-time build command that preserves DerivedData
+  xcodebuild -workspace ios/NutsRn.xcworkspace \
+    -scheme NutsRn \
+    -configuration Debug \
+    -sdk iphonesimulator \
+    -derivedDataPath ios/build/NativeAvatarFooterCheck \
+    CODE_SIGNING_ALLOWED=NO \
+    build
+  ```
+- Keep target/scheme/SDK constant (same simulator type). Switching targets or SDKs invalidates more.
+- If using Expo flow, keep the Metro bundle already running (`npm run start`) and reinstall native app only when bundle/install desync occurs.
+
+### When to expect rebuild speed to be slower
+
+- First-time native run after checkout or after Pod/SDK/toolchain changes.
+- Changing `Podfile`, `Podfile.lock`, `project.pbxproj`, `.xcscheme`, codegen outputs, signing/build settings, or architecture/device.
+- Dependency updates in `package.json` that affect iOS modules.
+- Swift type/interface changes in exported headers (`.h`) can cause wider recompilation than implementation-only `.swift/.mm` edits.
+
+### Suggested loop for native-only iteration
+
+1. Edit only implementation files (`.swift`, `.mm`) when possible; keep `.h` changes minimal.
+2. Run:
+   ```sh
+   xcodebuild -workspace ios/NutsRn.xcworkspace -scheme NutsRn -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build/NativeAvatarFooterCheck CODE_SIGNING_ALLOWED=NO build
+   ```
+3. Re-run same command after each change to let Xcode do incremental recompiles.
+4. Avoid `pod install` unless Pods changed.
+
+### Expo launch notes
+
+- For Expo dev-client, avoid doing full device uninstall/reinstall unless the app refuses to attach.
+- If build times are still high, prefer a fresh incremental restart of `npm run start` instead of repeatedly restarting the native run command.
+- Full clean rebuild is a last resort only:
+  ```sh
+  rm -rf ios/build/NativeAvatarFooterCheck
+  xcodebuild -workspace ios/NutsRn.xcworkspace -scheme NutsRn -configuration Debug -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+  ```

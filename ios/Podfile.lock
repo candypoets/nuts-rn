@@ -285,7 +285,7 @@ PODS:
   - libwebp/sharpyuv (1.5.0)
   - libwebp/webp (1.5.0):
     - libwebp/sharpyuv
-  - NipworkerReactNative (0.96.2):
+  - NipworkerReactNative (0.96.4):
     - RCTRequired
     - RCTTypeSafety
     - React-Core
@@ -2822,7 +2822,7 @@ SPEC CHECKSUMS:
   libavif: 5f8e715bea24debec477006f21ef9e95432e254d
   libdav1d: 23581a4d8ec811ff171ed5e2e05cd27bad64c39f
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
-  NipworkerReactNative: 743cbbd836c4be3ac9809f8399fa9698f27eb03b
+  NipworkerReactNative: ce4841b87731b88ecd52bb778e3fb05fb9522a5b
   RCTDeprecation: 225e022b85a206cf0883a909c4a114159783363c
   RCTRequired: 827a95c181af0886a11e21bc66c084088cf87839
   RCTSwiftUI: 7babb07156ae0a8e5ea97f77e43959ddaca2c6f2

@@ -6,6 +6,7 @@
 #import "ExpoModulesCore-Swift.h"
 #import <React-RCTAppDelegate/RCTReactNativeFactory.h>
 #import <react/renderer/components/NutsRnAppSpec/ComponentDescriptors.h>
+#import <react/renderer/components/NutsRnAppSpec/EventEmitters.h>
 #import <react/renderer/components/NutsRnAppSpec/Props.h>
 #import <react/renderer/components/NutsRnAppSpec/RCTComponentViewHelpers.h>
 
@@ -18,6 +19,7 @@
 using namespace facebook::react;
 
 @interface NativeNoteComponentView () <RCTNativeNoteViewProtocol>
+- (std::shared_ptr<const NativeNoteEventEmitter>)nativeNoteEventEmitter;
 @end
 
 @implementation NativeNoteComponentView {
@@ -30,10 +32,40 @@ using namespace facebook::react;
     static const auto defaultProps = std::make_shared<const NativeNoteProps>();
     _props = defaultProps;
     _contentView = [NativeNoteContentView new];
+    __weak NativeNoteComponentView *weakSelf = self;
+    _contentView.onHeightChange = ^(CGFloat height) {
+      NativeNoteComponentView *strongSelf = weakSelf;
+      if (!strongSelf) {
+        return;
+      }
+      auto eventEmitter = [strongSelf nativeNoteEventEmitter];
+      if (eventEmitter) {
+        NativeNoteEventEmitter::OnHeightChange event;
+        event.height = (double)height;
+        eventEmitter->onHeightChange(event);
+      }
+    };
+    _contentView.onNativeRoute = ^(NSString *route) {
+      NativeNoteComponentView *strongSelf = weakSelf;
+      if (!strongSelf || !route) {
+        return;
+      }
+      auto eventEmitter = [strongSelf nativeNoteEventEmitter];
+      if (eventEmitter) {
+        NativeNoteEventEmitter::OnNativeRoute event;
+        event.route = std::string([route UTF8String]);
+        eventEmitter->onNativeRoute(event);
+      }
+    };
     self.contentView = _contentView;
   }
 
   return self;
+}
+
+- (std::shared_ptr<const NativeNoteEventEmitter>)nativeNoteEventEmitter
+{
+  return std::static_pointer_cast<const NativeNoteEventEmitter>(_eventEmitter);
 }
 
 - (void)updateProps:(const Props::Shared &)props oldProps:(const Props::Shared &)oldProps
@@ -67,6 +99,9 @@ using namespace facebook::react;
   }
   if (oldNoteProps.showMedia != newNoteProps.showMedia) {
     [_contentView updateShowMedia:newNoteProps.showMedia];
+  }
+  if (oldNoteProps.forceFullContent != newNoteProps.forceFullContent) {
+    [_contentView updateForceFullContent:newNoteProps.forceFullContent];
   }
   if (oldNoteProps.showRoot != newNoteProps.showRoot) {
     [_contentView updateShowRoot:newNoteProps.showRoot];

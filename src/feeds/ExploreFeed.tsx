@@ -6,11 +6,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 import type {
   ParsedEvent,
   RequestObject,
@@ -112,6 +113,8 @@ export function ExploreFeed({
   stickyFooter,
   onChromeVisibilityChange,
 }: ExploreFeedProps) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const rootSubIdRef = useRef<string | null>(null);
@@ -164,6 +167,7 @@ export function ExploreFeed({
   const relaySubs = useRelayStore(state => state.relaySubs);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
+  const setImageZoom = useUIStore(state => state.setImageZoom);
   const relaySelectionSubId = `feed${exploreAudienceMode}`;
   const selectedSubRelays = relaySubs[relaySelectionSubId];
   const requestKinds = useMemo(
@@ -713,6 +717,103 @@ export function ExploreFeed({
     };
   }, [canStartExplore, enabled, feedKey, followsReadyForExplore, visible]);
 
+  const handleNativeRoute = useCallback(
+    (route: string, sourceNote: ParsedEvent) => {
+      if (route.startsWith('relays:')) {
+        const [, encodedSubId = '', encodedRelays = '', encodedStatuses = ''] =
+          route.split(':');
+        const subId = decodeURIComponent(encodedSubId);
+        const relays = decodeURIComponent(encodedRelays)
+          .split(',')
+          .map(relay => relay.trim())
+          .filter(Boolean);
+        const statuses = Object.fromEntries(
+          decodeURIComponent(encodedStatuses)
+            .split(',')
+            .map(entry => entry.split('='))
+            .filter(
+              (entry): entry is [string, string] =>
+                entry.length === 2 && !!entry[0],
+            ),
+        );
+        if (!relays.length) return;
+        if (subId) setSubRelays(subId, relays);
+        Object.entries(statuses).forEach(([relay, status]) => {
+          setRelayStatus(relay, status);
+        });
+        navigation.navigate('RelayInfos', {
+          subId,
+          relays,
+          statuses,
+        });
+        return;
+      }
+
+      if (route.startsWith('url:')) {
+        const url = route.slice('url:'.length);
+        if (url) Linking.openURL(url).catch(() => {});
+        return;
+      }
+
+      if (route.startsWith('profile:')) {
+        const pubkey = route.slice('profile:'.length);
+        if (!pubkey) return;
+        navigation.navigate('PublicProfile', {pubkey});
+        return;
+      }
+
+      if (route.startsWith('media:')) {
+        const [, rawIndex = '0', ...urlParts] = route.split(':');
+        const url = urlParts.join(':');
+        const index = Number.parseInt(rawIndex, 10);
+        if (!url) return;
+        setImageZoom({
+          links: [{src: url, type: 'image'}],
+          note: sourceNote,
+          zoomed: Number.isFinite(index) ? 0 : undefined,
+          gridId: sourceNote.id() || url,
+          videoTime: 0,
+        });
+        return;
+      }
+
+      if (route.startsWith('note:')) {
+        const routeId = route.slice('note:'.length);
+        const kind6 = asKind6(sourceNote);
+        const displayNote = kind6?.repostedEvent?.() ?? sourceNote;
+        const sourceDisplayId = displayNote.id() || '';
+        const displayId = routeId || sourceDisplayId;
+        if (!displayId) return;
+        const isSourceRoute = displayId === sourceDisplayId;
+        const kind = displayNote.kind();
+        const noteRelays = feedRelays;
+        if (isSourceRoute && kind === 30023) {
+          const identifier = tagValue(eventTags(displayNote), 'd');
+          const pubkey = displayNote.pubkey() || '';
+          if (!identifier || !pubkey) return;
+          navigation.navigate('Kind30023Thread', {
+            naddr: naddrEncode({
+              kind,
+              pubkey,
+              identifier,
+              relays: noteRelays,
+            }),
+          });
+          return;
+        }
+        navigation.navigate('Kind1Thread', {
+          nevent: neventEncode({
+            id: displayId,
+            author: isSourceRoute ? displayNote.pubkey() || undefined : undefined,
+            kind: isSourceRoute ? kind : undefined,
+            relays: noteRelays,
+          }),
+        });
+      }
+    },
+    [feedRelays, navigation, setImageZoom, setRelayStatus, setSubRelays],
+  );
+
   const renderItem = useCallback(
     ({
       item,
@@ -726,9 +827,14 @@ export function ExploreFeed({
       ) : eventCards ? (
         <ExploreEventCard note={item} relays={feedRelays} />
       ) : (
-        <NativeNote note={item} relays={feedRelays} visible={visible && itemVisible} />
+        <NativeNote
+          note={item}
+          relays={feedRelays}
+          visible={visible && itemVisible}
+          onNativeRoute={route => handleNativeRoute(route, item)}
+        />
       ),
-    [eventCards, feedRelays, mediaGrid, visible],
+    [eventCards, feedRelays, handleNativeRoute, mediaGrid, visible],
   );
   const getItemId = useCallback(
     (item: ParsedEvent, index: number) => item.id() || `missing:${index}`,
@@ -1054,7 +1160,7 @@ function MediaGridNoteComponent({
       </View>
       <View
         className="absolute bottom-0 left-0 right-0 px-1.5 py-1.5"
-      >,
+      >
         <View className="min-w-0 flex-row items-center gap-2">
           <Avatar pubkey={pubkey} size="xxs" />
           <User

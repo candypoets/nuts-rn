@@ -4,6 +4,12 @@ type NativeDebugLogEvent = {
   source?: string;
   event?: string;
   details?: string;
+  logs?: Array<{
+    source?: string;
+    event?: string;
+    details?: string;
+    count?: number;
+  }>;
   ts?: number;
 };
 

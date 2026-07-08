@@ -10,7 +10,15 @@ class NativeAvatarContentView: UIView {
   private var picture = ""
   private var avatarImage: UIImage?
   private var avatarRequestUrl: String?
-  private var profileSubscription: NipworkerHookHandle?
+  private lazy var profileHook: NativeProfileHook = {
+    let hook = NativeProfileHook()
+    hook.onProfile = { [weak self] profile in
+      guard let self, profile.pubkey == self.pubkey else { return }
+      self.picture = profile.picture
+      self.loadAvatarImage()
+    }
+    return hook
+  }()
   private var avatarBackgroundColor = UIColor.secondarySystemBackground
   private var avatarBorderColor = UIColor.separator
 
@@ -27,7 +35,7 @@ class NativeAvatarContentView: UIView {
   }
 
   deinit {
-    profileSubscription?.cancel()
+    profileHook.cancel()
   }
 
   @objc(updatePubkey:)
@@ -92,30 +100,7 @@ class NativeAvatarContentView: UIView {
   }
 
   private func refreshProfileSubscription() {
-    profileSubscription?.cancel()
-    profileSubscription = nil
-    guard query, !pubkey.isEmpty else { return }
-    profileSubscription = useSubscriptionHandle(
-      subscriptionId: "u_\(pubkey)",
-      requests: [
-        RequestObject(authors: [pubkey], kinds: [0], limit: 1, relays: [], closeOnEOSE: true, cacheFirst: true)
-      ],
-      callback: { [weak self] messages in
-        DispatchQueue.main.async {
-          self?.handleProfileMessages(messages)
-        }
-      },
-      options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
-    )
-  }
-
-  private func handleProfileMessages(_ messages: [WorkerMessageView]) {
-    for message in messages {
-      guard message.parsedEvent?.pubkey == pubkey, let profile = message.kind0 else { continue }
-      picture = profile.picture?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      loadAvatarImage()
-      break
-    }
+    profileHook.update(pubkey: pubkey, relays: [], visible: query)
   }
 
   private func loadAvatarImage() {

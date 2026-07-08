@@ -199,10 +199,6 @@ PODS:
     - ExpoModulesCore
   - ExpoCamera (56.0.7):
     - ExpoModulesCore
-  - ExpoCameraBarcodeScanning (56.0.7):
-    - ExpoCamera
-    - ZXingObjC/OneD
-    - ZXingObjC/PDF417
   - ExpoClipboard (56.0.3):
     - ExpoModulesCore
   - ExpoDomWebView (56.0.5):
@@ -260,11 +256,6 @@ PODS:
   - ExpoModulesWorklets (56.0.12):
     - ExpoModulesCore
     - ExpoModulesJSI
-  - ExpoModulesWorkletsAdapter (56.0.12):
-    - ExpoModulesCore
-    - ExpoModulesJSI
-    - ExpoModulesWorklets
-    - RNWorklets
   - ExpoSplashScreen (56.0.10):
     - ExpoModulesCore
   - ExpoVideo (56.1.2):
@@ -2490,11 +2481,6 @@ PODS:
     - SDWebImage/Core (~> 5.17)
   - SwiftUIIntrospect (1.3.0)
   - Yoga (0.0.0)
-  - ZXingObjC/Core (3.6.9)
-  - ZXingObjC/OneD (3.6.9):
-    - ZXingObjC/Core
-  - ZXingObjC/PDF417 (3.6.9):
-    - ZXingObjC/Core
 
 DEPENDENCIES:
   - "AsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
@@ -2509,7 +2495,6 @@ DEPENDENCIES:
   - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
   - ExpoBlur (from `../node_modules/expo-blur/ios`)
   - ExpoCamera (from `../node_modules/expo-camera/ios`)
-  - ExpoCameraBarcodeScanning (from `../node_modules/expo-camera/ios`)
   - ExpoClipboard (from `../node_modules/expo-clipboard/ios`)
   - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
@@ -2524,7 +2509,6 @@ DEPENDENCIES:
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core`)
-  - ExpoModulesWorkletsAdapter (from `../node_modules/expo-modules-core`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
   - ExpoVideo (from `../node_modules/expo-video/ios`)
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
@@ -2627,7 +2611,6 @@ SPEC REPOS:
     - SDWebImageSVGCoder
     - SDWebImageWebPCoder
     - SwiftUIIntrospect
-    - ZXingObjC
 
 EXTERNAL SOURCES:
   AsyncStorage:
@@ -2653,8 +2636,6 @@ EXTERNAL SOURCES:
   ExpoBlur:
     :path: "../node_modules/expo-blur/ios"
   ExpoCamera:
-    :path: "../node_modules/expo-camera/ios"
-  ExpoCameraBarcodeScanning:
     :path: "../node_modules/expo-camera/ios"
   ExpoClipboard:
     :path: "../node_modules/expo-clipboard/ios"
@@ -2683,8 +2664,6 @@ EXTERNAL SOURCES:
   ExpoModulesJSI:
     :path: "../node_modules/expo-modules-jsi/apple"
   ExpoModulesWorklets:
-    :path: "../node_modules/expo-modules-core"
-  ExpoModulesWorkletsAdapter:
     :path: "../node_modules/expo-modules-core"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
@@ -2881,7 +2860,6 @@ SPEC CHECKSUMS:
   ExpoAsset: d78594df1e5314c5ebcfc624397ceba515dcfebe
   ExpoBlur: 0b3935b04e5dd1ca037053f980950512f1c662b4
   ExpoCamera: 6df4f343f797a1905d93554004bdc0c220d97d2a
-  ExpoCameraBarcodeScanning: b4a5b5fe5a4c53a21e3ac301fa02382f35f528de
   ExpoClipboard: 99404c4d18defef14c97b17c740d76de43a3cac2
   ExpoDomWebView: 1d046ffae836cdb4221a46bc72a93df7b994ab8e
   ExpoFileSystem: 2a6be8ba7e627bee6d0a31a13ff349b39e1f2098
@@ -2896,7 +2874,6 @@ SPEC CHECKSUMS:
   ExpoModulesCore: e4b69554e3b1769607264198a607fa494dca27e2
   ExpoModulesJSI: 3dc06d022a7745e465622a210083fa07a36c98cb
   ExpoModulesWorklets: eec23d06518d9e07ded534881317fd44bcfdf929
-  ExpoModulesWorkletsAdapter: ffc34807abf581f89809c39133633baed1d679ec
   ExpoSplashScreen: 6deba2c0000d89a38dc192ebbee1656a0fbb0b70
   ExpoVideo: 4ea056abff62b63262569e8cd7f8de43d095f9e4
   ExpoWebBrowser: 89750f6c426baa673e8399c8874987b6acfb89c2
@@ -2980,7 +2957,7 @@ SPEC CHECKSUMS:
   React-viewtransitionnativemodule: cd921fba8073c1318a0a3901bd9567bc22b28966
   React-webperformancenativemodule: 7da8fd8bb2f99600f1192eb834cf8cb197564994
   ReactAppDependencyProvider: adf5403892170fbe996fce485a703f25df08db66
-  ReactCodegen: f6f1d09991d2afd85345b479d2bef3c63fcbcc4b
+  ReactCodegen: 6e35e982cfe7dfc524a043cdd64807d7b4e75092
   ReactCommon: 4a92a419d44cd92d17d7c29109e12dce2670e18a
   ReactNativeDependencies: fa0a54b3f5319ae0e3b9aff32bfee7a424b88e66
   ReactNativeEnriched: 678836b1c2845ae3bb405c676018142f0417995b
@@ -2994,8 +2971,7 @@ SPEC CHECKSUMS:
   SDWebImageSVGCoder: 15a300a97ec1c8ac958f009c02220ac0402e936c
   SDWebImageWebPCoder: e38c0a70396191361d60c092933e22c20d5b1380
   SwiftUIIntrospect: fee9aa07293ee280373a591e1824e8ddc869ba5d
-  Yoga: 18b7c3b4ad4df70f7c1f90871213fd001e6c3528
-  ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
+  Yoga: 2d945818608a5804c8a2df6530e23c0d88849797
 
 PODFILE CHECKSUM: 2cebcc107249cfd88a56e385fa61f5d5cff7ce94
 

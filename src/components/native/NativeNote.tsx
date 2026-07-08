@@ -1,4 +1,4 @@
-import React, {useMemo} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {StyleSheet} from 'react-native';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import NativeNoteComponent from '../../specs/NativeNoteNativeComponent';
@@ -18,12 +18,14 @@ type Props = {
   main?: boolean;
   showQuote?: boolean;
   showMedia?: boolean;
+  forceFullContent?: boolean;
   showRoot?: boolean;
   threadCard?: boolean;
   disableOpen?: boolean;
   depth?: number;
   leading?: boolean;
   tailing?: boolean;
+  onNativeRoute?: (route: string) => void;
 };
 
 function flatBufferBytes(view: unknown): number[] | undefined {
@@ -45,20 +47,45 @@ export function NativeNote({
   main = false,
   showQuote = true,
   showMedia = true,
+  forceFullContent = main,
   showRoot = true,
   threadCard = false,
   disableOpen = false,
   depth = 0,
   leading = false,
   tailing = false,
+  onNativeRoute,
 }: Props) {
   const theme = useAppTheme();
   const eventId = note?.id?.() || noteId || '';
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
   const noteBytes = useMemo(() => flatBufferBytes(note), [eventId, note]);
   const contextBytes = useMemo(
     () => (context?.length === 1 ? flatBufferBytes(context[0]) : undefined),
     [context],
   );
+  const handleHeightChange = useCallback((event: {nativeEvent: {height: number}}) => {
+    const nextHeight = Math.ceil(event.nativeEvent.height);
+    if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
+    setMeasuredHeight(current =>
+      current !== null && Math.abs(current - nextHeight) < 1 ? current : nextHeight,
+    );
+  }, []);
+  const handleNativeRoute = useCallback((event: {nativeEvent: {route: string}}) => {
+    onNativeRoute?.(event.nativeEvent.route);
+  }, [onNativeRoute]);
+
+  useEffect(() => {
+    setMeasuredHeight(null);
+  }, [
+    eventId,
+    footer,
+    main,
+    showQuote,
+    showMedia,
+    forceFullContent,
+    depth,
+  ]);
 
   return (
     <NativeNoteComponent
@@ -71,6 +98,7 @@ export function NativeNote({
       main={main}
       showQuote={showQuote}
       showMedia={showMedia}
+      forceFullContent={forceFullContent}
       showRoot={showRoot}
       threadCard={threadCard}
       disableOpen={disableOpen}
@@ -83,7 +111,9 @@ export function NativeNote({
       cardBackgroundColor={theme.colors.base300}
       borderColor={theme.colors.base200}
       accentColor={theme.colors.primary}
-      style={styles.root}
+      onHeightChange={handleHeightChange}
+      onNativeRoute={handleNativeRoute}
+      style={[styles.root, {height: measuredHeight ?? 120}]}
     />
   );
 }
@@ -91,7 +121,6 @@ export function NativeNote({
 const styles = StyleSheet.create({
   root: {
     alignSelf: 'stretch',
-    minHeight: 84,
     width: '100%',
   },
 });

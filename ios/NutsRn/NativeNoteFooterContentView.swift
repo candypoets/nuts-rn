@@ -10,14 +10,18 @@ class NativeNoteFooterContentView: UIView {
     "wss://relay.nuts.cash",
   ]
 
+  var onRelayStatusChange: ((String, String) -> Void)?
+
   private var noteBytes: [UInt8]?
   private var relays: [String] = []
+  private var relayResolutionPending = false
   private var currentUserPubkey = ""
   private var visible = true
   private var noteId = ""
   private var noteKind: UInt16 = 0
   private var mainSubscription: NipworkerHookHandle?
   private var quoteSubscription: NipworkerHookHandle?
+  private var activeSubscriptionKey = ""
   private var supportsComments = true
   private var commentsCount = 0
   private var repliesCount = 0
@@ -53,26 +57,67 @@ class NativeNoteFooterContentView: UIView {
 
   @objc(updateNoteBytes:)
   func updateNoteBytes(_ value: [NSNumber]?) {
-    noteBytes = value?.map { UInt8(truncating: $0) }
+    let nextBytes = value?.map { UInt8(truncating: $0) }
+    if noteBytes == nextBytes { return }
+    noteBytes = nextBytes
+    let previousNoteId = noteId
     parseNote()
-    resetCounts()
+    if previousNoteId != noteId {
+      resetCounts()
+      activeSubscriptionKey = ""
+    }
+    refreshSubscriptions()
+  }
+
+  func updateParsedEvent(_ event: nostr_fb_ParsedEvent?) {
+    let previousNoteId = noteId
+    guard let event else {
+      noteId = ""
+      noteKind = 0
+      supportsComments = true
+      if previousNoteId != noteId {
+        resetCounts()
+        activeSubscriptionKey = ""
+      }
+      refreshSubscriptions()
+      return
+    }
+
+    noteId = event.id ?? ""
+    noteKind = event.kind
+    supportsComments = noteKind != 1 && noteKind != 6
+    if previousNoteId != noteId {
+      resetCounts()
+      activeSubscriptionKey = ""
+    }
     refreshSubscriptions()
   }
 
   @objc(updateRelays:)
   func updateRelays(_ value: [String]?) {
-    relays = value ?? []
+    let nextRelays = value ?? []
+    if relays == nextRelays { return }
+    relays = nextRelays
+    refreshSubscriptions()
+  }
+
+  func updateRelayResolutionPending(_ value: Bool) {
+    if relayResolutionPending == value { return }
+    relayResolutionPending = value
     refreshSubscriptions()
   }
 
   @objc(updateCurrentUserPubkey:)
   func updateCurrentUserPubkey(_ value: String?) {
-    currentUserPubkey = value ?? ""
+    let nextPubkey = value ?? ""
+    if currentUserPubkey == nextPubkey { return }
+    currentUserPubkey = nextPubkey
     refreshSubscriptions()
   }
 
   @objc(updateVisible:)
   func updateVisible(_ value: Bool) {
+    if visible == value { return }
     visible = value
     refreshSubscriptions()
   }
@@ -122,12 +167,25 @@ class NativeNoteFooterContentView: UIView {
   }
 
   private func refreshSubscriptions() {
-    mainSubscription?.cancel()
-    quoteSubscription?.cancel()
-    mainSubscription = nil
-    quoteSubscription = nil
+    guard !relayResolutionPending else {
+      if !activeSubscriptionKey.isEmpty {
+        mainSubscription?.cancel()
+        quoteSubscription?.cancel()
+        mainSubscription = nil
+        quoteSubscription = nil
+        activeSubscriptionKey = ""
+      }
+      return
+    }
     let lookupRelays = relays.isEmpty ? Self.defaultRelays : relays
     guard visible, !noteId.isEmpty else {
+      if !activeSubscriptionKey.isEmpty {
+        mainSubscription?.cancel()
+        quoteSubscription?.cancel()
+        mainSubscription = nil
+        quoteSubscription = nil
+        activeSubscriptionKey = ""
+      }
       if !visible || noteId.isEmpty {
         emitNativeDebugLog(
           source: "NativeNoteFooterContentView",
@@ -138,6 +196,13 @@ class NativeNoteFooterContentView: UIView {
       return
     }
     let relaySource = relays.isEmpty ? "fallback" : "props"
+    let nextSubscriptionKey = "\(noteId)|\(lookupRelays.joined(separator: ","))|\(currentUserPubkey)|\(supportsComments)"
+    if activeSubscriptionKey == nextSubscriptionKey { return }
+    mainSubscription?.cancel()
+    quoteSubscription?.cancel()
+    mainSubscription = nil
+    quoteSubscription = nil
+    activeSubscriptionKey = nextSubscriptionKey
     emitNativeDebugLog(
       source: "NativeNoteFooterContentView",
       event: "refreshSubscriptions",
@@ -149,7 +214,7 @@ class NativeNoteFooterContentView: UIView {
       RequestObject(kinds: supportsComments ? [6, 7] : [1, 6, 7], tags: ["#e": [noteId]], relays: lookupRelays)
     ]
     if supportsComments {
-      mainRequests.append(RequestObject(kinds: [1111], tags: ["#E": [noteId]], relays: relays))
+      mainRequests.append(RequestObject(kinds: [1111], tags: ["#E": [noteId]], relays: lookupRelays))
     }
     mainSubscription = useSubscriptionHandle(
       subscriptionId: "f_\(noteId)_\(lookupRelays.joined(separator: ","))",
@@ -176,6 +241,7 @@ class NativeNoteFooterContentView: UIView {
   private func handleMainMessages(_ messages: [WorkerMessageView]) {
     var changed = false
     for message in messages {
+      forwardRelayStatus(message)
       guard let count = message.countResponse else { continue }
       switch count.kind {
       case 1:
@@ -203,6 +269,7 @@ class NativeNoteFooterContentView: UIView {
   private func handleQuoteMessages(_ messages: [WorkerMessageView]) {
     var changed = false
     for message in messages {
+      forwardRelayStatus(message)
       guard let count = message.countResponse, count.kind == 1 else { continue }
       quotesCount = Int(count.count)
       if count.you { reposted = true }
@@ -216,6 +283,23 @@ class NativeNoteFooterContentView: UIView {
       )
       setNeedsDisplay()
     }
+  }
+
+  private func forwardRelayStatus(_ message: WorkerMessageView) {
+    guard visible,
+          message.contentType == .connectionstatus,
+          let status = message.message.content(type: nostr_fb_ConnectionStatus.self),
+          !status.relayUrl.isEmpty,
+          !status.status.isEmpty else { return }
+    onRelayStatusChange?(normalizeRelay(status.relayUrl), status.status)
+  }
+
+  private func normalizeRelay(_ value: String) -> String {
+    var relay = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    while relay.hasSuffix("/") {
+      relay.removeLast()
+    }
+    return relay
   }
 
   private func parseParsedEvent(_ bytes: [UInt8]?) -> nostr_fb_ParsedEvent? {

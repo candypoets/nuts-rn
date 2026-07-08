@@ -15,6 +15,8 @@
 		0AA020020000000000000001 /* NativeAvatarComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0AA020060000000000000001 /* NativeAvatarComponentView.mm */; };
 		0AA030010000000000000001 /* NativeDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA030020000000000000001 /* NativeDebug.swift */; };
 		0AA030030000000000000001 /* NativeDebugBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 0AA030040000000000000001 /* NativeDebugBridge.m */; };
+		0AA040010000000000000001 /* NativeContentBlocksComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0AA040030000000000000001 /* NativeContentBlocksComponentView.mm */; };
+		0AA050010000000000000001 /* NativeProfileHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA050020000000000000001 /* NativeProfileHook.swift */; };
 		0C80B921A6F3F58F76C31292 /* libPods-NutsRn.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-NutsRn.a */; };
 		1073D645C3CEBCDE5B6B15FF /* NativeNoteFooterContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5475857E998A8EE023C381DB /* NativeNoteFooterContentView.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
@@ -37,6 +39,9 @@
 		0AA020060000000000000001 /* NativeAvatarComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeAvatarComponentView.mm; path = NutsRn/NativeAvatarComponentView.mm; sourceTree = "<group>"; };
 		0AA030020000000000000001 /* NativeDebug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NativeDebug.swift; path = NutsRn/NativeDebug.swift; sourceTree = "<group>"; };
 		0AA030040000000000000001 /* NativeDebugBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NativeDebugBridge.m; path = NutsRn/NativeDebugBridge.m; sourceTree = "<group>"; };
+		0AA040020000000000000001 /* NativeContentBlocksComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeContentBlocksComponentView.h; path = NutsRn/NativeContentBlocksComponentView.h; sourceTree = "<group>"; };
+		0AA040030000000000000001 /* NativeContentBlocksComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeContentBlocksComponentView.mm; path = NutsRn/NativeContentBlocksComponentView.mm; sourceTree = "<group>"; };
+		0AA050020000000000000001 /* NativeProfileHook.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeProfileHook.swift; path = NutsRn/NativeProfileHook.swift; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* NutsRn.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NutsRn.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = NutsRn/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = NutsRn/Info.plist; sourceTree = "<group>"; };
@@ -80,6 +85,7 @@
 				3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */,
 				0AA030020000000000000001 /* NativeDebug.swift */,
 				0AA030040000000000000001 /* NativeDebugBridge.m */,
+				0AA050020000000000000001 /* NativeProfileHook.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -87,6 +93,8 @@
 				0AA020050000000000000001 /* NativeAvatarComponentView.h */,
 				0AA020060000000000000001 /* NativeAvatarComponentView.mm */,
 				0AA010040000000000000001 /* NativeNoteContentView.swift */,
+				0AA040020000000000000001 /* NativeContentBlocksComponentView.h */,
+				0AA040030000000000000001 /* NativeContentBlocksComponentView.mm */,
 				0AA010050000000000000001 /* NativeNoteComponentView.h */,
 				0AA010060000000000000001 /* NativeNoteComponentView.mm */,
 				18F08309C84E299801EA6BB8 /* NativeNoteHeaderContentView.swift */,
@@ -216,7 +224,7 @@
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
 			packageReferences = (
-				4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "../../nipworker/swift" */,
+				4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "swift" */,
 			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
@@ -266,13 +274,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -332,13 +336,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NutsRn/Pods-NutsRn-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -357,10 +357,12 @@
 				3A3B6C302D7F4115A8B9C001 /* OrientationGateBridge.m in Sources */,
 				0AA030010000000000000001 /* NativeDebug.swift in Sources */,
 				0AA030030000000000000001 /* NativeDebugBridge.m in Sources */,
+				0AA050010000000000000001 /* NativeProfileHook.swift in Sources */,
 				2BE7C6CE4A0AFD8E29A98249 /* ExpoModulesProvider.swift in Sources */,
 				0AA020010000000000000001 /* NativeAvatarContentView.swift in Sources */,
 				0AA020020000000000000001 /* NativeAvatarComponentView.mm in Sources */,
 				0AA010010000000000000001 /* NativeNoteContentView.swift in Sources */,
+				0AA040010000000000000001 /* NativeContentBlocksComponentView.mm in Sources */,
 				0AA010020000000000000001 /* NativeNoteComponentView.mm in Sources */,
 				02691882C4EC18849FF2427E /* NativeNoteHeaderContentView.swift in Sources */,
 				DEC793C5A9C2CF7C409337FA /* NativeNoteHeaderComponentView.mm in Sources */,
@@ -628,7 +630,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "../../nipworker/swift" */ = {
+		4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "swift" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../nipworker/swift;
 		};
@@ -637,7 +639,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		4E2A6B112D2F4C2A00FB0001 /* NipworkerSwift */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "../../nipworker/swift" */;
+			package = 4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "swift" */;
 			productName = NipworkerSwift;
 		};
 /* End XCSwiftPackageProductDependency section */

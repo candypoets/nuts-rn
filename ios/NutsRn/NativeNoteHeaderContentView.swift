@@ -6,15 +6,40 @@ import UIKit
 class NativeNoteHeaderContentView: UIView {
   private static let imageCache = NSCache<NSString, UIImage>()
 
+  var onNativeRoute: ((String) -> Void)?
+
   private var noteBytes: [UInt8]?
   private var relays: [String] = []
+  private var relayStatuses: [String: String] = [:]
+  private var relayResolutionPending = false
   private var visible = true
-  private var profileSubscription: NipworkerHookHandle?
+  private lazy var profileHook: NativeProfileHook = {
+    let hook = NativeProfileHook()
+    hook.onProfile = { [weak self] profile in
+      guard let self, profile.pubkey == self.pubkey else { return }
+      self.applyProfile(profile)
+      self.setNeedsDisplay()
+    }
+    return hook
+  }()
+  private lazy var reposterProfileHook: NativeProfileHook = {
+    let hook = NativeProfileHook()
+    hook.onProfile = { [weak self] profile in
+      guard let self, profile.pubkey == self.reposterPubkey else { return }
+      self.reposterPicture = profile.picture
+      self.loadReposterAvatarImage()
+      self.setNeedsDisplay()
+    }
+    return hook
+  }()
   private var depth: Int = 0
   private var main: Bool = false
   private var showRelays: Bool = true
   private var relayCount: Int = 0
   private var reposterPubkey: String?
+  private var reposterPicture: String = ""
+  private var reposterAvatarImage: UIImage?
+  private var reposterAvatarRequestUrl: String?
   private var fallbackSubId: String?
 
   private var pubkey: String = ""
@@ -34,34 +59,77 @@ class NativeNoteHeaderContentView: UIView {
     super.init(frame: frame)
     isOpaque = false
     backgroundColor = .clear
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+    recognizer.cancelsTouchesInView = false
+    addGestureRecognizer(recognizer)
   }
 
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     isOpaque = false
     backgroundColor = .clear
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+    recognizer.cancelsTouchesInView = false
+    addGestureRecognizer(recognizer)
   }
 
   deinit {
-    profileSubscription?.cancel()
+    profileHook.cancel()
+    reposterProfileHook.cancel()
   }
 
   @objc(updateNoteBytes:)
   func updateNoteBytes(_ value: [NSNumber]?) {
-    noteBytes = value?.map { UInt8(truncating: $0) }
+    let nextBytes = value?.map { UInt8(truncating: $0) }
+    if noteBytes == nextBytes { return }
+    noteBytes = nextBytes
     parseNote()
+    refreshProfileSubscription()
+    setNeedsDisplay()
+  }
+
+  func updateParsedEvent(_ event: nostr_fb_ParsedEvent?) {
+    guard let event else {
+      if pubkey.isEmpty { return }
+      pubkey = ""
+      createdAt = 0
+      subId = ""
+      resetProfileDisplay()
+      refreshProfileSubscription()
+      setNeedsDisplay()
+      return
+    }
+
+    let nextPubkey = event.pubkey ?? ""
+    if pubkey != nextPubkey {
+      pubkey = nextPubkey
+      resetProfileDisplay()
+    }
+    createdAt = event.createdAt
+    if name.isEmpty {
+      name = shortPubkey(pubkey)
+    }
     refreshProfileSubscription()
     setNeedsDisplay()
   }
 
   @objc(updateRelays:)
   func updateRelays(_ value: [String]?) {
-    relays = value ?? []
+    let nextRelays = value ?? []
+    if relays == nextRelays { return }
+    relays = nextRelays
+    refreshProfileSubscription()
+  }
+
+  func updateRelayResolutionPending(_ value: Bool) {
+    if relayResolutionPending == value { return }
+    relayResolutionPending = value
     refreshProfileSubscription()
   }
 
   @objc(updateVisible:)
   func updateVisible(_ value: Bool) {
+    if visible == value { return }
     visible = value
     refreshProfileSubscription()
     setNeedsDisplay()
@@ -69,36 +137,53 @@ class NativeNoteHeaderContentView: UIView {
 
   @objc(updateDepth:)
   func updateDepth(_ value: NSNumber) {
+    if depth == value.intValue { return }
     depth = value.intValue
     setNeedsDisplay()
   }
 
   @objc(updateMain:)
   func updateMain(_ value: Bool) {
+    if main == value { return }
     main = value
     setNeedsDisplay()
   }
 
   @objc(updateShowRelays:)
   func updateShowRelays(_ value: Bool) {
+    if showRelays == value { return }
     showRelays = value
     setNeedsDisplay()
   }
 
   @objc(updateRelayCount:)
   func updateRelayCount(_ value: NSNumber) {
+    if relayCount == value.intValue { return }
     relayCount = value.intValue
+    setNeedsDisplay()
+  }
+
+  func updateRelayStatuses(_ value: [String: String]) {
+    if relayStatuses == value { return }
+    relayStatuses = value
     setNeedsDisplay()
   }
 
   @objc(updateReposterPubkey:)
   func updateReposterPubkey(_ value: String?) {
-    reposterPubkey = value
+    let nextPubkey = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if reposterPubkey == nextPubkey { return }
+    reposterPubkey = nextPubkey
+    reposterPicture = ""
+    reposterAvatarImage = nil
+    reposterAvatarRequestUrl = nil
+    refreshReposterProfileSubscription()
     setNeedsDisplay()
   }
 
   @objc(updateFallbackSubId:)
   func updateFallbackSubId(_ value: String?) {
+    if fallbackSubId == value { return }
     fallbackSubId = value
     setNeedsDisplay()
   }
@@ -153,15 +238,10 @@ class NativeNoteHeaderContentView: UIView {
     }
 
     if let reposterPubkey, !reposterPubkey.isEmpty {
-      let badge: CGFloat = quote ? 7 : 11
-      context.setFillColor(accentColor.cgColor)
-      context.fillEllipse(
-        in: CGRect(
-          x: avatarLeft + avatarSize - badge,
-          y: avatarTop + avatarSize - badge,
-          width: badge,
-          height: badge
-        )
+      drawReposterAvatar(
+        in: context,
+        avatarRect: avatarRect,
+        size: quote ? 11 : 18
       )
     }
 
@@ -206,14 +286,26 @@ class NativeNoteHeaderContentView: UIView {
     }
 
     if showRelays {
-      drawText(
-        "\(relayCount)",
-        at: CGPoint(x: bounds.width - 18, y: top + 1),
-        maxWidth: 18,
-        font: secondaryFont,
-        color: secondaryTextColor
-      )
+      drawRelayDots(in: CGRect(x: max(0, bounds.width - 32), y: top + 7, width: 28, height: 8))
     }
+  }
+
+  @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+    guard recognizer.state == .ended else { return }
+    let point = recognizer.location(in: self)
+    if showRelays, !relays.isEmpty, point.x >= bounds.width - 44 {
+      let subId = fallbackSubId ?? self.subId
+      let relayPayload = relays.joined(separator: ",")
+      let statusPayload = relayStatuses
+        .map { "\($0.key)=\($0.value)" }
+        .sorted()
+        .joined(separator: ",")
+      onNativeRoute?("relays:\(encodeRouteComponent(subId)):\(encodeRouteComponent(relayPayload)):\(encodeRouteComponent(statusPayload))")
+      return
+    }
+
+    guard !pubkey.isEmpty else { return }
+    onNativeRoute?("profile:\(pubkey)")
   }
 
   private func parseNote() {
@@ -226,12 +318,24 @@ class NativeNoteHeaderContentView: UIView {
       return
     }
 
-    pubkey = event.pubkey ?? ""
+    let nextPubkey = event.pubkey ?? ""
+    if pubkey != nextPubkey {
+      pubkey = nextPubkey
+      resetProfileDisplay()
+    }
     createdAt = event.createdAt
     subId = parseWorker(noteBytes)?.subId ?? ""
     if name.isEmpty {
       name = shortPubkey(pubkey)
     }
+  }
+
+  private func resetProfileDisplay() {
+    name = shortPubkey(pubkey)
+    nip05 = ""
+    picture = ""
+    avatarImage = nil
+    avatarRequestUrl = nil
   }
 
   private func parseProfile() {
@@ -246,19 +350,30 @@ class NativeNoteHeaderContentView: UIView {
   }
 
   private func applyProfile(_ profile: nostr_fb_Kind0Parsed) {
-    name = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    if name.isEmpty {
-      name = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-    nip05 = profile.nip05?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    picture = profile.picture?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    applyProfile(NativeProfileSnapshot(
+      pubkey: pubkey,
+      name: profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      displayName: profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      nip05: profile.nip05?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      picture: profile.picture?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    ))
+  }
+
+  private func applyProfile(_ profile: NativeProfileSnapshot) {
+    name = profile.bestName
+    nip05 = profile.nip05
+    picture = profile.picture
     loadAvatarImage()
   }
 
   private func refreshProfileSubscription() {
-    profileSubscription?.cancel()
-    profileSubscription = nil
+    guard !relayResolutionPending else {
+      profileHook.cancel()
+      reposterProfileHook.cancel()
+      return
+    }
     guard visible, !pubkey.isEmpty else {
+      profileHook.cancel()
       if !visible || pubkey.isEmpty {
         emitNativeDebugLog(
           source: "NativeNoteHeaderContentView",
@@ -273,32 +388,61 @@ class NativeNoteHeaderContentView: UIView {
       event: "refreshProfileSubscription",
       details: "pubkey=\(pubkey), relays=\(relays.count)"
     )
-    profileSubscription = useSubscriptionHandle(
-      subscriptionId: "u_\(pubkey)",
-      requests: [
-        RequestObject(authors: [pubkey], kinds: [0], limit: 1, relays: relays, closeOnEOSE: true, cacheFirst: true)
-      ],
-      callback: { [weak self] messages in
-        DispatchQueue.main.async {
-          self?.handleProfileMessages(messages)
-        }
-      },
-      options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
-    )
+    profileHook.update(pubkey: pubkey, relays: relays, visible: visible)
+    refreshReposterProfileSubscription()
   }
 
-  private func handleProfileMessages(_ messages: [WorkerMessageView]) {
-    for message in messages {
-      guard message.parsedEvent?.pubkey == pubkey, let profile = message.kind0 else { continue }
-      emitNativeDebugLog(
-        source: "NativeNoteHeaderContentView",
-        event: "handleProfileMessages",
-        details: "pubkey=\(pubkey), pictureSet=\(!((profile.picture ?? "").isEmpty))"
-      )
-      applyProfile(profile)
-      setNeedsDisplay()
-      break
+  private func drawRelayDots(in rect: CGRect) {
+    let displayRelays = Array(relays.prefix(3))
+    guard !displayRelays.isEmpty else { return }
+    let dotSize: CGFloat = 4
+    let gap: CGFloat = 3
+    let totalWidth = CGFloat(displayRelays.count) * dotSize + CGFloat(max(0, displayRelays.count - 1)) * gap
+    var x = rect.maxX - totalWidth
+    let y = rect.midY - dotSize / 2
+    for relay in displayRelays {
+      statusColor(relayStatuses[normalizeRelay(relay)]).setFill()
+      UIBezierPath(ovalIn: CGRect(x: x, y: y, width: dotSize, height: dotSize)).fill()
+      x += dotSize + gap
     }
+  }
+
+  private func statusColor(_ status: String?) -> UIColor {
+    switch status {
+    case "EOSE", "OK":
+      return UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
+    case "SUBSCRIBED":
+      return UIColor(red: 59 / 255, green: 130 / 255, blue: 246 / 255, alpha: 1)
+    case "FAILED":
+      return UIColor(red: 239 / 255, green: 68 / 255, blue: 68 / 255, alpha: 1)
+    case "CLOSED":
+      return avatarBackgroundColor
+    default:
+      return avatarBackgroundColor
+    }
+  }
+
+  private func normalizeRelay(_ value: String) -> String {
+    var relay = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    while relay.hasSuffix("/") {
+      relay.removeLast()
+    }
+    return relay
+  }
+
+  private func encodeRouteComponent(_ value: String) -> String {
+    value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+  }
+
+  private func refreshReposterProfileSubscription() {
+    guard !relayResolutionPending,
+          visible,
+          let reposterPubkey,
+          !reposterPubkey.isEmpty else {
+      reposterProfileHook.cancel()
+      return
+    }
+    reposterProfileHook.update(pubkey: reposterPubkey, relays: relays, visible: visible)
   }
 
   private func parseParsedEvent(_ bytes: [UInt8]?) -> nostr_fb_ParsedEvent? {
@@ -359,6 +503,69 @@ class NativeNoteHeaderContentView: UIView {
         self.setNeedsDisplay()
       }
     }.resume()
+  }
+
+  private func loadReposterAvatarImage() {
+    reposterAvatarImage = nil
+    guard !reposterPicture.isEmpty, let url = URL(string: reposterPicture) else {
+      reposterAvatarRequestUrl = nil
+      return
+    }
+
+    let cacheKey = reposterPicture as NSString
+    if let cached = Self.imageCache.object(forKey: cacheKey) {
+      reposterAvatarImage = cached
+      setNeedsDisplay()
+      return
+    }
+
+    reposterAvatarRequestUrl = reposterPicture
+    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+      guard
+        let self,
+        let data,
+        let httpResponse = response as? HTTPURLResponse,
+        (200..<300).contains(httpResponse.statusCode),
+        let image = UIImage(data: data)
+      else {
+        return
+      }
+
+      Self.imageCache.setObject(image, forKey: cacheKey)
+      DispatchQueue.main.async {
+        guard self.reposterAvatarRequestUrl == cacheKey as String else {
+          return
+        }
+        self.reposterAvatarImage = image
+        self.setNeedsDisplay()
+      }
+    }.resume()
+  }
+
+  private func drawReposterAvatar(in context: CGContext, avatarRect: CGRect, size: CGFloat) {
+    let badgeRect = CGRect(
+      x: avatarRect.maxX - size + 2,
+      y: avatarRect.maxY - size + 2,
+      width: size,
+      height: size
+    )
+    let borderRect = badgeRect.insetBy(dx: -2, dy: -2)
+
+    context.saveGState()
+    context.setFillColor(UIColor.systemBackground.cgColor)
+    context.fillEllipse(in: borderRect)
+    context.setFillColor(avatarBackgroundColor.cgColor)
+    context.fillEllipse(in: badgeRect)
+
+    if let reposterAvatarImage {
+      context.addEllipse(in: badgeRect)
+      context.clip()
+      reposterAvatarImage.draw(in: badgeRect)
+    } else {
+      context.setFillColor(accentColor.cgColor)
+      context.fillEllipse(in: badgeRect.insetBy(dx: size * 0.28, dy: size * 0.28))
+    }
+    context.restoreGState()
   }
 
   private func drawText(_ value: String, at point: CGPoint, maxWidth: CGFloat, font: UIFont, color: UIColor) {

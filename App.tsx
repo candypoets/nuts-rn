@@ -206,6 +206,16 @@ function App() {
   const keyboardResizeStyle = useKeyboardResizeStyle();
   useEffect(() => {
     return startNativeDebugLogRelay(event => {
+      if (event.event === 'summary' && event.logs?.length) {
+        console.log(
+          '[native-debug]',
+          event.logs
+            .map(log => `${log.source}.${log.event} x${log.count ?? 0}`)
+            .join(' | '),
+          event.logs.slice(0, 3).map(log => log.details),
+        );
+        return;
+      }
       console.log('[native-debug]', event);
     });
   }, []);

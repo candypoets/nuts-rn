@@ -20,6 +20,7 @@ class NativeNoteFooterManager :
   override fun setNoteBytes(view: NativeNoteFooterView, value: ReadableArray?) = view.setNoteBytes(value)
   override fun setRelays(view: NativeNoteFooterView, value: ReadableArray?) = view.setRelays(value)
   override fun setCurrentUserPubkey(view: NativeNoteFooterView, value: String?) = view.setCurrentUserPubkey(value)
+  override fun setOptimisticReactionNonce(view: NativeNoteFooterView, value: Int) = view.setOptimisticReactionNonce(value)
   override fun setVisible(view: NativeNoteFooterView, value: Boolean) = view.setVisible(value)
   override fun setMain(view: NativeNoteFooterView, value: Boolean) = view.setMain(value)
   override fun setZoom(view: NativeNoteFooterView, value: Boolean) = view.setZoom(value)

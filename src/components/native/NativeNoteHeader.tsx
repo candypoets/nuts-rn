@@ -1,7 +1,11 @@
-import React, {useMemo} from 'react';
+import React, {useCallback, useMemo} from 'react';
 import {StyleSheet} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import NativeNoteHeaderComponent from '../../specs/NativeNoteHeaderNativeComponent';
+import {handleProfileRoute} from '../../navigation/nativeRouteEvents';
+import type {RootStackParamList} from '../../navigation/types';
 import {
   getBaseContentColor,
   getMutedContentColor,
@@ -37,10 +41,17 @@ export function NativeNoteHeader({
   reposterPubkey,
 }: Props) {
   const theme = useAppTheme();
-  const noteId = note.id() || '';
-  const noteBytes = useMemo(() => flatBufferBytes(note), [noteId, note]);
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
   const primaryTextColor = getBaseContentColor(theme);
   const secondaryTextColor = getMutedContentColor(theme);
+  const handleNativeRoute = useCallback(
+    (event: {nativeEvent: {route: string}}) => {
+      handleProfileRoute(event.nativeEvent.route, navigation);
+    },
+    [navigation],
+  );
 
   return (
     <NativeNoteHeaderComponent
@@ -57,6 +68,7 @@ export function NativeNoteHeader({
       secondaryTextColor={secondaryTextColor}
       avatarBackgroundColor={theme.colors.base200}
       accentColor={theme.colors.primary}
+      onNativeRoute={handleNativeRoute}
       style={[styles.header, depth > 0 ? styles.quote : styles.full]}
     />
   );
@@ -69,7 +81,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   full: {
-    minHeight: 40,
+    minHeight: 42,
   },
   quote: {
     minHeight: 18,

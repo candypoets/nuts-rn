@@ -2,31 +2,28 @@ import type {HostComponent, ViewProps} from 'react-native';
 import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNativeComponent';
 import type {
   DirectEventHandler,
-  Int32,
-  WithDefault,
+  Double,
 } from 'react-native/Libraries/Types/CodegenTypes';
+
+type HeightChangeEvent = Readonly<{
+  height: Double;
+}>;
 
 type NativeRouteEvent = Readonly<{
   route: string;
 }>;
 
 export interface NativeProps extends ViewProps {
-  noteBytes?: ReadonlyArray<Int32>;
-  relays?: ReadonlyArray<string>;
-  visible?: WithDefault<boolean, true>;
-  depth?: WithDefault<Int32, 0>;
-  main?: WithDefault<boolean, false>;
-  showRelays?: WithDefault<boolean, true>;
-  relayCount?: WithDefault<Int32, 0>;
-  reposterPubkey?: string;
-  fallbackSubId?: string;
-  primaryTextColor?: string;
+  url?: string;
+  text?: string;
+  baseContentColor?: string;
   secondaryTextColor?: string;
-  avatarBackgroundColor?: string;
-  accentColor?: string;
+  cardBackgroundColor?: string;
+  borderColor?: string;
+  onHeightChange?: DirectEventHandler<HeightChangeEvent>;
   onNativeRoute?: DirectEventHandler<NativeRouteEvent>;
 }
 
 export default codegenNativeComponent<NativeProps>(
-  'NativeNoteHeader',
+  'NativeLinkPreview',
 ) as HostComponent<NativeProps>;

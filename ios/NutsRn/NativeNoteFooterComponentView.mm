@@ -6,6 +6,7 @@
 #import "ExpoModulesCore-Swift.h"
 #import <React-RCTAppDelegate/RCTReactNativeFactory.h>
 #import <react/renderer/components/NutsRnAppSpec/ComponentDescriptors.h>
+#import <react/renderer/components/NutsRnAppSpec/EventEmitters.h>
 #import <react/renderer/components/NutsRnAppSpec/Props.h>
 #import <react/renderer/components/NutsRnAppSpec/RCTComponentViewHelpers.h>
 
@@ -18,6 +19,7 @@
 using namespace facebook::react;
 
 @interface NativeNoteFooterComponentView () <RCTNativeNoteFooterViewProtocol>
+- (std::shared_ptr<const NativeNoteFooterEventEmitter>)nativeNoteFooterEventEmitter;
 @end
 
 @implementation NativeNoteFooterComponentView {
@@ -35,10 +37,28 @@ using namespace facebook::react;
     static const auto defaultProps = std::make_shared<const NativeNoteFooterProps>();
     _props = defaultProps;
     _contentView = [NativeNoteFooterContentView new];
+    __weak NativeNoteFooterComponentView *weakSelf = self;
+    _contentView.onNativeAction = ^(NSString *action) {
+      NativeNoteFooterComponentView *strongSelf = weakSelf;
+      if (!strongSelf || !action) {
+        return;
+      }
+      auto eventEmitter = [strongSelf nativeNoteFooterEventEmitter];
+      if (eventEmitter) {
+        NativeNoteFooterEventEmitter::OnNativeAction event;
+        event.action = std::string([action UTF8String]);
+        eventEmitter->onNativeAction(event);
+      }
+    };
     self.contentView = _contentView;
   }
 
   return self;
+}
+
+- (std::shared_ptr<const NativeNoteFooterEventEmitter>)nativeNoteFooterEventEmitter
+{
+  return std::static_pointer_cast<const NativeNoteFooterEventEmitter>(_eventEmitter);
 }
 
 - (void)updateProps:(const Props::Shared &)props oldProps:(const Props::Shared &)oldProps
@@ -54,6 +74,9 @@ using namespace facebook::react;
   }
   if (oldFooterProps.currentUserPubkey != newFooterProps.currentUserPubkey) {
     [_contentView updateCurrentUserPubkey:RCTNSStringFromString(newFooterProps.currentUserPubkey)];
+  }
+  if (oldFooterProps.optimisticReactionNonce != newFooterProps.optimisticReactionNonce) {
+    [_contentView updateOptimisticReactionNonce:newFooterProps.optimisticReactionNonce];
   }
   if (oldFooterProps.visible != newFooterProps.visible) {
     [_contentView updateVisible:newFooterProps.visible];

@@ -11,6 +11,7 @@ class NativeNoteFooterContentView: UIView {
   ]
 
   var onRelayStatusChange: ((String, String) -> Void)?
+  @objc var onNativeAction: ((String) -> Void)?
 
   private var noteBytes: [UInt8]?
   private var relays: [String] = []
@@ -18,10 +19,12 @@ class NativeNoteFooterContentView: UIView {
   private var currentUserPubkey = ""
   private var visible = true
   private var noteId = ""
+  private var notePubkey = ""
   private var noteKind: UInt16 = 0
   private var mainSubscription: NipworkerHookHandle?
   private var quoteSubscription: NipworkerHookHandle?
   private var activeSubscriptionKey = ""
+  private var optimisticReactionNonce: Int32 = 0
   private var supportsComments = true
   private var commentsCount = 0
   private var repliesCount = 0
@@ -42,12 +45,18 @@ class NativeNoteFooterContentView: UIView {
     super.init(frame: frame)
     isOpaque = false
     backgroundColor = .clear
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+    recognizer.cancelsTouchesInView = false
+    addGestureRecognizer(recognizer)
   }
 
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     isOpaque = false
     backgroundColor = .clear
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+    recognizer.cancelsTouchesInView = false
+    addGestureRecognizer(recognizer)
   }
 
   deinit {
@@ -73,6 +82,7 @@ class NativeNoteFooterContentView: UIView {
     let previousNoteId = noteId
     guard let event else {
       noteId = ""
+      notePubkey = ""
       noteKind = 0
       supportsComments = true
       if previousNoteId != noteId {
@@ -84,6 +94,7 @@ class NativeNoteFooterContentView: UIView {
     }
 
     noteId = event.id ?? ""
+    notePubkey = event.pubkey ?? ""
     noteKind = event.kind
     supportsComments = noteKind != 1 && noteKind != 6
     if previousNoteId != noteId {
@@ -113,6 +124,16 @@ class NativeNoteFooterContentView: UIView {
     if currentUserPubkey == nextPubkey { return }
     currentUserPubkey = nextPubkey
     refreshSubscriptions()
+  }
+
+  @objc(updateOptimisticReactionNonce:)
+  func updateOptimisticReactionNonce(_ value: Int32) {
+    guard value != optimisticReactionNonce else { return }
+    optimisticReactionNonce = value
+    guard value > 0, !reacted else { return }
+    reacted = true
+    reactionsCount += 1
+    setNeedsDisplay()
   }
 
   @objc(updateVisible:)
@@ -145,11 +166,13 @@ class NativeNoteFooterContentView: UIView {
         details: "missing note bytes"
       )
       noteId = ""
+      notePubkey = ""
       noteKind = 0
       supportsComments = true
       return
     }
     noteId = event.id
+    notePubkey = event.pubkey
     noteKind = event.kind
     supportsComments = noteKind != 1 && noteKind != 6
   }
@@ -190,7 +213,8 @@ class NativeNoteFooterContentView: UIView {
         emitNativeDebugLog(
           source: "NativeNoteFooterContentView",
           event: "refreshSubscriptions-skipped",
-          details: "visible=\(visible), noteIdEmpty=\(noteId.isEmpty), relaysEmpty=\(relays.isEmpty)"
+          details: "noteId=\(noteId), visible=\(visible), noteIdEmpty=\(noteId.isEmpty), relaysEmpty=\(relays.isEmpty)",
+          context: noteId
         )
       }
       return
@@ -206,7 +230,8 @@ class NativeNoteFooterContentView: UIView {
     emitNativeDebugLog(
       source: "NativeNoteFooterContentView",
       event: "refreshSubscriptions",
-      details: "noteId=\(noteId), relays=\(lookupRelays.count), relaySource=\(relaySource), supportsComments=\(supportsComments)"
+      details: "noteId=\(noteId), relays=\(lookupRelays.count), relaySource=\(relaySource), supportsComments=\(supportsComments)",
+      context: noteId
     )
 
     let mainKinds: [UInt16] = supportsComments ? [6, 7, 1111] : [1, 6, 7]
@@ -251,7 +276,9 @@ class NativeNoteFooterContentView: UIView {
       case 6:
         repostsCount = Int(count.count); if count.you { reposted = true }; changed = true
       case 7:
-        reactionsCount = Int(count.count); if count.you { reacted = true }; changed = true
+        reactionsCount = reacted ? max(Int(count.count), reactionsCount) : Int(count.count)
+        if count.you { reacted = true }
+        changed = true
       default:
         break
       }
@@ -260,7 +287,8 @@ class NativeNoteFooterContentView: UIView {
       emitNativeDebugLog(
         source: "NativeNoteFooterContentView",
         event: "handleMainMessages",
-        details: "replies=\(repliesCount), reposts=\(repostsCount), comments=\(commentsCount), likes=\(reactionsCount)"
+        details: "noteId=\(noteId), replies=\(repliesCount), reposts=\(repostsCount), comments=\(commentsCount), likes=\(reactionsCount)",
+        context: noteId
       )
       setNeedsDisplay()
     }
@@ -279,7 +307,8 @@ class NativeNoteFooterContentView: UIView {
       emitNativeDebugLog(
         source: "NativeNoteFooterContentView",
         event: "handleQuoteMessages",
-        details: "quotes=\(quotesCount)"
+        details: "noteId=\(noteId), quotes=\(quotesCount)",
+        context: noteId
       )
       setNeedsDisplay()
     }
@@ -300,6 +329,88 @@ class NativeNoteFooterContentView: UIView {
       relay.removeLast()
     }
     return relay
+  }
+
+  @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+    guard recognizer.state == .ended else { return }
+    let point = recognizer.location(in: self)
+    guard let action = footerAction(at: point) else { return }
+    onNativeAction?(action)
+  }
+
+  private func footerAction(at point: CGPoint) -> String? {
+    zoom ? zoomFooterAction(at: point) : inlineFooterAction(at: point)
+  }
+
+  private func inlineFooterAction(at point: CGPoint) -> String? {
+    let leftInset: CGFloat = main ? 8 : 48
+    let rightInset: CGFloat = 8
+    let zapWidth: CGFloat = 24
+    let rowMaxX = bounds.width - rightInset - zapWidth
+    let y = (bounds.height - 20) / 2
+    let gap: CGFloat = 8
+
+    let zapRect = CGRect(x: bounds.width - rightInset - 32, y: 0, width: 32, height: bounds.height)
+    if zapRect.contains(point) {
+      return "zap"
+    }
+
+    var x = leftInset
+    let firstAction = supportsComments ? "comments" : "reply"
+    let firstLabel = countLabel(supportsComments ? commentsCount : repliesCount)
+    let firstEnd = inlineActionEnd(x: x, y: y, label: firstLabel, maxX: rowMaxX)
+    if CGRect(x: x, y: 0, width: max(34, firstEnd - x + gap), height: bounds.height).contains(point) {
+      return firstAction
+    }
+    x = firstEnd + gap
+
+    let repostEnd = inlineActionEnd(x: x, y: y, label: countLabel(repostsCount + quotesCount), maxX: rowMaxX)
+    if CGRect(x: x, y: 0, width: max(34, repostEnd - x + gap), height: bounds.height).contains(point) {
+      return "repost"
+    }
+    x = repostEnd + gap
+
+    let likeEnd = inlineActionEnd(x: x, y: y, label: countLabel(reactionsCount), maxX: rowMaxX)
+    if CGRect(x: x, y: 0, width: max(34, likeEnd - x + gap), height: bounds.height).contains(point) {
+      return "like"
+    }
+    x = likeEnd + gap
+
+    let shareEnd = inlineActionEnd(x: x, y: y, label: nil, maxX: rowMaxX)
+    if CGRect(x: x, y: 0, width: max(34, shareEnd - x), height: bounds.height).contains(point) {
+      return "share"
+    }
+
+    return nil
+  }
+
+  private func zoomFooterAction(at point: CGPoint) -> String? {
+    let itemWidth = max(72, bounds.width / 4 - 9)
+    let gap: CGFloat = 12
+    let y = (bounds.height - 48) / 2
+    let actions = [supportsComments ? "comments" : "reply", "repost", "like", "share"]
+    var x: CGFloat = 0
+
+    for action in actions {
+      if CGRect(x: x, y: y, width: itemWidth, height: 48).contains(point) {
+        return action
+      }
+      x += itemWidth + gap
+    }
+
+    return nil
+  }
+
+  private func inlineActionEnd(x: CGFloat, y: CGFloat, label: String?, maxX: CGFloat) -> CGFloat {
+    guard x < maxX else {
+      return x
+    }
+
+    var nextX = x + 22
+    if let label {
+      nextX += 4 + labelWidth(label, fontSize: 12, bold: false)
+    }
+    return min(nextX + 2, maxX)
   }
 
   private func parseParsedEvent(_ bytes: [UInt8]?) -> nostr_fb_ParsedEvent? {
@@ -324,7 +435,7 @@ class NativeNoteFooterContentView: UIView {
   }
 
   private func drawInlineFooter() {
-    let leftInset: CGFloat = main ? 8 : 40
+    let leftInset: CGFloat = main ? 8 : 48
     let rightInset: CGFloat = 8
     let zapWidth: CGFloat = 24
     let rowMaxX = bounds.width - rightInset - zapWidth
@@ -468,6 +579,11 @@ class NativeNoteFooterContentView: UIView {
     let size = (label as NSString).size(withAttributes: attributes)
     (label as NSString).draw(at: point, withAttributes: attributes)
     return ceil(size.width)
+  }
+
+  private func labelWidth(_ label: String, fontSize: CGFloat, bold: Bool) -> CGFloat {
+    let font = UIFont.systemFont(ofSize: fontSize, weight: bold ? .semibold : .regular)
+    return ceil((label as NSString).size(withAttributes: [.font: font]).width)
   }
 
   private func countLabel(_ count: Int) -> String? {

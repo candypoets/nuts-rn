@@ -4,10 +4,11 @@ import Foundation
 func emitNativeDebugLog(
   source: String,
   event: String,
-  details: String = ""
+  details: String = "",
+  context: String = ""
 ) {
   #if DEBUG
-  NativeDebug.log(source: source, event: event, details: details)
+  NativeDebug.log(source: source, event: event, details: details, context: context)
   #endif
 }
 
@@ -21,6 +22,7 @@ enum NativeDebug {
     var source: String
     var event: String
     var details: String
+    var context: String
     var count: Int
   }
 
@@ -28,15 +30,17 @@ enum NativeDebug {
   static func log(
     source: String,
     event: String,
-    details: String = ""
+    details: String = "",
+    context: String = ""
   ) {
     DispatchQueue.main.async {
-      let key = "\(source)|\(event)"
+      let key = "\(source)|\(event)|\(context)"
       if var existing = pending[key] {
         existing.count += 1
+        existing.details = details
         pending[key] = existing
       } else {
-        pending[key] = PendingLog(source: source, event: event, details: details, count: 1)
+        pending[key] = PendingLog(source: source, event: event, details: details, context: context, count: 1)
       }
 
       guard !flushScheduled else { return }
@@ -65,6 +69,7 @@ enum NativeDebug {
           "source": log.source,
           "event": log.event,
           "details": log.details,
+          "context": log.context,
           "count": log.count,
         ] as [String: Any]
       }

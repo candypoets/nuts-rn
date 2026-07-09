@@ -39,14 +39,15 @@ final class NativeProfileHook {
     }
 
     let lookupRelays = NativeProfileHook.normalizedRelays(relays)
-    let nextKey = "\(cleanPubkey)|\(lookupRelays.joined(separator: ","))"
+    let relayKey = NativeProfileHook.relayKey(lookupRelays)
+    let nextKey = "\(cleanPubkey)|\(relayKey)"
     if subscriptionKey == nextKey { return }
 
     cancel()
     subscriptionKey = nextKey
     let requestedPubkey = cleanPubkey
     subscription = useSubscriptionHandle(
-      subscriptionId: "u_\(requestedPubkey)",
+      subscriptionId: "u_\(requestedPubkey)_\(relayKey)",
       requests: [
         RequestObject(authors: [requestedPubkey], kinds: [0], limit: 1, relays: lookupRelays, closeOnEOSE: true, cacheFirst: true)
       ],
@@ -93,5 +94,12 @@ final class NativeProfileHook {
       result.append(relay)
     }
     return result
+  }
+
+  private static func relayKey(_ relays: [String]) -> String {
+    relays.map { $0.replacingOccurrences(of: #"[^A-Za-z0-9]"#, with: "", options: .regularExpression) }
+      .joined()
+      .prefix(24)
+      .description
   }
 }

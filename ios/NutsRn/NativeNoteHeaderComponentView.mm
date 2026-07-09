@@ -6,6 +6,7 @@
 #import "ExpoModulesCore-Swift.h"
 #import <React-RCTAppDelegate/RCTReactNativeFactory.h>
 #import <react/renderer/components/NutsRnAppSpec/ComponentDescriptors.h>
+#import <react/renderer/components/NutsRnAppSpec/EventEmitters.h>
 #import <react/renderer/components/NutsRnAppSpec/Props.h>
 #import <react/renderer/components/NutsRnAppSpec/RCTComponentViewHelpers.h>
 
@@ -18,6 +19,7 @@
 using namespace facebook::react;
 
 @interface NativeNoteHeaderComponentView () <RCTNativeNoteHeaderViewProtocol>
+- (std::shared_ptr<const NativeNoteHeaderEventEmitter>)nativeNoteHeaderEventEmitter;
 @end
 
 @implementation NativeNoteHeaderComponentView {
@@ -35,10 +37,28 @@ using namespace facebook::react;
     static const auto defaultProps = std::make_shared<const NativeNoteHeaderProps>();
     _props = defaultProps;
     _contentView = [NativeNoteHeaderContentView new];
+    __weak NativeNoteHeaderComponentView *weakSelf = self;
+    _contentView.onNativeRoute = ^(NSString *route) {
+      NativeNoteHeaderComponentView *strongSelf = weakSelf;
+      if (!strongSelf || !route) {
+        return;
+      }
+      auto eventEmitter = [strongSelf nativeNoteHeaderEventEmitter];
+      if (eventEmitter) {
+        NativeNoteHeaderEventEmitter::OnNativeRoute event;
+        event.route = std::string([route UTF8String]);
+        eventEmitter->onNativeRoute(event);
+      }
+    };
     self.contentView = _contentView;
   }
 
   return self;
+}
+
+- (std::shared_ptr<const NativeNoteHeaderEventEmitter>)nativeNoteHeaderEventEmitter
+{
+  return std::static_pointer_cast<const NativeNoteHeaderEventEmitter>(_eventEmitter);
 }
 
 - (void)updateProps:(const Props::Shared &)props oldProps:(const Props::Shared &)oldProps

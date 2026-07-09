@@ -1,12 +1,13 @@
 import React from 'react';
-import {Pressable, StyleSheet, View} from 'react-native';
-import type {ParsedEvent} from '@candypoets/nipworker';
+import { StyleSheet, View } from 'react-native';
+import type { ParsedEvent } from '@candypoets/nipworker';
 import NativeNoteFooterComponent from '../../specs/NativeNoteFooterNativeComponent';
 
 type Props = {
   note: ParsedEvent;
   relays?: string[];
   currentUserPubkey?: string;
+  optimisticReactionNonce?: number;
   visible?: boolean;
   main?: boolean;
   mode?: 'inline' | 'zoom';
@@ -15,14 +16,15 @@ type Props = {
   accentColor: string;
   onReply: () => void;
   onComments: () => void;
-  onQuote: () => void;
+  onRepost: () => void;
   onLike: () => void;
   onShare: () => void;
   onZap: () => void;
 };
+type FooterAction = 'reply' | 'comments' | 'repost' | 'like' | 'share' | 'zap';
 
 function flatBufferBytes(view: unknown): number[] | undefined {
-  const bytes = (view as {bb?: {bytes_?: Uint8Array}} | null)?.bb?.bytes_;
+  const bytes = (view as { bb?: { bytes_?: Uint8Array } } | null)?.bb?.bytes_;
   return bytes ? Array.from(bytes) : undefined;
 }
 
@@ -30,6 +32,7 @@ export function NativeNoteFooter({
   note,
   relays,
   currentUserPubkey,
+  optimisticReactionNonce = 0,
   visible = true,
   main = false,
   mode = 'inline',
@@ -38,14 +41,38 @@ export function NativeNoteFooter({
   accentColor,
   onReply,
   onComments,
-  onQuote,
+  onRepost,
   onLike,
   onShare,
   onZap,
 }: Props) {
   const zoom = mode === 'zoom';
   const noteBytes = React.useMemo(() => flatBufferBytes(note), [note]);
-  const supportsComments = note.kind() !== 1 && note.kind() !== 6;
+  const handleNativeAction = React.useCallback(
+    (event: { nativeEvent: { action: string } }) => {
+      switch (event.nativeEvent.action as FooterAction) {
+        case 'reply':
+          onReply();
+          break;
+        case 'comments':
+          onComments();
+          break;
+        case 'repost':
+          onRepost();
+          break;
+        case 'like':
+          onLike();
+          break;
+        case 'share':
+          onShare();
+          break;
+        case 'zap':
+          onZap();
+          break;
+      }
+    },
+    [onComments, onLike, onReply, onRepost, onShare, onZap],
+  );
 
   return (
     <View
@@ -60,6 +87,7 @@ export function NativeNoteFooter({
         noteBytes={noteBytes}
         relays={relays}
         currentUserPubkey={currentUserPubkey}
+        optimisticReactionNonce={optimisticReactionNonce}
         visible={visible}
         main={main}
         zoom={zoom}
@@ -67,43 +95,10 @@ export function NativeNoteFooter({
         primaryColor={primaryColor}
         accentColor={accentColor}
         zoomBackgroundColor="rgba(15, 23, 42, 0.46)"
+        onNativeAction={handleNativeAction}
         style={StyleSheet.absoluteFill}
-        pointerEvents="none"
+        pointerEvents="auto"
       />
-      <View
-        style={[
-          styles.hitRow,
-          zoom ? styles.zoomHitRow : styles.inlineHitRow,
-        ]}
-      >
-        <Pressable
-          accessibilityRole="button"
-          style={zoom ? styles.zoomHit : styles.inlineHit}
-          onPress={supportsComments ? onComments : onReply}
-        />
-        <Pressable
-          accessibilityRole="button"
-          style={zoom ? styles.zoomHit : styles.inlineHit}
-          onPress={onQuote}
-        />
-        <Pressable
-          accessibilityRole="button"
-          style={zoom ? styles.zoomHit : styles.inlineHit}
-          onPress={onLike}
-        />
-        <Pressable
-          accessibilityRole="button"
-          style={zoom ? styles.zoomHit : styles.inlineHit}
-          onPress={onShare}
-        />
-      </View>
-      {zoom ? null : (
-        <Pressable
-          accessibilityRole="button"
-          style={styles.zapHit}
-          onPress={onZap}
-        />
-      )}
     </View>
   );
 }
@@ -116,8 +111,9 @@ const styles = StyleSheet.create({
   },
   inlineRoot: {
     height: 24,
-    marginTop: 8,
-    paddingHorizontal: 8,
+    marginTop: 4,
+    marginLeft: -8,
+    // paddingHorizontal: 0,
   },
   inlineIndented: {
     paddingLeft: 40,
@@ -128,38 +124,5 @@ const styles = StyleSheet.create({
   zoomRoot: {
     height: 48,
     marginTop: 12,
-  },
-  hitRow: {
-    flexDirection: 'row',
-  },
-  inlineHitRow: {
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 32,
-    top: 0,
-  },
-  zoomHitRow: {
-    bottom: 0,
-    justifyContent: 'space-between',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  inlineHit: {
-    minWidth: 34,
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  zoomHit: {
-    flex: 1,
-  },
-  zapHit: {
-    bottom: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    width: 32,
   },
 });

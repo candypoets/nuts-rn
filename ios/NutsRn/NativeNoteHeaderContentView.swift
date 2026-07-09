@@ -6,32 +6,15 @@ import UIKit
 class NativeNoteHeaderContentView: UIView {
   private static let imageCache = NSCache<NSString, UIImage>()
 
-  var onNativeRoute: ((String) -> Void)?
+  @objc var onNativeRoute: ((String) -> Void)?
 
   private var noteBytes: [UInt8]?
   private var relays: [String] = []
   private var relayStatuses: [String: String] = [:]
   private var relayResolutionPending = false
   private var visible = true
-  private lazy var profileHook: NativeProfileHook = {
-    let hook = NativeProfileHook()
-    hook.onProfile = { [weak self] profile in
-      guard let self, profile.pubkey == self.pubkey else { return }
-      self.applyProfile(profile)
-      self.setNeedsDisplay()
-    }
-    return hook
-  }()
-  private lazy var reposterProfileHook: NativeProfileHook = {
-    let hook = NativeProfileHook()
-    hook.onProfile = { [weak self] profile in
-      guard let self, profile.pubkey == self.reposterPubkey else { return }
-      self.reposterPicture = profile.picture
-      self.loadReposterAvatarImage()
-      self.setNeedsDisplay()
-    }
-    return hook
-  }()
+  private var profileHook: NativeProfileHook?
+  private var reposterProfileHook: NativeProfileHook?
   private var depth: Int = 0
   private var main: Bool = false
   private var showRelays: Bool = true
@@ -43,6 +26,7 @@ class NativeNoteHeaderContentView: UIView {
   private var fallbackSubId: String?
 
   private var pubkey: String = ""
+  private var noteId: String = ""
   private var createdAt: UInt32 = 0
   private var subId: String = ""
   private var name: String = ""
@@ -74,8 +58,8 @@ class NativeNoteHeaderContentView: UIView {
   }
 
   deinit {
-    profileHook.cancel()
-    reposterProfileHook.cancel()
+    profileHook?.cancel()
+    reposterProfileHook?.cancel()
   }
 
   @objc(updateNoteBytes:)
@@ -92,6 +76,7 @@ class NativeNoteHeaderContentView: UIView {
     guard let event else {
       if pubkey.isEmpty { return }
       pubkey = ""
+      noteId = ""
       createdAt = 0
       subId = ""
       resetProfileDisplay()
@@ -100,6 +85,7 @@ class NativeNoteHeaderContentView: UIView {
       return
     }
 
+    noteId = event.id ?? ""
     let nextPubkey = event.pubkey ?? ""
     if pubkey != nextPubkey {
       pubkey = nextPubkey
@@ -219,9 +205,9 @@ class NativeNoteHeaderContentView: UIView {
 
     let quote = depth > 0
     let avatarSize: CGFloat = quote ? 16 : 40
-    let horizontalGap: CGFloat = main ? 8 : 4
+    let horizontalGap: CGFloat = quote ? 2 : 6
     let avatarLeft: CGFloat = 0
-    let avatarTop: CGFloat = 0
+    let avatarTop: CGFloat = quote ? 0 : 2
     let textLeft = avatarLeft + avatarSize + horizontalGap
     let top: CGFloat = 0
 
@@ -241,11 +227,11 @@ class NativeNoteHeaderContentView: UIView {
       drawReposterAvatar(
         in: context,
         avatarRect: avatarRect,
-        size: quote ? 11 : 18
+        size: quote ? 11 : 19
       )
     }
 
-    let primaryFont = UIFont.systemFont(ofSize: main ? 16 : 14, weight: .semibold)
+    let primaryFont = UIFont.systemFont(ofSize: main ? 15 : 13, weight: .semibold)
     let secondaryFont = UIFont.systemFont(ofSize: 12, weight: .regular)
 
     let displayName = name.isEmpty ? (shortPubkey(pubkey).isEmpty ? "unknown" : shortPubkey(pubkey)) : name
@@ -279,7 +265,7 @@ class NativeNoteHeaderContentView: UIView {
 
       drawMetaLine(
         startX: cursorX + 8,
-        y: top + 2,
+        y: top + max(0, (primaryFont.lineHeight - secondaryFont.lineHeight) / 2),
         maxX: contentRight,
         font: secondaryFont
       )
@@ -318,6 +304,7 @@ class NativeNoteHeaderContentView: UIView {
       return
     }
 
+    noteId = event.id ?? ""
     let nextPubkey = event.pubkey ?? ""
     if pubkey != nextPubkey {
       pubkey = nextPubkey
@@ -366,19 +353,49 @@ class NativeNoteHeaderContentView: UIView {
     loadAvatarImage()
   }
 
+  private func getProfileHook() -> NativeProfileHook {
+    if let profileHook {
+      return profileHook
+    }
+    let hook = NativeProfileHook()
+    hook.onProfile = { [weak self] profile in
+      guard let self, profile.pubkey == self.pubkey else { return }
+      self.applyProfile(profile)
+      self.setNeedsDisplay()
+    }
+    profileHook = hook
+    return hook
+  }
+
+  private func getReposterProfileHook() -> NativeProfileHook {
+    if let reposterProfileHook {
+      return reposterProfileHook
+    }
+    let hook = NativeProfileHook()
+    hook.onProfile = { [weak self] profile in
+      guard let self, profile.pubkey == self.reposterPubkey else { return }
+      self.reposterPicture = profile.picture
+      self.loadReposterAvatarImage()
+      self.setNeedsDisplay()
+    }
+    reposterProfileHook = hook
+    return hook
+  }
+
   private func refreshProfileSubscription() {
     guard !relayResolutionPending else {
-      profileHook.cancel()
-      reposterProfileHook.cancel()
+      profileHook?.cancel()
+      reposterProfileHook?.cancel()
       return
     }
     guard visible, !pubkey.isEmpty else {
-      profileHook.cancel()
+      profileHook?.cancel()
       if !visible || pubkey.isEmpty {
         emitNativeDebugLog(
           source: "NativeNoteHeaderContentView",
           event: "refreshProfileSubscription-skipped",
-          details: "visible=\(visible), pubkeyEmpty=\(pubkey.isEmpty)"
+          details: "noteId=\(noteId), visible=\(visible), pubkeyEmpty=\(pubkey.isEmpty)",
+          context: noteId
         )
       }
       return
@@ -386,9 +403,10 @@ class NativeNoteHeaderContentView: UIView {
     emitNativeDebugLog(
       source: "NativeNoteHeaderContentView",
       event: "refreshProfileSubscription",
-      details: "pubkey=\(pubkey), relays=\(relays.count)"
+      details: "noteId=\(noteId), pubkey=\(pubkey), relays=\(relays.count)",
+      context: noteId
     )
-    profileHook.update(pubkey: pubkey, relays: relays, visible: visible)
+    getProfileHook().update(pubkey: pubkey, relays: relays, visible: visible)
     refreshReposterProfileSubscription()
   }
 
@@ -439,10 +457,10 @@ class NativeNoteHeaderContentView: UIView {
           visible,
           let reposterPubkey,
           !reposterPubkey.isEmpty else {
-      reposterProfileHook.cancel()
+      reposterProfileHook?.cancel()
       return
     }
-    reposterProfileHook.update(pubkey: reposterPubkey, relays: relays, visible: visible)
+    getReposterProfileHook().update(pubkey: reposterPubkey, relays: relays, visible: visible)
   }
 
   private func parseParsedEvent(_ bytes: [UInt8]?) -> nostr_fb_ParsedEvent? {
@@ -549,11 +567,8 @@ class NativeNoteHeaderContentView: UIView {
       width: size,
       height: size
     )
-    let borderRect = badgeRect.insetBy(dx: -2, dy: -2)
 
     context.saveGState()
-    context.setFillColor(UIColor.systemBackground.cgColor)
-    context.fillEllipse(in: borderRect)
     context.setFillColor(avatarBackgroundColor.cgColor)
     context.fillEllipse(in: badgeRect)
 
@@ -609,8 +624,9 @@ class NativeNoteHeaderContentView: UIView {
   private func drawMetaLine(startX: CGFloat, y: CGFloat, maxX: CGFloat, font: UIFont) {
     var cursorX = startX
     if !nip05.isEmpty, cursorX < maxX {
-      drawBadgeCheck(at: CGPoint(x: cursorX, y: y + 1))
-      cursorX += 18
+      let badgeSlotWidth: CGFloat = 16
+      drawBadgeCheck(at: CGPoint(x: cursorX + 1, y: y + 1))
+      cursorX += badgeSlotWidth + 4
       cursorX += drawInlineText(
         nip05,
         at: CGPoint(x: cursorX, y: y),
@@ -640,12 +656,15 @@ class NativeNoteHeaderContentView: UIView {
 
     let rect = CGRect(x: point.x, y: point.y, width: 14, height: 14)
     context.saveGState()
-    context.setStrokeColor(UIColor(red: 21 / 255, green: 135 / 255, blue: 119 / 255, alpha: 1).cgColor)
-    context.setLineWidth(2.2)
-    context.strokeEllipse(in: rect.insetBy(dx: 1.5, dy: 1.5))
-    context.move(to: CGPoint(x: rect.minX + 4, y: rect.midY))
-    context.addLine(to: CGPoint(x: rect.minX + 6.3, y: rect.maxY - 4.2))
-    context.addLine(to: CGPoint(x: rect.maxX - 3.5, y: rect.minY + 4.2))
+    context.setFillColor(accentColor.cgColor)
+    context.fillEllipse(in: rect.insetBy(dx: 0.5, dy: 0.5))
+    context.setStrokeColor(UIColor(red: 9 / 255, green: 17 / 255, blue: 28 / 255, alpha: 0.9).cgColor)
+    context.setLineWidth(1.9)
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    context.move(to: CGPoint(x: rect.minX + 4.0, y: rect.midY + 0.2))
+    context.addLine(to: CGPoint(x: rect.minX + 6.3, y: rect.maxY - 4.1))
+    context.addLine(to: CGPoint(x: rect.maxX - 3.3, y: rect.minY + 4.2))
     context.strokePath()
     context.restoreGState()
   }

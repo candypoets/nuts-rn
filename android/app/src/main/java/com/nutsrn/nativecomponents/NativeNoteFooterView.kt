@@ -20,6 +20,7 @@ class NativeNoteFooterView(context: Context) : View(context) {
   fun setNoteBytes(@Suppress("UNUSED_PARAMETER") value: ReadableArray?) {}
   fun setRelays(@Suppress("UNUSED_PARAMETER") value: ReadableArray?) {}
   fun setCurrentUserPubkey(@Suppress("UNUSED_PARAMETER") value: String?) {}
+  fun setOptimisticReactionNonce(@Suppress("UNUSED_PARAMETER") value: Int) {}
   fun setVisible(value: Boolean) { visibility = if (value) VISIBLE else INVISIBLE }
   fun setMain(value: Boolean) { main = value; invalidate() }
   fun setZoom(value: Boolean) { zoom = value; invalidate() }

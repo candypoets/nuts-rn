@@ -189,37 +189,32 @@ const ReplyThreadNode = memo(
       () => (itemId ? [...visitedIds, itemId] : visitedIds),
       [itemId, visitedIds],
     );
-    const childReply = useMemo(() => {
-      const child = oldestVisibleChildReply(replies, item, threadPubkey, headerPubkey);
-      const childId = child?.id();
-      if (!childId) return null;
-      return nextVisitedIds.includes(childId) ? null : child;
-    }, [headerPubkey, item, nextVisitedIds, replies, threadPubkey]);
+    const showReplies = useCallback(
+      (post: ParsedEvent) => () => {
+        const child = oldestVisibleChildReply(
+          replies,
+          post,
+          threadPubkey,
+          headerPubkey,
+        );
+        const childId = child?.id();
+        if (!childId || nextVisitedIds.includes(childId)) return [];
+        return child ? [child] : [];
+      },
+      [headerPubkey, nextVisitedIds, replies, threadPubkey],
+    );
 
     return (
-      <>
-        <Note
-          note={item}
-          visible={visible}
-          footer
-          leading={!!childReply}
-          showQuote={false}
-          showRoot={false}
-          tailing={tailing}
-          threadCard
-        />
-        {childReply ? (
-          <ReplyThreadNode
-            headerPubkey={headerPubkey}
-            item={childReply}
-            replies={replies}
-            tailing
-            threadPubkey={threadPubkey}
-            visitedIds={nextVisitedIds}
-            visible={visible}
-          />
-        ) : null}
-      </>
+      <Note
+        note={item}
+        visible={visible}
+        footer
+        showQuote={false}
+        showReplies={showReplies}
+        showRoot={false}
+        tailing={tailing}
+        threadCard
+      />
     );
   },
   (previous, next) =>

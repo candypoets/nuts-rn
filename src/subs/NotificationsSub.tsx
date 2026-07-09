@@ -144,6 +144,18 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
     [pubkey],
   );
 
+  const clearPaginationTimeout = useCallback(() => {
+    if (!paginationTimeoutRef.current) return;
+    clearTimeout(paginationTimeoutRef.current);
+    paginationTimeoutRef.current = null;
+  }, []);
+
+  const clearInitialTimeout = useCallback(() => {
+    if (!initialTimeoutRef.current) return;
+    clearTimeout(initialTimeoutRef.current);
+    initialTimeoutRef.current = null;
+  }, []);
+
   const handleMessage = useCallback(
     (message: WorkerMessage) => {
       const status = asConnectionStatus(message);
@@ -159,7 +171,7 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
       const event = asParsedEvent(message);
       if (event) addEvent(event);
     },
-    [addEvent],
+    [addEvent, clearInitialTimeout],
   );
 
   const handlePaginationMessage = useCallback(
@@ -175,18 +187,6 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
     },
     [addEvent],
   );
-
-  const clearPaginationTimeout = useCallback(() => {
-    if (!paginationTimeoutRef.current) return;
-    clearTimeout(paginationTimeoutRef.current);
-    paginationTimeoutRef.current = null;
-  }, []);
-
-  const clearInitialTimeout = useCallback(() => {
-    if (!initialTimeoutRef.current) return;
-    clearTimeout(initialTimeoutRef.current);
-    initialTimeoutRef.current = null;
-  }, []);
 
   const resetNotificationState = useCallback(() => {
     seenIdsRef.current.clear();
@@ -395,7 +395,7 @@ const NotificationItem = memo(function NotificationItem({
       <NotificationShell
         icon={
           isSingleReply && replyPubkey ? (
-            <Avatar pubkey={replyPubkey} size="sm" link />
+            <Avatar pubkey={replyPubkey} size="md" link />
           ) : (
             <MessageCircleReply size={18} color="#2563eb" />
           )
@@ -428,7 +428,7 @@ const NotificationItem = memo(function NotificationItem({
       <NotificationShell
         icon={
           isSingleReaction && reactionPubkey ? (
-            <Avatar pubkey={reactionPubkey} size="sm" link />
+            <Avatar pubkey={reactionPubkey} size="md" link />
           ) : (
             <Heart size={18} color="#dc2626" fill="#dc2626" />
           )
@@ -475,7 +475,7 @@ const NotificationItem = memo(function NotificationItem({
       <NotificationShell
         icon={
           isSingleRepost && repostPubkey ? (
-            <Avatar pubkey={repostPubkey} size="sm" link />
+            <Avatar pubkey={repostPubkey} size="md" link />
           ) : (
             <Repeat2 size={18} color="#16a34a" />
           )

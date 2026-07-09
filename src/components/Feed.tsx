@@ -53,6 +53,7 @@ export type FeedRenderItemInfo<T> = {
 export type FeedProps<T> = {
   items: T[];
   resetScrollKey?: string | number;
+  scrollToTopKey?: string | number;
   scrollToBottomKey?: string | number;
   getItemId?: (item: T, index: number) => string | number;
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
@@ -79,6 +80,7 @@ export type FeedProps<T> = {
   onRefresh?: () => void | Promise<void>;
   onNearBottom?: (event: {distance: number}) => void;
   onChromeVisibilityChange?: (visible: boolean) => void;
+  onViewportStateChange?: (state: {start: number; down: boolean}) => void;
   contentContainerClassName?: string;
   removeClippedSubviews?: boolean;
 };
@@ -147,6 +149,7 @@ function defaultGetItemId<T>(item: T, index: number) {
 export function Feed<T>({
   items,
   resetScrollKey,
+  scrollToTopKey,
   scrollToBottomKey,
   getItemId = defaultGetItemId,
   renderItem,
@@ -173,6 +176,7 @@ export function Feed<T>({
   onRefresh,
   onNearBottom,
   onChromeVisibilityChange,
+  onViewportStateChange,
   contentContainerClassName = 'pb-28',
   removeClippedSubviews = false,
 }: FeedProps<T>) {
@@ -301,6 +305,15 @@ export function Feed<T>({
   }, [bottom, resetScrollKey]);
 
   useEffect(() => {
+    if (scrollToTopKey === undefined) return;
+    requestAnimationFrame(() => {
+      scrollToTop();
+      lastOffsetRef.current = 0;
+      setDown(true);
+    });
+  }, [scrollToTop, scrollToTopKey]);
+
+  useEffect(() => {
     if (scrollToBottomKey === undefined) return;
     requestAnimationFrame(() => {
       scrollToBottom(true);
@@ -312,6 +325,10 @@ export function Feed<T>({
   useEffect(() => {
     onChromeVisibilityChange?.(!down || start < 1);
   }, [down, onChromeVisibilityChange, start]);
+
+  useEffect(() => {
+    onViewportStateChange?.({start, down});
+  }, [down, onViewportStateChange, start]);
 
   useEffect(() => {
     headerVisible.value = withTiming(start >= 1 && !down ? 1 : 0, {

@@ -12,7 +12,6 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import {markSwipeGestureEnd} from './notes/press';
 
 export const SWIPE_SPRING = {
   damping: 28,
@@ -66,9 +65,6 @@ export function CarouselAnimator({
 
   const handlePageSelected = (event: PagerViewOnPageSelectedEvent) => {
     const index = event.nativeEvent.position;
-    if (index !== selectedIndexRef.current) {
-      markSwipeGestureEnd();
-    }
     selectedIndexRef.current = index;
     virtualIndex.value = withSpring(index, SWIPE_SPRING);
     onIndexChange(index);

@@ -1,16 +1,22 @@
 import './global.css';
 import './textEncodingPolyfill';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated,
   Easing,
   Keyboard,
   Platform,
-  Pressable,
   StatusBar,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
   type KeyboardEvent,
@@ -20,17 +26,12 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
   DefaultTheme,
   NavigationContainer,
-  useNavigation,
   useIsFocused,
 } from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {BlurView} from 'expo-blur';
 import {
-  GlassContainer,
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from 'expo-glass-effect';
+  createNativeBottomTabNavigator,
+  type NativeBottomTabIcon,
+} from '@react-navigation/bottom-tabs/unstable';
 import {
   createNativeStackNavigator,
   type NativeStackScreenProps,
@@ -39,15 +40,12 @@ import { enableFreeze, enableScreens } from 'react-native-screens';
 import {
   ReanimatedLogLevel,
   configureReanimatedLogger,
-  useSharedValue,
 } from 'react-native-reanimated';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import {Home, MessageCircle, Plus, SquareStack} from 'lucide-react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { NostrManagerLike } from '@candypoets/nipworker';
 import {MintQuoteState, Wallet as CashuWallet} from '@cashu/cashu-ts';
 import {
   ReactNativeBackend,
-  createNostrManager,
   hasReactNativeModule,
   setManager,
 } from '@candypoets/nipworker/react-native';
@@ -86,11 +84,11 @@ import {
 } from './src/modals';
 import { CommunitySub, Kind0Sub, Kind1Sub, Kind30023Sub, Kind4Sub, LiveStreamSub, NotificationsSub, TagsSub } from './src/subs';
 import {useAuthStore, useNostrStore, useWalletStore} from './src/stores';
-import { CarouselAnimator } from './src/components/CarouselAnimator';
 import { ImageZoom } from './src/components/ImageZoom';
 import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
 import {rootNavigationRef} from './src/navigation/rootNavigation';
+import {setNativeTabBarVisible} from './src/navigation/nativeTabBar';
 import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
@@ -105,18 +103,13 @@ configureReanimatedLogger({
 });
 
 type RouteId = 'home' | 'explore' | 'chat';
-const ROUTES: Array<{ id: RouteId; label: string; footerLabel: string }> = [
-  { id: 'home', label: 'Home', footerLabel: 'Home' },
-  { id: 'explore', label: 'Explore', footerLabel: 'Feed' },
-  { id: 'chat', label: 'Chat', footerLabel: 'Chats' },
-];
-const APP_FOOTER_HEIGHT = 56;
-const IOS_LIQUID_GLASS_AVAILABLE =
-  Platform.OS === 'ios' &&
-  isLiquidGlassAvailable() &&
-  isGlassEffectAPIAvailable();
-
+type MainTabParamList = {
+  HomeTab: undefined;
+  ExploreTab: undefined;
+  ChatTab: undefined;
+};
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
+const NativeBottomTabs = createNativeBottomTabNavigator<MainTabParamList>();
 const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
 const MINT_QUOTE_RETRY_DELAY_MS = 1200;
 const PUSH_SCREEN_OPTIONS = {
@@ -149,9 +142,7 @@ function createSharedNostrManager(): NostrManagerLike | null {
 
   // This must run before Swift/Kotlin native components use Nipworker hooks.
   // The RN manager initializes the Rust runtime that native components borrow.
-  const manager = __DEV__
-    ? new ReactNativeBackend()
-    : createNostrManager();
+  const manager = new ReactNativeBackend();
 
   setManager(manager);
   return manager;
@@ -210,9 +201,12 @@ function App() {
         console.log(
           '[native-debug]',
           event.logs
-            .map(log => `${log.source}.${log.event} x${log.count ?? 0}`)
+            .map(log => {
+              const context = log.context ? `/${log.context}` : '';
+              return `${log.source}.${log.event}${context} x${log.count ?? 0}`;
+            })
             .join(' | '),
-          event.logs.slice(0, 3).map(log => log.details),
+          event.logs.slice(0, 8).map(log => log.details),
         );
         return;
       }
@@ -762,10 +756,7 @@ function MainTabs({
   nostrEnabled: boolean;
 }) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
-  const [activeRouteId, setActiveRouteId] = useState<RouteId>('explore');
   const [activatedRoutes, setActivatedRoutes] = useState<
     Record<RouteId, boolean>
   >({
@@ -773,421 +764,202 @@ function MainTabs({
     explore: true,
     chat: false,
   });
-  const [chromeVisibleByRoute, setChromeVisibleByRoute] = useState<
-    Record<RouteId, boolean>
-  >({
-    home: true,
-    explore: true,
-    chat: true,
-  });
-  const stackDepth = useSharedValue(0);
-  const dismissProgress = useSharedValue(0);
-  const activeRouteIndex = useMemo(
-    () =>
-      Math.max(
-        0,
-        ROUTES.findIndex(route => route.id === activeRouteId),
-      ),
-    [activeRouteId],
-  );
-  const activeRoute = ROUTES[activeRouteIndex] ?? ROUTES[0];
 
-  useEffect(() => {
-    setActivatedRoutes(current =>
-      current[activeRoute.id]
-        ? current
-        : {
-            ...current,
-            [activeRoute.id]: true,
-          },
-    );
-  }, [activeRoute.id]);
-
-  useEffect(() => scheduleNostrCleanup(manager), [activeRoute.id, manager]);
-
-  const changeRouteIndex = useCallback((index: number) => {
-    setActiveRouteId(ROUTES[index]?.id ?? 'explore');
+  const activateRoute = useCallback((routeId: RouteId) => {
+    setActivatedRoutes(current => {
+      if (current[routeId]) return current;
+      return {...current, [routeId]: true};
+    });
   }, []);
 
-  const setRouteChromeVisible = useCallback((routeId: RouteId, nextVisible: boolean) => {
-    setChromeVisibleByRoute(current =>
-      current[routeId] === nextVisible
-        ? current
-        : {
-            ...current,
-            [routeId]: nextVisible,
+  const tabContext = useMemo(
+    () => ({
+      activatedRoutes,
+      activateRoute,
+      manager,
+      nostrEnabled,
+      themeVars,
+      backgroundColor: theme.colors.base100,
+    }),
+    [
+      activateRoute,
+      activatedRoutes,
+      manager,
+      nostrEnabled,
+      theme.colors.base100,
+      themeVars,
+    ],
+  );
+
+  return (
+    <MainTabContext.Provider value={tabContext}>
+      <NativeBottomTabs.Navigator
+        initialRouteName="ExploreTab"
+        backBehavior="initialRoute"
+        screenOptions={{
+          headerShown: false,
+          lazy: false,
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: theme.colors.primaryContent,
+          tabBarActiveIndicatorColor: `${theme.colors.primary}22`,
+          tabBarControllerMode: 'tabBar',
+          tabBarMinimizeBehavior: 'onScrollDown',
+          tabBarStyle: {
+            backgroundColor: theme.colors.base100,
+            shadowColor: `${theme.colors.primary}33`,
           },
-    );
-  }, []);
-
-  const handleHomeChromeVisibility = useCallback(
-    (nextVisible: boolean) => setRouteChromeVisible('home', nextVisible),
-    [setRouteChromeVisible],
-  );
-  const handleExploreChromeVisibility = useCallback(
-    (nextVisible: boolean) => setRouteChromeVisible('explore', nextVisible),
-    [setRouteChromeVisible],
-  );
-  const handleChatChromeVisibility = useCallback(
-    (nextVisible: boolean) => setRouteChromeVisible('chat', nextVisible),
-    [setRouteChromeVisible],
-  );
-  const footerVisible = chromeVisibleByRoute[activeRoute.id];
-
-  return (
-    <View
-      style={[
-        styles.navigator,
-        themeVars,
-        { backgroundColor: theme.colors.base100 },
-      ]}
-    >
-      <CarouselAnimator
-        activeIndex={activeRouteIndex}
-        pageCount={ROUTES.length}
-        labels={ROUTES.map(route => route.label)}
-        enabled
-        stackDepth={stackDepth}
-        dismissProgress={dismissProgress}
-        stackPresentation="flat"
-        onIndexChange={changeRouteIndex}
-        renderPage={({ index, width }) => (
-          <FeedPage
-            key={ROUTES[index].id}
-            backgroundColor={theme.colors.base100}
-            themeVars={themeVars}
-            width={width}
-          >
-            {ROUTES[index].id === 'home' ? (
-              <HomeFeed
-                enabled={nostrEnabled}
-                visible={activatedRoutes.home}
-                onChromeVisibilityChange={handleHomeChromeVisibility}
-              />
-            ) : ROUTES[index].id === 'explore' ? (
-              <ExploreFeed
-                enabled={nostrEnabled}
-                visible={activatedRoutes.explore}
-                stickyFooter={
-                  IOS_LIQUID_GLASS_AVAILABLE ? () => null : undefined
-                }
-                onChromeVisibilityChange={handleExploreChromeVisibility}
-              />
-            ) : (
-              <ChatFeed
-                enabled={nostrEnabled}
-                visible={activatedRoutes.chat}
-                onChromeVisibilityChange={handleChatChromeVisibility}
-              />
-            )}
-          </FeedPage>
-        )}
-      />
-      <MainFooter
-        activeRouteId={activeRoute.id}
-        routes={ROUTES}
-        visible={footerVisible}
-        onSelectRoute={routeId => {
-          const index = ROUTES.findIndex(route => route.id === routeId);
-          if (index >= 0) changeRouteIndex(index);
         }}
-        onCompose={() => navigation.navigate('Post')}
-      />
-    </View>
-  );
-}
-
-function MainFooter({
-  activeRouteId,
-  routes,
-  visible,
-  onSelectRoute,
-  onCompose,
-}: {
-  activeRouteId: RouteId;
-  routes: typeof ROUTES;
-  visible: boolean;
-  onSelectRoute: (routeId: RouteId) => void;
-  onCompose: () => void;
-}) {
-  const theme = useAppTheme();
-  const insets = useSafeAreaInsets();
-  const {width: windowWidth} = useWindowDimensions();
-  const visibility = useRef(new Animated.Value(visible ? 1 : 0)).current;
-  const activeRouteIndex = Math.max(
-    0,
-    routes.findIndex(route => route.id === activeRouteId),
-  );
-  const selectedProgress = useRef(new Animated.Value(activeRouteIndex)).current;
-  const darkMaterial =
-    theme.id === 'nightsky' ||
-    theme.id === 'matteblack' ||
-    theme.id === 'downfox';
-  const canUseLiquidGlass =
-    IOS_LIQUID_GLASS_AVAILABLE;
-  const composeAvailable = canUseLiquidGlass && activeRouteId === 'explore';
-  const composeVisible = composeAvailable && visible;
-  const composeProgress = useRef(
-    new Animated.Value(composeVisible ? 1 : 0),
-  ).current;
-
-  useEffect(() => {
-    Animated.timing(visibility, {
-      toValue: visible ? 1 : 0,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [visibility, visible]);
-
-  useEffect(() => {
-    Animated.timing(selectedProgress, {
-      toValue: activeRouteIndex,
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [activeRouteIndex, selectedProgress]);
-
-  useEffect(() => {
-    Animated.timing(composeProgress, {
-      toValue: composeVisible ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [composeProgress, composeVisible]);
-
-  const floatingInset = 42;
-  const floatingPadding = 5;
-  const floatingWidth = Math.max(0, windowWidth - floatingInset * 2);
-  const floatingItemWidth = Math.max(
-    0,
-    (floatingWidth - floatingPadding * 2) / routes.length,
-  );
-  const selectedGlassStyle = {
-    width: floatingItemWidth,
-    transform: [
-      {
-        translateX: selectedProgress.interpolate({
-          inputRange: routes.map((_, index) => index),
-          outputRange: routes.map((_, index) => index * floatingItemWidth),
-        }),
-      },
-    ],
-  };
-
-  const animatedStyle = {
-    opacity: canUseLiquidGlass ? 1 : visibility,
-    transform: [
-      {
-        translateY: visibility.interpolate({
-          inputRange: [0, 1],
-          outputRange: [APP_FOOTER_HEIGHT + insets.bottom + 12, 0],
-        }),
-      },
-    ],
-  };
-
-  return (
-    <Animated.View
-      pointerEvents={visible ? 'auto' : 'none'}
-      style={[
-        styles.mainFooter,
-        canUseLiquidGlass && styles.mainFooterFloating,
-        animatedStyle,
-        {
-          backgroundColor: canUseLiquidGlass
-            ? 'transparent'
-            : `${theme.colors.base100}F2`,
-          borderTopColor: canUseLiquidGlass
-            ? 'transparent'
-            : `${theme.colors.primary}33`,
-          bottom: canUseLiquidGlass ? Math.max(insets.bottom - 10, 8) : 0,
-          left: canUseLiquidGlass ? floatingInset : 0,
-          paddingBottom: canUseLiquidGlass ? 0 : Math.max(insets.bottom - 18, 0),
-          right: canUseLiquidGlass ? floatingInset : 0,
-        },
-      ]}
-    >
-      {Platform.OS === 'ios' ? (
-        canUseLiquidGlass ? (
-          <MainFooterGlassBackground
-            selectedGlassStyle={selectedGlassStyle}
-            visible={visible}
-          />
-        ) : (
-          <>
-            <BlurView
-              intensity={70}
-              tint={darkMaterial ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
-            <View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFill,
-                {backgroundColor: `${theme.colors.base100}CC`},
-              ]}
-            />
-          </>
-        )
-      ) : null}
-      {routes.map(route => {
-        const active = route.id === activeRouteId;
-        const color = active ? theme.colors.primary : theme.colors.primaryContent;
-        return (
-          <Pressable
-            key={route.id}
-            accessibilityRole="tab"
-            accessibilityLabel={route.footerLabel}
-            accessibilityState={{selected: active}}
-            hitSlop={8}
-            style={[
-              styles.mainFooterItem,
-              canUseLiquidGlass && {
-                flex: 0,
-                width: floatingItemWidth,
-              },
-            ]}
-            onPress={() => onSelectRoute(route.id)}
-          >
-            <FooterIcon routeId={route.id} active={active} color={color} />
-            <Text
-              style={[
-                styles.mainFooterText,
-                {
-                  color,
-                  opacity: active ? 1 : 0.62,
-                },
-              ]}
-            >
-              {route.footerLabel}
-            </Text>
-            <View
-              style={[
-                styles.mainFooterDot,
-                canUseLiquidGlass && styles.mainFooterDotFloating,
-                {
-                  backgroundColor:
-                    active && !canUseLiquidGlass
-                      ? theme.colors.primary
-                      : 'transparent',
-                },
-              ]}
-            />
-          </Pressable>
-        );
-      })}
-      {canUseLiquidGlass ? (
-        <Animated.View
-          pointerEvents={composeVisible ? 'auto' : 'none'}
-          style={[
-            styles.mainFooterDetachedCompose,
-            {
-              opacity: composeProgress,
-              transform: [
-                {
-                  translateY: composeProgress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [10, 0],
-                  }),
-                },
-                {
-                  scale: composeProgress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.92, 1],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <Pressable
-            accessibilityLabel="Compose"
-            accessibilityRole="button"
-            hitSlop={8}
-            style={styles.mainFooterDetachedComposeButton}
-            onPress={onCompose}
-          >
-            <GlassView
-              colorScheme="dark"
-              glassEffectStyle="clear"
-              isInteractive
-              style={styles.mainFooterDetachedComposeGlass}
-            >
-              <Plus size={31} color={theme.colors.primaryContent} strokeWidth={2.5} />
-            </GlassView>
-          </Pressable>
-        </Animated.View>
-      ) : null}
-    </Animated.View>
-  );
-}
-
-function MainFooterGlassBackground({
-  selectedGlassStyle,
-  visible,
-}: {
-  selectedGlassStyle: {
-    width: number;
-    transform: Array<{translateX: Animated.AnimatedInterpolation<number>}>;
-  };
-  visible: boolean;
-}) {
-  return (
-    <GlassContainer
-      pointerEvents="box-none"
-      spacing={10}
-      style={StyleSheet.absoluteFill}
-    >
-      <GlassView
-        pointerEvents="none"
-        colorScheme="dark"
-        glassEffectStyle={{
-          style: visible ? 'regular' : 'none',
-          animate: true,
-          animationDuration: 0.18,
-        }}
-        style={styles.mainFooterGlass}
-      />
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.mainFooterSelectedSlot, selectedGlassStyle]}
       >
-        <GlassView
-          colorScheme="dark"
-          glassEffectStyle={{
-            style: 'clear',
-            animate: true,
-            animationDuration: 0.18,
+        <NativeBottomTabs.Screen
+          name="HomeTab"
+          component={HomeTabScreen}
+          options={{
+            title: 'Home',
+            tabBarLabel: 'Home',
+            tabBarIcon: tabIcon('home'),
           }}
-          isInteractive
-          style={styles.mainFooterSelectedGlass}
         />
-      </Animated.View>
-    </GlassContainer>
+        <NativeBottomTabs.Screen
+          name="ExploreTab"
+          component={ExploreTabScreen}
+          options={{
+            title: 'Feed',
+            tabBarLabel: 'Feed',
+            tabBarIcon: tabIcon('explore'),
+          }}
+        />
+        <NativeBottomTabs.Screen
+          name="ChatTab"
+          component={ChatTabScreen}
+          options={{
+            title: 'Chats',
+            tabBarLabel: 'Chats',
+            tabBarIcon: tabIcon('chat'),
+          }}
+        />
+      </NativeBottomTabs.Navigator>
+    </MainTabContext.Provider>
   );
 }
 
-function FooterIcon({
-  routeId,
-  active,
-  color,
-}: {
-  routeId: RouteId;
-  active: boolean;
-  color: string;
-}) {
-  const commonProps = {
-    color,
-    size: 26,
-    strokeWidth: active ? 2.4 : 2,
-  };
+type MainTabContextValue = {
+  activatedRoutes: Record<RouteId, boolean>;
+  activateRoute: (routeId: RouteId) => void;
+  manager: NostrManagerLike | null;
+  nostrEnabled: boolean;
+  themeVars: ReturnType<typeof getAppThemeVars>;
+  backgroundColor: string;
+};
 
-  if (routeId === 'home') return <Home {...commonProps} />;
-  if (routeId === 'chat') return <MessageCircle {...commonProps} />;
-  return <SquareStack {...commonProps} />;
+const MainTabContext = createContext<MainTabContextValue | null>(null);
+
+function useMainTabContext(routeId: RouteId) {
+  const context = useContext(MainTabContext);
+  if (!context) {
+    throw new Error('Main tab context is missing');
+  }
+
+  const isFocused = useIsFocused();
+
+  useEffect(() => {
+    if (!isFocused) return;
+    context.activateRoute(routeId);
+    setNativeTabBarVisible(true, false);
+    return scheduleNostrCleanup(context.manager);
+  }, [context, isFocused, routeId]);
+
+  return {
+    ...context,
+    isFocused,
+    visible: context.activatedRoutes[routeId],
+  };
+}
+
+function HomeTabScreen() {
+  const {backgroundColor, isFocused, nostrEnabled, themeVars, visible} =
+    useMainTabContext('home');
+  const handleChromeVisibilityChange = useCallback(
+    (nextVisible: boolean) => {
+      if (isFocused) setNativeTabBarVisible(nextVisible);
+    },
+    [isFocused],
+  );
+
+  return (
+    <FeedPage
+      backgroundColor={backgroundColor}
+      themeVars={themeVars}
+    >
+      <HomeFeed
+        enabled={nostrEnabled}
+        visible={visible}
+        onChromeVisibilityChange={handleChromeVisibilityChange}
+      />
+    </FeedPage>
+  );
+}
+
+function ExploreTabScreen() {
+  const {backgroundColor, isFocused, nostrEnabled, themeVars, visible} =
+    useMainTabContext('explore');
+  const handleChromeVisibilityChange = useCallback(
+    (nextVisible: boolean) => {
+      if (isFocused) setNativeTabBarVisible(nextVisible);
+    },
+    [isFocused],
+  );
+
+  return (
+    <FeedPage
+      backgroundColor={backgroundColor}
+      themeVars={themeVars}
+    >
+      <ExploreFeed
+        enabled={nostrEnabled}
+        visible={visible}
+        stickyFooter={() => null}
+        onChromeVisibilityChange={handleChromeVisibilityChange}
+      />
+    </FeedPage>
+  );
+}
+
+function ChatTabScreen() {
+  const {backgroundColor, isFocused, nostrEnabled, themeVars, visible} =
+    useMainTabContext('chat');
+  const handleChromeVisibilityChange = useCallback(
+    (nextVisible: boolean) => {
+      if (isFocused) setNativeTabBarVisible(nextVisible);
+    },
+    [isFocused],
+  );
+
+  return (
+    <FeedPage
+      backgroundColor={backgroundColor}
+      themeVars={themeVars}
+    >
+      <ChatFeed
+        enabled={nostrEnabled}
+        visible={visible}
+        onChromeVisibilityChange={handleChromeVisibilityChange}
+      />
+    </FeedPage>
+  );
+}
+
+function tabIcon(routeId: RouteId) {
+  if (Platform.OS !== 'ios') return undefined;
+
+  return {
+      type: 'sfSymbol',
+      name:
+        routeId === 'home'
+          ? 'house'
+          : routeId === 'chat'
+            ? 'message'
+            : 'square.stack',
+    } satisfies NativeBottomTabIcon;
 }
 
 function useAuthValue() {
@@ -1590,17 +1362,15 @@ function FeedPage({
   backgroundColor,
   children,
   themeVars,
-  width,
 }: {
   backgroundColor: string;
   children: React.ReactNode;
   themeVars: ReturnType<typeof getAppThemeVars>;
-  width: number;
 }) {
   return (
     <View
       pointerEvents="box-none"
-      style={[styles.page, themeVars, { backgroundColor, width }]}
+      style={[styles.page, themeVars, { backgroundColor }]}
     >
       {children}
     </View>
@@ -1614,105 +1384,6 @@ const styles = StyleSheet.create({
   navigator: {
     flex: 1,
     overflow: 'hidden',
-  },
-  mainFooter: {
-    alignItems: 'flex-start',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    bottom: 0,
-    elevation: 30,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    left: 0,
-    minHeight: APP_FOOTER_HEIGHT,
-    paddingTop: 7,
-    position: 'absolute',
-    right: 0,
-    shadowColor: '#020617',
-    shadowOffset: {width: 0, height: -8},
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    zIndex: 60,
-  },
-  mainFooterFloating: {
-    alignItems: 'center',
-    borderRadius: 28,
-    borderTopWidth: 0,
-    height: 62,
-    minHeight: 62,
-    overflow: 'visible',
-    paddingHorizontal: 5,
-    paddingTop: 0,
-    shadowOffset: {width: 0, height: 10},
-    shadowOpacity: 0.22,
-    shadowRadius: 20,
-  },
-  mainFooterGlass: {
-    bottom: 0,
-    borderRadius: 28,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  mainFooterItem: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 1,
-    height: '100%',
-    justifyContent: 'center',
-  },
-  mainFooterSelectedSlot: {
-    bottom: 0,
-    left: 5,
-    position: 'absolute',
-    top: 0,
-  },
-  mainFooterSelectedGlass: {
-    borderRadius: 23,
-    bottom: 5,
-    left: 4,
-    position: 'absolute',
-    right: 4,
-    top: 5,
-  },
-  mainFooterText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  mainFooterDot: {
-    borderRadius: 999,
-    height: 7,
-    marginTop: 1,
-    width: 7,
-  },
-  mainFooterDotFloating: {
-    height: 5,
-    width: 5,
-  },
-  mainFooterDetachedCompose: {
-    position: 'absolute',
-    right: -14,
-    top: -72,
-  },
-  mainFooterDetachedComposeButton: {
-    borderColor: 'rgba(214, 226, 240, 0.38)',
-    borderRadius: 999,
-    borderWidth: 1,
-    height: 58,
-    overflow: 'hidden',
-    shadowColor: '#020617',
-    shadowOffset: {width: 0, height: 10},
-    shadowOpacity: 0.3,
-    shadowRadius: 18,
-    width: 58,
-  },
-  mainFooterDetachedComposeGlass: {
-    alignItems: 'center',
-    borderRadius: 999,
-    height: 58,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 58,
   },
   page: {
     flex: 1,

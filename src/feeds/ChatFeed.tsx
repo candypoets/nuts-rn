@@ -28,7 +28,6 @@ import {MessageCirclePlus} from 'lucide-react-native';
 import {AppButton} from '../components/AppButton';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
-import {wasRecentSwipeGesture} from '../components/notes/press';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {RootStackParamList} from '../navigation/types';
@@ -619,11 +618,9 @@ function ChatRow({
       className="mt-1 min-h-24 flex-row gap-3 overflow-hidden rounded-lg bg-base-300/90 px-3 py-4 shadow-sm"
       onPress={event => {
         event.stopPropagation();
-        if (!wasRecentSwipeGesture()) {
-          pushDistinct(navigation, 'ChatThread', {
-            peerPubkey: conversation.peerPubkey,
-          });
-        }
+        pushDistinct(navigation, 'ChatThread', {
+          peerPubkey: conversation.peerPubkey,
+        });
       }}
     >
       <Avatar pubkey={conversation.peerPubkey} size="lg" />

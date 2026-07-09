@@ -17,21 +17,19 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import { ContentData } from '@candypoets/nipworker';
 import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
   asKind6,
-  asNostrData,
   asParsedEvent,
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
 import { useEffectiveAuthorRelays } from '../../hooks/useAuthorRelays';
-import {pushDistinct} from '../../navigation/pushDistinct';
+import { pushDistinct } from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
-import {useAppTheme} from '../../theme';
+import { useAppTheme } from '../../theme';
 import { BOOTSTRAP_RELAYS, useNostrStore, useRelayStore } from '../../stores';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
@@ -41,9 +39,8 @@ import { Kind1068Content } from './Kind1068Content';
 import { Kind30023Content } from './Kind30023Content';
 import { KindPreGenericContent } from './KindPreGenericContent';
 import { ZapSummary } from './ZapSummary';
-import {eventTags, tagValue} from './kindHelpers';
+import { eventTags, tagValue } from './kindHelpers';
 import type { RelayStatusSink } from './RelaysList';
-import { wasRecentSwipeGesture } from './press';
 import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 
 const EMPTY_RELAYS: string[] = [];
@@ -57,9 +54,6 @@ const NOTE_FALLBACK_RELAYS = [
   'wss://relay.primal.net',
   'wss://nos.lol',
 ];
-
-function keepForPlaceholderExperiment(..._values: unknown[]) {}
-const fbArrayLoose = fbArray as (value: unknown, key: string) => unknown[];
 
 function isRelayUrl(value: unknown): value is string {
   return typeof value === 'string' && /^wss?:\/\//.test(value);
@@ -99,7 +93,10 @@ function toRequestObject(request: Request): RequestObject {
   };
 }
 
-function withKnownRelays(request: RequestObject, relays: string[]): RequestObject {
+function withKnownRelays(
+  request: RequestObject,
+  relays: string[],
+): RequestObject {
   return {
     ...request,
     relays: relayList([...(request.relays || []), ...relays]),
@@ -138,6 +135,7 @@ type NoteProps = {
   leading?: boolean;
   tailing?: boolean;
   ancestorIds?: string[];
+  showReplies?: (post: ParsedEvent) => (events: ParsedEvent[]) => ParsedEvent[];
 };
 
 function parsedEventId(event?: ParsedEvent) {
@@ -183,7 +181,6 @@ type LoadingNoteBodyProps = {
   cardStyle?: ViewStyle;
   effectiveId: string;
   threadConnectors: React.ReactNode;
-  visible: boolean;
 };
 
 type NotFoundNoteBodyProps = LoadingNoteBodyProps & {
@@ -196,45 +193,17 @@ type UnsupportedNoteBodyProps = {
   cardStyle?: ViewStyle;
   effectiveNote: ParsedEvent;
   threadConnectors: React.ReactNode;
-  visible: boolean;
 };
-
-type PlaceholderNoteBodyProps = {
-  containerClassName: string;
-  cardStyle?: ViewStyle;
-  depth: number;
-  effectiveNote: ParsedEvent;
-  footer: boolean;
-  main: boolean;
-  relays?: string[];
-  relayStatusSink: RelayStatusSink;
-  reposterPubkey?: string;
-  showRelays: boolean;
-  subId: string;
-  threadConnectors: React.ReactNode;
-  visible: boolean;
-};
-
-function NoteVisibilityDebug({visible}: {visible: boolean}) {
-  if (!__DEV__) return null;
-  return (
-    <Text className="mb-1 font-mono text-[10px] text-primary-content opacity-50">
-      {visible ? 'visible' : 'not visible'}
-    </Text>
-  );
-}
 
 const LoadingNoteBody = memo(function LoadingNoteBody({
   cardStyle,
   containerClassName,
   effectiveId,
   threadConnectors,
-  visible,
 }: LoadingNoteBodyProps) {
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      {/* <NoteVisibilityDebug visible={visible} /> */}
       <Text className="text-xs text-primary-content">
         Loading note {effectiveId ? `${effectiveId.slice(0, 12)}...` : ''}
       </Text>
@@ -249,13 +218,11 @@ const NotFoundNoteBody = memo(function NotFoundNoteBody({
   onRetry,
   retrying,
   threadConnectors,
-  visible,
 }: NotFoundNoteBodyProps) {
   const theme = useAppTheme();
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      {/* <NoteVisibilityDebug visible={visible} /> */}
       <View className="flex-row items-center gap-2">
         <CloudOff
           size={16}
@@ -299,84 +266,13 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
   containerClassName,
   effectiveNote,
   threadConnectors,
-  visible,
 }: UnsupportedNoteBodyProps) {
   return (
     <View className={containerClassName} style={cardStyle}>
       {threadConnectors}
-      {/* <NoteVisibilityDebug visible={visible} /> */}
       <Text className="text-sm text-primary-content">
         Kind {effectiveNote.kind()} is not supported yet.
       </Text>
-    </View>
-  );
-});
-
-const PlaceholderNoteBody = memo(function PlaceholderNoteBody({
-  cardStyle,
-  containerClassName,
-  depth,
-  effectiveNote,
-  footer,
-  main,
-  relays,
-  relayStatusSink,
-  reposterPubkey,
-  showRelays,
-  subId,
-  threadConnectors,
-  visible,
-}: PlaceholderNoteBodyProps) {
-  return (
-    <View className={containerClassName} style={cardStyle}>
-      {threadConnectors}
-      <Header
-        note={effectiveNote}
-        subId={subId}
-        depth={depth}
-        main={main}
-        relays={relays}
-        showRelays={showRelays}
-        relayStatusSink={relayStatusSink}
-        reposterPubkey={reposterPubkey}
-      />
-      <View
-        className={[
-          main ? 'mt-2' : depth > 0 ? 'mt-1' : '-mt-1',
-          depth > 0 || main ? 'ml-0' : 'ml-10',
-          'gap-1',
-        ].join(' ')}
-      >
-        <Text className="text-sm font-semibold text-base-content">
-          Placeholder note
-        </Text>
-        <Text className="font-mono text-[11px] text-primary-content opacity-60">
-          {effectiveNote.kind()} / {effectiveNote.id()?.slice(0, 12) || 'missing'}
-        </Text>
-        <Text className="text-xs text-primary-content opacity-50">
-          {visible ? 'visible lifecycle active' : 'hidden lifecycle paused'}
-        </Text>
-      </View>
-      {depth === 0 ? (
-        <ZapSummary
-          note={effectiveNote}
-          visible={visible}
-          relays={relays}
-          className={[
-            '-mt-1 -mb-5 w-full pl-2 pr-2.5',
-            main ? 'pl-2' : 'pl-10',
-          ].join(' ')}
-        />
-      ) : null}
-      {footer && depth === 0 ? (
-        <Footer
-          note={effectiveNote}
-          visible={visible}
-          main={main}
-          relays={relays ?? EMPTY_RELAYS}
-          relayStatusSink={relayStatusSink}
-        />
-      ) : null}
     </View>
   );
 });
@@ -412,7 +308,6 @@ const NoteBody = memo(
         {ancestor}
         <View className={containerClassName} style={cardStyle}>
           {threadConnectors}
-          {/* <NoteVisibilityDebug visible={visible} /> */}
           <Header
             note={effectiveNote}
             subId={subId}
@@ -428,17 +323,19 @@ const NoteBody = memo(
               main
                 ? 'mt-1 flex-row gap-0'
                 : isQuote
-                  ? '-mt-1 flex-row gap-0'
-                  : fullBleedContent
-                    ? 'mt-2 flex-row gap-0'
-                    : '-mt-4 flex-row gap-2'
+                ? '-mt-1 flex-row gap-0'
+                : fullBleedContent
+                ? 'mt-2 flex-row gap-0'
+                : '-mt-6 flex-row gap-4'
             }
             onPress={event => {
               event.stopPropagation();
-              if (!wasRecentSwipeGesture()) onOpen();
+              onOpen();
             }}
           >
-            <View className={isQuote || main || fullBleedContent ? 'w-0' : 'w-8'} />
+            <View
+              className={isQuote || main || fullBleedContent ? 'w-0' : 'w-8'}
+            />
             <View
               className={[
                 depth >= 1 ? 'min-w-0 flex-1 pt-1' : 'min-w-0 flex-1',
@@ -450,6 +347,7 @@ const NoteBody = memo(
                   content={parsedContent}
                   shortContent={shortContent}
                   note={effectiveNote}
+                  relays={relays}
                   depth={depth}
                   showQuote={showQuote}
                   showMedia={showMedia}
@@ -509,7 +407,6 @@ const NoteBody = memo(
     previous.contentOverride === next.contentOverride &&
     previous.fullBleedContent === next.fullBleedContent,
 );
-keepForPlaceholderExperiment(NoteBody);
 
 function NoteComponent({
   note,
@@ -528,19 +425,21 @@ function NoteComponent({
   leading = false,
   tailing = false,
   ancestorIds = [],
+  showReplies,
 }: NoteProps) {
   const theme = useAppTheme();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const fetchedRef = useRef<ParsedEvent | null>(null);
   const contextRef = useRef<ParsedEvent[]>(context);
-  const relayStatusSink = useRef<((relayUrl: string, status: string) => void) | null>(
-    null,
-  );
+  const relayStatusSink = useRef<
+    ((relayUrl: string, status: string) => void) | null
+  >(null);
   const [contextVersion, setContextVersion] = useState(0);
   const readRelays = useNostrStore(state => state.readRelays);
   const relayStatuses = useRelayStore(state => state.relayStatuses);
   const [extraSearchRelays, setExtraSearchRelays] = useState<string[]>([]);
+  const [replies, setReplies] = useState<ParsedEvent[]>([]);
   const [retryNonce, setRetryNonce] = useState(0);
   const [missingSearchState, setMissingSearchState] = useState<
     'loading' | 'not-found'
@@ -565,7 +464,9 @@ function NoteComponent({
     ? kind6?.repostedEvent?.() ?? effectiveNote
     : effectiveNote;
   const displayId = displayNote?.id() || effectiveId;
-  const reposterPubkey = isRepost ? effectiveNote?.pubkey() || undefined : undefined;
+  const reposterPubkey = isRepost
+    ? effectiveNote?.pubkey() || undefined
+    : undefined;
   const lookupRelays = useMemo(
     () => relayList([...relays, ...extraSearchRelays, ...DEFAULT_FEED_RELAYS]),
     [extraSearchRelays, relays],
@@ -582,7 +483,9 @@ function NoteComponent({
     fallbackRelays: noteFallbackRelays,
   });
   const noteRelays = headerRelays;
-  const noteRelayKey = noteRelays.join('|');
+  // contextVersion forces refreshes when contextRef receives subscription events.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const contextEvents = useMemo(() => contextRef.current, [contextVersion]);
   const openNote = useCallback(() => {
     if (disableOpen) {
       Keyboard.dismiss();
@@ -599,7 +502,9 @@ function NoteComponent({
     });
     if (kind === 30023) {
       const pubkey = displayNote?.pubkey() || '';
-      const identifier = displayNote ? tagValue(eventTags(displayNote), 'd') : '';
+      const identifier = displayNote
+        ? tagValue(eventTags(displayNote), 'd')
+        : '';
       console.log('[kind30023] open article', {
         articleId: displayId,
         pubkey: pubkey ? `${pubkey.slice(0, 12)}...` : null,
@@ -607,11 +512,14 @@ function NoteComponent({
         relays: noteRelays,
       });
       if (!pubkey || !identifier) {
-        console.warn('[kind30023] cannot open article without pubkey and d tag', {
-          articleId: displayId,
-          hasPubkey: !!pubkey,
-          identifier,
-        });
+        console.warn(
+          '[kind30023] cannot open article without pubkey and d tag',
+          {
+            articleId: displayId,
+            hasPubkey: !!pubkey,
+            identifier,
+          },
+        );
         return;
       }
       pushDistinct(navigation, 'Kind30023Thread', {
@@ -624,8 +532,15 @@ function NoteComponent({
       });
       return;
     }
-    pushDistinct(navigation, 'Kind1Thread', {nevent});
-  }, [disableOpen, displayId, displayNote, effectiveId, navigation, noteRelays]);
+    pushDistinct(navigation, 'Kind1Thread', { nevent });
+  }, [
+    disableOpen,
+    displayId,
+    displayNote,
+    effectiveId,
+    navigation,
+    noteRelays,
+  ]);
 
   useEffect(() => {
     const nextContext = [...contextRef.current];
@@ -700,7 +615,7 @@ function NoteComponent({
   const contentOverride = useMemo(() => {
     if (!displayNote) return null;
     if (isMediaEventKind(displayNote.kind())) {
-      return <Kind20Content note={displayNote} />;
+      return <Kind20Content note={displayNote} relays={relays} />;
     }
     if (displayNote.kind() === 1068) {
       return <Kind1068Content note={displayNote} visible={visible} />;
@@ -716,7 +631,7 @@ function NoteComponent({
       return <KindPreGenericContent note={displayNote} />;
     }
     return null;
-  }, [displayNote, visible]);
+  }, [displayNote, relays, visible]);
   const isMediaEvent = isMediaEventKind(displayNote?.kind());
   const isKind30023 = displayNote?.kind() === 30023;
   const effectiveMain = main || ((isMediaEvent || isKind30023) && depth === 0);
@@ -731,9 +646,7 @@ function NoteComponent({
   const eventRefIds = useMemo(
     () => [
       ...new Set(
-        eventRefs
-          .map(ref => ref.id?.())
-          .filter((id): id is string => !!id),
+        eventRefs.map(ref => ref.id?.()).filter((id): id is string => !!id),
       ),
     ],
     [eventRefs],
@@ -745,6 +658,11 @@ function NoteComponent({
   const shortContent = useMemo(
     () => (kind1 ? fbArray(kind1, 'shortenedContent') : []),
     [kind1],
+  );
+  const visibleReplies = useMemo(
+    () =>
+      showReplies && displayNote ? showReplies(displayNote)(replies) : [],
+    [displayNote, replies, showReplies],
   );
   const shouldRenderAncestor = !!(
     showRoot &&
@@ -777,7 +695,7 @@ function NoteComponent({
           id =>
             !eventRefIds.includes(id) &&
             !ancestorIds.includes(id) &&
-            !contextRef.current.some(event => event?.id?.() === id),
+            !contextEvents.some(event => event?.id?.() === id),
         )
       : [];
     const ancestorRequests: RequestObject[] = ancestorRequestIds.length
@@ -809,12 +727,10 @@ function NoteComponent({
   }, [
     ancestorIds,
     ancestorRelays,
-    contextVersion,
+    contextEvents,
     displayNote,
     effectiveNote,
-    effectiveId,
     eventRefIds,
-    lookupRelayKey,
     lookupRelays,
     noteRelays,
     noteSubscriptionId,
@@ -822,11 +738,13 @@ function NoteComponent({
   ]);
   const isQuote = depth > 0;
   const hasTopThreadConnector = shouldRenderAncestor || tailing;
-  const hasBottomThreadConnector = leading;
+  const hasBottomThreadConnector = leading || visibleReplies.length > 0;
   const containerClassName = threadCard
     ? [
         'relative rounded-xl border border-base-200 bg-base-300/95 px-3 py-3',
-        hasTopThreadConnector || hasBottomThreadConnector ? 'shadow-none' : 'shadow-sm',
+        hasTopThreadConnector || hasBottomThreadConnector
+          ? 'shadow-none'
+          : 'shadow-sm',
         hasTopThreadConnector ? '-mt-px rounded-t-none border-t-0' : '',
         hasBottomThreadConnector ? 'rounded-b-none border-b-0' : '',
       ].join(' ')
@@ -852,7 +770,7 @@ function NoteComponent({
     if (theme.colors.base100 !== '#111111') return undefined;
     return {
       shadowColor: '#000000',
-      shadowOffset: {width: 0, height: 3},
+      shadowOffset: { width: 0, height: 3 },
       shadowOpacity: 0.36,
       shadowRadius: 8,
       elevation: 3,
@@ -860,7 +778,8 @@ function NoteComponent({
   }, [cardlessMain, isQuote, theme.colors.base100]);
   const threadConnectorStyle = useMemo<ViewStyle>(
     () => ({
-      backgroundColor: theme.id === 'snowwhite' ? '#dddddd' : theme.colors.base200,
+      backgroundColor:
+        theme.id === 'snowwhite' ? '#dddddd' : theme.colors.base200,
     }),
     [theme.colors.base200, theme.id],
   );
@@ -902,6 +821,13 @@ function NoteComponent({
           fetchedRef.current = parsed;
         }
         addContextEvent(parsed);
+        if (showReplies && parsed.id() !== noteSubscriptionId) {
+          setReplies(current =>
+            current.some(reply => parsedEventId(reply) === parsed.id())
+              ? current
+              : [...current, parsed],
+          );
+        }
       },
       { bytesPerEvent: NOTE_BYTES_PER_EVENT },
     );
@@ -915,6 +841,7 @@ function NoteComponent({
     noteId,
     noteSubscriptionId,
     noteSubscriptionRequests,
+    showReplies,
     visible,
   ]);
 
@@ -937,41 +864,11 @@ function NoteComponent({
         context={contextRef.current}
         visible={visible}
         depth={quoteDepth}
-        relays={[
-          ...relayList([
-            ...quoteRelays,
-            ...noteRelays,
-          ]),
-        ]}
+        relays={[...relayList([...quoteRelays, ...noteRelays])]}
         footer={false}
       />
     ),
     [noteRelays, visible],
-  );
-  const quotePlaceholders = useMemo(
-    () => {
-      if (!showQuote || depth >= 3) return [];
-      return parsedContent.flatMap((block, index) => {
-        if (block.dataType() !== ContentData.NostrData) return [];
-        const nostr = asNostrData(block);
-        const id = nostr?.id?.();
-        if (!id) return [];
-        const entityRelays = fbArrayLoose(nostr, 'relays').map(relay =>
-          String(relay),
-        );
-        const key = `placeholder-quote-${index}-${id}`;
-        return [
-          renderQuote({
-            id,
-            author: nostr?.author?.() || undefined,
-            relays: entityRelays,
-            depth: depth + 1,
-            key,
-          }),
-        ];
-      });
-    },
-    [depth, parsedContent, renderQuote, showQuote],
   );
   const ancestor = shouldRenderAncestor ? (
     <Note
@@ -986,13 +883,6 @@ function NoteComponent({
       ancestorIds={displayId ? [...ancestorIds, displayId] : ancestorIds}
     />
   ) : null;
-  keepForPlaceholderExperiment(
-    noteRelayKey,
-    openNote,
-    shortContent,
-    contentOverride,
-  );
-
   if (depth > 3) {
     return null;
   }
@@ -1007,7 +897,6 @@ function NoteComponent({
           onRetry={retryWithFallbackRelays}
           retrying={retryNonce > 0}
           threadConnectors={threadConnectors}
-          visible={visible}
         />
       );
     }
@@ -1018,7 +907,6 @@ function NoteComponent({
         containerClassName={containerClassName}
         effectiveId={effectiveId}
         threadConnectors={threadConnectors}
-        visible={visible}
       />
     );
   }
@@ -1035,30 +923,53 @@ function NoteComponent({
         containerClassName={containerClassName}
         effectiveNote={(supportedDisplayNote ?? effectiveNote) as ParsedEvent}
         threadConnectors={threadConnectors}
-        visible={visible}
       />
     );
   }
 
   return (
     <>
-      {ancestor}
-      <PlaceholderNoteBody
+      <NoteBody
+        ancestor={ancestor}
         cardStyle={cardStyle}
         containerClassName={containerClassName}
         depth={depth}
         effectiveNote={supportedDisplayNote as ParsedEvent}
+        subId={displayId}
         footer={footer}
         main={effectiveMain || isMediaEvent}
-        relays={noteRelays}
-        relayStatusSink={relayStatusSink}
-        reposterPubkey={reposterPubkey}
-        showRelays={!!noteRelays.length}
-        subId={displayId}
+        isQuote={isQuote}
+        renderQuote={renderQuote}
+        shortContent={shortContent}
+        parsedContent={parsedContent}
+        showQuote={showQuote}
+        showMedia={showMedia}
         threadConnectors={threadConnectors}
         visible={visible}
+        onOpen={openNote}
+        relays={noteRelays}
+        showRelays={!!noteRelays.length}
+        relayStatusSink={relayStatusSink}
+        reposterPubkey={reposterPubkey}
+        contentOverride={contentOverride}
+        fullBleedContent={fullWidthCardMain}
       />
-      {quotePlaceholders}
+      {visibleReplies.map(reply => (
+        <Note
+          key={reply.id()}
+          note={reply}
+          context={contextRef.current}
+          visible={visible}
+          relays={noteRelays}
+          footer={footer}
+          showQuote={showQuote}
+          showMedia={showMedia}
+          showRoot={false}
+          showReplies={showReplies}
+          tailing
+          threadCard={threadCard}
+        />
+      ))}
     </>
   );
 }
@@ -1092,6 +1003,7 @@ export const Note = memo(
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.leading ?? false) === (next.leading ?? false) &&
     (previous.tailing ?? false) === (next.tailing ?? false) &&
+    previous.showReplies === next.showReplies &&
     sameStringArray(
       previous.ancestorIds ?? EMPTY_RELAYS,
       next.ancestorIds ?? EMPTY_RELAYS,

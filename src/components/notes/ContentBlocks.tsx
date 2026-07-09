@@ -25,12 +25,21 @@ import {
   fetchLinkPreview,
   type OpenGraphData,
 } from '../../lib/linkPreview';
+import {
+  NativeMediaViewer,
+  isNativeMediaViewerAvailable,
+} from '../native/NativeMediaViewer';
+import {
+  NativeLinkPreview,
+  isNativeLinkPreviewAvailable,
+} from '../native/NativeLinkPreview';
 
 type ContentBlocksProps = {
   content: ContentBlock[];
   shortContent?: ContentBlock[];
   note?: ParsedEvent;
   context?: ParsedEvent[];
+  relays?: string[];
   depth?: number;
   showQuote?: boolean;
   showMedia?: boolean;
@@ -285,6 +294,7 @@ function ContentBlocksComponent({
   showMedia = true,
   forceFullContent = false,
   renderQuote,
+  relays,
 }: ContentBlocksProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -463,7 +473,11 @@ function ContentBlocksComponent({
         continue;
       }
       renderedBlocks.push(
-        <LinkPreviewCard key={blockKey} text={block.text() || url} url={url} />,
+        isNativeLinkPreviewAvailable ? (
+          <NativeLinkPreview key={blockKey} text={block.text() || url} url={url} />
+        ) : (
+          <LinkPreviewCard key={blockKey} text={block.text() || url} url={url} />
+        ),
       );
       index += 1;
       continue;
@@ -481,16 +495,30 @@ function ContentBlocksComponent({
       }
       renderedBlocks.push(
         <React.Fragment key={blockKey}>
-          <ImageGrid
-            note={note}
-            links={[
-              {
-                src: image?.url?.() || block.text() || '',
-                type: 'image',
-                dim: image?.dim?.(),
-              },
-            ]}
-          />
+          {isNativeMediaViewerAvailable ? (
+            <NativeMediaViewer
+              note={note}
+              relays={relays}
+              links={[
+                {
+                  src: image?.url?.() || block.text() || '',
+                  type: 'image',
+                  dim: image?.dim?.(),
+                },
+              ]}
+            />
+          ) : (
+            <ImageGrid
+              note={note}
+              links={[
+                {
+                  src: image?.url?.() || block.text() || '',
+                  type: 'image',
+                  dim: image?.dim?.(),
+                },
+              ]}
+            />
+          )}
         </React.Fragment>,
       );
       index += 1;
@@ -509,17 +537,32 @@ function ContentBlocksComponent({
       }
       renderedBlocks.push(
         <React.Fragment key={blockKey}>
-          <ImageGrid
-            note={note}
-            links={[
-              {
-                src: video?.url?.() || block.text() || '',
-                type: 'video',
-                blurhash: video?.thumbnail?.() || undefined,
-                dim: video?.dim?.(),
-              },
-            ]}
-          />
+          {isNativeMediaViewerAvailable ? (
+            <NativeMediaViewer
+              note={note}
+              relays={relays}
+              links={[
+                {
+                  src: video?.url?.() || block.text() || '',
+                  type: 'video',
+                  blurhash: video?.thumbnail?.() || undefined,
+                  dim: video?.dim?.(),
+                },
+              ]}
+            />
+          ) : (
+            <ImageGrid
+              note={note}
+              links={[
+                {
+                  src: video?.url?.() || block.text() || '',
+                  type: 'video',
+                  blurhash: video?.thumbnail?.() || undefined,
+                  dim: video?.dim?.(),
+                },
+              ]}
+            />
+          )}
         </React.Fragment>,
       );
       index += 1;
@@ -550,29 +593,56 @@ function ContentBlocksComponent({
       }
       renderedBlocks.push(
         <React.Fragment key={blockKey}>
-          <ImageGrid
-            note={note}
-            links={
-              mediaGroup
-                ? fbArray(mediaGroup, 'items').map(item => {
-                    const image = item.image();
-                    const video = item.video();
-                    return image
-                      ? {
-                          src: image.url() || '',
-                          type: 'image',
-                          dim: image.dim(),
-                        }
-                      : {
-                          src: video?.url() || '',
-                          type: 'video',
-                          blurhash: video?.thumbnail() || undefined,
-                          dim: video?.dim(),
-                        };
-                  })
-                : []
-            }
-          />
+          {isNativeMediaViewerAvailable ? (
+            <NativeMediaViewer
+              note={note}
+              relays={relays}
+              links={
+                mediaGroup
+                  ? fbArray(mediaGroup, 'items').map(item => {
+                      const image = item.image();
+                      const video = item.video();
+                      return image
+                        ? {
+                            src: image.url() || '',
+                            type: 'image',
+                            dim: image.dim(),
+                          }
+                        : {
+                            src: video?.url() || '',
+                            type: 'video',
+                            blurhash: video?.thumbnail() || undefined,
+                            dim: video?.dim(),
+                          };
+                    })
+                  : []
+              }
+            />
+          ) : (
+            <ImageGrid
+              note={note}
+              links={
+                mediaGroup
+                  ? fbArray(mediaGroup, 'items').map(item => {
+                      const image = item.image();
+                      const video = item.video();
+                      return image
+                        ? {
+                            src: image.url() || '',
+                            type: 'image',
+                            dim: image.dim(),
+                          }
+                        : {
+                            src: video?.url() || '',
+                            type: 'video',
+                            blurhash: video?.thumbnail() || undefined,
+                            dim: video?.dim(),
+                          };
+                    })
+                  : []
+              }
+            />
+          )}
         </React.Fragment>,
       );
       index += 1;
@@ -610,6 +680,7 @@ export const ContentBlocks = memo(
     previous.content === next.content &&
     previous.shortContent === next.shortContent &&
     previous.note?.id() === next.note?.id() &&
+    previous.relays === next.relays &&
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.showQuote ?? true) === (next.showQuote ?? true) &&
     (previous.showMedia ?? true) === (next.showMedia ?? true) &&

@@ -447,7 +447,10 @@ export function ImageGrid({
 }: ImageGridProps) {
   const viewportWidth = useUIStore(state => state.dimensions.width);
   const setImageZoom = useUIStore(state => state.setImageZoom);
-  const validLinks = useMemo(() => links.filter(link => link.src), [links]);
+  const validLinks = useMemo(
+    () => links.filter(link => link.src),
+    [links],
+  );
   const displayLinks = useMemo(
     () => validLinks.slice(0, MAX_DISPLAY_LINKS),
     [validLinks],
@@ -488,8 +491,6 @@ export function ImageGrid({
               links: validLinks,
               note,
               zoomed: index,
-              gridId: `${validLinks[0]?.src || 'media'}-${validLinks.length}`,
-              videoTime: 0,
             });
           };
 

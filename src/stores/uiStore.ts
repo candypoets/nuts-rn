@@ -17,8 +17,6 @@ export type UIStore = {
     }[];
     note?: ParsedEvent;
     zoomed?: number;
-    gridId: string;
-    videoTime: number;
   };
   themeId: string | null;
   debugEnabled: boolean;
@@ -32,7 +30,7 @@ export const useUIStore = create<UIStore>()(
   persist(
     set => ({
       dimensions: { width: initialDimensions.width, height: initialDimensions.height },
-      imageZoom: { links: [], gridId: '', videoTime: 0 },
+      imageZoom: { links: [] },
       themeId: null,
       debugEnabled: false,
       setDimensions: dimensions => set({ dimensions }),

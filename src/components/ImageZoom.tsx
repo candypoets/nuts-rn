@@ -94,8 +94,6 @@ export function ImageZoom() {
       links: [],
       note: undefined,
       zoomed: undefined,
-      gridId: '',
-      videoTime: 0,
     });
   }, [setImageZoom]);
 
@@ -251,7 +249,9 @@ function ZoomNoteOverlay({
           ) : null}
           <Footer note={note} visible={zoomVisible} mode="zoom" />
         </View>
-        {link?.type === 'video' ? <ZoomVideoControls src={link.src} /> : null}
+        {link?.type === 'video' ? (
+          <ZoomVideoControls src={link.src} />
+        ) : null}
       </View>
     </View>
   );
@@ -500,36 +500,22 @@ function ZoomImage({
   );
 }
 
-function ZoomVideo({
-  link,
+function createDismissPan({
   height,
   onDismiss,
-  onToggleChrome,
   overlayTranslateY,
   backgroundOpacity,
+  dismissStartX,
+  dismissStartY,
 }: {
-  link: ZoomLink;
   height: number;
   onDismiss: () => void;
-  onToggleChrome: () => void;
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
+  dismissStartX: SharedValue<number>;
+  dismissStartY: SharedValue<number>;
 }) {
-  const player = useSharedVideoPlayer(link.src);
-  const dismissStartX = useSharedValue(0);
-  const dismissStartY = useSharedValue(0);
-
-  useEffect(() => {
-    player.loop = false;
-    player.muted = false;
-    player.volume = 1;
-    player.timeUpdateEventInterval = 0.25;
-    player.showNowPlayingNotification = false;
-    player.staysActiveInBackground = false;
-    player.play();
-  }, [player]);
-
-  const dismissPan = Gesture.Pan()
+  return Gesture.Pan()
     .manualActivation(true)
     .onTouchesDown(event => {
       const touch = event.allTouches[0];
@@ -575,6 +561,72 @@ function ZoomVideo({
       overlayTranslateY.value = withTiming(0, { duration: 160 });
       backgroundOpacity.value = withTiming(1, { duration: 140 });
     });
+}
+
+function ZoomVideo({
+  link,
+  height,
+  onDismiss,
+  onToggleChrome,
+  overlayTranslateY,
+  backgroundOpacity,
+}: {
+  link: ZoomLink;
+  height: number;
+  onDismiss: () => void;
+  onToggleChrome: () => void;
+  overlayTranslateY: SharedValue<number>;
+  backgroundOpacity: SharedValue<number>;
+}) {
+  return (
+    <ExpoZoomVideo
+      link={link}
+      height={height}
+      onDismiss={onDismiss}
+      onToggleChrome={onToggleChrome}
+      overlayTranslateY={overlayTranslateY}
+      backgroundOpacity={backgroundOpacity}
+    />
+  );
+}
+
+function ExpoZoomVideo({
+  link,
+  height,
+  onDismiss,
+  onToggleChrome,
+  overlayTranslateY,
+  backgroundOpacity,
+}: {
+  link: ZoomLink;
+  height: number;
+  onDismiss: () => void;
+  onToggleChrome: () => void;
+  overlayTranslateY: SharedValue<number>;
+  backgroundOpacity: SharedValue<number>;
+}) {
+  const player = useSharedVideoPlayer(link.src);
+  const dismissStartX = useSharedValue(0);
+  const dismissStartY = useSharedValue(0);
+
+  useEffect(() => {
+    player.loop = false;
+    player.muted = false;
+    player.volume = 1;
+    player.timeUpdateEventInterval = 0.25;
+    player.showNowPlayingNotification = false;
+    player.staysActiveInBackground = false;
+    player.play();
+  }, [player]);
+
+  const dismissPan = createDismissPan({
+    height,
+    onDismiss,
+    overlayTranslateY,
+    backgroundOpacity,
+    dismissStartX,
+    dismissStartY,
+  });
 
   return (
     <GestureDetector gesture={dismissPan}>

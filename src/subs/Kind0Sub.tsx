@@ -113,6 +113,7 @@ type Kind0ProfileHeaderProps = {
 type Kind0StickyHeaderProps = {
   onClose: () => void;
   pubkey: string;
+  safeAreaTop?: number;
 };
 
 type Kind0ImageProps = {
@@ -258,10 +259,14 @@ const styles = StyleSheet.create({
 const Kind0StickyHeader = memo(function Kind0StickyHeader({
   onClose,
   pubkey,
+  safeAreaTop = 0,
 }: Kind0StickyHeaderProps) {
   const theme = useAppTheme();
   return (
-    <View className="h-16 flex-row items-center justify-between px-4">
+    <View
+      className="flex-row items-center justify-between px-4"
+      style={{height: 64 + safeAreaTop, paddingTop: safeAreaTop}}
+    >
       <Pressable
         className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
         hitSlop={12}
@@ -1490,7 +1495,13 @@ export function Kind0Sub({
     navigation.navigate('SendEcash', { pubkey });
   }, [navigation, pubkey]);
   const stickyHeader = useCallback(
-    () => <Kind0StickyHeader onClose={onClose} pubkey={pubkey} />,
+    ({safeAreaTop}: {safeAreaTop: number}) => (
+      <Kind0StickyHeader
+        onClose={onClose}
+        pubkey={pubkey}
+        safeAreaTop={safeAreaTop}
+      />
+    ),
     [onClose, pubkey],
   );
 
@@ -1551,7 +1562,8 @@ export function Kind0Sub({
         <Note note={item} visible={visible && itemVisible} />
       )}
       header={header}
-      headerSafeArea={false}
+      headerSafeArea
+      headerOwnsSafeArea
       stickyHeader={stickyHeader}
       visible={visible}
       loading={loading}

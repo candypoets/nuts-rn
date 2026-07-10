@@ -43,10 +43,12 @@ type FeedBuilderStore = {
   selectedPacks: FeedPackSelection[];
   selectedAuthors: string[];
   exploreAudienceMode: ExploreAudienceMode;
+  exploreRelays: string[] | null;
   hydrated: boolean;
   applySelection(kinds: FeedKind[], packs: FeedPackSelection[]): void;
   setSelectedKinds(kinds: FeedKind[]): void;
   setExploreAudienceMode(mode: ExploreAudienceMode): void;
+  setExploreRelays(relays: string[]): void;
   setFollowListPack(pack: FeedPackSelection): void;
   toggleKind(kind: FeedKind): void;
   togglePack(pack: FeedPackSelection): void;
@@ -95,6 +97,7 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
       selectedPacks: [],
       selectedAuthors: [],
       exploreAudienceMode: 'contacts',
+      exploreRelays: null,
       hydrated: false,
       applySelection: (kinds, packs) =>
         set({
@@ -108,6 +111,7 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
         }),
       setExploreAudienceMode: exploreAudienceMode =>
         set({ exploreAudienceMode }),
+      setExploreRelays: exploreRelays => set({ exploreRelays }),
       setFollowListPack: pack =>
         set(state => {
           const existingIndex = state.selectedPacks.findIndex(
@@ -171,6 +175,7 @@ export const useFeedBuilderStore = create<FeedBuilderStore>()(
         selectedPacks: state.selectedPacks,
         selectedAuthors: state.selectedAuthors,
         exploreAudienceMode: state.exploreAudienceMode,
+        exploreRelays: state.exploreRelays,
       }),
       onRehydrateStorage: () => state => {
         if (!state) return;

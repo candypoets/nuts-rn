@@ -177,6 +177,8 @@ export function ExploreFeed({
   const setExploreAudienceMode = useFeedBuilderStore(
     state => state.setExploreAudienceMode,
   );
+  const exploreRelays = useFeedBuilderStore(state => state.exploreRelays);
+  const setExploreRelays = useFeedBuilderStore(state => state.setExploreRelays);
   const feedBuilderHydrated = useFeedBuilderStore(state => state.hydrated);
   const authPubkey = useAuthStore(state => state.pubkey);
   const authResolved = useAuthStore(state => state.authResolved);
@@ -210,9 +212,11 @@ export function ExploreFeed({
   );
   const feedRelays = useMemo(() => {
     const relays =
-      selectedSubRelays ?? (authPubkey ? accountRelays : GUEST_EXPLORE_RELAYS);
+      selectedSubRelays ??
+      exploreRelays ??
+      (authPubkey ? accountRelays : GUEST_EXPLORE_RELAYS);
     return relays.map(normalizeRelayUrl).filter(Boolean);
-  }, [accountRelays, authPubkey, selectedSubRelays]);
+  }, [accountRelays, authPubkey, exploreRelays, selectedSubRelays]);
   const authReadyForExplore = Boolean(authPubkey) || authResolved;
   const followsReadyForExplore =
     exploreAudienceMode !== 'contacts' || kind3UpdatedAt > 0;
@@ -377,6 +381,23 @@ export function ExploreFeed({
   useEffect(() => {
     refreshingRef.current = refreshing;
   }, [refreshing]);
+
+  useEffect(() => {
+    if (!feedBuilderHydrated) return;
+    if (selectedSubRelays === undefined) {
+      if (exploreRelays !== null) {
+        setSubRelays(relaySelectionSubId, exploreRelays);
+      }
+      return;
+    }
+    setExploreRelays(selectedSubRelays);
+  }, [
+    exploreRelays,
+    feedBuilderHydrated,
+    selectedSubRelays,
+    setExploreRelays,
+    setSubRelays,
+  ]);
 
   const setLoadingState = useCallback((next: boolean) => {
     loadingRef.current = next;

@@ -64,6 +64,14 @@ class NativeNoteFooterContentView: UIView {
     quoteSubscription?.cancel()
   }
 
+  @objc func prepareForRecycle() {
+    mainSubscription?.cancel()
+    quoteSubscription?.cancel()
+    mainSubscription = nil
+    quoteSubscription = nil
+    activeSubscriptionKey = ""
+  }
+
   @objc(updateNoteBytes:)
   func updateNoteBytes(_ value: [NSNumber]?) {
     let nextBytes = value?.map { UInt8(truncating: $0) }

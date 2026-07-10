@@ -1,15 +1,43 @@
 import NipworkerSwift
+import SDWebImage
 import UIKit
+
+final class NativeAvatarImageLoader {
+  static let shared = NativeAvatarImageLoader()
+
+  private init() {}
+
+  @discardableResult
+  func loadImage(
+    for source: String,
+    targetSize: CGSize,
+    completion: @escaping (UIImage?) -> Void
+  ) -> SDWebImageOperation? {
+    guard let url = URL(string: source), targetSize.width > 0, targetSize.height > 0 else { return nil }
+    let context: [SDWebImageContextOption: Any] = [
+      .imageThumbnailPixelSize: targetSize,
+      .imagePreserveAspectRatio: true,
+    ]
+    return SDWebImageManager.shared.loadImage(
+      with: url,
+      options: [.retryFailed, .scaleDownLargeImages, .continueInBackground, .highPriority],
+      context: context,
+      progress: nil
+    ) { image, _, _, _, finished, _ in
+      guard finished else { return }
+      completion(image)
+    }
+  }
+}
 
 @objc(NativeAvatarContentView)
 class NativeAvatarContentView: UIView {
-  private static let imageCache = NSCache<NSString, UIImage>()
-
   private var pubkey = ""
   private var query = true
   private var picture = ""
   private var avatarImage: UIImage?
   private var avatarRequestUrl: String?
+  private var avatarImageOperation: SDWebImageOperation?
   private lazy var profileHook: NativeProfileHook = {
     let hook = NativeProfileHook()
     hook.onProfile = { [weak self] profile in
@@ -35,7 +63,24 @@ class NativeAvatarContentView: UIView {
   }
 
   deinit {
+    avatarImageOperation?.cancel()
     profileHook.cancel()
+  }
+
+  @objc func prepareForRecycle() {
+    avatarImageOperation?.cancel()
+    avatarImageOperation = nil
+    profileHook.cancel()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      avatarImageOperation?.cancel()
+      avatarImageOperation = nil
+    } else if avatarImage == nil, !picture.isEmpty {
+      loadAvatarImage()
+    }
   }
 
   @objc(updatePubkey:)
@@ -104,34 +149,25 @@ class NativeAvatarContentView: UIView {
   }
 
   private func loadAvatarImage() {
+    avatarImageOperation?.cancel()
+    avatarImageOperation = nil
     avatarImage = nil
-    guard !picture.isEmpty, let url = URL(string: picture) else {
+    guard !picture.isEmpty, URL(string: picture) != nil else {
       avatarRequestUrl = nil
       setNeedsDisplay()
       return
     }
-    let cacheKey = picture as NSString
-    if let cached = Self.imageCache.object(forKey: cacheKey) {
-      avatarImage = cached
-      setNeedsDisplay()
-      return
-    }
+    guard window != nil else { return }
     avatarRequestUrl = picture
-    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-      guard
-        let self,
-        let data,
-        let httpResponse = response as? HTTPURLResponse,
-        (200..<300).contains(httpResponse.statusCode),
-        let image = UIImage(data: data)
-      else { return }
-      Self.imageCache.setObject(image, forKey: cacheKey)
-      DispatchQueue.main.async {
-        guard self.avatarRequestUrl == cacheKey as String else { return }
-        self.avatarImage = image
-        self.setNeedsDisplay()
-      }
-    }.resume()
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let targetSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+    avatarImageOperation = NativeAvatarImageLoader.shared.loadImage(for: picture, targetSize: targetSize) { [weak self] image in
+      guard let self, self.avatarRequestUrl == self.picture else { return }
+      self.avatarImageOperation = nil
+      guard let image else { return }
+      self.avatarImage = image
+      self.setNeedsDisplay()
+    }
   }
 }
 

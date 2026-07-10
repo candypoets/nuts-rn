@@ -1,11 +1,10 @@
 import FlatBuffers
 import NipworkerSwift
+import SDWebImage
 import UIKit
 
 @objc(NativeNoteHeaderContentView)
 class NativeNoteHeaderContentView: UIView {
-  private static let imageCache = NSCache<NSString, UIImage>()
-
   @objc var onNativeRoute: ((String) -> Void)?
 
   private var noteBytes: [UInt8]?
@@ -23,6 +22,7 @@ class NativeNoteHeaderContentView: UIView {
   private var reposterPicture: String = ""
   private var reposterAvatarImage: UIImage?
   private var reposterAvatarRequestUrl: String?
+  private var reposterAvatarImageOperation: SDWebImageOperation?
   private var fallbackSubId: String?
 
   private var pubkey: String = ""
@@ -34,6 +34,7 @@ class NativeNoteHeaderContentView: UIView {
   private var picture: String = ""
   private var avatarImage: UIImage?
   private var avatarRequestUrl: String?
+  private var avatarImageOperation: SDWebImageOperation?
   private var primaryTextColor = UIColor(red: 17 / 255, green: 24 / 255, blue: 39 / 255, alpha: 1)
   private var secondaryTextColor = UIColor(red: 107 / 255, green: 114 / 255, blue: 128 / 255, alpha: 1)
   private var avatarBackgroundColor = UIColor(red: 229 / 255, green: 231 / 255, blue: 235 / 255, alpha: 1)
@@ -58,8 +59,32 @@ class NativeNoteHeaderContentView: UIView {
   }
 
   deinit {
+    avatarImageOperation?.cancel()
+    reposterAvatarImageOperation?.cancel()
     profileHook?.cancel()
     reposterProfileHook?.cancel()
+  }
+
+  @objc func prepareForRecycle() {
+    avatarImageOperation?.cancel()
+    avatarImageOperation = nil
+    reposterAvatarImageOperation?.cancel()
+    reposterAvatarImageOperation = nil
+    profileHook?.cancel()
+    reposterProfileHook?.cancel()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      avatarImageOperation?.cancel()
+      avatarImageOperation = nil
+      reposterAvatarImageOperation?.cancel()
+      reposterAvatarImageOperation = nil
+    } else {
+      if avatarImage == nil, !picture.isEmpty { loadAvatarImage() }
+      if reposterAvatarImage == nil, !reposterPicture.isEmpty { loadReposterAvatarImage() }
+    }
   }
 
   @objc(updateNoteBytes:)
@@ -487,77 +512,45 @@ class NativeNoteHeaderContentView: UIView {
   }
 
   private func loadAvatarImage() {
+    avatarImageOperation?.cancel()
+    avatarImageOperation = nil
     avatarImage = nil
-    guard !picture.isEmpty, let url = URL(string: picture) else {
+    guard !picture.isEmpty, URL(string: picture) != nil else {
       avatarRequestUrl = nil
       return
     }
 
-    let cacheKey = picture as NSString
-    if let cached = Self.imageCache.object(forKey: cacheKey) {
-      avatarImage = cached
-      setNeedsDisplay()
-      return
-    }
-
     avatarRequestUrl = picture
-    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-      guard
-        let self,
-        let data,
-        let httpResponse = response as? HTTPURLResponse,
-        (200..<300).contains(httpResponse.statusCode),
-        let image = UIImage(data: data)
-      else {
-        return
-      }
-
-      Self.imageCache.setObject(image, forKey: cacheKey)
-      DispatchQueue.main.async {
-        guard self.avatarRequestUrl == cacheKey as String else {
-          return
-        }
-        self.avatarImage = image
-        self.setNeedsDisplay()
-      }
-    }.resume()
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let targetSize = CGSize(width: 40 * scale, height: 40 * scale)
+    avatarImageOperation = NativeAvatarImageLoader.shared.loadImage(for: picture, targetSize: targetSize) { [weak self] image in
+      guard let self, self.avatarRequestUrl == self.picture else { return }
+      self.avatarImageOperation = nil
+      guard let image else { return }
+      self.avatarImage = image
+      self.setNeedsDisplay()
+    }
   }
 
   private func loadReposterAvatarImage() {
+    reposterAvatarImageOperation?.cancel()
+    reposterAvatarImageOperation = nil
     reposterAvatarImage = nil
-    guard !reposterPicture.isEmpty, let url = URL(string: reposterPicture) else {
+    guard !reposterPicture.isEmpty, URL(string: reposterPicture) != nil else {
       reposterAvatarRequestUrl = nil
       return
     }
 
-    let cacheKey = reposterPicture as NSString
-    if let cached = Self.imageCache.object(forKey: cacheKey) {
-      reposterAvatarImage = cached
-      setNeedsDisplay()
-      return
-    }
-
     reposterAvatarRequestUrl = reposterPicture
-    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-      guard
-        let self,
-        let data,
-        let httpResponse = response as? HTTPURLResponse,
-        (200..<300).contains(httpResponse.statusCode),
-        let image = UIImage(data: data)
-      else {
-        return
-      }
-
-      Self.imageCache.setObject(image, forKey: cacheKey)
-      DispatchQueue.main.async {
-        guard self.reposterAvatarRequestUrl == cacheKey as String else {
-          return
-        }
-        self.reposterAvatarImage = image
-        self.setNeedsDisplay()
-      }
-    }.resume()
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let targetSize = CGSize(width: 20 * scale, height: 20 * scale)
+    reposterAvatarImageOperation = NativeAvatarImageLoader.shared.loadImage(for: reposterPicture, targetSize: targetSize) { [weak self] image in
+      guard let self, self.reposterAvatarRequestUrl == self.reposterPicture else { return }
+      self.reposterAvatarImageOperation = nil
+      guard let image else { return }
+      self.reposterAvatarImage = image
+      self.setNeedsDisplay()
+    }
   }
 
   private func drawReposterAvatar(in context: CGContext, avatarRect: CGRect, size: CGFloat) {

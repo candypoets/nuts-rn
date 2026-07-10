@@ -917,7 +917,6 @@ function ExploreTabScreen() {
       <ExploreFeed
         enabled={nostrEnabled}
         visible={visible}
-        stickyFooter={() => null}
         onChromeVisibilityChange={handleChromeVisibilityChange}
       />
     </FeedPage>

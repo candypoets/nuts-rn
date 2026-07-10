@@ -1,10 +1,12 @@
 import React, {
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import * as ReactNative from 'react-native';
 import {
   InteractionManager,
   Pressable,
@@ -16,10 +18,7 @@ import {
 import { Image } from 'expo-image';
 import { Check } from 'lucide-react-native';
 import { useRelayStore } from '../stores';
-import {
-  fetchRelayInfosForRelays,
-  normalizeRelayUrl,
-} from '../nostr/nip11';
+import { fetchRelayInfosForRelays, normalizeRelayUrl } from '../nostr/nip11';
 import { type AppTheme, type AppThemeColors, useAppTheme } from '../theme';
 
 type RelayInfosModalProps = {
@@ -29,6 +28,31 @@ type RelayInfosModalProps = {
   mode?: 'relays' | 'communities';
   onClose: () => void;
 };
+
+type RelayInfoItem = {
+  url: string;
+};
+
+type VirtualCollection<T> = {
+  readonly size: number;
+  at(index: number): T;
+};
+
+type VirtualColumnProps<TItem> = {
+  children: (item: TItem, key: string) => ReactNode;
+  items: VirtualCollection<TItem>;
+  itemToKey?: (item: TItem) => string;
+  removeClippedSubviews?: boolean;
+  testID?: null | string;
+};
+
+const VirtualColumn = (
+  ReactNative as typeof ReactNative & {
+    unstable_VirtualColumn: <TItem>(
+      props: VirtualColumnProps<TItem>,
+    ) => ReactNode;
+  }
+).unstable_VirtualColumn;
 
 function relayLabel(url: string) {
   const normalized = normalizeRelayUrl(url);
@@ -68,7 +92,13 @@ function statusColor(status: string | undefined, colors: AppThemeColors) {
 
 function statusLabel(status?: string) {
   if (!status) return '';
-  if (status === 'open' || status === 'connected' || status === 'EOSE' || status === 'OK') return 'live';
+  if (
+    status === 'open' ||
+    status === 'connected' ||
+    status === 'EOSE' ||
+    status === 'OK'
+  )
+    return 'live';
   if (status === 'SUBSCRIBED') return 'sub';
   if (status === 'connecting') return 'sync';
   if (status === 'failed' || status === 'FAILED') return 'fail';
@@ -86,13 +116,7 @@ function softwareLabel(software?: string) {
 }
 
 function uniqueRelays(relays: string[]) {
-  return [
-    ...new Set(
-      relays
-        .map(normalizeRelayUrl)
-        .filter(Boolean),
-    ),
-  ];
+  return [...new Set(relays.map(normalizeRelayUrl).filter(Boolean))];
 }
 
 function hexLuminance(hex: string) {
@@ -109,6 +133,125 @@ function readableTextColor(background: string) {
   return hexLuminance(background) < 140 ? '#ffffff' : '#1a1a1a';
 }
 
+function RelayInfoRow({
+  communityMode,
+  item,
+  selected,
+  statusOverride,
+  styles,
+  theme,
+  toggleRelay,
+}: {
+  communityMode: boolean;
+  item: RelayInfoItem;
+  selected: boolean;
+  statusOverride?: string;
+  styles: ReturnType<typeof createRelayInfosStyles>;
+  theme: AppTheme;
+  toggleRelay: (url: string) => void;
+}) {
+  const info = useRelayStore(state => state.relayInfos[item.url]?.info);
+  const storeStatus = useRelayStore(state => state.relayStatuses[item.url]);
+  const status = statusOverride ?? storeStatus;
+  const name = info?.name || relayLabel(item.url);
+  const nips = Array.isArray(info?.supported_nips) ? info.supported_nips : [];
+  const software = softwareLabel(info?.software);
+  const label = statusLabel(status);
+
+  return (
+    <Pressable
+      style={[styles.card, selected && styles.selectedRow]}
+      onPress={() => {
+        if (!communityMode) toggleRelay(item.url);
+      }}
+    >
+      <View style={styles.row}>
+        {communityMode ? null : (
+          <Pressable
+            hitSlop={8}
+            style={[
+              styles.selectionBox,
+              selected ? styles.selectionBoxSelected : styles.selectionBoxIdle,
+            ]}
+            onPress={event => {
+              event.stopPropagation();
+              toggleRelay(item.url);
+            }}
+          >
+            {selected ? (
+              <Check
+                size={13}
+                color={theme.button.primary.text}
+                strokeWidth={3}
+              />
+            ) : null}
+          </Pressable>
+        )}
+        <View style={styles.relayIconWrap}>
+          {info?.icon ? (
+            <Image
+              source={{ uri: info.icon }}
+              style={styles.relayIcon}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={styles.relayIconFallback}>
+              <Text style={styles.relayInitials}>{relayInitials(name)}</Text>
+            </View>
+          )}
+          <View
+            style={[
+              styles.statusDot,
+              {
+                backgroundColor: statusColor(status, theme.colors),
+              },
+            ]}
+          />
+        </View>
+        <View style={styles.textBlock}>
+          <View style={styles.nameRow}>
+            <Text style={styles.relayName} numberOfLines={1}>
+              {name}
+            </Text>
+            {label ? <Text style={styles.inlineStatus}>{label}</Text> : null}
+          </View>
+          <Text style={styles.relayUrl} numberOfLines={1}>
+            {communityMode
+              ? info?.description || 'Public community'
+              : info?.description || relayLabel(item.url)}
+          </Text>
+        </View>
+        <View style={styles.badges}>
+          {nips.includes(50) ? (
+            <Text style={[styles.badge, styles.searchBadge]}>search</Text>
+          ) : null}
+          {nips.includes(42) ? (
+            <Text style={[styles.badge, styles.authBadge]}>auth</Text>
+          ) : null}
+          {nips.length ? (
+            <Text
+              style={[
+                styles.badge,
+                selected ? styles.selectedNipBadge : styles.nipBadge,
+              ]}
+            >
+              {nips.length}
+            </Text>
+          ) : null}
+          {software ? (
+            <Text
+              style={[styles.badge, styles.softwareBadge]}
+              numberOfLines={1}
+            >
+              {software}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 export function RelayInfosModal({
   subId,
   relays,
@@ -118,8 +261,6 @@ export function RelayInfosModal({
 }: RelayInfosModalProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createRelayInfosStyles(theme), [theme]);
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
-  const relayInfos = useRelayStore(state => state.relayInfos);
   const storeRelays = useRelayStore(state =>
     subId ? state.relaySubs[subId] : undefined,
   );
@@ -129,6 +270,13 @@ export function RelayInfosModal({
   );
   const selectedRelaysRef = useRef(selectedRelays);
   const initialSelectedRelaysRef = useRef(selectedRelays);
+  const initialKnownRelaysRef = useRef<string[] | null>(null);
+  if (initialKnownRelaysRef.current === null) {
+    initialKnownRelaysRef.current = uniqueRelays([
+      ...Object.keys(useRelayStore.getState().relayStatuses),
+      ...Object.keys(useRelayStore.getState().relayInfos),
+    ]);
+  }
   const itemOrderRef = useRef<string[] | null>(null);
   const communityMode = mode === 'communities';
 
@@ -142,35 +290,31 @@ export function RelayInfosModal({
 
   useEffect(
     () => () => {
-      if (subId && !communityMode) setSubRelays(subId, selectedRelaysRef.current);
+      if (subId && !communityMode)
+        setSubRelays(subId, selectedRelaysRef.current);
     },
     [communityMode, setSubRelays, subId],
   );
 
-  const toggleRelay = useCallback(
-    (url: string) => {
-      const normalizedUrl = normalizeRelayUrl(url);
-      const nextRelays = selectedRelays.includes(normalizedUrl)
-        ? selectedRelays.filter(relay => relay !== normalizedUrl)
-        : [...selectedRelays, normalizedUrl];
-      setSelectedRelays([
-        ...new Set(nextRelays.map(normalizeRelayUrl).filter(Boolean)),
-      ]);
-    },
-    [selectedRelays],
-  );
+  const toggleRelay = useCallback((url: string) => {
+    const normalizedUrl = normalizeRelayUrl(url);
+    setSelectedRelays(currentRelays => {
+      const nextRelays = currentRelays.includes(normalizedUrl)
+        ? currentRelays.filter(relay => relay !== normalizedUrl)
+        : [...currentRelays, normalizedUrl];
+      return [...new Set(nextRelays.map(normalizeRelayUrl).filter(Boolean))];
+    });
+  }, []);
 
   const items = useMemo(() => {
-    const selectedRelaySet = new Set(selectedRelays);
     const routeRelays = uniqueRelays(relays);
     const candidateRelays = communityMode
       ? routeRelays
       : uniqueRelays([
           ...routeRelays,
           ...selectedRelays,
-          ...Object.keys(relayStatuses),
           ...Object.keys(statuses),
-          ...Object.keys(relayInfos),
+          ...initialKnownRelaysRef.current,
         ]);
     const currentOrder = itemOrderRef.current;
     const initialSelectedRelaySet = new Set(initialSelectedRelaysRef.current);
@@ -186,17 +330,35 @@ export function RelayInfosModal({
           ];
     itemOrderRef.current = allRelays;
 
-    return allRelays
-      .map(url => ({
-        url,
-        selected: selectedRelaySet.has(url),
-        status: statuses[url] ?? relayStatuses[url],
-        infoEntry: relayInfos[url],
-        info: relayInfos[url]?.info,
-      }));
-  }, [communityMode, relayInfos, relayStatuses, relays, selectedRelays, statuses]);
+    return allRelays.map(url => ({ url }));
+  }, [communityMode, relays, selectedRelays, statuses]);
 
   const itemUrls = useMemo(() => items.map(item => item.url), [items]);
+  const virtualItems = useMemo<VirtualCollection<RelayInfoItem>>(
+    () => ({
+      get size() {
+        return items.length;
+      },
+      at(index: number) {
+        return items[index];
+      },
+    }),
+    [items],
+  );
+  const renderVirtualItem = useCallback(
+    (item: RelayInfoItem) => (
+      <RelayInfoRow
+        communityMode={communityMode}
+        item={item}
+        selected={selectedRelays.includes(item.url)}
+        statusOverride={statuses[item.url]}
+        styles={styles}
+        theme={theme}
+        toggleRelay={toggleRelay}
+      />
+    ),
+    [communityMode, selectedRelays, statuses, styles, theme, toggleRelay],
+  );
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
@@ -213,9 +375,7 @@ export function RelayInfosModal({
       <View style={styles.modalSheet}>
         <View style={styles.modalHeader}>
           <View>
-            <Text style={styles.title}>
-              Communities
-            </Text>
+            <Text style={styles.title}>Communities</Text>
             {communityMode ? (
               <Text style={styles.subtitle}>Your spaces. Your people.</Text>
             ) : null}
@@ -227,123 +387,14 @@ export function RelayInfosModal({
           contentContainerStyle={styles.content}
         >
           {items.length ? (
-            items.map(item => {
-              const name = item.info?.name || relayLabel(item.url);
-              const nips = Array.isArray(item.info?.supported_nips)
-                ? item.info.supported_nips
-                : [];
-              const software = softwareLabel(item.info?.software);
-              const label = statusLabel(item.status);
-
-              return (
-                <Pressable
-                  key={item.url}
-                  style={[styles.card, item.selected && styles.selectedRow]}
-                  onPress={() => {
-                    if (!communityMode) toggleRelay(item.url);
-                  }}
-                >
-                  <View style={styles.row}>
-                    {communityMode ? null : (
-                      <Pressable
-                        hitSlop={8}
-                        style={[
-                          styles.selectionBox,
-                          item.selected
-                            ? styles.selectionBoxSelected
-                            : styles.selectionBoxIdle,
-                        ]}
-                        onPress={event => {
-                          event.stopPropagation();
-                          toggleRelay(item.url);
-                        }}
-                      >
-                        {item.selected ? (
-                          <Check
-                            size={13}
-                            color={theme.button.primary.text}
-                            strokeWidth={3}
-                          />
-                        ) : null}
-                      </Pressable>
-                    )}
-                    <View style={styles.relayIconWrap}>
-                      {item.info?.icon ? (
-                        <Image
-                          source={{ uri: item.info.icon }}
-                          style={styles.relayIcon}
-                          contentFit="cover"
-                        />
-                      ) : (
-                        <View style={styles.relayIconFallback}>
-                          <Text style={styles.relayInitials}>
-                            {relayInitials(name)}
-                          </Text>
-                        </View>
-                      )}
-                      <View
-                        style={[
-                          styles.statusDot,
-                          {
-                            backgroundColor: statusColor(
-                              item.status,
-                              theme.colors,
-                            ),
-                          },
-                        ]}
-                      />
-                    </View>
-                    <View style={styles.textBlock}>
-                      <View style={styles.nameRow}>
-                        <Text style={styles.relayName} numberOfLines={1}>
-                          {name}
-                        </Text>
-                        {label ? (
-                          <Text style={styles.inlineStatus}>{label}</Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.relayUrl} numberOfLines={1}>
-                        {communityMode
-                          ? item.info?.description || 'Public community'
-                          : item.info?.description || relayLabel(item.url)}
-                      </Text>
-                    </View>
-                    <View style={styles.badges}>
-                      {nips.includes(50) ? (
-                        <Text style={[styles.badge, styles.searchBadge]}>
-                          search
-                        </Text>
-                      ) : null}
-                      {nips.includes(42) ? (
-                        <Text style={[styles.badge, styles.authBadge]}>
-                          auth
-                        </Text>
-                      ) : null}
-                      {nips.length ? (
-                        <Text
-                          style={[
-                            styles.badge,
-                            item.selected
-                              ? styles.selectedNipBadge
-                              : styles.nipBadge,
-                          ]}
-                        >
-                          {nips.length}
-                        </Text>
-                      ) : null}
-                      {software ? (
-                        <Text
-                          style={[styles.badge, styles.softwareBadge]}
-                          numberOfLines={1}
-                        >
-                          {software}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </View>
-                </Pressable>
-              );
-            })
+            <VirtualColumn
+              items={virtualItems}
+              itemToKey={item => item.url}
+              removeClippedSubviews
+              testID="relay-infos-virtual-column"
+            >
+              {renderVirtualItem}
+            </VirtualColumn>
           ) : (
             <Text style={styles.empty}>No relays to show yet.</Text>
           )}

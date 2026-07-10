@@ -17,12 +17,57 @@ class NativeTabBarController: NSObject {
         return
       }
 
+      Self.logSelectedTabScrollViews(tabBarController)
+
       guard NativeTabBarController.hidden != hidden else { return }
       NativeTabBarController.hidden = hidden
 
       if #available(iOS 18.0, *) {
         tabBarController.setTabBarHidden(hidden, animated: animated)
       }
+    }
+  }
+
+  private static func logSelectedTabScrollViews(_ tabBarController: UITabBarController) {
+    guard let rootView = tabBarController.selectedViewController?.view else {
+      emitNativeDebugLog(
+        source: "NativeTabBarController",
+        event: "scroll-view-diagnostic",
+        details: "selected tab has no root view"
+      )
+      return
+    }
+
+    var firstChain: [String] = []
+    var currentView: UIView? = rootView
+    while let view = currentView {
+      firstChain.append(String(describing: type(of: view)))
+      currentView = view.subviews.first
+    }
+
+    var scrollViews: [String] = []
+    collectScrollViews(in: rootView, path: [], output: &scrollViews)
+    emitNativeDebugLog(
+      source: "NativeTabBarController",
+      event: "scroll-view-diagnostic",
+      details: "first=\(firstChain.joined(separator: ">")); scrolls=\(scrollViews.joined(separator: " | "))"
+    )
+  }
+
+  private static func collectScrollViews(
+    in view: UIView,
+    path: [Int],
+    output: inout [String]
+  ) {
+    if let scrollView = view as? UIScrollView {
+      output.append(
+        "\(path.map(String.init).joined(separator: ".")):\(type(of: scrollView))" +
+          " inset=\(scrollView.contentInsetAdjustmentBehavior.rawValue)" +
+          " content=\(scrollView.contentSize) frame=\(scrollView.frame)"
+      )
+    }
+    for (index, child) in view.subviews.enumerated() {
+      collectScrollViews(in: child, path: path + [index], output: &output)
     }
   }
 

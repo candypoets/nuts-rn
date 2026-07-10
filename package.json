@@ -112,7 +112,6 @@
         "NativeContentBlocks": "NativeContentBlocksComponentView",
         "NativeLinkPreview": "NativeLinkPreviewComponentView",
         "NativeMediaViewer": "NativeMediaViewerComponentView",
-        "NativeNote": "NativeNoteComponentView",
         "NativeNoteHeader": "NativeNoteHeaderComponentView",
         "NativeNoteFooter": "NativeNoteFooterComponentView"
       }

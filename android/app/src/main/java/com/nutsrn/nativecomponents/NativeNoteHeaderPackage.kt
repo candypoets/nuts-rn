@@ -10,7 +10,6 @@ class NativeNoteHeaderPackage : ReactPackage {
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
       listOf(
-          NativeNoteManager(),
           NativeAvatarManager(),
           NativeNoteHeaderManager(),
           NativeNoteFooterManager(),

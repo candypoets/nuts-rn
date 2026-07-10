@@ -10,7 +10,10 @@
 		02691882C4EC18849FF2427E /* NativeNoteHeaderContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F08309C84E299801EA6BB8 /* NativeNoteHeaderContentView.swift */; };
 		06BA45682B6742610F5A8D40 /* NativeNoteFooterComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = DA42CA430619B3EE60E90CF8 /* NativeNoteFooterComponentView.mm */; };
 		0AA010010000000000000001 /* NativeNoteContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA010040000000000000001 /* NativeNoteContentView.swift */; };
-		0AA010020000000000000001 /* NativeNoteComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0AA010060000000000000001 /* NativeNoteComponentView.mm */; };
+		0AB010010000000000000001 /* NativeMediaViewerContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB010020000000000000001 /* NativeMediaViewerContentView.swift */; };
+		0AB020010000000000000001 /* NativeLinkPreviewContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB020020000000000000001 /* NativeLinkPreviewContentView.swift */; };
+		0AB030010000000000000001 /* NativeContentBlocksContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB030020000000000000001 /* NativeContentBlocksContentView.swift */; };
+		0AB040010000000000000001 /* NativeNoteSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB040020000000000000001 /* NativeNoteSupport.swift */; };
 		0AA020010000000000000001 /* NativeAvatarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA020040000000000000001 /* NativeAvatarContentView.swift */; };
 		0AA020020000000000000001 /* NativeAvatarComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0AA020060000000000000001 /* NativeAvatarComponentView.mm */; };
 		0AA030010000000000000001 /* NativeDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA030020000000000000001 /* NativeDebug.swift */; };
@@ -36,8 +39,10 @@
 
 /* Begin PBXFileReference section */
 		0AA010040000000000000001 /* NativeNoteContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeNoteContentView.swift; path = NutsRn/NativeNoteContentView.swift; sourceTree = "<group>"; };
-		0AA010050000000000000001 /* NativeNoteComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeNoteComponentView.h; path = NutsRn/NativeNoteComponentView.h; sourceTree = "<group>"; };
-		0AA010060000000000000001 /* NativeNoteComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeNoteComponentView.mm; path = NutsRn/NativeNoteComponentView.mm; sourceTree = "<group>"; };
+		0AB010020000000000000001 /* NativeMediaViewerContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeMediaViewerContentView.swift; path = NutsRn/NativeMediaViewerContentView.swift; sourceTree = "<group>"; };
+		0AB020020000000000000001 /* NativeLinkPreviewContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeLinkPreviewContentView.swift; path = NutsRn/NativeLinkPreviewContentView.swift; sourceTree = "<group>"; };
+		0AB030020000000000000001 /* NativeContentBlocksContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeContentBlocksContentView.swift; path = NutsRn/NativeContentBlocksContentView.swift; sourceTree = "<group>"; };
+		0AB040020000000000000001 /* NativeNoteSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeNoteSupport.swift; path = NutsRn/NativeNoteSupport.swift; sourceTree = "<group>"; };
 		0AA020040000000000000001 /* NativeAvatarContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeAvatarContentView.swift; path = NutsRn/NativeAvatarContentView.swift; sourceTree = "<group>"; };
 		0AA020050000000000000001 /* NativeAvatarComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeAvatarComponentView.h; path = NutsRn/NativeAvatarComponentView.h; sourceTree = "<group>"; };
 		0AA020060000000000000001 /* NativeAvatarComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeAvatarComponentView.mm; path = NutsRn/NativeAvatarComponentView.mm; sourceTree = "<group>"; };
@@ -101,18 +106,20 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				0AA010040000000000000001 /* NativeNoteContentView.swift */,
+				0AB010020000000000000001 /* NativeMediaViewerContentView.swift */,
+				0AB020020000000000000001 /* NativeLinkPreviewContentView.swift */,
+				0AB030020000000000000001 /* NativeContentBlocksContentView.swift */,
+				0AB040020000000000000001 /* NativeNoteSupport.swift */,
 				0AA020040000000000000001 /* NativeAvatarContentView.swift */,
 				0AA020050000000000000001 /* NativeAvatarComponentView.h */,
 				0AA020060000000000000001 /* NativeAvatarComponentView.mm */,
-					0AA010040000000000000001 /* NativeNoteContentView.swift */,
 					0AA040020000000000000001 /* NativeContentBlocksComponentView.h */,
 					0AA040030000000000000001 /* NativeContentBlocksComponentView.mm */,
 					0AA070020000000000000001 /* NativeLinkPreviewComponentView.h */,
 					0AA070030000000000000001 /* NativeLinkPreviewComponentView.mm */,
 					0AA090020000000000000001 /* NativeMediaViewerComponentView.h */,
 					0AA090030000000000000001 /* NativeMediaViewerComponentView.mm */,
-					0AA010050000000000000001 /* NativeNoteComponentView.h */,
-					0AA010060000000000000001 /* NativeNoteComponentView.mm */,
 				18F08309C84E299801EA6BB8 /* NativeNoteHeaderContentView.swift */,
 				1E4D2CD386E1D07FF923856A /* NativeNoteHeaderComponentView.h */,
 				FA91351551C9B9DDDD514CE5 /* NativeNoteHeaderComponentView.mm */,
@@ -379,11 +386,14 @@
 				2BE7C6CE4A0AFD8E29A98249 /* ExpoModulesProvider.swift in Sources */,
 				0AA020010000000000000001 /* NativeAvatarContentView.swift in Sources */,
 				0AA020020000000000000001 /* NativeAvatarComponentView.mm in Sources */,
-					0AA010010000000000000001 /* NativeNoteContentView.swift in Sources */,
 					0AA040010000000000000001 /* NativeContentBlocksComponentView.mm in Sources */,
 					0AA070010000000000000001 /* NativeLinkPreviewComponentView.mm in Sources */,
 					0AA090010000000000000001 /* NativeMediaViewerComponentView.mm in Sources */,
-					0AA010020000000000000001 /* NativeNoteComponentView.mm in Sources */,
+					0AA010010000000000000001 /* NativeNoteContentView.swift in Sources */,
+					0AB010010000000000000001 /* NativeMediaViewerContentView.swift in Sources */,
+					0AB020010000000000000001 /* NativeLinkPreviewContentView.swift in Sources */,
+					0AB030010000000000000001 /* NativeContentBlocksContentView.swift in Sources */,
+					0AB040010000000000000001 /* NativeNoteSupport.swift in Sources */,
 				02691882C4EC18849FF2427E /* NativeNoteHeaderContentView.swift in Sources */,
 				DEC793C5A9C2CF7C409337FA /* NativeNoteHeaderComponentView.mm in Sources */,
 				1073D645C3CEBCDE5B6B15FF /* NativeNoteFooterContentView.swift in Sources */,

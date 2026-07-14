@@ -26,10 +26,20 @@ const PAGE_LIMIT = 50;
 const REPLY_BYTES_PER_EVENT = 96 * 1024;
 const KIND1_DEBUG = false;
 const KIND1_TRACE = false;
-const EMPTY_IDS: string[] = [];
+const KIND1_REACTIVITY_DEBUG = true;
+const KIND1_RENDER_HEADER_NOTE = true;
+
+function shouldLogReactivityCount(count: number) {
+  return count <= 10 || count % 25 === 0;
+}
 
 type Kind1SubProps = {
+  enableHeaderSubscription?: boolean;
+  enableReplySubscriptions?: boolean;
   nevent: string;
+  keepSubscriptionsOnBlur?: boolean;
+  renderFeed?: boolean;
+  runLifecycleEffects?: boolean;
   visible: boolean;
   onClose: () => void;
 };
@@ -42,20 +52,14 @@ type Kind1HeaderProps = {
 };
 
 type ReplyItemProps = {
-  headerPubkey: string | null;
   index: number;
   item: ParsedEvent;
-  replies: ParsedEvent[];
   visible: boolean;
 };
 
 type ReplyThreadNodeProps = {
-  headerPubkey: string | null;
   item: ParsedEvent;
-  replies: ParsedEvent[];
   tailing?: boolean;
-  threadPubkey: string | null;
-  visitedIds?: string[];
   visible: boolean;
 };
 
@@ -79,26 +83,6 @@ function decodeEventPointer(nevent: string): EventPointer {
 
 function pointerRelays(data: EventPointer) {
   return [...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl))];
-}
-
-function oldestVisibleChildReply(
-  replies: ParsedEvent[],
-  item: ParsedEvent,
-  threadPubkey: string | null,
-  headerPubkey: string | null,
-): ParsedEvent | null {
-  const itemId = item.id();
-  if (!itemId) return null;
-
-  let oldest: ParsedEvent | null = null;
-  replies.forEach(reply => {
-    if (reply.id() === itemId) return;
-    const kind1 = asKind1(reply);
-    if (kind1?.reply()?.id() !== itemId) return;
-    if (reply.pubkey() !== threadPubkey && reply.pubkey() !== headerPubkey) return;
-    if (!oldest || reply.createdAt() < oldest.createdAt()) oldest = reply;
-  });
-  return oldest;
 }
 
 const Kind1StickyHeader = memo(function Kind1StickyHeader({
@@ -145,7 +129,20 @@ const Kind1Header = memo(function Kind1Header({
       </View>
       {headerItem ? (
         <View className="mt-2 px-1">
-          <Note note={headerItem} visible={visible} main threadCard />
+          {KIND1_RENDER_HEADER_NOTE ? (
+            <Note
+              note={headerItem}
+              visible={visible}
+              main
+              threadCard
+            />
+          ) : (
+            <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
+              <Text className="text-sm text-primary-content">
+                Kind1 header loaded: {headerItem.id()?.slice(0, 12)}
+              </Text>
+            </View>
+          )}
         </View>
       ) : null}
     </View>
@@ -153,64 +150,34 @@ const Kind1Header = memo(function Kind1Header({
 });
 
 const ReplyItem = memo(
-  function ReplyItem({headerPubkey, index, item, replies, visible}: ReplyItemProps) {
+  function ReplyItem({index, item, visible}: ReplyItemProps) {
     return (
       <View className={index === 0 ? 'px-1 pb-1.5 pt-1' : 'px-1 pb-1.5'}>
         <ReplyThreadNode
-          headerPubkey={headerPubkey}
           item={item}
-          replies={replies}
-          threadPubkey={item.pubkey() || null}
           visible={visible}
         />
       </View>
     );
   },
   (previous, next) =>
-    previous.headerPubkey === next.headerPubkey &&
     previous.index === next.index &&
     previous.item.id() === next.item.id() &&
-    previous.replies === next.replies &&
     previous.visible === next.visible,
 );
 
 const ReplyThreadNode = memo(
   function ReplyThreadNode({
-    headerPubkey,
     item,
-    replies,
     tailing = false,
-    threadPubkey,
-    visitedIds = [],
     visible,
   }: ReplyThreadNodeProps) {
-    const itemId = item.id();
-    const nextVisitedIds = useMemo(
-      () => (itemId ? [...visitedIds, itemId] : visitedIds),
-      [itemId, visitedIds],
-    );
-    const showReplies = useCallback(
-      (post: ParsedEvent) => () => {
-        const child = oldestVisibleChildReply(
-          replies,
-          post,
-          threadPubkey,
-          headerPubkey,
-        );
-        const childId = child?.id();
-        if (!childId || nextVisitedIds.includes(childId)) return [];
-        return child ? [child] : [];
-      },
-      [headerPubkey, nextVisitedIds, replies, threadPubkey],
-    );
-
     return (
       <Note
         note={item}
         visible={visible}
         footer
         showQuote={false}
-        showReplies={showReplies}
         showRoot={false}
         tailing={tailing}
         threadCard
@@ -218,14 +185,9 @@ const ReplyThreadNode = memo(
     );
   },
   (previous, next) =>
-    previous.headerPubkey === next.headerPubkey &&
     previous.item.id() === next.item.id() &&
-    previous.replies === next.replies &&
     (previous.tailing ?? false) === (next.tailing ?? false) &&
-    previous.threadPubkey === next.threadPubkey &&
-    previous.visible === next.visible &&
-    (previous.visitedIds ?? EMPTY_IDS).join(',') ===
-      (next.visitedIds ?? EMPTY_IDS).join(','),
+    previous.visible === next.visible,
 );
 
 function kind1Debug(message: string, data?: Record<string, unknown>) {
@@ -242,10 +204,27 @@ function kind1Trace(
   console.log(`[kind1-trace] t+${Date.now() - startedAt}ms ${message}`, data ?? {});
 }
 
-export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
+export function Kind1Sub({
+  enableHeaderSubscription = true,
+  enableReplySubscriptions = true,
+  nevent,
+  keepSubscriptionsOnBlur = false,
+  renderFeed = true,
+  runLifecycleEffects = true,
+  visible,
+  onClose,
+}: Kind1SubProps) {
+  const instanceIdRef = useRef(
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+  );
+  const renderCountRef = useRef(0);
+  const effectCountsRef = useRef<Record<string, number>>({});
   const traceStartedAtRef = useRef(Date.now());
   const data = useMemo(() => decodeEventPointer(nevent), [nevent]);
   const rootId = data.id ?? '';
+  const subscriptionVisible = visible || keepSubscriptionsOnBlur;
+  const diagnosticContextRef = useRef({rootId, visible});
+  diagnosticContextRef.current = {rootId, visible};
   const initialRelays = useMemo(() => pointerRelays(data), [data]);
   const [headerItem, setHeaderItem] = useState<ParsedEvent | null>(null);
   const [authorReadRelays, setAuthorReadRelays] = useState<string[]>([]);
@@ -303,7 +282,59 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
     [activeRelays, authorReadRelays],
   );
 
+  renderCountRef.current += 1;
+  if (
+    __DEV__ &&
+    KIND1_REACTIVITY_DEBUG &&
+    shouldLogReactivityCount(renderCountRef.current)
+  ) {
+    console.log('[kind1-reactivity] render', {
+      instance: instanceIdRef.current,
+      count: renderCountRef.current,
+      rootId: rootId.slice(0, 12),
+      visible,
+      header: headerItem?.id()?.slice(0, 12) ?? null,
+      items: items.length,
+      allReplies: allReplies.length,
+      loading,
+      hasMore,
+      rootReadRelays: rootReadRelays.length,
+      activeRelays: activeRelays.length,
+      authorReadRelays: authorReadRelays.length,
+      displayedRelays: displayedRelays.length,
+    });
+  }
+
+  const logEffectCycle = useCallback(
+    (
+      effect: string,
+      phase: 'run' | 'cleanup',
+      details?: Record<string, unknown>,
+    ) => {
+      if (!__DEV__ || !KIND1_REACTIVITY_DEBUG) return;
+      const key = `${effect}:${phase}`;
+      const count = (effectCountsRef.current[key] ?? 0) + 1;
+      effectCountsRef.current[key] = count;
+      if (!shouldLogReactivityCount(count)) return;
+      console.log(`[kind1-reactivity] effect ${phase}`, {
+        instance: instanceIdRef.current,
+        effect,
+        count,
+        rootId: diagnosticContextRef.current.rootId.slice(0, 12),
+        visible: diagnosticContextRef.current.visible,
+        ...details,
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
+    if (!runLifecycleEffects) return;
+    logEffectCycle('trace-root', 'run', {
+      activeRelays: activeRelays.length,
+      initialRelays: initialRelays.length,
+      rootReadRelays: rootReadRelays.length,
+    });
     traceStartedAtRef.current = Date.now();
     firstReplyAtRef.current = null;
     firstCommitAtRef.current = null;
@@ -314,7 +345,14 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
       rootReadRelays,
       activeRelays,
     });
-  }, [activeRelays, initialRelays, rootId, rootReadRelays]);
+  }, [
+    activeRelays,
+    initialRelays,
+    logEffectCycle,
+    rootId,
+    rootReadRelays,
+    runLifecycleEffects,
+  ]);
 
   const clearTimers = useCallback(() => {
     if (timeoutRef.current) {
@@ -546,14 +584,31 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
     cleanupSubscriptions();
   }, [cleanupSubscriptions, rootId]);
 
-  useEffect(() => cleanupSubscriptions, [cleanupSubscriptions]);
+  useEffect(() => {
+    if (!runLifecycleEffects) return undefined;
+    logEffectCycle('unmount-cleanup', 'run');
+    return () => {
+      logEffectCycle('unmount-cleanup', 'cleanup');
+      cleanupSubscriptions();
+    };
+  }, [cleanupSubscriptions, logEffectCycle, runLifecycleEffects]);
 
   useEffect(() => {
+    if (!runLifecycleEffects) return;
+    logEffectCycle('reset-root', 'run');
     reset();
-  }, [rootId, reset]);
+  }, [logEffectCycle, reset, rootId, runLifecycleEffects]);
 
   useEffect(() => {
-    if (!visible || !rootId) return undefined;
+    if (!runLifecycleEffects) return undefined;
+    logEffectCycle('header-subscription', 'run', {
+      activeRelays: activeRelays.length,
+      enabled: enableHeaderSubscription,
+      eligible: enableHeaderSubscription && visible && !!rootId,
+    });
+    if (!enableHeaderSubscription || !visible || !rootId) {
+      return undefined;
+    }
 
     headerSubSeqRef.current += 1;
     const headerSeq = headerSubSeqRef.current;
@@ -628,6 +683,7 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
     );
 
     return () => {
+      logEffectCycle('header-subscription', 'cleanup');
       kind1Trace(traceStartedAtRef.current, 'header cleanup', {
         seq: headerSeq,
         elapsed: Date.now() - headerStartedAt,
@@ -640,18 +696,39 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
   }, [
     activeRelays,
     clearTimers,
+    enableHeaderSubscription,
     handleReplyMessage,
     initialRelays,
+    logEffectCycle,
     reset,
     rootId,
     rootReadRelays,
+    runLifecycleEffects,
     setRelayStatus,
     setSubRelays,
     visible,
   ]);
 
   useEffect(() => {
-    if (!visible || !rootId || !headerItem) return undefined;
+    if (!runLifecycleEffects) return undefined;
+    logEffectCycle('reply-cache-subscription', 'run', {
+      activeRelays: activeRelays.length,
+      enabled: enableReplySubscriptions,
+      eligible:
+        enableReplySubscriptions &&
+        subscriptionVisible &&
+        !!rootId &&
+        !!headerItem,
+      header: headerItem?.id()?.slice(0, 12) ?? null,
+    });
+    if (
+      !enableReplySubscriptions ||
+      !subscriptionVisible ||
+      !rootId ||
+      !headerItem
+    ) {
+      return undefined;
+    }
     repliesSubSeqRef.current += 1;
     const repliesSeq = repliesSubSeqRef.current;
     const repliesStartedAt = Date.now();
@@ -696,6 +773,7 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
     }, 120);
 
     return () => {
+      logEffectCycle('reply-cache-subscription', 'cleanup');
       if (startTimeout) clearTimeout(startTimeout);
       kind1Trace(traceStartedAtRef.current, 'cache replies cleanup', {
         seq: repliesSeq,
@@ -710,11 +788,38 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
         repliesDebugTimeoutRef.current = null;
       }
     };
-  }, [activeRelays, handleReplyMessage, headerItem, rootId, visible]);
+  }, [
+    activeRelays,
+    enableReplySubscriptions,
+    handleReplyMessage,
+    headerItem,
+    logEffectCycle,
+    rootId,
+    runLifecycleEffects,
+    subscriptionVisible,
+  ]);
 
   useEffect(() => {
+    if (!runLifecycleEffects) return undefined;
     const authorPubkey = headerItem?.pubkey();
-    if (!visible || !rootId || !authorPubkey) return undefined;
+    logEffectCycle('author-relay-subscription', 'run', {
+      activeRelays: activeRelays.length,
+      enabled: enableReplySubscriptions,
+      eligible:
+        enableReplySubscriptions &&
+        visible &&
+        !!rootId &&
+        !!authorPubkey,
+      author: authorPubkey?.slice(0, 12) ?? null,
+    });
+    if (
+      !enableReplySubscriptions ||
+      !visible ||
+      !rootId ||
+      !authorPubkey
+    ) {
+      return undefined;
+    }
 
     const authorDiscoveryStartedAt = Date.now();
     let called = false;
@@ -841,6 +946,7 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
     );
 
     return () => {
+      logEffectCycle('author-relay-subscription', 'cleanup');
       if (authorReplyStartFrameRef.current) {
         cancelAnimationFrame(authorReplyStartFrameRef.current);
         authorReplyStartFrameRef.current = null;
@@ -853,15 +959,25 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
     };
   }, [
     activeRelays,
+    enableReplySubscriptions,
     handleReplyMessage,
     headerItem,
+    logEffectCycle,
     rootId,
+    runLifecycleEffects,
     setRelayStatus,
     setSubRelays,
     visible,
   ]);
 
   useEffect(() => {
+    if (!runLifecycleEffects) return;
+    logEffectCycle('rendered-state', 'run', {
+      items: items.length,
+      allReplies: allReplies.length,
+      header: headerItem?.id()?.slice(0, 12) ?? null,
+      loading,
+    });
     renderedItemsLengthRef.current = items.length;
     kind1Trace(traceStartedAtRef.current, 'render items', {
       rootId: rootId.slice(0, 12),
@@ -879,9 +995,23 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
       last: items[items.length - 1]?.id()?.slice(0, 12),
       loading,
     });
-  }, [allReplies.length, headerItem, items, loading, rootId]);
+  }, [
+    allReplies.length,
+    headerItem,
+    items,
+    loading,
+    logEffectCycle,
+    rootId,
+    runLifecycleEffects,
+  ]);
 
   useEffect(() => {
+    if (!runLifecycleEffects) return undefined;
+    logEffectCycle('pagination-settle', 'run', {
+      loading,
+      items: items.length,
+      itemsBeforePagination: itemsBeforePaginationRef.current,
+    });
     if (loading || itemsBeforePaginationRef.current === 0) return;
     const itemsBefore = itemsBeforePaginationRef.current;
     const timeout = setTimeout(() => {
@@ -890,31 +1020,15 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
       paginationUnsubRef.current?.();
       paginationUnsubRef.current = null;
     }, 500);
-    return () => clearTimeout(timeout);
-  }, [loading, items.length]);
+    return () => {
+      logEffectCycle('pagination-settle', 'cleanup');
+      clearTimeout(timeout);
+    };
+  }, [loading, items.length, logEffectCycle, runLifecycleEffects]);
 
   const handleNearBottom = useCallback(() => {
     // Temporarily disabled: do not paginate replies while testing Kind1Sub load behavior.
-    return;
-
-    if (loading || !hasMore || !itemsRef.current.length) return;
-    const lastItem = itemsRef.current[itemsRef.current.length - 1];
-    const until = lastItem?.createdAt() ? lastItem.createdAt() - 1 : undefined;
-    if (!until) return;
-
-    setLoading(true);
-    itemsBeforePaginationRef.current = itemsRef.current.length;
-    paginationCounterRef.current += 1;
-    paginationUnsubRef.current?.();
-    const pageSubId = `replies_${rootId}_page_${paginationCounterRef.current}_${until}_${relayHash(activeRelays)}`;
-    paginationUnsubRef.current = subscribeToNostr(
-      pageSubId,
-      [{kinds: [1], tags: {'#e': [rootId]}, limit: PAGE_LIMIT, until, noContext: true, relays: activeRelays}],
-      handleReplyMessage,
-      {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-    );
-    paginationTimeoutRef.current = setTimeout(() => setLoading(false), 10000);
-  }, [activeRelays, handleReplyMessage, hasMore, loading, rootId]);
+  }, []);
 
   const stickyHeader = useCallback(
     () => <Kind1StickyHeader onClose={onClose} />,
@@ -944,20 +1058,28 @@ export function Kind1Sub({nevent, visible, onClose}: Kind1SubProps) {
       }
       return (
         <ReplyItem
-          headerPubkey={headerItem?.pubkey() ?? null}
           index={index}
           item={item}
-          replies={allReplies}
           visible={visible && itemVisible}
         />
       );
     },
-    [allReplies, headerItem, rootId, visible],
+    [rootId, visible],
   );
   const getItemId = useCallback(
     (item: ParsedEvent) => item.id() || String(item.createdAt()),
     [],
   );
+
+  if (!renderFeed) {
+    return (
+      <View className="flex-1 items-center justify-center bg-base-100 px-6">
+        <Text className="text-center text-base text-base-content">
+          Nested Kind1Sub hooks active; Feed disabled
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <Feed

@@ -120,6 +120,7 @@ class NativeNoteFooterContentView: UIView {
     refreshSubscriptions()
   }
 
+  @objc(updateRelayResolutionPending:)
   func updateRelayResolutionPending(_ value: Bool) {
     if relayResolutionPending == value { return }
     relayResolutionPending = value

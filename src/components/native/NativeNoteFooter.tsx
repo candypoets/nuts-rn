@@ -6,6 +6,7 @@ import NativeNoteFooterComponent from '../../specs/NativeNoteFooterNativeCompone
 type Props = {
   note: ParsedEvent;
   relays?: string[];
+  relayResolutionPending?: boolean;
   currentUserPubkey?: string;
   optimisticReactionNonce?: number;
   visible?: boolean;
@@ -31,6 +32,7 @@ function flatBufferBytes(view: unknown): number[] | undefined {
 export function NativeNoteFooter({
   note,
   relays,
+  relayResolutionPending = false,
   currentUserPubkey,
   optimisticReactionNonce = 0,
   visible = true,
@@ -86,6 +88,7 @@ export function NativeNoteFooter({
       <NativeNoteFooterComponent
         noteBytes={noteBytes}
         relays={relays}
+        relayResolutionPending={relayResolutionPending}
         currentUserPubkey={currentUserPubkey}
         optimisticReactionNonce={optimisticReactionNonce}
         visible={visible}

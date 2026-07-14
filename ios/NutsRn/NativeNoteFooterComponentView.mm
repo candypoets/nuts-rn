@@ -72,6 +72,9 @@ using namespace facebook::react;
   if (oldFooterProps.relays != newFooterProps.relays) {
     [_contentView updateRelays:RCTNSArrayFromStringVector(newFooterProps.relays)];
   }
+  if (oldFooterProps.relayResolutionPending != newFooterProps.relayResolutionPending) {
+    [_contentView updateRelayResolutionPending:newFooterProps.relayResolutionPending];
+  }
   if (oldFooterProps.currentUserPubkey != newFooterProps.currentUserPubkey) {
     [_contentView updateCurrentUserPubkey:RCTNSStringFromString(newFooterProps.currentUserPubkey)];
   }

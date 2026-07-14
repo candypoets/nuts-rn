@@ -13,5 +13,7 @@ class NativeNoteHeaderPackage : ReactPackage {
           NativeAvatarManager(),
           NativeNoteHeaderManager(),
           NativeNoteFooterManager(),
+          NativeLinkPreviewManager(),
+          NativeMediaViewerManager(),
       )
 }

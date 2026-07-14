@@ -87,6 +87,9 @@ using namespace facebook::react;
   if (oldHeaderProps.relayCount != newHeaderProps.relayCount) {
     [_contentView updateRelayCount:@(newHeaderProps.relayCount)];
   }
+  if (oldHeaderProps.authorPubkey != newHeaderProps.authorPubkey) {
+    [_contentView updateAuthorPubkey:RCTNSStringFromString(newHeaderProps.authorPubkey)];
+  }
   if (oldHeaderProps.reposterPubkey != newHeaderProps.reposterPubkey) {
     [_contentView updateReposterPubkey:RCTNSStringFromString(newHeaderProps.reposterPubkey)];
   }

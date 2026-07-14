@@ -200,7 +200,7 @@ function useAuthorRelayEntry(
   return cache.get(cacheKey(pubkey, normalizedDiscovery));
 }
 
-export function useEffectiveAuthorRelays({
+export function useEffectiveAuthorRelayState({
   subId,
   pubkey,
   marker,
@@ -229,15 +229,27 @@ export function useEffectiveAuthorRelays({
   const timedOut = authorRelayEntry?.timedOut ?? false;
 
   return useMemo(() => {
-    if (hasOverride) return normalizedOverride ?? EMPTY_RELAYS;
-    if (hasAuthorRelays) return authorRelays ?? EMPTY_RELAYS;
-    return timedOut ? normalizedFallback : EMPTY_RELAYS;
+    if (hasOverride) {
+      return {relays: normalizedOverride ?? EMPTY_RELAYS, pending: false};
+    }
+    if (hasAuthorRelays) {
+      return {relays: authorRelays ?? EMPTY_RELAYS, pending: false};
+    }
+    if (timedOut) return {relays: normalizedFallback, pending: false};
+    return {relays: EMPTY_RELAYS, pending: !!pubkey};
   }, [
     authorRelays,
     hasAuthorRelays,
     hasOverride,
     normalizedFallback,
     normalizedOverride,
+    pubkey,
     timedOut,
   ]);
+}
+
+export function useEffectiveAuthorRelays(
+  options: Parameters<typeof useEffectiveAuthorRelayState>[0],
+) {
+  return useEffectiveAuthorRelayState(options).relays;
 }

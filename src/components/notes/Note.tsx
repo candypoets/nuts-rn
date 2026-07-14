@@ -26,7 +26,10 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
-import { useEffectiveAuthorRelays } from '../../hooks/useAuthorRelays';
+import {
+  useEffectiveAuthorRelayState,
+  useEffectiveAuthorRelays,
+} from '../../hooks/useAuthorRelays';
 import { pushDistinct } from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAppTheme } from '../../theme';
@@ -169,6 +172,7 @@ type NoteBodyProps = {
   visible: boolean;
   onOpen: () => void;
   relays?: string[];
+  relayResolutionPending: boolean;
   showRelays: boolean;
   relayStatusSink: RelayStatusSink;
   reposterPubkey?: string;
@@ -297,6 +301,7 @@ const NoteBody = memo(
     visible,
     onOpen,
     relays,
+    relayResolutionPending,
     showRelays,
     relayStatusSink,
     reposterPubkey,
@@ -317,6 +322,7 @@ const NoteBody = memo(
             showRelays={showRelays}
             relayStatusSink={relayStatusSink}
             reposterPubkey={reposterPubkey}
+            onNotePress={onOpen}
           />
           <Pressable
             className={
@@ -374,6 +380,7 @@ const NoteBody = memo(
               visible={visible}
               main={main || fullBleedContent}
               relays={relays ?? EMPTY_RELAYS}
+              relayResolutionPending={relayResolutionPending}
               relayStatusSink={relayStatusSink}
             />
           ) : null}
@@ -401,6 +408,7 @@ const NoteBody = memo(
     previous.visible === next.visible &&
     previous.onOpen === next.onOpen &&
     previous.relays === next.relays &&
+    previous.relayResolutionPending === next.relayResolutionPending &&
     previous.showRelays === next.showRelays &&
     previous.relayStatusSink === next.relayStatusSink &&
     previous.reposterPubkey === next.reposterPubkey &&
@@ -476,13 +484,13 @@ function NoteComponent({
     () => relayList([...readRelays, ...relays]),
     [readRelays, relays],
   );
-  const headerRelays = useEffectiveAuthorRelays({
+  const authorRelayState = useEffectiveAuthorRelayState({
     subId: displayId || undefined,
     pubkey: displayNote?.pubkey(),
     marker: 'read',
     fallbackRelays: noteFallbackRelays,
   });
-  const noteRelays = headerRelays;
+  const noteRelays = authorRelayState.relays;
   // contextVersion forces refreshes when contextRef receives subscription events.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const contextEvents = useMemo(() => contextRef.current, [contextVersion]);
@@ -948,6 +956,7 @@ function NoteComponent({
         visible={visible}
         onOpen={openNote}
         relays={noteRelays}
+        relayResolutionPending={authorRelayState.pending}
         showRelays={!!noteRelays.length}
         relayStatusSink={relayStatusSink}
         reposterPubkey={reposterPubkey}

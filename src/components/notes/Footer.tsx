@@ -10,6 +10,7 @@ type FooterProps = {
   main?: boolean;
   mode?: 'inline' | 'zoom';
   relays?: string[];
+  relayResolutionPending?: boolean;
   relayStatusSink?: RelayStatusSink;
 };
 
@@ -21,6 +22,7 @@ export function Footer({
   main = false,
   mode = 'inline',
   relays = EMPTY_RELAYS,
+  relayResolutionPending = false,
   relayStatusSink: _relayStatusSink,
 }: FooterProps) {
   const footerActions = useNoteFooterActions(note, relays);
@@ -29,6 +31,7 @@ export function Footer({
     <NativeNoteFooter
       note={note}
       relays={relays}
+      relayResolutionPending={relayResolutionPending}
       currentUserPubkey={footerActions.currentUserPubkey}
       optimisticReactionNonce={footerActions.optimisticReactionNonce}
       visible={visible}

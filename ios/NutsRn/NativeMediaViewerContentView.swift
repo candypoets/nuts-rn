@@ -4,6 +4,52 @@ import NipworkerSwift
 import AVFoundation
 import UIKit
 
+enum NativeMediaLayout {
+  static let maxImageHeight: CGFloat = 384
+  static let gridHeight: CGFloat = 192
+  static let gap: CGFloat = 4
+  static let maxDisplayLinks = 6
+
+  static func height(items: [MediaInfo], width: CGFloat) -> CGFloat {
+    let count = min(items.count, maxDisplayLinks)
+    guard count > 0 else { return 0 }
+    return count == 1 ? imageHeight(dim: items[0].dim, width: width) : gridHeight
+  }
+
+  static func imageHeight(dim: String?, width: CGFloat) -> CGFloat {
+    guard let dim, let parsed = parseDim(dim), parsed.width > 0 else { return min(width, maxImageHeight) }
+    return min((parsed.height * width) / parsed.width, maxImageHeight)
+  }
+
+  static func tileFrame(total: Int, index: Int, width: CGFloat, height: CGFloat) -> CGRect {
+    let halfWidth = (width - gap) / 2
+    let halfHeight = (height - gap) / 2
+    let thirdWidth = (width - gap * 2) / 3
+    if total <= 1 { return CGRect(x: 0, y: 0, width: width, height: height) }
+    if total == 2 { return CGRect(x: index == 0 ? 0 : halfWidth + gap, y: 0, width: halfWidth, height: height) }
+    if total == 3 {
+      if index == 0 { return CGRect(x: 0, y: 0, width: halfWidth, height: height) }
+      return CGRect(x: halfWidth + gap, y: index == 1 ? 0 : halfHeight + gap, width: halfWidth, height: halfHeight)
+    }
+    if total == 4 {
+      return CGRect(x: index % 2 == 0 ? 0 : halfWidth + gap, y: index < 2 ? 0 : halfHeight + gap, width: halfWidth, height: halfHeight)
+    }
+    if total == 5 {
+      if index == 0 { return CGRect(x: 0, y: 0, width: halfWidth, height: height) }
+      let offset = index - 1
+      let smallWidth = (halfWidth - gap) / 2
+      return CGRect(x: halfWidth + gap + CGFloat(offset % 2) * (smallWidth + gap), y: offset < 2 ? 0 : halfHeight + gap, width: smallWidth, height: halfHeight)
+    }
+    return CGRect(x: CGFloat(index % 3) * (thirdWidth + gap), y: index < 3 ? 0 : halfHeight + gap, width: thirdWidth, height: halfHeight)
+  }
+
+  private static func parseDim(_ dim: String) -> (width: CGFloat, height: CGFloat)? {
+    let parts = dim.split(separator: "x").compactMap { Double($0) }
+    guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+    return (CGFloat(parts[0]), CGFloat(parts[1]))
+  }
+}
+
 struct ContentRun {
   let text: String
   let color: UIColor
@@ -114,6 +160,29 @@ final class NativeMediaSessionRegistry {
   }
 }
 
+private final class NativeMediaPlaybackCoordinator {
+  static let shared = NativeMediaPlaybackCoordinator()
+
+  private weak var activePlayer: AVPlayer?
+
+  private init() {}
+
+  func play(_ player: AVPlayer) {
+    if activePlayer !== player {
+      activePlayer?.pause()
+      activePlayer = player
+    }
+    player.play()
+  }
+
+  func pause(_ player: AVPlayer) {
+    player.pause()
+    if activePlayer === player {
+      activePlayer = nil
+    }
+  }
+}
+
 private func nativeMediaFormatDuration(_ seconds: Double) -> String {
   guard seconds.isFinite, seconds > 0 else { return "0:00" }
   let total = max(0, Int(ceil(seconds)))
@@ -218,7 +287,7 @@ private final class NativeVideoGridControlsView: UIView {
     let nextMuted = !(player.isMuted || player.volume <= 0)
     player.isMuted = nextMuted
     player.volume = nextMuted ? 0 : 1
-    player.play()
+    NativeMediaPlaybackCoordinator.shared.play(player)
     centerVisible = false
     refresh()
   }
@@ -367,13 +436,13 @@ private final class NativeVideoZoomControlsView: UIView {
   @objc private func togglePlayback() {
     guard let player else { return }
     if player.timeControlStatus == .playing {
-      player.pause()
+      NativeMediaPlaybackCoordinator.shared.pause(player)
     } else {
       let duration = player.currentItem?.duration.seconds ?? 0
       if duration > 0 && player.currentTime().seconds >= duration - 0.25 {
         player.seek(to: .zero)
       }
-      player.play()
+      NativeMediaPlaybackCoordinator.shared.play(player)
     }
     refresh()
   }
@@ -399,7 +468,7 @@ private final class NativeVideoZoomControlsView: UIView {
   @objc private func replay() {
     guard let player else { return }
     player.seek(to: .zero)
-    player.play()
+    NativeMediaPlaybackCoordinator.shared.play(player)
     refresh()
   }
 }
@@ -863,6 +932,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var videoPlayersByKey: [String: AVPlayer] = [:]
   private var videoLayersByKey: [String: AVPlayerLayer] = [:]
   private var gridControlsByKey: [String: NativeVideoGridControlsView] = [:]
+  private let remainingItemsLabel = UILabel()
   private var overlayItem: MediaInfo?
   private var overlayView: UIView?
   private weak var overlayDimmingView: UIView?
@@ -895,6 +965,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     clipsToBounds = true
     layer.cornerRadius = 8
     backgroundColor = .clear
+    configureRemainingItemsLabel()
     noteOverlayView.onNativeRoute = { [weak self] route in
       self?.onNativeRoute?(route)
     }
@@ -908,6 +979,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     clipsToBounds = true
     layer.cornerRadius = 8
     backgroundColor = .clear
+    configureRemainingItemsLabel()
     noteOverlayView.onNativeRoute = { [weak self] route in
       self?.onNativeRoute?(route)
     }
@@ -919,6 +991,16 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   deinit {
     overlayView?.removeFromSuperview()
     stopAllVideos()
+  }
+
+  private func configureRemainingItemsLabel() {
+    remainingItemsLabel.backgroundColor = UIColor.black.withAlphaComponent(0.58)
+    remainingItemsLabel.textColor = .white
+    remainingItemsLabel.font = .systemFont(ofSize: 24, weight: .bold)
+    remainingItemsLabel.textAlignment = .center
+    remainingItemsLabel.isHidden = true
+    remainingItemsLabel.isUserInteractionEnabled = false
+    addSubview(remainingItemsLabel)
   }
 
   @objc(updateSessionId:)
@@ -1064,6 +1146,20 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       videoLayersByKey[item.key]?.frame = imageView.bounds
       gridControlsByKey[item.key]?.frame = imageView.bounds
     }
+    if items.count > displayItems.count,
+       let lastIndex = displayItems.indices.last {
+      remainingItemsLabel.frame = NativeMediaLayout.tileFrame(
+        total: displayItems.count,
+        index: lastIndex,
+        width: bounds.width,
+        height: bounds.height
+      )
+      remainingItemsLabel.text = "+\(items.count - displayItems.count)"
+      remainingItemsLabel.isHidden = false
+      bringSubviewToFront(remainingItemsLabel)
+    } else {
+      remainingItemsLabel.isHidden = true
+    }
   }
 
   override func draw(_ rect: CGRect) {
@@ -1074,20 +1170,6 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       context.setFillColor(UIColor.black.withAlphaComponent(0.24).cgColor)
       context.fill(frame)
       drawPlayGlyph(in: frame)
-    }
-    if items.count > displayItems.count, let lastFrame = displayItems.indices.last.map({ NativeMediaLayout.tileFrame(total: displayItems.count, index: $0, width: bounds.width, height: bounds.height) }) {
-      context.setFillColor(UIColor.black.withAlphaComponent(0.58).cgColor)
-      context.fill(lastFrame)
-      let remaining = "+\(items.count - displayItems.count)"
-      let attrs: [NSAttributedString.Key: Any] = [
-        .font: UIFont.systemFont(ofSize: 24, weight: .bold),
-        .foregroundColor: UIColor.white,
-      ]
-      let size = remaining.size(withAttributes: attrs)
-      remaining.draw(
-        at: CGPoint(x: lastFrame.midX - size.width / 2, y: lastFrame.midY - size.height / 2),
-        withAttributes: attrs
-      )
     }
   }
 
@@ -1535,12 +1617,12 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       if index == activeIndex {
         player.isMuted = false
         player.volume = 1
-        player.play()
+        NativeMediaPlaybackCoordinator.shared.play(player)
         activePlayer = player
       } else {
         player.isMuted = true
         player.volume = 0
-        player.pause()
+        NativeMediaPlaybackCoordinator.shared.pause(player)
       }
     }
     overlayZoomControlsView?.configure(player: activePlayer)
@@ -1626,9 +1708,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       if item.key == activeItem.key,
          let index = items.firstIndex(where: { $0.key == item.key }),
          (items.count <= 1 || index == 0) {
-        player.play()
+        NativeMediaPlaybackCoordinator.shared.play(player)
       } else {
-        player.pause()
+        NativeMediaPlaybackCoordinator.shared.pause(player)
       }
     }
   }
@@ -1866,9 +1948,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     layer.videoGravity = .resizeAspectFill
     layer.frame = imageView.bounds
     if autoplay {
-      player.play()
+      NativeMediaPlaybackCoordinator.shared.play(player)
     } else {
-      player.pause()
+      NativeMediaPlaybackCoordinator.shared.pause(player)
     }
     configureGridControls(for: item, in: imageView, player: player, autoplay: autoplay)
   }
@@ -1905,11 +1987,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       if overlayView != nil,
          currentOverlayIndex() < items.count,
          items[currentOverlayIndex()].key == key {
-        player.pause()
+        NativeMediaPlaybackCoordinator.shared.pause(player)
         return
       }
       player.seek(to: .zero)
-      player.play()
+      NativeMediaPlaybackCoordinator.shared.play(player)
       return
     }
   }
@@ -1917,7 +1999,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private func removeVideo(forKey key: String) {
     if let player = videoPlayersByKey[key] {
       NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: player.currentItem)
-      player.pause()
+      NativeMediaPlaybackCoordinator.shared.pause(player)
       videoPlayersByKey[key] = nil
     }
     gridControlsByKey[key]?.removeFromSuperview()

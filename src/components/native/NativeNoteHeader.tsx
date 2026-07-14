@@ -20,6 +20,7 @@ type Props = {
   relays?: string[];
   showRelays?: boolean;
   reposterPubkey?: string;
+  onNotePress: () => void;
 };
 
 function flatBufferBytes(view: unknown): number[] | undefined {
@@ -39,6 +40,7 @@ export function NativeNoteHeader({
   relays,
   showRelays = true,
   reposterPubkey,
+  onNotePress,
 }: Props) {
   const theme = useAppTheme();
   const navigation =
@@ -48,9 +50,13 @@ export function NativeNoteHeader({
   const secondaryTextColor = getMutedContentColor(theme);
   const handleNativeRoute = useCallback(
     (event: {nativeEvent: {route: string}}) => {
+      if (event.nativeEvent.route === 'note') {
+        onNotePress();
+        return;
+      }
       handleProfileRoute(event.nativeEvent.route, navigation);
     },
-    [navigation],
+    [navigation, onNotePress],
   );
 
   return (
@@ -62,6 +68,7 @@ export function NativeNoteHeader({
       main={main}
       showRelays={showRelays}
       relayCount={relays?.length ?? 0}
+      authorPubkey={note.pubkey() || undefined}
       reposterPubkey={reposterPubkey}
       fallbackSubId={subId}
       primaryTextColor={primaryTextColor}
@@ -79,6 +86,8 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     flex: 1,
     minWidth: 0,
+    position: 'relative',
+    zIndex: 1,
   },
   full: {
     minHeight: 42,

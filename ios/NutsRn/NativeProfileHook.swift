@@ -18,8 +18,13 @@ struct NativeProfileSnapshot: Equatable {
 final class NativeProfileHook {
   var onProfile: ((NativeProfileSnapshot) -> Void)?
 
+  private let subscriptionNamespace: String
   private var subscription: NipworkerHookHandle?
   private var subscriptionKey = ""
+
+  init(subscriptionNamespace: String = "native_profile") {
+    self.subscriptionNamespace = subscriptionNamespace
+  }
 
   deinit {
     cancel()
@@ -47,7 +52,7 @@ final class NativeProfileHook {
     subscriptionKey = nextKey
     let requestedPubkey = cleanPubkey
     subscription = useSubscriptionHandle(
-      subscriptionId: "u_\(requestedPubkey)_\(relayKey)",
+      subscriptionId: "\(subscriptionNamespace)_\(requestedPubkey)_\(relayKey)",
       requests: [
         RequestObject(authors: [requestedPubkey], kinds: [0], limit: 1, relays: lookupRelays, closeOnEOSE: true, cacheFirst: true)
       ],

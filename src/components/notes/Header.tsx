@@ -13,6 +13,7 @@ type HeaderProps = {
   showRelays?: boolean;
   relayStatusSink?: RelayStatusSink;
   reposterPubkey?: string;
+  onNotePress: () => void;
 };
 
 function HeaderComponent({
@@ -24,6 +25,7 @@ function HeaderComponent({
   showRelays = true,
   relayStatusSink,
   reposterPubkey,
+  onNotePress,
 }: HeaderProps) {
   const isQuote = depth > 0;
 
@@ -41,6 +43,7 @@ function HeaderComponent({
         relays={relays}
         showRelays={showRelays}
         reposterPubkey={reposterPubkey}
+        onNotePress={onNotePress}
       />
     </View>
   );
@@ -56,5 +59,6 @@ export const Header = memo(
     previous.relays === next.relays &&
     (previous.showRelays ?? true) === (next.showRelays ?? true) &&
     previous.relayStatusSink === next.relayStatusSink &&
-    previous.reposterPubkey === next.reposterPubkey,
+    previous.reposterPubkey === next.reposterPubkey &&
+    previous.onNotePress === next.onNotePress,
 );

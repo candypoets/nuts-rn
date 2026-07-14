@@ -18,6 +18,7 @@ class NativeNoteHeaderContentView: UIView {
   private var main: Bool = false
   private var showRelays: Bool = true
   private var relayCount: Int = 0
+  private var authorPubkey: String?
   private var reposterPubkey: String?
   private var reposterPicture: String = ""
   private var reposterAvatarImage: UIImage?
@@ -192,6 +193,17 @@ class NativeNoteHeaderContentView: UIView {
     setNeedsDisplay()
   }
 
+  @objc(updateAuthorPubkey:)
+  func updateAuthorPubkey(_ value: String?) {
+    let nextPubkey = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedPubkey = nextPubkey?.isEmpty == false ? nextPubkey : nil
+    if authorPubkey == normalizedPubkey { return }
+    authorPubkey = normalizedPubkey
+    parseNote()
+    refreshProfileSubscription()
+    setNeedsDisplay()
+  }
+
   @objc(updateFallbackSubId:)
   func updateFallbackSubId(_ value: String?) {
     if fallbackSubId == value { return }
@@ -315,8 +327,19 @@ class NativeNoteHeaderContentView: UIView {
       return
     }
 
-    guard !pubkey.isEmpty else { return }
-    onNativeRoute?("profile:\(pubkey)")
+    let avatarSize: CGFloat = depth > 0 ? 16 : 40
+    let avatarTop: CGFloat = depth > 0 ? 0 : 2
+    let avatarRect = CGRect(x: 0, y: avatarTop, width: avatarSize, height: avatarSize)
+    let primaryFont = UIFont.systemFont(ofSize: main ? 15 : 13, weight: .semibold)
+    let displayName = name.isEmpty ? (shortPubkey(pubkey).isEmpty ? "unknown" : shortPubkey(pubkey)) : name
+    let textLeft = avatarSize + (depth > 0 ? 2 : 6)
+    let nameWidth = (displayName as NSString).size(withAttributes: [.font: primaryFont]).width
+    let nameRect = CGRect(x: textLeft, y: 0, width: nameWidth, height: primaryFont.lineHeight)
+    if (avatarRect.contains(point) || nameRect.contains(point)), !pubkey.isEmpty {
+      onNativeRoute?("profile:\(pubkey)")
+    } else {
+      onNativeRoute?("note")
+    }
   }
 
   private func parseNote() {
@@ -330,7 +353,7 @@ class NativeNoteHeaderContentView: UIView {
     }
 
     noteId = event.id ?? ""
-    let nextPubkey = event.pubkey ?? ""
+    let nextPubkey = authorPubkey ?? event.pubkey ?? ""
     if pubkey != nextPubkey {
       pubkey = nextPubkey
       resetProfileDisplay()
@@ -382,7 +405,7 @@ class NativeNoteHeaderContentView: UIView {
     if let profileHook {
       return profileHook
     }
-    let hook = NativeProfileHook()
+    let hook = NativeProfileHook(subscriptionNamespace: "native_note_author")
     hook.onProfile = { [weak self] profile in
       guard let self, profile.pubkey == self.pubkey else { return }
       self.applyProfile(profile)
@@ -396,7 +419,7 @@ class NativeNoteHeaderContentView: UIView {
     if let reposterProfileHook {
       return reposterProfileHook
     }
-    let hook = NativeProfileHook()
+    let hook = NativeProfileHook(subscriptionNamespace: "native_note_reposter")
     hook.onProfile = { [weak self] profile in
       guard let self, profile.pubkey == self.reposterPubkey else { return }
       self.reposterPicture = profile.picture

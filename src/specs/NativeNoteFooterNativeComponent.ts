@@ -13,6 +13,7 @@ type FooterActionEvent = Readonly<{
 export interface NativeProps extends ViewProps {
   noteBytes?: ReadonlyArray<Int32>;
   relays?: ReadonlyArray<string>;
+  relayResolutionPending?: WithDefault<boolean, false>;
   currentUserPubkey?: string;
   optimisticReactionNonce?: WithDefault<Int32, 0>;
   visible?: WithDefault<boolean, true>;

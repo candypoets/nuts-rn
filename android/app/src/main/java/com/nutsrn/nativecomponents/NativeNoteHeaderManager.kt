@@ -7,6 +7,7 @@ import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.ViewManagerDelegate
 import com.facebook.react.viewmanagers.NativeNoteHeaderManagerDelegate
 import com.facebook.react.viewmanagers.NativeNoteHeaderManagerInterface
+import com.facebook.react.common.MapBuilder
 
 @ReactModule(name = NativeNoteHeaderManager.REACT_CLASS)
 class NativeNoteHeaderManager :
@@ -45,6 +46,10 @@ class NativeNoteHeaderManager :
     view.setRelayCount(value)
   }
 
+  override fun setAuthorPubkey(view: NativeNoteHeaderView, value: String?) {
+    view.setAuthorPubkey(value)
+  }
+
   override fun setReposterPubkey(view: NativeNoteHeaderView, value: String?) {
     view.setReposterPubkey(value)
   }
@@ -68,6 +73,9 @@ class NativeNoteHeaderManager :
   override fun setAccentColor(view: NativeNoteHeaderView, value: String?) {
     view.setAccentColor(value)
   }
+
+  override fun getExportedCustomDirectEventTypeConstants(): MutableMap<String, Any> =
+      MapBuilder.of<String, Any>("topNativeRoute", MapBuilder.of("registrationName", "onNativeRoute")).toMutableMap()
 
   companion object {
     const val REACT_CLASS = "NativeNoteHeader"

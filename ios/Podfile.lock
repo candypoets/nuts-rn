@@ -285,7 +285,7 @@ PODS:
   - libwebp/sharpyuv (1.5.0)
   - libwebp/webp (1.5.0):
     - libwebp/sharpyuv
-  - NipworkerReactNative (0.96.4):
+  - NipworkerReactNative (0.96.6):
     - RCTRequired
     - RCTTypeSafety
     - React-Core
@@ -2883,7 +2883,7 @@ SPEC CHECKSUMS:
   libavif: 5f8e715bea24debec477006f21ef9e95432e254d
   libdav1d: 23581a4d8ec811ff171ed5e2e05cd27bad64c39f
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
-  NipworkerReactNative: ce4841b87731b88ecd52bb778e3fb05fb9522a5b
+  NipworkerReactNative: 952a3bf204ff244271a5bf79ed70eb174f72083d
   RCTDeprecation: 8f1dc8057e54ea6fd01df47d0d29487adc92c1a9
   RCTRequired: 9d02105f758490fab48d77fead2599a449321ab7
   RCTSwiftUI: 714ca60953e8b7779821eea889ebdc891851682b
@@ -2957,7 +2957,7 @@ SPEC CHECKSUMS:
   React-viewtransitionnativemodule: cd921fba8073c1318a0a3901bd9567bc22b28966
   React-webperformancenativemodule: 7da8fd8bb2f99600f1192eb834cf8cb197564994
   ReactAppDependencyProvider: adf5403892170fbe996fce485a703f25df08db66
-  ReactCodegen: 6e35e982cfe7dfc524a043cdd64807d7b4e75092
+  ReactCodegen: 45d864c82863e2b32ea0e2987dbc0f5ebf859608
   ReactCommon: 4a92a419d44cd92d17d7c29109e12dce2670e18a
   ReactNativeDependencies: fa0a54b3f5319ae0e3b9aff32bfee7a424b88e66
   ReactNativeEnriched: 678836b1c2845ae3bb405c676018142f0417995b

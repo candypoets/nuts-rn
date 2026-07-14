@@ -2,6 +2,7 @@ import {NativeModules, Platform} from 'react-native';
 
 type NativeTabBarControllerModule = {
   setHidden?: (hidden: boolean, animated: boolean) => void;
+  diagnoseScrollViews?: () => void;
 };
 
 const nativeTabBarController =
@@ -18,4 +19,8 @@ export function setNativeTabBarVisible(visible: boolean, animated = true) {
   if (hidden === nextHidden) return;
   hidden = nextHidden;
   nativeTabBarController.setHidden(nextHidden, animated);
+}
+
+export function diagnoseNativeTabBarScrollViews() {
+  nativeTabBarController?.diagnoseScrollViews?.();
 }

@@ -428,7 +428,7 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
       getItemId={item => item.chatId}
       pullToRefresh
       header={header}
-      headerOwnsSafeArea
+      headerSafeArea={false}
       stickyHeader={stickyHeader}
       renderItem={({item}) => (
         <ChatRow

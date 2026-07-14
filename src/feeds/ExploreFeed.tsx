@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -107,7 +108,7 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
-const APP_FOOTER_HEIGHT = 56;
+const APP_FOOTER_HEIGHT = Platform.OS === 'android' ? 68 : 56;
 const MEDIA_GRID_COLUMNS = 2;
 const MEDIA_TILE_HEIGHT = 286;
 const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6];
@@ -845,7 +846,7 @@ export function ExploreFeed({
         header={listHeader}
         pullToRefresh
         stickyHeader={stickyHeader ?? defaultStickyHeader}
-        headerOwnsSafeArea
+        headerSafeArea={false}
         stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
         loading={loading || refreshing}

@@ -665,7 +665,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       <Feed
         items={[]}
         header={renderHeader}
-        headerOwnsSafeArea
+        headerSafeArea={false}
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
@@ -680,7 +680,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       <Feed
         items={[]}
         header={renderHeader}
-        headerOwnsSafeArea
+        headerSafeArea={false}
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
@@ -696,7 +696,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       getItemId={item => item.id}
       pullToRefresh
       header={renderHeader}
-      headerOwnsSafeArea
+      headerSafeArea={false}
       stickyHeader={renderStickyHeader}
       renderItem={({ item, index }) => (
         <WalletActivityRow

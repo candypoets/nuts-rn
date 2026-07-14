@@ -11,6 +11,7 @@ import * as ReactNative from 'react-native';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -30,6 +31,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import {diagnoseNativeTabBarScrollViews} from '../navigation/nativeTabBar';
 import {useAppTheme} from '../theme';
 
 type FeedChromeProps = {
@@ -183,7 +185,9 @@ export function Feed<T>({
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
   const listRef = useRef<ScrollView>(null);
+  const androidListRef = useRef<FlashListRef<FeedVirtualRow<T>>>(null);
   const bottomListRef = useRef<FlashListRef<T>>(null);
+  const lastTabBarDiagnosticAtRef = useRef(0);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
@@ -245,6 +249,8 @@ export function Feed<T>({
   const scrollToTop = useCallback(() => {
     if (bottom) {
       bottomListRef.current?.scrollToOffset({offset: 0, animated: true});
+    } else if (Platform.OS === 'android') {
+      androidListRef.current?.scrollToOffset({offset: 0, animated: true});
     } else {
       listRef.current?.scrollTo({y: 0, animated: true});
     }
@@ -253,6 +259,8 @@ export function Feed<T>({
   const scrollToBottom = useCallback((animated: boolean) => {
     if (bottom) {
       bottomListRef.current?.scrollToOffset({offset: 0, animated});
+    } else if (Platform.OS === 'android') {
+      androidListRef.current?.scrollToEnd({animated});
     } else {
       listRef.current?.scrollToEnd({animated});
     }
@@ -298,7 +306,11 @@ export function Feed<T>({
   useEffect(() => {
     if (resetScrollKey === undefined || bottom) return;
     requestAnimationFrame(() => {
-      listRef.current?.scrollTo({y: 0, animated: false});
+      if (Platform.OS === 'android') {
+        androidListRef.current?.scrollToOffset({offset: 0, animated: false});
+      } else {
+        listRef.current?.scrollTo({y: 0, animated: false});
+      }
       lastOffsetRef.current = 0;
       setDown(true);
     });
@@ -388,6 +400,11 @@ export function Feed<T>({
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
+    const now = Date.now();
+    if (now - lastTabBarDiagnosticAtRef.current >= 1000) {
+      lastTabBarDiagnosticAtRef.current = now;
+      diagnoseNativeTabBarScrollViews();
+    }
     const offset = contentOffset.y;
     scrollY.value = offset;
     scrollViewportHeightRef.current = layoutMeasurement.height;
@@ -508,23 +525,6 @@ export function Feed<T>({
   }, [empty, loading]);
   return (
     <View className="relative flex-1">
-      {fixedHeader ? (
-        <View
-          pointerEvents="box-none"
-          className="absolute bottom-0 left-0 right-0 top-0 z-40"
-          style={{paddingTop: topInset}}
-        >
-          {fixedHeader(chromeProps)}
-        </View>
-      ) : null}
-      {stickyHeader ? (
-        <Animated.View
-          pointerEvents={start >= 1 && !down ? 'auto' : 'none'}
-          className="absolute left-0 right-0 top-0 z-30"
-          style={stickyHeaderStyle}>
-          <Pressable onPress={scrollToTop}>{stickyHeader(chromeProps)}</Pressable>
-        </Animated.View>
-      ) : null}
       {bottom ? (
         <FlashList
           ref={bottomListRef}
@@ -553,6 +553,39 @@ export function Feed<T>({
           onEndReachedThreshold={0.35}
           onScroll={handleScroll}
           onViewableItemsChanged={handleViewableItemsChanged}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={[refreshColor]}
+                progressViewOffset={refreshInset}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          scrollEventThrottle={16}
+        />
+      ) : Platform.OS === 'android' ? (
+        <FlashList
+          ref={androidListRef}
+          data={virtualRows}
+          keyExtractor={row => row.key}
+          renderItem={({item}) => renderVirtualRowContent(item, item.key)}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          ListEmptyComponent={listEmpty}
+          className="flex-1"
+          contentContainerClassName={contentContainerClassName}
+          maintainVisibleContentPosition={
+            shouldMaintainVisibleContentPosition
+              ? {minIndexForVisible: 0}
+              : {disabled: true}
+          }
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.35}
+          onScroll={handleScroll}
           refreshControl={
             pullToRefresh && onRefresh ? (
               <RefreshControl
@@ -607,6 +640,23 @@ export function Feed<T>({
           {listFooter}
         </ScrollView>
       )}
+      {fixedHeader ? (
+        <View
+          pointerEvents="box-none"
+          className="absolute bottom-0 left-0 right-0 top-0 z-40"
+          style={{paddingTop: topInset}}
+        >
+          {fixedHeader(chromeProps)}
+        </View>
+      ) : null}
+      {stickyHeader ? (
+        <Animated.View
+          pointerEvents={start >= 1 && !down ? 'auto' : 'none'}
+          className="absolute left-0 right-0 top-0 z-30"
+          style={stickyHeaderStyle}>
+          <Pressable onPress={scrollToTop}>{stickyHeader(chromeProps)}</Pressable>
+        </Animated.View>
+      ) : null}
       {stickyFooter ? (
         <Animated.View
           pointerEvents="box-none"

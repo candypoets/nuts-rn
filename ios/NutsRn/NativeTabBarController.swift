@@ -17,14 +17,27 @@ class NativeTabBarController: NSObject {
         return
       }
 
-      Self.logSelectedTabScrollViews(tabBarController)
-
       guard NativeTabBarController.hidden != hidden else { return }
       NativeTabBarController.hidden = hidden
 
       if #available(iOS 18.0, *) {
         tabBarController.setTabBarHidden(hidden, animated: animated)
       }
+    }
+  }
+
+  @objc(diagnoseScrollViews)
+  func diagnoseScrollViews() {
+    DispatchQueue.main.async {
+      guard let tabBarController = Self.findTabBarController() else {
+        emitNativeDebugLog(
+          source: "NativeTabBarController",
+          event: "missing-tab-controller",
+          details: "diagnose"
+        )
+        return
+      }
+      Self.logSelectedTabScrollViews(tabBarController)
     }
   }
 
@@ -47,11 +60,34 @@ class NativeTabBarController: NSObject {
 
     var scrollViews: [String] = []
     collectScrollViews(in: rootView, path: [], output: &scrollViews)
+    var viewTree: [String] = []
+    collectViewTree(in: rootView, path: [], depth: 0, output: &viewTree)
     emitNativeDebugLog(
       source: "NativeTabBarController",
       event: "scroll-view-diagnostic",
-      details: "first=\(firstChain.joined(separator: ">")); scrolls=\(scrollViews.joined(separator: " | "))"
+      details: "controller=\(type(of: tabBarController))" +
+        " selected=\(String(describing: tabBarController.selectedViewController.map { type(of: $0) }))" +
+        "; first=\(firstChain.joined(separator: ">"))" +
+        "; tree=\(viewTree.joined(separator: " | "))" +
+        "; scrolls=\(scrollViews.joined(separator: " | "))"
     )
+  }
+
+  private static func collectViewTree(
+    in view: UIView,
+    path: [Int],
+    depth: Int,
+    output: inout [String]
+  ) {
+    guard depth <= 3 else { return }
+    let identifier = view.accessibilityIdentifier.map { " id=\($0)" } ?? ""
+    output.append(
+      "\(path.map(String.init).joined(separator: ".")):\(type(of: view))" +
+        " frame=\(view.frame) hidden=\(view.isHidden) z=\(view.layer.zPosition)\(identifier)"
+    )
+    for (index, child) in view.subviews.enumerated() {
+      collectViewTree(in: child, path: path + [index], depth: depth + 1, output: &output)
+    }
   }
 
   private static func collectScrollViews(
@@ -72,7 +108,7 @@ class NativeTabBarController: NSObject {
   }
 
   private static func findTabBarController() -> UITabBarController? {
-    UIApplication.shared.connectedScenes
+    let rootControllers = UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }
       .flatMap(\.windows)
       .sorted { left, right in
@@ -81,8 +117,37 @@ class NativeTabBarController: NSObject {
         }
         return left.windowLevel.rawValue > right.windowLevel.rawValue
       }
-      .compactMap { findTabBarController(in: $0.rootViewController) }
+      .compactMap(\.rootViewController)
+
+    return rootControllers
+      .compactMap { findReactNativeScreensTabBarController(in: $0) }
+      .first ?? rootControllers
+      .compactMap { findTabBarController(in: $0) }
       .first
+  }
+
+  private static func findReactNativeScreensTabBarController(
+    in controller: UIViewController?
+  ) -> UITabBarController? {
+    guard let controller else { return nil }
+
+    if let tabBarController = controller as? UITabBarController,
+       String(describing: type(of: tabBarController)).contains("RNSTabBarController") {
+      return tabBarController
+    }
+
+    if let presented = controller.presentedViewController,
+       let tabBarController = findReactNativeScreensTabBarController(in: presented) {
+      return tabBarController
+    }
+
+    for child in controller.children {
+      if let tabBarController = findReactNativeScreensTabBarController(in: child) {
+        return tabBarController
+      }
+    }
+
+    return nil
   }
 
   private static func findTabBarController(in controller: UIViewController?) -> UITabBarController? {

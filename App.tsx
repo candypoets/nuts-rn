@@ -29,9 +29,14 @@ import {
   useIsFocused,
 } from '@react-navigation/native';
 import {
+  createBottomTabNavigator,
+  type BottomTabNavigationOptions,
+} from '@react-navigation/bottom-tabs';
+import {
   createNativeBottomTabNavigator,
   type NativeBottomTabIcon,
 } from '@react-navigation/bottom-tabs/unstable';
+import {House, Layers3, MessageCircle} from 'lucide-react-native';
 import {
   createNativeStackNavigator,
   type NativeStackScreenProps,
@@ -93,6 +98,7 @@ import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
 import { startNativeDebugLogRelay } from './src/debug/nativeDebugBridge';
+import {NativeParityHarness} from './src/debug/NativeParityHarness';
 
 enableScreens(true);
 enableFreeze(true);
@@ -110,6 +116,9 @@ type MainTabParamList = {
 };
 const NativeStack = createNativeStackNavigator<RootStackParamList>();
 const NativeBottomTabs = createNativeBottomTabNavigator<MainTabParamList>();
+const AndroidBottomTabs = createBottomTabNavigator<MainTabParamList>();
+const supportsNativeTabBarMinimization =
+  Platform.OS === 'ios' && Number.parseFloat(String(Platform.Version)) >= 26;
 const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
 const MINT_QUOTE_RETRY_DELAY_MS = 1200;
 const PUSH_SCREEN_OPTIONS = {
@@ -198,6 +207,14 @@ function App() {
   useEffect(() => {
     return startNativeDebugLogRelay(event => {
       if (event.event === 'summary' && event.logs?.length) {
+        const tabBarDiagnostic = event.logs.find(
+          log =>
+            log.source === 'NativeTabBarController' &&
+            log.event === 'scroll-view-diagnostic',
+        );
+        if (tabBarDiagnostic?.details) {
+          console.log('[tab-bar-scroll]', tabBarDiagnostic.details);
+        }
         console.log(
           '[native-debug]',
           event.logs
@@ -217,6 +234,9 @@ function App() {
   if (!manager) {
     return null;
   }
+
+  const showNativeParityHarness =
+    __DEV__ && process.env.EXPO_PUBLIC_NATIVE_PARITY === '1';
 
   return (
     <GestureHandlerRootView
@@ -244,7 +264,11 @@ function App() {
                 backgroundColor="transparent"
                 barStyle={isDarkMode ? 'light-content' : 'dark-content'}
               />
-              <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
+              {showNativeParityHarness ? (
+                <NativeParityHarness />
+              ) : (
+                <RootNavigator manager={manager} nostrEnabled={Boolean(manager)} />
+              )}
               <SendStatuses />
             </Animated.View>
           </View>
@@ -310,6 +334,16 @@ function RootNavigator({
   nostrEnabled: boolean;
 }) {
   const theme = useAppTheme();
+  const themedNavigationTheme = useMemo(
+    () => ({
+      ...navigationTheme,
+      colors: {
+        ...navigationTheme.colors,
+        background: theme.colors.base100,
+      },
+    }),
+    [theme.colors.base100],
+  );
   const cleanupCancelRef = useRef<(() => void) | null>(null);
   const contentStyle = useMemo(
     () => [styles.root, { backgroundColor: theme.colors.base100 }],
@@ -334,7 +368,7 @@ function RootNavigator({
   return (
     <NavigationContainer
       ref={rootNavigationRef}
-      theme={navigationTheme}
+      theme={themedNavigationTheme}
       onStateChange={() => scheduleCleanup()}
     >
       <NativeStack.Navigator
@@ -443,7 +477,7 @@ function RootNavigator({
         <NativeStack.Screen
           name="Post"
           component={PostScreen}
-          options={{ presentation: 'modal' }}
+          options={{ presentation: 'modal', gestureEnabled: true }}
         />
         <NativeStack.Screen
           name="Receive"
@@ -793,6 +827,39 @@ function MainTabs({
 
   return (
     <MainTabContext.Provider value={tabContext}>
+      {Platform.OS === 'android' ? (
+        <AndroidBottomTabs.Navigator
+          initialRouteName="ExploreTab"
+          backBehavior="initialRoute"
+          screenOptions={({route}) => ({
+            headerShown: false,
+            lazy: false,
+            tabBarActiveTintColor: theme.colors.primary,
+            tabBarInactiveTintColor: theme.colors.primaryContent,
+            tabBarStyle: {
+              backgroundColor: theme.colors.base100,
+              borderTopColor: `${theme.colors.primaryContent}18`,
+              height: 68,
+              paddingBottom: 7,
+              paddingTop: 7,
+            },
+            tabBarLabelStyle: {fontSize: 11, fontWeight: '500'},
+            tabBarIcon: ({color, size}) => {
+              const Icon =
+                route.name === 'HomeTab'
+                  ? House
+                  : route.name === 'ChatTab'
+                    ? MessageCircle
+                    : Layers3;
+              return <Icon color={color} size={Math.min(size, 22)} strokeWidth={2} />;
+            },
+          }) satisfies BottomTabNavigationOptions}
+        >
+          <AndroidBottomTabs.Screen name="HomeTab" component={HomeTabScreen} options={{title: 'Home'}} />
+          <AndroidBottomTabs.Screen name="ExploreTab" component={ExploreTabScreen} options={{title: 'Feed'}} />
+          <AndroidBottomTabs.Screen name="ChatTab" component={ChatTabScreen} options={{title: 'Chats'}} />
+        </AndroidBottomTabs.Navigator>
+      ) : (
       <NativeBottomTabs.Navigator
         initialRouteName="ExploreTab"
         backBehavior="initialRoute"
@@ -838,6 +905,7 @@ function MainTabs({
           }}
         />
       </NativeBottomTabs.Navigator>
+      )}
     </MainTabContext.Provider>
   );
 }
@@ -864,7 +932,9 @@ function useMainTabContext(routeId: RouteId) {
   useEffect(() => {
     if (!isFocused) return;
     context.activateRoute(routeId);
-    setNativeTabBarVisible(true, false);
+    if (!supportsNativeTabBarMinimization) {
+      setNativeTabBarVisible(true, false);
+    }
     return scheduleNostrCleanup(context.manager);
   }, [context, isFocused, routeId]);
 
@@ -876,74 +946,65 @@ function useMainTabContext(routeId: RouteId) {
 }
 
 function HomeTabScreen() {
-  const {backgroundColor, isFocused, nostrEnabled, themeVars, visible} =
+  const {isFocused, nostrEnabled, visible} =
     useMainTabContext('home');
   const handleChromeVisibilityChange = useCallback(
     (nextVisible: boolean) => {
-      if (isFocused) setNativeTabBarVisible(nextVisible);
+      if (isFocused && !supportsNativeTabBarMinimization) {
+        setNativeTabBarVisible(nextVisible);
+      }
     },
     [isFocused],
   );
 
   return (
-    <FeedPage
-      backgroundColor={backgroundColor}
-      themeVars={themeVars}
-    >
-      <HomeFeed
-        enabled={nostrEnabled}
-        visible={visible}
-        onChromeVisibilityChange={handleChromeVisibilityChange}
-      />
-    </FeedPage>
+    <HomeFeed
+      enabled={nostrEnabled}
+      visible={visible}
+      onChromeVisibilityChange={handleChromeVisibilityChange}
+    />
   );
 }
 
 function ExploreTabScreen() {
-  const {backgroundColor, isFocused, nostrEnabled, themeVars, visible} =
+  const {isFocused, nostrEnabled, visible} =
     useMainTabContext('explore');
   const handleChromeVisibilityChange = useCallback(
     (nextVisible: boolean) => {
-      if (isFocused) setNativeTabBarVisible(nextVisible);
+      if (isFocused && !supportsNativeTabBarMinimization) {
+        setNativeTabBarVisible(nextVisible);
+      }
     },
     [isFocused],
   );
 
   return (
-    <FeedPage
-      backgroundColor={backgroundColor}
-      themeVars={themeVars}
-    >
-      <ExploreFeed
-        enabled={nostrEnabled}
-        visible={visible}
-        onChromeVisibilityChange={handleChromeVisibilityChange}
-      />
-    </FeedPage>
+    <ExploreFeed
+      enabled={nostrEnabled}
+      visible={visible}
+      onChromeVisibilityChange={handleChromeVisibilityChange}
+    />
   );
 }
 
 function ChatTabScreen() {
-  const {backgroundColor, isFocused, nostrEnabled, themeVars, visible} =
+  const {isFocused, nostrEnabled, visible} =
     useMainTabContext('chat');
   const handleChromeVisibilityChange = useCallback(
     (nextVisible: boolean) => {
-      if (isFocused) setNativeTabBarVisible(nextVisible);
+      if (isFocused && !supportsNativeTabBarMinimization) {
+        setNativeTabBarVisible(nextVisible);
+      }
     },
     [isFocused],
   );
 
   return (
-    <FeedPage
-      backgroundColor={backgroundColor}
-      themeVars={themeVars}
-    >
-      <ChatFeed
-        enabled={nostrEnabled}
-        visible={visible}
-        onChromeVisibilityChange={handleChromeVisibilityChange}
-      />
-    </FeedPage>
+    <ChatFeed
+      enabled={nostrEnabled}
+      visible={visible}
+      onChromeVisibilityChange={handleChromeVisibilityChange}
+    />
   );
 }
 
@@ -1357,24 +1418,6 @@ function TagsScreen({
   );
 }
 
-function FeedPage({
-  backgroundColor,
-  children,
-  themeVars,
-}: {
-  backgroundColor: string;
-  children: React.ReactNode;
-  themeVars: ReturnType<typeof getAppThemeVars>;
-}) {
-  return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.page, themeVars, { backgroundColor }]}
-    >
-      {children}
-    </View>
-  );
-}
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -1383,10 +1426,6 @@ const styles = StyleSheet.create({
   navigator: {
     flex: 1,
     overflow: 'hidden',
-  },
-  page: {
-    flex: 1,
-    backgroundColor: '#f5f7f8',
   },
 });
 

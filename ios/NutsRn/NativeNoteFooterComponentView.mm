@@ -50,6 +50,19 @@ using namespace facebook::react;
         eventEmitter->onNativeAction(event);
       }
     };
+    _contentView.onRelayStatusChange = ^(NSString *relayUrl, NSString *status) {
+      NativeNoteFooterComponentView *strongSelf = weakSelf;
+      if (!strongSelf || !relayUrl || !status) {
+        return;
+      }
+      auto eventEmitter = [strongSelf nativeNoteFooterEventEmitter];
+      if (eventEmitter) {
+        NativeNoteFooterEventEmitter::OnRelayStatus event;
+        event.relayUrl = std::string([relayUrl UTF8String]);
+        event.status = std::string([status UTF8String]);
+        eventEmitter->onRelayStatus(event);
+      }
+    };
     self.contentView = _contentView;
   }
 

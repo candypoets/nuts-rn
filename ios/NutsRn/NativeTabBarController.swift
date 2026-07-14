@@ -5,6 +5,52 @@ import UIKit
 class NativeTabBarController: NSObject {
   private static var hidden = false
 
+  @objc(configureCompactAppearance)
+  func configureCompactAppearance() {
+    DispatchQueue.main.async {
+      Self.configureCompactAppearance(attempt: 0)
+    }
+  }
+
+  private static func configureCompactAppearance(attempt: Int) {
+    guard let tabBarController = findTabBarController() else {
+      guard attempt < 20 else {
+        emitNativeDebugLog(
+          source: "NativeTabBarController",
+          event: "missing-tab-controller",
+          details: "configure-compact-appearance attempts=\(attempt + 1)"
+        )
+        return
+      }
+
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        configureCompactAppearance(attempt: attempt + 1)
+      }
+      return
+    }
+
+    guard #available(iOS 18.0, *) else { return }
+
+    let compactTabIdentifiers = tabBarController.tabs.map(\.identifier)
+    tabBarController.compactTabIdentifiers = compactTabIdentifiers
+    tabBarController.tabBar.itemPositioning = .fill
+
+    let appearance = tabBarController.tabBar.standardAppearance.copy()
+      as? UITabBarAppearance ?? UITabBarAppearance()
+    let compactItems = appearance.compactInlineLayoutAppearance
+    compactItems.normal.titleTextAttributes[.font] = UIFont.systemFont(ofSize: 10, weight: .medium)
+    compactItems.selected.titleTextAttributes[.font] = UIFont.systemFont(ofSize: 10, weight: .semibold)
+    tabBarController.tabBar.standardAppearance = appearance
+    tabBarController.tabBar.scrollEdgeAppearance = appearance
+    tabBarController.tabBar.setNeedsLayout()
+
+    emitNativeDebugLog(
+      source: "NativeTabBarController",
+      event: "compact-appearance-configured",
+      details: "identifiers=\(compactTabIdentifiers.joined(separator: ",")); positioning=fill; attempt=\(attempt + 1)"
+    )
+  }
+
   @objc(setHidden:animated:)
   func setHidden(_ hidden: Bool, animated: Bool) {
     DispatchQueue.main.async {

@@ -87,6 +87,14 @@ using namespace facebook::react;
   if (oldHeaderProps.relayCount != newHeaderProps.relayCount) {
     [_contentView updateRelayCount:@(newHeaderProps.relayCount)];
   }
+  if (oldHeaderProps.relayStatuses != newHeaderProps.relayStatuses) {
+    NSArray<NSString *> *entries = RCTNSArrayFromStringVector(newHeaderProps.relayStatuses);
+    NSMutableDictionary<NSString *, NSString *> *statuses = [NSMutableDictionary new];
+    for (NSUInteger index = 0; index + 1 < entries.count; index += 2) {
+      statuses[entries[index]] = entries[index + 1];
+    }
+    [_contentView updateRelayStatuses:statuses];
+  }
   if (oldHeaderProps.authorPubkey != newHeaderProps.authorPubkey) {
     [_contentView updateAuthorPubkey:RCTNSStringFromString(newHeaderProps.authorPubkey)];
   }

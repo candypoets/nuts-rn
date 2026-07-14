@@ -18,6 +18,7 @@ export interface NativeProps extends ViewProps {
   main?: WithDefault<boolean, false>;
   showRelays?: WithDefault<boolean, true>;
   relayCount?: WithDefault<Int32, 0>;
+  relayStatuses?: ReadonlyArray<string>;
   authorPubkey?: string;
   reposterPubkey?: string;
   fallbackSubId?: string;

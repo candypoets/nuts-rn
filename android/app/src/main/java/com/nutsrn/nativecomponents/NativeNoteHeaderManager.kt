@@ -46,6 +46,13 @@ class NativeNoteHeaderManager :
     view.setRelayCount(value)
   }
 
+  override fun setRelayStatuses(view: NativeNoteHeaderView, value: ReadableArray?) {
+    val entries = value?.let { array -> (0 until array.size()).mapNotNull(array::getString) }.orEmpty()
+    view.setRelayStatuses(entries.chunked(2).mapNotNull { pair ->
+      pair.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+    }.toMap())
+  }
+
   override fun setAuthorPubkey(view: NativeNoteHeaderView, value: String?) {
     view.setAuthorPubkey(value)
   }

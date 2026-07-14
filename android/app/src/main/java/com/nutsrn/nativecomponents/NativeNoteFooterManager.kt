@@ -31,7 +31,10 @@ class NativeNoteFooterManager :
   override fun setAccentColor(view: NativeNoteFooterView, value: String?) = view.setAccentColor(value)
   override fun setZoomBackgroundColor(view: NativeNoteFooterView, value: String?) = view.setZoomBackgroundColor(value)
   override fun getExportedCustomDirectEventTypeConstants(): MutableMap<String, Any> =
-      MapBuilder.of<String, Any>("topNativeAction", MapBuilder.of("registrationName", "onNativeAction")).toMutableMap()
+      MapBuilder.builder<String, Any>()
+          .put("topNativeAction", MapBuilder.of("registrationName", "onNativeAction"))
+          .put("topRelayStatus", MapBuilder.of("registrationName", "onRelayStatus"))
+          .build().toMutableMap()
 
   companion object {
     const val REACT_CLASS = "NativeNoteFooter"

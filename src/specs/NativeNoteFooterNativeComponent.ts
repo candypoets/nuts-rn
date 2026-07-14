@@ -10,6 +10,11 @@ type FooterActionEvent = Readonly<{
   action: string;
 }>;
 
+type RelayStatusEvent = Readonly<{
+  relayUrl: string;
+  status: string;
+}>;
+
 export interface NativeProps extends ViewProps {
   noteBytes?: ReadonlyArray<Int32>;
   relays?: ReadonlyArray<string>;
@@ -24,6 +29,7 @@ export interface NativeProps extends ViewProps {
   accentColor?: string;
   zoomBackgroundColor?: string;
   onNativeAction?: DirectEventHandler<FooterActionEvent>;
+  onRelayStatus?: DirectEventHandler<RelayStatusEvent>;
 }
 
 export default codegenNativeComponent<NativeProps>(

@@ -23,7 +23,7 @@ export function Footer({
   mode = 'inline',
   relays = EMPTY_RELAYS,
   relayResolutionPending = false,
-  relayStatusSink: _relayStatusSink,
+  relayStatusSink,
 }: FooterProps) {
   const footerActions = useNoteFooterActions(note, relays);
 
@@ -32,6 +32,7 @@ export function Footer({
       note={note}
       relays={relays}
       relayResolutionPending={relayResolutionPending}
+      relayStatusSink={relayStatusSink}
       currentUserPubkey={footerActions.currentUserPubkey}
       optimisticReactionNonce={footerActions.optimisticReactionNonce}
       visible={visible}

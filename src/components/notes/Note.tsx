@@ -117,6 +117,14 @@ function sameStringArray(left: string[], right: string[]) {
   );
 }
 
+function hashKey(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 2147483647;
+  }
+  return hash.toString(36);
+}
+
 function shouldUseString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
@@ -189,7 +197,6 @@ type LoadingNoteBodyProps = {
 
 type NotFoundNoteBodyProps = LoadingNoteBodyProps & {
   onRetry: () => void;
-  retrying: boolean;
 };
 
 type UnsupportedNoteBodyProps = {
@@ -220,7 +227,6 @@ const NotFoundNoteBody = memo(function NotFoundNoteBody({
   containerClassName,
   effectiveId,
   onRetry,
-  retrying,
   threadConnectors,
 }: NotFoundNoteBodyProps) {
   const theme = useAppTheme();
@@ -257,7 +263,7 @@ const NotFoundNoteBody = memo(function NotFoundNoteBody({
         >
           <RefreshCw size={14} color={theme.colors.primaryContent} />
           <Text className="text-xs font-semibold text-primary-content">
-            {retrying ? 'Searching' : 'Deep search'}
+            Deep search
           </Text>
         </Pressable>
       </View>
@@ -687,6 +693,13 @@ function NoteComponent({
     fallbackRelays: noteRelays,
   });
   const noteSubscriptionId = displayId || effectiveId;
+  const workerSubscriptionId = useMemo(
+    () =>
+      noteSubscriptionId
+        ? `note_${noteSubscriptionId}_${retryNonce}_${hashKey(lookupRelayKey)}`
+        : '',
+    [lookupRelayKey, noteSubscriptionId, retryNonce],
+  );
   const noteSubscriptionRequests = useMemo<RequestObject[]>(() => {
     if (!noteSubscriptionId) return [];
 
@@ -815,11 +828,11 @@ function NoteComponent({
   );
 
   useEffect(() => {
-    if (!visible || !noteSubscriptionId || !noteSubscriptionRequests.length)
+    if (!visible || !workerSubscriptionId || !noteSubscriptionRequests.length)
       return;
 
     const unsubscribe = subscribeToNostr(
-      noteSubscriptionId,
+      workerSubscriptionId,
       noteSubscriptionRequests,
       message => {
         if (handleRelayStatus(message)) return;
@@ -851,6 +864,7 @@ function NoteComponent({
     noteSubscriptionRequests,
     showReplies,
     visible,
+    workerSubscriptionId,
   ]);
 
   const renderQuote = useCallback(
@@ -903,7 +917,6 @@ function NoteComponent({
           containerClassName={containerClassName}
           effectiveId={effectiveId}
           onRetry={retryWithFallbackRelays}
-          retrying={retryNonce > 0}
           threadConnectors={threadConnectors}
         />
       );

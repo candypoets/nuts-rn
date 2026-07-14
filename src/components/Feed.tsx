@@ -11,7 +11,6 @@ import * as ReactNative from 'react-native';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -185,7 +184,6 @@ export function Feed<T>({
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
   const listRef = useRef<ScrollView>(null);
-  const androidListRef = useRef<FlashListRef<FeedVirtualRow<T>>>(null);
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const lastTabBarDiagnosticAtRef = useRef(0);
   const insets = useSafeAreaInsets();
@@ -249,8 +247,6 @@ export function Feed<T>({
   const scrollToTop = useCallback(() => {
     if (bottom) {
       bottomListRef.current?.scrollToOffset({offset: 0, animated: true});
-    } else if (Platform.OS === 'android') {
-      androidListRef.current?.scrollToOffset({offset: 0, animated: true});
     } else {
       listRef.current?.scrollTo({y: 0, animated: true});
     }
@@ -259,8 +255,6 @@ export function Feed<T>({
   const scrollToBottom = useCallback((animated: boolean) => {
     if (bottom) {
       bottomListRef.current?.scrollToOffset({offset: 0, animated});
-    } else if (Platform.OS === 'android') {
-      androidListRef.current?.scrollToEnd({animated});
     } else {
       listRef.current?.scrollToEnd({animated});
     }
@@ -306,11 +300,7 @@ export function Feed<T>({
   useEffect(() => {
     if (resetScrollKey === undefined || bottom) return;
     requestAnimationFrame(() => {
-      if (Platform.OS === 'android') {
-        androidListRef.current?.scrollToOffset({offset: 0, animated: false});
-      } else {
-        listRef.current?.scrollTo({y: 0, animated: false});
-      }
+      listRef.current?.scrollTo({y: 0, animated: false});
       lastOffsetRef.current = 0;
       setDown(true);
     });
@@ -553,39 +543,6 @@ export function Feed<T>({
           onEndReachedThreshold={0.35}
           onScroll={handleScroll}
           onViewableItemsChanged={handleViewableItemsChanged}
-          refreshControl={
-            pullToRefresh && onRefresh ? (
-              <RefreshControl
-                colors={[refreshColor]}
-                progressViewOffset={refreshInset}
-                progressBackgroundColor={theme.colors.base200}
-                refreshing={refreshing}
-                tintColor={refreshColor}
-                onRefresh={onRefresh}
-              />
-            ) : undefined
-          }
-          scrollEventThrottle={16}
-        />
-      ) : Platform.OS === 'android' ? (
-        <FlashList
-          ref={androidListRef}
-          data={virtualRows}
-          keyExtractor={row => row.key}
-          renderItem={({item}) => renderVirtualRowContent(item, item.key)}
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={listFooter}
-          ListEmptyComponent={listEmpty}
-          className="flex-1"
-          contentContainerClassName={contentContainerClassName}
-          maintainVisibleContentPosition={
-            shouldMaintainVisibleContentPosition
-              ? {minIndexForVisible: 0}
-              : {disabled: true}
-          }
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.35}
-          onScroll={handleScroll}
           refreshControl={
             pullToRefresh && onRefresh ? (
               <RefreshControl

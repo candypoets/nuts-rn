@@ -1,6 +1,7 @@
 import {NativeModules, Platform} from 'react-native';
 
 type NativeTabBarControllerModule = {
+  configureCompactAppearance?: () => void;
   setHidden?: (hidden: boolean, animated: boolean) => void;
   diagnoseScrollViews?: () => void;
 };
@@ -11,6 +12,10 @@ const nativeTabBarController =
     : undefined;
 
 let hidden = false;
+
+export function configureNativeTabBarCompactAppearance() {
+  nativeTabBarController?.configureCompactAppearance?.();
+}
 
 export function setNativeTabBarVisible(visible: boolean, animated = true) {
   if (!nativeTabBarController?.setHidden) return;

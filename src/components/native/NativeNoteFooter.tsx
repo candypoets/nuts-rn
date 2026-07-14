@@ -2,11 +2,13 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { ParsedEvent } from '@candypoets/nipworker';
 import NativeNoteFooterComponent from '../../specs/NativeNoteFooterNativeComponent';
+import type {RelayStatusSink} from '../notes/RelaysList';
 
 type Props = {
   note: ParsedEvent;
   relays?: string[];
   relayResolutionPending?: boolean;
+  relayStatusSink?: RelayStatusSink;
   currentUserPubkey?: string;
   optimisticReactionNonce?: number;
   visible?: boolean;
@@ -33,6 +35,7 @@ export function NativeNoteFooter({
   note,
   relays,
   relayResolutionPending = false,
+  relayStatusSink,
   currentUserPubkey,
   optimisticReactionNonce = 0,
   visible = true,
@@ -75,6 +78,13 @@ export function NativeNoteFooter({
     },
     [onComments, onLike, onReply, onRepost, onShare, onZap],
   );
+  const handleRelayStatus = React.useCallback(
+    (event: {nativeEvent: {relayUrl: string; status: string}}) => {
+      const {relayUrl, status} = event.nativeEvent;
+      relayStatusSink?.current?.(relayUrl, status);
+    },
+    [relayStatusSink],
+  );
 
   return (
     <View
@@ -99,6 +109,7 @@ export function NativeNoteFooter({
         accentColor={accentColor}
         zoomBackgroundColor="rgba(15, 23, 42, 0.46)"
         onNativeAction={handleNativeAction}
+        onRelayStatus={handleRelayStatus}
         style={StyleSheet.absoluteFill}
         pointerEvents="auto"
       />

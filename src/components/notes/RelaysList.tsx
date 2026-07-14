@@ -39,7 +39,7 @@ function statusClass(status?: string) {
   }
 }
 
-function useRelayStatusDots(statusSink?: RelayStatusSink) {
+export function useRelayStatusDots(statusSink?: RelayStatusSink) {
   const [statuses, setStatuses] = useState<Record<string, string>>({});
 
   const updateStatus = useCallback((relayUrl: string, status: string) => {

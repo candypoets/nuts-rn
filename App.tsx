@@ -93,7 +93,10 @@ import { ImageZoom } from './src/components/ImageZoom';
 import { SendStatuses } from './src/components/SendStatuses';
 import type { RootStackParamList } from './src/navigation/types';
 import {rootNavigationRef} from './src/navigation/rootNavigation';
-import {setNativeTabBarVisible} from './src/navigation/nativeTabBar';
+import {
+  configureNativeTabBarCompactAppearance,
+  setNativeTabBarVisible,
+} from './src/navigation/nativeTabBar';
 import {publishProofsBackup} from './src/nostr/proofBackup';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
@@ -791,6 +794,9 @@ function MainTabs({
 }) {
   const theme = useAppTheme();
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
+  useEffect(() => {
+    configureNativeTabBarCompactAppearance();
+  }, []);
   const [activatedRoutes, setActivatedRoutes] = useState<
     Record<RouteId, boolean>
   >({

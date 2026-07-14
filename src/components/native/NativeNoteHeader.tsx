@@ -19,6 +19,7 @@ type Props = {
   main?: boolean;
   relays?: string[];
   showRelays?: boolean;
+  relayStatuses?: Record<string, string>;
   reposterPubkey?: string;
   onNotePress: () => void;
 };
@@ -39,6 +40,7 @@ export function NativeNoteHeader({
   main = false,
   relays,
   showRelays = true,
+  relayStatuses,
   reposterPubkey,
   onNotePress,
 }: Props) {
@@ -46,6 +48,10 @@ export function NativeNoteHeader({
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
+  const relayStatusEntries = useMemo(
+    () => Object.entries(relayStatuses ?? {}).flat(),
+    [relayStatuses],
+  );
   const primaryTextColor = getBaseContentColor(theme);
   const secondaryTextColor = getMutedContentColor(theme);
   const handleNativeRoute = useCallback(
@@ -68,6 +74,7 @@ export function NativeNoteHeader({
       main={main}
       showRelays={showRelays}
       relayCount={relays?.length ?? 0}
+      relayStatuses={relayStatusEntries}
       authorPubkey={note.pubkey() || undefined}
       reposterPubkey={reposterPubkey}
       fallbackSubId={subId}

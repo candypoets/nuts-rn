@@ -175,6 +175,7 @@ class NativeNoteHeaderContentView: UIView {
     setNeedsDisplay()
   }
 
+  @objc(updateRelayStatuses:)
   func updateRelayStatuses(_ value: [String: String]) {
     if relayStatuses == value { return }
     relayStatuses = value

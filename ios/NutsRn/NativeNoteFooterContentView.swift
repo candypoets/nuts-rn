@@ -10,7 +10,7 @@ class NativeNoteFooterContentView: UIView {
     "wss://relay.nuts.cash",
   ]
 
-  var onRelayStatusChange: ((String, String) -> Void)?
+  @objc var onRelayStatusChange: ((String, String) -> Void)?
   @objc var onNativeAction: ((String) -> Void)?
 
   private var noteBytes: [UInt8]?

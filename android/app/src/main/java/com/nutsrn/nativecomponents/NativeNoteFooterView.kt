@@ -17,12 +17,14 @@ import com.candypoets.nipworker.reactnative.NipworkerHookHandle
 import com.candypoets.nipworker.reactnative.NipworkerRequest
 import com.candypoets.nipworker.reactnative.NipworkerRuntime
 import com.candypoets.nipworker.reactnative.NipworkerSubscriptionOptions
+import com.candypoets.nipworker.reactnative.NipworkerWorkerMessage
 import com.candypoets.nipworker.reactnative.useSubscription
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import nostr.fb.CountResponse
+import nostr.fb.ConnectionStatus
 import nostr.fb.Message
 import nostr.fb.ParsedEvent
 import nostr.fb.WorkerMessage
@@ -120,11 +122,11 @@ class NativeNoteFooterView(context: Context) : View(context) {
     if (supportsComments) requests += NipworkerRequest(kinds = listOf(1111), tags = mapOf("#E" to listOf(noteId)), relays = lookup)
     mainSub = NipworkerRuntime.useSubscription("f_${noteId}_${lookup.joinToString(",")}", requests, NipworkerSubscriptionOptions(cacheFirst = true, bytesPerEvent = 1024, counterKinds = kinds, counterPubkey = currentUserPubkey)) { messages ->
       var changed = false
-      for (message in messages) { if (message.contentType != Message.CountResponse) continue; val c = message.message.content(CountResponse()) as? CountResponse ?: continue; when (c.kind()) { 1 -> { replies = c.count().toInt(); replied = replied || c.you() }; 1111 -> comments = c.count().toInt(); 6 -> { reposts = c.count().toInt(); reposted = reposted || c.you() }; 7 -> { reactions = if (reacted) maxOf(reactions, c.count().toInt()) else c.count().toInt(); reacted = reacted || c.you() }; else -> continue }; changed = true }
+      for (message in messages) { if (forwardRelayStatus(message)) continue; if (message.contentType != Message.CountResponse) continue; val c = message.message.content(CountResponse()) as? CountResponse ?: continue; when (c.kind()) { 1 -> { replies = c.count().toInt(); replied = replied || c.you() }; 1111 -> comments = c.count().toInt(); 6 -> { reposts = c.count().toInt(); reposted = reposted || c.you() }; 7 -> { reactions = if (reacted) maxOf(reactions, c.count().toInt()) else c.count().toInt(); reacted = reacted || c.you() }; else -> continue }; changed = true }
       if (changed) postInvalidate()
     }
     quoteSub = NipworkerRuntime.useSubscription("fq_${noteId}_${lookup.joinToString(",")}", listOf(NipworkerRequest(kinds = listOf(1), tags = mapOf("#q" to listOf(noteId)), relays = lookup)), NipworkerSubscriptionOptions(cacheFirst = true, bytesPerEvent = 1024, counterKinds = listOf(1), counterPubkey = currentUserPubkey)) { messages ->
-      for (message in messages) { if (message.contentType != Message.CountResponse) continue; val c = message.message.content(CountResponse()) as? CountResponse ?: continue; if (c.kind() == 1) { quotes = c.count().toInt(); reposted = reposted || c.you(); postInvalidate() } }
+      for (message in messages) { if (forwardRelayStatus(message)) continue; if (message.contentType != Message.CountResponse) continue; val c = message.message.content(CountResponse()) as? CountResponse ?: continue; if (c.kind() == 1) { quotes = c.count().toInt(); reposted = reposted || c.you(); postInvalidate() } }
     }
   }
   private fun cancelSubscriptions() { mainSub?.cancel(); quoteSub?.cancel(); mainSub = null; quoteSub = null; subscriptionKey = "" }
@@ -159,6 +161,19 @@ class NativeNoteFooterView(context: Context) : View(context) {
   private fun inlineActionEnd(x:Float,label:String?,maxX:Float):Float{if(x>=maxX)return x;var next=x+dp(22f);if(label!=null)next+=dp(4f)+labelWidth(label,12f,false);return minOf(next+dp(2f),maxX)}
   private fun labelWidth(value:String,size:Float,bold:Boolean):Float{paint.textSize=sp(size);paint.typeface=if(bold)semiboldTypeface()else android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.NORMAL);return kotlin.math.ceil(paint.measureText(value).toDouble()).toFloat()}
   private fun emitAction(action: String) { onAction?.let { it(action); return }; dispatchNativeViewEvent("topNativeAction", Arguments.createMap().apply { putString("action", action) }) }
+  private fun forwardRelayStatus(message: NipworkerWorkerMessage): Boolean {
+    if (message.contentType != Message.ConnectionStatus) return false
+    val connection = message.message.content(ConnectionStatus()) as? ConnectionStatus ?: return true
+    val relayUrl = connection.relayUrl()?.trim()?.trimEnd('/').orEmpty()
+    val status = connection.status().orEmpty()
+    if (relayUrl.isNotEmpty() && status.isNotEmpty()) {
+      dispatchNativeViewEvent("topRelayStatus", Arguments.createMap().apply {
+        putString("relayUrl", relayUrl)
+        putString("status", status)
+      })
+    }
+    return true
+  }
 
   private fun drawIcon(canvas: Canvas, icon: Icon, rect: RectF, color: Int, filled: Boolean) { when (icon) { Icon.REPLY -> drawReply(canvas, rect, color); Icon.COMMENT -> drawComment(canvas, rect, color); Icon.REPOST -> drawRepost(canvas, rect, color); Icon.LIKE -> drawLike(canvas, rect, color, filled); Icon.SHARE -> drawShare(canvas, rect, color) } }
   private fun path(rect: RectF, build: Path.() -> Unit): Path = Path().apply(build).also { it.transform(android.graphics.Matrix().apply { setScale(rect.width()/24f, rect.height()/24f); postTranslate(rect.left, rect.top) }) }

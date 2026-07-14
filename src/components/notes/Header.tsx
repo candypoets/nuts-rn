@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { View } from 'react-native';
 import type { ParsedEvent } from '@candypoets/nipworker';
 import { NativeNoteHeader } from '../native/NativeNoteHeader';
-import type { RelayStatusSink } from './RelaysList';
+import {useRelayStatusDots, type RelayStatusSink} from './RelaysList';
 
 type HeaderProps = {
   note: ParsedEvent;
@@ -28,6 +28,7 @@ function HeaderComponent({
   onNotePress,
 }: HeaderProps) {
   const isQuote = depth > 0;
+  const relayStatuses = useRelayStatusDots(relayStatusSink);
 
   return (
     <View
@@ -42,6 +43,7 @@ function HeaderComponent({
         main={main}
         relays={relays}
         showRelays={showRelays}
+        relayStatuses={relayStatuses}
         reposterPubkey={reposterPubkey}
         onNotePress={onNotePress}
       />

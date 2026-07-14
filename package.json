@@ -109,7 +109,6 @@
     "ios": {
       "componentProvider": {
         "NativeAvatar": "NativeAvatarComponentView",
-        "NativeContentBlocks": "NativeContentBlocksComponentView",
         "NativeLinkPreview": "NativeLinkPreviewComponentView",
         "NativeMediaViewer": "NativeMediaViewerComponentView",
         "NativeNoteHeader": "NativeNoteHeaderComponentView",

@@ -51,8 +51,7 @@ export function ComposerFooter({
         floating ? styles.floatingWrap : styles.embeddedWrap,
         {
           bottom: floating ? bottomOffset : undefined,
-          marginBottom: floating ? undefined : bottomOffset,
-          paddingBottom: 0,
+          paddingBottom: floating ? 0 : bottomOffset,
         },
       ]}
     >

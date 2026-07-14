@@ -1,8 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -343,6 +345,22 @@ function slugFromTitle(title: string) {
 export function PostModal({ reply, quote, onClose }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createPostModalStyles(theme), [theme]);
+  const closeModal = useCallback(() => {
+    Keyboard.dismiss();
+    onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        closeModal();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [closeModal]);
   const iconColor = theme.colors.primaryContent;
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -1212,17 +1230,17 @@ export function PostModal({ reply, quote, onClose }: Props) {
         <>
           <View style={styles.header}>
             <Pressable
+              accessibilityLabel="Close post composer"
+              accessibilityRole="button"
               style={styles.iconButton}
               hitSlop={12}
-              onPress={() => {
-                if (keyboardOpen) {
-                  Keyboard.dismiss();
-                  return;
-                }
-                onClose();
-              }}
+              onPress={closeModal}
             >
-              <ChevronDown size={23} color={iconColor} strokeWidth={2.3} />
+              {Platform.OS === 'android' ? (
+                <X size={22} color={iconColor} strokeWidth={2.3} />
+              ) : (
+                <ChevronDown size={23} color={iconColor} strokeWidth={2.3} />
+              )}
             </Pressable>
             <Pressable
               style={[styles.submitButton, !canSubmit && styles.submitDisabled]}

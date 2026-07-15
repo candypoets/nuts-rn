@@ -14,7 +14,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { Image } from 'expo-image';
 import { Mint } from '@cashu/cashu-ts';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { useNavigation } from '@react-navigation/native';
+import { StackActions, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import QRCode from 'react-native-qrcode-svg';
 import type {
@@ -45,7 +45,7 @@ import type {SearchBarCommands} from 'react-native-screens';
 
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { Avatar } from '../components/notes';
-import { pushDistinct } from '../navigation/pushDistinct';
+import { rootNavigationRef } from '../navigation/rootNavigation';
 import type { RootStackParamList } from '../navigation/types';
 import {
   BOOTSTRAP_RELAYS,
@@ -135,7 +135,7 @@ function decodePublicKey(input: string) {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function ProfileModal({ auth, manager }: ProfileModalProps) {
+export function ProfileModal({ auth, manager, onClose }: ProfileModalProps) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const iconColor = theme.colors.primaryContent;
@@ -192,12 +192,19 @@ export function ProfileModal({ auth, manager }: ProfileModalProps) {
         return;
       }
       if (item.path === 'nprofile' && auth.pubkey) {
-        pushDistinct(navigation, 'PublicProfile', { pubkey: auth.pubkey });
+        const pubkey = auth.pubkey;
+        onClose();
+        setTimeout(() => {
+          if (!rootNavigationRef.isReady()) return;
+          rootNavigationRef.dispatch(
+            StackActions.push('PublicProfile', { pubkey }),
+          );
+        }, 350);
         return;
       }
       navigation.navigate('ProfileStub', { path: item.path });
     },
-    [auth.pubkey, navigation],
+    [auth.pubkey, navigation, onClose],
   );
   const switchAccount = useCallback(
     (pubkey: string) => {

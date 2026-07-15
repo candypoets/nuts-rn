@@ -314,7 +314,7 @@ export function RelayInfosModal({
           ...routeRelays,
           ...selectedRelays,
           ...Object.keys(statuses),
-          ...initialKnownRelaysRef.current,
+          ...(initialKnownRelaysRef.current ?? []),
         ]);
     const currentOrder = itemOrderRef.current;
     const initialSelectedRelaySet = new Set(initialSelectedRelaysRef.current);
@@ -328,12 +328,14 @@ export function RelayInfosModal({
             ...currentOrder.filter(url => candidateRelays.includes(url)),
             ...candidateRelays.filter(url => !currentOrder.includes(url)),
           ];
-    itemOrderRef.current = allRelays;
-
     return allRelays.map(url => ({ url }));
   }, [communityMode, relays, selectedRelays, statuses]);
 
   const itemUrls = useMemo(() => items.map(item => item.url), [items]);
+
+  useEffect(() => {
+    itemOrderRef.current = itemUrls;
+  }, [itemUrls]);
   const virtualItems = useMemo<VirtualCollection<RelayInfoItem>>(
     () => ({
       get size() {

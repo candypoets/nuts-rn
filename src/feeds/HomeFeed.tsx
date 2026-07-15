@@ -225,8 +225,12 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     setTick(tick => tick + 1);
   }, []);
 
-  const completeResolvingSubscription = useCallback(() => {
-    if (!subscriptionResolvingRef.current) return;
+  const completeResolvingSubscription = useCallback((reason = 'relay-resolution') => {
+    console.log('[home-refresh] complete', {
+      reason,
+      wasResolving: subscriptionResolvingRef.current,
+      pendingItems: pendingItemsRef.current.length,
+    });
     subscriptionResolvingRef.current = false;
     commitPendingItems();
     setLoading(false);
@@ -280,10 +284,10 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   );
 
   const initFeed = useCallback(() => {
-    if (!enabled || !visible || !authPubkey || !hasSigner) return;
-    if (!homeRelays.length) return;
+    if (!enabled || !visible || !authPubkey || !hasSigner) return false;
+    if (!homeRelays.length) return false;
     const requests = requestList();
-    if (!requests.length) return;
+    if (!requests.length) return false;
     unsubscribeRef.current?.();
     pendingItemsRef.current = [];
     connectionTrackerRef.current.reset();
@@ -298,11 +302,14 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       requests,
       handleMessage,
     );
+    clearRefreshTimeout();
     refreshTimeoutRef.current = setTimeout(() => {
-      completeResolvingSubscription();
+      completeResolvingSubscription('timeout');
     }, 10000);
+    return true;
   }, [
     authPubkey,
+    clearRefreshTimeout,
     completeResolvingSubscription,
     enabled,
     hasSigner,
@@ -595,11 +602,32 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
 
   const handleRefresh = useCallback(() => {
     if (!authPubkey || refreshing) return;
+    console.log('[home-refresh] start', {
+      requestCache: requestCacheRef.current + 1,
+      relays: homeRelays.length,
+      hasSigner,
+      enabled,
+      visible,
+    });
+    clearRefreshTimeout();
     requestCacheRef.current += 1;
     setRefreshing(true);
     initProofs();
-    initFeed();
-  }, [authPubkey, initFeed, initProofs, refreshing]);
+    if (!initFeed()) {
+      console.warn('[home-refresh] feed initialization skipped');
+      setRefreshing(false);
+    }
+  }, [
+    authPubkey,
+    clearRefreshTimeout,
+    enabled,
+    hasSigner,
+    homeRelays.length,
+    initFeed,
+    initProofs,
+    refreshing,
+    visible,
+  ]);
 
   const activities = useMemo(
     () =>
@@ -665,7 +693,8 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       <Feed
         items={[]}
         header={renderHeader}
-        headerSafeArea={false}
+        headerSafeArea
+        headerOwnsSafeArea
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
@@ -680,7 +709,8 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       <Feed
         items={[]}
         header={renderHeader}
-        headerSafeArea={false}
+        headerSafeArea
+        headerOwnsSafeArea
         stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
@@ -696,7 +726,8 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       getItemId={item => item.id}
       pullToRefresh
       header={renderHeader}
-      headerSafeArea={false}
+      headerSafeArea
+      headerOwnsSafeArea
       stickyHeader={renderStickyHeader}
       renderItem={({ item, index }) => (
         <WalletActivityRow

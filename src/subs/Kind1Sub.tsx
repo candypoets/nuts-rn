@@ -52,12 +52,14 @@ type Kind1HeaderProps = {
 };
 
 type ReplyItemProps = {
+  headerAuthorPubkey?: string;
   index: number;
   item: ParsedEvent;
   visible: boolean;
 };
 
 type ReplyThreadNodeProps = {
+  headerAuthorPubkey?: string;
   item: ParsedEvent;
   tailing?: boolean;
   visible: boolean;
@@ -150,10 +152,11 @@ const Kind1Header = memo(function Kind1Header({
 });
 
 const ReplyItem = memo(
-  function ReplyItem({index, item, visible}: ReplyItemProps) {
+  function ReplyItem({headerAuthorPubkey, index, item, visible}: ReplyItemProps) {
     return (
       <View className={index === 0 ? 'px-1 pb-1.5 pt-1' : 'px-1 pb-1.5'}>
         <ReplyThreadNode
+          headerAuthorPubkey={headerAuthorPubkey}
           item={item}
           visible={visible}
         />
@@ -161,6 +164,7 @@ const ReplyItem = memo(
     );
   },
   (previous, next) =>
+    previous.headerAuthorPubkey === next.headerAuthorPubkey &&
     previous.index === next.index &&
     previous.item.id() === next.item.id() &&
     previous.visible === next.visible,
@@ -168,10 +172,33 @@ const ReplyItem = memo(
 
 const ReplyThreadNode = memo(
   function ReplyThreadNode({
+    headerAuthorPubkey,
     item,
     tailing = false,
     visible,
   }: ReplyThreadNodeProps) {
+    const showReplies = useCallback(
+      (newPost: ParsedEvent) => (replies: ParsedEvent[]) => {
+        const matchingReplies = replies.filter(reply => {
+          const kind1 = asKind1(reply);
+          return (
+            (reply.pubkey() === item.pubkey() ||
+              reply.pubkey() === headerAuthorPubkey) &&
+            kind1?.reply()?.id() === newPost.id()
+          );
+        });
+
+        if (!matchingReplies.length) return matchingReplies;
+
+        return [
+          matchingReplies.reduce((oldest, reply) =>
+            reply.createdAt() < oldest.createdAt() ? reply : oldest,
+          ),
+        ];
+      },
+      [headerAuthorPubkey, item],
+    );
+
     return (
       <Note
         note={item}
@@ -179,12 +206,14 @@ const ReplyThreadNode = memo(
         footer
         showQuote={false}
         showRoot={false}
+        showReplies={showReplies}
         tailing={tailing}
         threadCard
       />
     );
   },
   (previous, next) =>
+    previous.headerAuthorPubkey === next.headerAuthorPubkey &&
     previous.item.id() === next.item.id() &&
     (previous.tailing ?? false) === (next.tailing ?? false) &&
     previous.visible === next.visible,
@@ -1058,13 +1087,14 @@ export function Kind1Sub({
       }
       return (
         <ReplyItem
+          headerAuthorPubkey={headerItem?.pubkey() ?? undefined}
           index={index}
           item={item}
           visible={visible && itemVisible}
         />
       );
     },
-    [rootId, visible],
+    [headerItem, rootId, visible],
   );
   const getItemId = useCallback(
     (item: ParsedEvent) => item.id() || String(item.createdAt()),

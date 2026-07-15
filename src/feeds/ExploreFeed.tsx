@@ -150,6 +150,9 @@ export function ExploreFeed({
   const paginationCheckTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const paginationUnsubscribeTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const authFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -323,6 +326,10 @@ export function ExploreFeed({
     if (paginationCheckTimeoutRef.current) {
       clearTimeout(paginationCheckTimeoutRef.current);
       paginationCheckTimeoutRef.current = null;
+    }
+    if (paginationUnsubscribeTimeoutRef.current) {
+      clearTimeout(paginationUnsubscribeTimeoutRef.current);
+      paginationUnsubscribeTimeoutRef.current = null;
     }
     if (commitFrameRef.current) {
       cancelAnimationFrame(commitFrameRef.current);
@@ -741,7 +748,8 @@ export function ExploreFeed({
             setHasMore(false);
           }
           itemsBeforePaginationRef.current = 0;
-          setTimeout(() => {
+          paginationUnsubscribeTimeoutRef.current = setTimeout(() => {
+            paginationUnsubscribeTimeoutRef.current = null;
             unsubscribePaginationRef.current?.();
             unsubscribePaginationRef.current = null;
           }, 5000);
@@ -846,7 +854,8 @@ export function ExploreFeed({
         header={listHeader}
         pullToRefresh
         stickyHeader={stickyHeader ?? defaultStickyHeader}
-        headerSafeArea={false}
+        headerSafeArea
+        headerOwnsSafeArea
         stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
         loading={loading || refreshing}

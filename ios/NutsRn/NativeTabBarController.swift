@@ -31,10 +31,6 @@ class NativeTabBarController: NSObject {
 
     guard #available(iOS 18.0, *) else { return }
 
-    let compactTabIdentifiers = tabBarController.tabs.map(\.identifier)
-    tabBarController.compactTabIdentifiers = compactTabIdentifiers
-    tabBarController.tabBar.itemPositioning = .fill
-
     let appearance = tabBarController.tabBar.standardAppearance.copy()
       as? UITabBarAppearance ?? UITabBarAppearance()
     let compactItems = appearance.compactInlineLayoutAppearance
@@ -42,12 +38,11 @@ class NativeTabBarController: NSObject {
     compactItems.selected.titleTextAttributes[.font] = UIFont.systemFont(ofSize: 10, weight: .semibold)
     tabBarController.tabBar.standardAppearance = appearance
     tabBarController.tabBar.scrollEdgeAppearance = appearance
-    tabBarController.tabBar.setNeedsLayout()
 
     emitNativeDebugLog(
       source: "NativeTabBarController",
       event: "compact-appearance-configured",
-      details: "identifiers=\(compactTabIdentifiers.joined(separator: ",")); positioning=fill; attempt=\(attempt + 1)"
+      details: "attempt=\(attempt + 1)"
     )
   }
 

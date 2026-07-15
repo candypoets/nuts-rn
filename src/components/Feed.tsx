@@ -518,6 +518,7 @@ export function Feed<T>({
       {bottom ? (
         <FlashList
           ref={bottomListRef}
+          contentInsetAdjustmentBehavior="never"
           data={items}
           keyExtractor={keyExtractor}
           renderItem={renderBottomItem}
@@ -561,6 +562,7 @@ export function Feed<T>({
         <ScrollView
           ref={listRef}
           className="flex-1"
+          contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition ? {minIndexForVisible: 0} : undefined

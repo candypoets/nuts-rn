@@ -2,6 +2,7 @@
   "expo": {
     "name": "Nuts",
     "slug": "nuts",
+    "icon": "./assets/app-icon.png",
     "scheme": "nutsrn",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -59,7 +60,7 @@
         {
           "backgroundColor": "#131716",
           "image": "./assets/splash-nutscash.png",
-          "imageWidth": 120,
+          "imageWidth": 240,
           "resizeMode": "contain",
           "dark": {
             "backgroundColor": "#131716",

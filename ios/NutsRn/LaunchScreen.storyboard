@@ -17,10 +17,10 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleAspectFit" image="SplashNutscash" translatesAutoresizingMaskIntoConstraints="NO" id="GJd-Yh-RWb">
-                                <rect key="frame" x="127.5" y="273" width="120" height="120"/>
+                                <rect key="frame" x="67.5" y="213" width="240" height="240"/>
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="120" id="7xp-TW-rzR"/>
-                                    <constraint firstAttribute="height" constant="120" id="ee2-QQ-Cii"/>
+                                    <constraint firstAttribute="width" constant="240" id="7xp-TW-rzR"/>
+                                    <constraint firstAttribute="height" constant="240" id="ee2-QQ-Cii"/>
                                 </constraints>
                             </imageView>
                         </subviews>

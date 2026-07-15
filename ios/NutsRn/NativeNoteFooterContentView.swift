@@ -492,7 +492,7 @@ class NativeNoteFooterContentView: UIView {
       maxX: rowMaxX
     )
 
-    drawZapIcon(in: CGRect(x: bounds.width - rightInset - 24, y: (bounds.height - 24) / 2, width: 24, height: 24), color: footerTintColor)
+    drawZapIcon(in: CGRect(x: bounds.width - rightInset - 24, y: (bounds.height - 24) / 2, width: 24, height: 24))
   }
 
   private func drawZoomFooter() {
@@ -713,18 +713,8 @@ class NativeNoteFooterContentView: UIView {
     }
   }
 
-  private func drawZapIcon(in rect: CGRect, color: UIColor) {
-    let path = UIBezierPath()
-    path.move(to: CGPoint(x: 13.8, y: 2.5))
-    path.addLine(to: CGPoint(x: 5.8, y: 13.2))
-    path.addLine(to: CGPoint(x: 11.2, y: 13.2))
-    path.addLine(to: CGPoint(x: 9.6, y: 21.5))
-    path.addLine(to: CGPoint(x: 18.4, y: 10.2))
-    path.addLine(to: CGPoint(x: 12.8, y: 10.2))
-    path.close()
-    path.apply(transform(rect))
-    color.setFill()
-    path.fill()
+  private func drawZapIcon(in rect: CGRect) {
+    UIImage(named: "NutsZap")?.draw(in: rect)
   }
 }
 

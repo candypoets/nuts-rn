@@ -2,6 +2,7 @@ package com.nutsrn.nativecomponents
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
@@ -21,6 +22,7 @@ import com.candypoets.nipworker.reactnative.NipworkerWorkerMessage
 import com.candypoets.nipworker.reactnative.useSubscription
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
+import com.nutsrn.R
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import nostr.fb.CountResponse
@@ -33,6 +35,7 @@ class NativeNoteFooterView(context: Context) : View(context) {
   internal var onAction: ((String) -> Unit)? = null
   private enum class Icon { REPLY, COMMENT, REPOST, LIKE, SHARE }
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+  private val zapIcon by lazy { BitmapFactory.decodeResource(resources, R.drawable.nuts_zap) }
   private var noteBytes: ByteArray? = null
   private var relays = emptyList<String>()
   private var relayResolutionPending = false
@@ -137,7 +140,7 @@ class NativeNoteFooterView(context: Context) : View(context) {
     x = drawAction(canvas, Icon.REPOST, x, y, count(reposts + quotes), if (reposted) primary else tint, false, maxX) + gap
     x = drawAction(canvas, Icon.LIKE, x, y, count(reactions), if (reacted) accent else tint, reacted, maxX) + gap
     drawAction(canvas, Icon.SHARE, x, y, null, tint, false, maxX)
-    drawZap(canvas, RectF(width - dp(32f), (height - dp(24f)) / 2f, width - dp(8f), (height + dp(24f)) / 2f), tint)
+    drawZap(canvas, RectF(width - dp(32f), (height - dp(24f)) / 2f, width - dp(8f), (height + dp(24f)) / 2f))
   }
 
   private fun drawZoom(canvas: Canvas) {
@@ -183,7 +186,11 @@ class NativeNoteFooterView(context: Context) : View(context) {
   private fun drawRepost(c: Canvas, r: RectF, color: Int) { stroke(c, path(r) { moveTo(4f,4f); lineTo(4f,9f); lineTo(9f,9f); moveTo(4.6f,9f); cubicTo(9.8f,4.8f,17.2f,5.8f,19.9f,11f); moveTo(20f,20f); lineTo(20f,15f); lineTo(15f,15f); moveTo(19.4f,15f); cubicTo(16.7f,20.2f,9.3f,21.2f,4.1f,13f) }, color) }
   private fun drawShare(c: Canvas, r: RectF, color: Int) { stroke(c, path(r) { moveTo(22f,2f); lineTo(11f,13f); moveTo(22f,2f); lineTo(15f,22f); lineTo(11f,13f); lineTo(2f,9f); close() }, color) }
   private fun drawLike(c: Canvas, r: RectF, color: Int, filled: Boolean) { val p = path(r) { moveTo(12f,21.35f); cubicTo(5.4f,15.36f,2f,12.28f,2f,8.5f); cubicTo(2f,5.42f,4.42f,3f,7.5f,3f); cubicTo(9.24f,3f,10.91f,3.81f,12f,5.09f); cubicTo(13.09f,3.81f,14.76f,3f,16.5f,3f); cubicTo(19.58f,3f,22f,5.42f,22f,8.5f); cubicTo(22f,12.28f,18.6f,15.36f,12f,21.35f); close() }; paint.color = color; paint.strokeWidth = dp(2f); paint.style = if (filled) Paint.Style.FILL else Paint.Style.STROKE; c.drawPath(p, paint) }
-  private fun drawZap(c: Canvas, r: RectF, color: Int) { val p = path(r) { moveTo(13.8f,2.5f); lineTo(5.8f,13.2f); lineTo(11.2f,13.2f); lineTo(9.6f,21.5f); lineTo(18.4f,10.2f); lineTo(12.8f,10.2f); close() }; paint.style = Paint.Style.FILL; paint.color = color; c.drawPath(p, paint) }
+  private fun drawZap(c: Canvas, r: RectF) {
+    paint.alpha = 255
+    paint.isFilterBitmap = true
+    c.drawBitmap(zapIcon, null, r, paint)
+  }
 
   private fun dp(v: Float) = v * resources.displayMetrics.density
   private fun sp(v: Float) = v * resources.displayMetrics.scaledDensity

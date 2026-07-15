@@ -102,6 +102,7 @@ function LiveVideo({
     nextPlayer.loop = false;
     nextPlayer.muted = false;
     nextPlayer.volume = 1;
+    nextPlayer.audioMixingMode = 'doNotMix';
     nextPlayer.timeUpdateEventInterval = 0.5;
     nextPlayer.showNowPlayingNotification = false;
     nextPlayer.staysActiveInBackground = false;

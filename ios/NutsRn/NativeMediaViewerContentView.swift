@@ -168,6 +168,13 @@ private final class NativeMediaPlaybackCoordinator {
   private init() {}
 
   func play(_ player: AVPlayer) {
+    let audioSession = AVAudioSession.sharedInstance()
+    do {
+      try audioSession.setCategory(.playback, mode: .moviePlayback)
+      try audioSession.setActive(true)
+    } catch {
+      NSLog("[NativeMedia] Failed to activate video audio session: %@", error.localizedDescription)
+    }
     if activePlayer !== player {
       activePlayer?.pause()
       activePlayer = player

@@ -9,6 +9,7 @@ type RegistryEntry = {
 const players = new Map<string, RegistryEntry>();
 
 function configureBasePlayer(player: VideoPlayer) {
+  player.audioMixingMode = 'doNotMix';
   player.showNowPlayingNotification = false;
   player.staysActiveInBackground = false;
 }

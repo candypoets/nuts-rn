@@ -32,6 +32,8 @@ import {Avatar} from '../components/notes/Avatar';
 import {shortPubkey} from '../components/notes/time';
 import {MintCardPicker} from '../components/MintCardPicker';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {publishProofsBackup} from '../nostr/proofBackup';
+import {uniqueWalletRelays} from '../hooks/useWalletSubscription';
 import {useNostrStore, useWalletStore} from '../stores';
 import {useAppTheme} from '../theme';
 import {
@@ -44,6 +46,7 @@ import {
 } from '../model/cashu/txRecovery';
 import {
   buildZapRequestTemplate,
+  getLightningInvoice,
   getLNURLFromProfile,
   getZapInvoice,
 } from '../lib/wallet';
@@ -51,10 +54,82 @@ import {
 type SendEcashModalProps = {
   pubkey: string;
   noteId?: string;
+  targetKind?: number;
+  targetAddress?: string;
   onClose: () => void;
 };
 
 type SendState = 'idle' | 'loading' | 'sending' | 'sent' | 'error';
+
+const NETWORK_STEP_TIMEOUT_MS = 15_000;
+
+async function runTimedStep<T>(
+  scope: 'fee' | 'zap',
+  label: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  console.log('[send-ecash] step started', {scope, label});
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const result = await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`${label} timed out after ${NETWORK_STEP_TIMEOUT_MS}ms`)),
+          NETWORK_STEP_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    console.log('[send-ecash] step completed', {
+      scope,
+      label,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    console.warn('[send-ecash] step failed', {
+      scope,
+      label,
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function runPaymentStep<T>(label: string, operation: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  console.log('[send-ecash] step started', {scope: 'zap', label});
+  const slowWarning = setTimeout(() => {
+    console.warn('[send-ecash] step still running', {
+      scope: 'zap',
+      label,
+      durationMs: Date.now() - startedAt,
+    });
+  }, NETWORK_STEP_TIMEOUT_MS);
+  try {
+    const result = await operation();
+    console.log('[send-ecash] step completed', {
+      scope: 'zap',
+      label,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    console.warn('[send-ecash] step failed', {
+      scope: 'zap',
+      label,
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  } finally {
+    clearTimeout(slowWarning);
+  }
+}
 
 function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
@@ -104,6 +179,7 @@ function sumProofs(proofs: Proof[]) {
 }
 
 function signEvent(template: EventTemplate) {
+  console.log('[send-ecash] signing with configured signer', {kind: template.kind});
   return new Promise<Event>((resolve, reject) => {
     try {
       useSignEvent(template, signed => {
@@ -115,7 +191,13 @@ function signEvent(template: EventTemplate) {
   });
 }
 
-export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
+export function SendEcashModal({
+  pubkey,
+  noteId,
+  targetKind,
+  targetAddress,
+  onClose,
+}: SendEcashModalProps) {
   const theme = useAppTheme();
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
@@ -144,6 +226,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
   const [message, setMessage] = useState('');
   const [fees, setFees] = useState<number | null>(null);
   const [feeLoading, setFeeLoading] = useState(false);
+  const [feeError, setFeeError] = useState<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const relays = useMemo(() => {
@@ -160,6 +243,10 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         ...DEFAULT_FEED_RELAYS,
       ]),
     [readRelays, recipientWriteRelays, walletReadRelays],
+  );
+  const proofBackupRelays = useMemo(
+    () => uniqueWalletRelays(readRelays, walletReadRelays),
+    [readRelays, walletReadRelays],
   );
 
   const mints = useMemo(
@@ -269,6 +356,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     const toMint = recipientMint || recipientMints[0] || null;
 
     setFees(null);
+    setFeeError(null);
     if (!fromMint || !Number.isInteger(numericAmount) || numericAmount <= 0) {
       setFeeLoading(false);
       return;
@@ -288,33 +376,35 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
       (async () => {
         try {
           const fromWallet = new CashuWallet(fromMint);
-          await fromWallet.loadMint();
+          await runTimedStep('fee', 'load source mint', () => fromWallet.loadMint());
           if (hasNip61Wallet && toMint && recipientP2pk) {
             const toWallet = new CashuWallet(toMint);
-            await toWallet.loadMint();
-            const mintQuote = await toWallet.createMintQuote(numericAmount, recipientP2pk);
-            const meltQuote = await fromWallet.createMeltQuote(mintQuote.request);
+            await runTimedStep('fee', 'load recipient mint', () => toWallet.loadMint());
+            const mintQuote = await runTimedStep('fee', 'create recipient mint quote', () =>
+              toWallet.createMintQuote(numericAmount, recipientP2pk),
+            );
+            const meltQuote = await runTimedStep('fee', 'create cross-mint melt quote', () =>
+              fromWallet.createMeltQuote(mintQuote.request),
+            );
             if (!cancelled) setFees(Number(meltQuote.fee_reserve || 0));
             return;
           }
           if (lnurl) {
-            const zapRequest = buildZapRequestTemplate({
-              pubkey,
-              amount: numericAmount,
-              lnurl,
-              relays: zapReceiptRelays,
-              content: memo,
-              noteId: hexNoteId || undefined,
-              createdAt: Math.floor(Date.now() / 1000),
-            });
-            const signedZapRequest = await signEvent(zapRequest);
-            const {pr} = await getZapInvoice(lnurl, numericAmount, signedZapRequest);
-            const meltQuote = await fromWallet.createMeltQuote(pr);
+            const {pr} = await runTimedStep('fee', 'request LNURL invoice', () =>
+              getLightningInvoice(lnurl, numericAmount),
+            );
+            const meltQuote = await runTimedStep('fee', 'create Lightning melt quote', () =>
+              fromWallet.createMeltQuote(pr),
+            );
             if (!cancelled) setFees(Number(meltQuote.fee_reserve || 0));
           }
         } catch (error) {
-          console.warn('[send-ecash] fee quote failed', error);
-          if (!cancelled) setFees(null);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn('[send-ecash] fee quote failed', {error: errorMessage});
+          if (!cancelled) {
+            setFees(null);
+            setFeeError(errorMessage);
+          }
         } finally {
           if (!cancelled) setFeeLoading(false);
         }
@@ -413,6 +503,11 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
 
           const mintedProofs = await toWallet.mintProofs(numericAmount, mintQuote.quote);
           await setProofsForMint(fromMint, keep.concat(change || []));
+          publishProofsBackup(
+            fromMint,
+            getUnspentProofsForMint(fromMint),
+            proofBackupRelays,
+          );
 
           setMessage('Locking ecash to recipient...');
           const lockedProofs = await toWallet.receive(
@@ -495,6 +590,11 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         setMessage('Publishing nutzap...');
         await updateTransaction(txId, {nutzapEvent: event});
         await setProofsForMint(fromMint, keep);
+        publishProofsBackup(
+          fromMint,
+          getUnspentProofsForMint(fromMint),
+          proofBackupRelays,
+        );
         const published = await publishWithRetry(
           event,
           zapReceiptRelays,
@@ -508,7 +608,7 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
 
       if (!lnurl) throw new Error('This user has no NutsZap wallet or Lightning Address.');
 
-      setMessage('Requesting zap invoice...');
+      setMessage('Signing zap request...');
       const zapRequest = buildZapRequestTemplate({
         pubkey,
         amount: numericAmount,
@@ -516,11 +616,23 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         relays: zapReceiptRelays,
         content: memo,
         noteId: hexNoteId || undefined,
+        targetKind,
+        targetAddress,
         createdAt: Math.floor(Date.now() / 1000),
       });
-      const signedZapRequest = await signEvent(zapRequest);
-      const {pr, allowsNostr} = await getZapInvoice(lnurl, numericAmount, signedZapRequest);
-      const meltQuote = await fromWallet.createMeltQuote(pr);
+      const signedZapRequest = await runTimedStep('zap', 'sign zap request', () =>
+        signEvent(zapRequest),
+      );
+      setMessage('Requesting zap invoice...');
+      const {pr, allowsNostr} = await runTimedStep(
+        'zap',
+        'request LNURL zap invoice',
+        () => getZapInvoice(lnurl, numericAmount, signedZapRequest),
+      );
+      setMessage('Calculating Lightning fee...');
+      const meltQuote = await runTimedStep('zap', 'create Lightning melt quote', () =>
+        fromWallet.createMeltQuote(pr),
+      );
       const amountWithFees = numericAmount + Number(meltQuote.fee_reserve || 0);
       const selection = fromWallet.selectProofsToSend(
         getUnspentProofsForMint(fromMint),
@@ -550,10 +662,17 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
       await updateTransaction(txId, {meltQuote: {...meltQuote, mintUrl: fromMint}});
 
       setMessage('Paying Lightning zap...');
-      const {quote, change} = await fromWallet.meltProofs(meltQuote, selectedProofs);
+      const {quote, change} = await runPaymentStep('pay Lightning zap', () =>
+        fromWallet.meltProofs(meltQuote, selectedProofs),
+      );
       if (quote.state !== 'PAID') throw new Error('Payment failed');
       await updateTransaction(txId, {proofs: []});
       await setProofsForMint(fromMint, keep.concat(change || []));
+      publishProofsBackup(
+        fromMint,
+        getUnspentProofsForMint(fromMint),
+        proofBackupRelays,
+      );
       verifyAndCleanProofs().catch(error => {
         console.warn('[send-ecash] post-send proof verification failed', error);
       });
@@ -595,12 +714,14 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
     lnurl,
     memo,
     numericAmount,
+    proofBackupRelays,
     pubkey,
     recipientMint,
     recipientMints,
     recipientP2pk,
-    relays,
     setProofsForMint,
+    targetAddress,
+    targetKind,
     verifyAndCleanProofs,
     zapReceiptRelays,
   ]);
@@ -688,6 +809,8 @@ export function SendEcashModal({pubkey, noteId, onClose}: SendEcashModalProps) {
         <Text className="mt-8 px-4 text-center text-sm leading-5 text-primary-content">
           {feeLoading
             ? 'Calculating fees...'
+            : feeError
+            ? `Could not calculate fees: ${feeError}`
             : typeof fees === 'number'
             ? fees > 0
               ? `A fee of ${fees} sats may apply for this transaction. This covers Lightning network costs and is only reserved - you might get some or all of it refunded.`

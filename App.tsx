@@ -98,6 +98,7 @@ import {
   setNativeTabBarVisible,
 } from './src/navigation/nativeTabBar';
 import {publishProofsBackup} from './src/nostr/proofBackup';
+import {uniqueWalletRelays} from './src/hooks/useWalletSubscription';
 import {resumePendingTransactions} from './src/model/cashu/txRecovery';
 import { getAppThemeVars, isAppThemeDark, useAppTheme } from './src/theme';
 import { startNativeDebugLogRelay } from './src/debug/nativeDebugBridge';
@@ -593,6 +594,7 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
   const resetWalletSession = useWalletStore(state => state.resetWalletSession);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
+  const readRelays = useNostrStore(state => state.readRelays);
   const resetNostrState = useNostrStore(state => state.resetNostrState);
   const activeMintQuoteMonitorsRef = useRef(new Map<string, () => void>());
   const activeNostrPubkeyRef = useRef<string | null | undefined>(undefined);
@@ -675,6 +677,16 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   }, [authPubkey, initializeProofWallet, pendingMintQuotes, walletMintUrls]);
 
   useEffect(() => {
+    const activeMonitors = activeMintQuoteMonitorsRef.current;
+    return () => {
+      for (const cancel of activeMonitors.values()) {
+        cancel();
+      }
+      activeMonitors.clear();
+    };
+  }, [authPubkey]);
+
+  useEffect(() => {
     if (!authPubkey) return;
     const activeMonitors = activeMintQuoteMonitorsRef.current;
     const pendingIds = new Set(pendingMintQuotes.map(quote => quote.quote));
@@ -744,7 +756,7 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
             publishProofsBackup(
               quote.mintUrl,
               getUnspentProofsForMint(quote.mintUrl),
-              [...new Set(walletReadRelays)],
+              uniqueWalletRelays(readRelays, walletReadRelays),
             );
             await verifyAndCleanProofs();
             activeMonitors.delete(quote.quote);
@@ -778,6 +790,7 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
     deletePendingMintQuote,
     getUnspentProofsForMint,
     pendingMintQuotes,
+    readRelays,
     verifyAndCleanProofs,
     walletReadRelays,
   ]);
@@ -872,6 +885,7 @@ function MainTabs({
         screenOptions={{
           headerShown: false,
           lazy: false,
+          overrideScrollViewContentInsetAdjustmentBehavior: false,
           tabBarActiveTintColor: theme.colors.primary,
           tabBarInactiveTintColor: theme.colors.primaryContent,
           tabBarActiveIndicatorColor: `${theme.colors.primary}22`,
@@ -1158,6 +1172,8 @@ function SendEcashScreen({
     <SendEcashModal
       pubkey={route.params.pubkey}
       noteId={route.params.noteId}
+      targetKind={route.params.targetKind}
+      targetAddress={route.params.targetAddress}
       onClose={navigation.goBack}
     />
   );

@@ -45,6 +45,8 @@ export function buildZapRequestTemplate({
   relays,
   content = '',
   noteId,
+  targetKind,
+  targetAddress,
   createdAt,
 }: {
   pubkey: string;
@@ -53,6 +55,8 @@ export function buildZapRequestTemplate({
   relays: string[];
   content?: string;
   noteId?: string;
+  targetKind?: number;
+  targetAddress?: string;
   createdAt: number;
 }): EventTemplate {
   const amountMsats = Number(amount) * 1000;
@@ -68,6 +72,12 @@ export function buildZapRequestTemplate({
   }
   if (!cleanRelays.length) throw new Error('Zap request needs receipt relays');
   if (noteId && !HEX_64.test(noteId)) throw new Error('Zap event id must be hex');
+  if (targetKind !== undefined && (!Number.isInteger(targetKind) || targetKind < 0)) {
+    throw new Error('Zap target kind must be a non-negative integer');
+  }
+  if (targetAddress && !/^\d+:[0-9a-f]{64}:.*$/i.test(targetAddress)) {
+    throw new Error('Zap target address must be a valid event coordinate');
+  }
 
   return {
     kind: 9734,
@@ -78,6 +88,8 @@ export function buildZapRequestTemplate({
       ['amount', String(amountMsats)],
       ['lnurl', encodedLnurl],
       ...(noteId ? [['e', noteId]] : []),
+      ...(targetAddress ? [['a', targetAddress]] : []),
+      ...(targetKind !== undefined ? [['k', String(targetKind)]] : []),
       ['relays', ...cleanRelays],
     ],
   };
@@ -88,6 +100,7 @@ export async function getZapInvoice(
   amount: number,
   zapRequest: Event,
 ): Promise<{pr: string; allowsNostr: boolean}> {
+  const encodedLnurl = encodeLNURL(lnurl);
   const endpoint = await resolveLNURLEndpoint(lnurl);
   const endpointUrl = new URL(endpoint);
   const response = await fetch(endpoint);
@@ -107,6 +120,7 @@ export async function getZapInvoice(
   const callbackUrl = new URL(callback);
   callbackUrl.searchParams.set('amount', String(amount * 1000));
   callbackUrl.searchParams.set('nostr', JSON.stringify(zapRequest));
+  callbackUrl.searchParams.set('lnurl', encodedLnurl);
 
   const commentAllowed = meta.commentAllowed ?? 0;
   if (commentAllowed > 0 && zapRequest.content) {
@@ -123,4 +137,38 @@ export async function getZapInvoice(
   const invoice = (await invoiceResponse.json()) as {pr?: string};
   if (!invoice.pr) throw new Error('No payment request in LNURL response');
   return {pr: invoice.pr, allowsNostr: !!meta.allowsNostr};
+}
+
+export async function getLightningInvoice(
+  lnurl: string,
+  amount: number,
+): Promise<{pr: string}> {
+  const endpoint = await resolveLNURLEndpoint(lnurl);
+  const endpointUrl = new URL(endpoint);
+  const response = await fetch(endpoint, {
+    credentials: 'omit',
+    headers: {Accept: 'application/json'},
+  });
+  if (!response.ok) {
+    throw new Error(`Cannot reach Lightning provider: ${response.status}`);
+  }
+  const meta = (await response.json()) as {callback?: string};
+  if (!meta.callback) throw new Error('No LNURL callback found');
+
+  const callback = meta.callback.startsWith('http')
+    ? meta.callback
+    : `${endpointUrl.origin}${meta.callback}`;
+  const callbackUrl = new URL(callback);
+  callbackUrl.searchParams.set('amount', String(amount * 1000));
+
+  const invoiceResponse = await fetch(callbackUrl.toString(), {
+    credentials: 'omit',
+    headers: {Accept: 'application/json'},
+  });
+  if (!invoiceResponse.ok) {
+    throw new Error(`Lightning invoice failed: ${invoiceResponse.status}`);
+  }
+  const invoice = (await invoiceResponse.json()) as {pr?: string};
+  if (!invoice.pr) throw new Error('No payment request in LNURL response');
+  return {pr: invoice.pr};
 }

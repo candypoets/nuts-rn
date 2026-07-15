@@ -111,14 +111,20 @@ export function useNoteFooterActions(
 
   const openZap = React.useCallback(() => {
     if (!note || !noteId || !notePubkey) return;
+    const kind = note.kind();
+    const identifier =
+      kind >= 30000 && kind < 40000 ? tagValue(eventTags(note), 'd') : '';
     navigation.navigate('SendEcash', {
       pubkey: notePubkey,
       noteId: neventEncode({
         id: noteId,
         author: notePubkey || undefined,
-        kind: note.kind(),
+        kind,
         relays,
       }),
+      targetKind: kind,
+      targetAddress:
+        identifier ? `${kind}:${notePubkey}:${identifier}` : undefined,
     });
   }, [navigation, note, noteId, notePubkey, relays]);
 

@@ -7,7 +7,7 @@ import type {EventTemplate} from 'nostr-tools';
 const DEFAULT_WALLET_BACKUP_RELAYS = ['wss://relay.nuts.cash'];
 
 export function publishProofsBackup(mint: string, proofs: Proof[], relays: string[]) {
-  if (!mint || !proofs.length) return;
+  if (!mint) return;
 
   const event: EventTemplate = {
     kind: 7375,

@@ -10,7 +10,12 @@ export type RootStackParamList = {
   Minting: undefined;
   Send: undefined;
   NewChat: undefined;
-  SendEcash: { pubkey: string; noteId?: string };
+  SendEcash: {
+    pubkey: string;
+    noteId?: string;
+    targetKind?: number;
+    targetAddress?: string;
+  };
   Share: { nevent: string; naddr?: string };
   Scan: { mode?: 'share' | 'scan' } | undefined;
   Tapcash: undefined;

@@ -960,6 +960,10 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private weak var overlayDismissPan: UIPanGestureRecognizer?
   private var overlayZoomScalesByKey: [String: CGFloat] = [:]
   private var overlayPinchStartScale: CGFloat = 1
+  private var overlayPinchStartCenter = CGPoint.zero
+  private var overlayPinchStartLocation = CGPoint.zero
+  private var overlayPinchAnchor = CGPoint.zero
+  private var overlayPanStartCenter = CGPoint.zero
   private weak var overlayOriginalSuperview: UIView?
   private var overlayOriginalSubviewIndex = 0
   private var overlayOriginalFrame = CGRect.zero
@@ -1331,7 +1335,18 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     if currentScale > 1.02 {
       setOverlayZoomScale(1, for: item, mediaView: mediaView, animated: true)
     } else {
-      setOverlayZoomScale(2.5, for: item, mediaView: mediaView, animated: true)
+      let scale: CGFloat = 2.5
+      let location = recognizer.location(in: mediaView.superview)
+      let anchor = recognizer.location(in: mediaView)
+      let anchorOffset = CGPoint(
+        x: anchor.x - mediaView.bounds.midX,
+        y: anchor.y - mediaView.bounds.midY
+      )
+      let center = CGPoint(
+        x: location.x - anchorOffset.x * scale,
+        y: location.y - anchorOffset.y * scale
+      )
+      setOverlayZoomScale(scale, for: item, mediaView: mediaView, center: center, animated: true)
       if overlayChromeVisible {
         overlayChromeVisible = false
         applyOverlayChromeVisibility(animated: true)
@@ -1347,17 +1362,58 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     switch recognizer.state {
     case .began:
       overlayPinchStartScale = overlayZoomScalesByKey[item.key] ?? 1
+      overlayPinchStartCenter = mediaView.center
+      overlayPinchStartLocation = recognizer.location(in: mediaView.superview)
+      let anchor = recognizer.location(in: mediaView)
+      overlayPinchAnchor = CGPoint(
+        x: anchor.x - mediaView.bounds.midX,
+        y: anchor.y - mediaView.bounds.midY
+      )
       if overlayChromeVisible {
         overlayChromeVisible = false
         applyOverlayChromeVisibility(animated: true)
       }
     case .changed:
       let nextScale = min(max(overlayPinchStartScale * recognizer.scale, 1), 4)
-      setOverlayZoomScale(nextScale, for: item, mediaView: mediaView, animated: false)
+      let location = recognizer.location(in: mediaView.superview)
+      let center = CGPoint(
+        x: overlayPinchStartCenter.x + location.x - overlayPinchStartLocation.x
+          + overlayPinchAnchor.x * (overlayPinchStartScale - nextScale),
+        y: overlayPinchStartCenter.y + location.y - overlayPinchStartLocation.y
+          + overlayPinchAnchor.y * (overlayPinchStartScale - nextScale)
+      )
+      setOverlayZoomScale(nextScale, for: item, mediaView: mediaView, center: center, animated: false)
     case .ended, .cancelled, .failed:
       let scale = overlayZoomScalesByKey[item.key] ?? 1
       setOverlayZoomScale(scale < 1.02 ? 1 : scale, for: item, mediaView: mediaView, animated: scale < 1.02)
       overlayPinchStartScale = 1
+    default:
+      break
+    }
+  }
+
+  @objc private func handleOverlayZoomPan(_ recognizer: UIPanGestureRecognizer) {
+    guard let mediaView = recognizer.view,
+          let item = overlayItem(for: mediaView),
+          (overlayZoomScalesByKey[item.key] ?? 1) > 1.02,
+          !overlayIsDismissing else { return }
+
+    switch recognizer.state {
+    case .began:
+      overlayPanStartCenter = mediaView.center
+    case .changed:
+      let translation = recognizer.translation(in: mediaView.superview)
+      let center = CGPoint(
+        x: overlayPanStartCenter.x + translation.x,
+        y: overlayPanStartCenter.y + translation.y
+      )
+      setOverlayZoomScale(
+        overlayZoomScalesByKey[item.key] ?? 1,
+        for: item,
+        mediaView: mediaView,
+        center: center,
+        animated: false
+      )
     default:
       break
     }
@@ -1369,13 +1425,23 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     }
   }
 
-  private func setOverlayZoomScale(_ rawScale: CGFloat, for item: MediaInfo, mediaView: UIView, animated: Bool) {
+  private func setOverlayZoomScale(
+    _ rawScale: CGFloat,
+    for item: MediaInfo,
+    mediaView: UIView,
+    center proposedCenter: CGPoint? = nil,
+    animated: Bool
+  ) {
     let scale = min(max(rawScale, 1), 4)
+    let center = constrainedOverlayCenter(
+      proposedCenter ?? mediaView.center,
+      scale: scale,
+      for: item,
+      mediaView: mediaView
+    )
     let apply = {
       mediaView.transform = scale <= 1.02 ? .identity : CGAffineTransform(scaleX: scale, y: scale)
-      if let targetFrame = self.overlayTargetFramesByKey[item.key] {
-        mediaView.center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
-      }
+      mediaView.center = center
       self.layerForOverlayMedia(item.key)?.frame = mediaView.bounds
     }
 
@@ -1395,6 +1461,38 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     }
   }
 
+  private func constrainedOverlayCenter(
+    _ proposedCenter: CGPoint,
+    scale: CGFloat,
+    for item: MediaInfo,
+    mediaView: UIView
+  ) -> CGPoint {
+    guard let targetFrame = overlayTargetFramesByKey[item.key],
+          let scrollView = overlayScrollView else { return proposedCenter }
+    if scale <= 1.02 {
+      return CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+    }
+
+    let pageWidth = scrollView.bounds.width
+    let pageIndex = CGFloat(items.firstIndex(where: { $0.key == item.key }) ?? 0)
+    let pageBounds = CGRect(
+      x: pageWidth * pageIndex,
+      y: 0,
+      width: pageWidth,
+      height: scrollView.bounds.height
+    )
+    let scaledWidth = mediaView.bounds.width * scale
+    let scaledHeight = mediaView.bounds.height * scale
+
+    let x = scaledWidth <= pageBounds.width
+      ? pageBounds.midX
+      : min(max(proposedCenter.x, pageBounds.maxX - scaledWidth / 2), pageBounds.minX + scaledWidth / 2)
+    let y = scaledHeight <= pageBounds.height
+      ? pageBounds.midY
+      : min(max(proposedCenter.y, pageBounds.maxY - scaledHeight / 2), pageBounds.minY + scaledHeight / 2)
+    return CGPoint(x: x, y: y)
+  }
+
   private func updateOverlayScrollInteraction() {
     let zoomed = overlayZoomScalesByKey.values.contains { $0 > 1.02 }
     overlayScrollView?.isScrollEnabled = !zoomed
@@ -1407,6 +1505,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
         view.transform = .identity
       }
       for (key, view) in self.overlayPageViewsByKey {
+        if let targetFrame = self.overlayTargetFramesByKey[key] {
+          view.center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+        }
         self.layerForOverlayMedia(key)?.frame = view.bounds
       }
     }
@@ -1565,6 +1666,14 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     pinch.cancelsTouchesInView = false
     view.addGestureRecognizer(pinch)
     overlayZoomRecognizers.append(pinch)
+
+    let pan = UIPanGestureRecognizer(target: self, action: #selector(handleOverlayZoomPan(_:)))
+    pan.delegate = self
+    pan.minimumNumberOfTouches = 1
+    pan.maximumNumberOfTouches = 1
+    pan.cancelsTouchesInView = false
+    view.addGestureRecognizer(pan)
+    overlayZoomRecognizers.append(pan)
   }
 
   private func makeOverlayToggleRecognizer() -> UITapGestureRecognizer {
@@ -1767,6 +1876,12 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if overlayZoomRecognizers.contains(where: { $0 === gestureRecognizer }),
+       let pan = gestureRecognizer as? UIPanGestureRecognizer,
+       let mediaView = pan.view,
+       let item = overlayItem(for: mediaView) {
+      return (overlayZoomScalesByKey[item.key] ?? 1) > 1.02
+    }
     if let overlayDismissPan = overlayDismissPan, gestureRecognizer === overlayDismissPan {
       if overlayZoomScalesByKey.values.contains(where: { $0 > 1.02 }) {
         return false

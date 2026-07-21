@@ -810,6 +810,7 @@ function ZoomVideoControls({ src }: { src: string }) {
 
 const styles = StyleSheet.create({
   modal: {
+    backgroundColor: '#020617',
     bottom: 0,
     left: 0,
     position: 'absolute',
@@ -873,8 +874,11 @@ const styles = StyleSheet.create({
     zIndex: -1,
   },
   noteCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 16,
     gap: 8,
-    width: '100%',
+    marginHorizontal: 16,
+    paddingVertical: 12,
   },
   notePreviewPad: {
     paddingHorizontal: 16,

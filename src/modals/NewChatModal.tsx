@@ -14,7 +14,7 @@ import {ChevronDown, MessageCirclePlus, X} from 'lucide-react-native';
 
 import {AppButton} from '../components/AppButton';
 import {Avatar, User} from '../components/notes';
-import {shortPubkey} from '../components/notes/time';
+import {shortNpub} from '../lib/identity';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {RootStackParamList} from '../navigation/types';
 import {useNostrStore} from '../stores';
@@ -207,7 +207,7 @@ export function NewChatModal({onClose}: NewChatModalProps) {
               className="mt-0.5 text-xs text-primary-content"
               numberOfLines={1}
             >
-              {shortPubkey(pubkey)}
+              {shortNpub(pubkey)}
             </Text>
           </View>
           <Text className="text-sm font-semibold text-primary">Message</Text>

@@ -4,6 +4,7 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import NativeNoteHeaderComponent from '../../specs/NativeNoteHeaderNativeComponent';
+import {shortNpub} from '../../lib/identity';
 import {handleProfileRoute} from '../../navigation/nativeRouteEvents';
 import type {RootStackParamList} from '../../navigation/types';
 import {
@@ -48,6 +49,11 @@ export function NativeNoteHeader({
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
+  const authorPubkey = note.pubkey() || undefined;
+  const nameFallback = useMemo(
+    () => (authorPubkey ? shortNpub(authorPubkey) : ''),
+    [authorPubkey],
+  );
   const relayStatusEntries = useMemo(
     () => Object.entries(relayStatuses ?? {}).flat(),
     [relayStatuses],
@@ -75,9 +81,10 @@ export function NativeNoteHeader({
       showRelays={showRelays}
       relayCount={relays?.length ?? 0}
       relayStatuses={relayStatusEntries}
-      authorPubkey={note.pubkey() || undefined}
+      authorPubkey={authorPubkey}
       reposterPubkey={reposterPubkey}
       fallbackSubId={subId}
+      nameFallback={nameFallback}
       primaryTextColor={primaryTextColor}
       secondaryTextColor={secondaryTextColor}
       avatarBackgroundColor={theme.colors.base200}

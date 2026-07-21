@@ -65,6 +65,10 @@ class NativeNoteHeaderManager :
     view.setFallbackSubId(value)
   }
 
+  override fun setNameFallback(view: NativeNoteHeaderView, value: String?) {
+    view.setNameFallback(value)
+  }
+
   override fun setPrimaryTextColor(view: NativeNoteHeaderView, value: String?) {
     view.setPrimaryTextColor(value)
   }

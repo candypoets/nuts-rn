@@ -19,7 +19,7 @@ import type {EventTemplate} from 'nostr-tools';
 import {decode} from 'nostr-tools/nip19';
 
 import {Avatar} from '../components/notes/Avatar';
-import {shortPubkey} from '../components/notes/time';
+import {shortNpub} from '../lib/identity';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {useNostrStore, useSendStatusStore} from '../stores';
 import {useAppTheme} from '../theme';
@@ -40,7 +40,7 @@ function displayName(kind0: Kind0Parsed | null, pubkey: string) {
   return (
     kind0?.name?.()?.trim() ||
     kind0?.displayName?.()?.trim() ||
-    shortPubkey(pubkey)
+    shortNpub(pubkey)
   );
 }
 
@@ -104,7 +104,7 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
     return contacts
       .map(pubkey => profiles[contactKey(pubkey)] ?? {
         pubkey,
-        name: shortPubkey(pubkey),
+        name: shortNpub(pubkey),
         event: null,
       })
       .filter(contact => {
@@ -220,7 +220,7 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
   const selectedContact = selectedPubkey
     ? profiles[contactKey(selectedPubkey)] ?? {
         pubkey: selectedPubkey,
-        name: shortPubkey(selectedPubkey),
+        name: shortNpub(selectedPubkey),
         event: null,
       }
     : null;

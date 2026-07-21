@@ -7,6 +7,8 @@ export interface NativeProps extends ViewProps {
   query?: WithDefault<boolean, true>;
   backgroundColor?: string;
   borderColor?: string;
+  initials?: string;
+  avatarColor?: string;
 }
 
 export default codegenNativeComponent<NativeProps>(

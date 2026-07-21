@@ -46,6 +46,7 @@ import type {SearchBarCommands} from 'react-native-screens';
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { Avatar } from '../components/notes';
 import { rootNavigationRef } from '../navigation/rootNavigation';
+import { shortNpub } from '../lib/identity';
 import type { RootStackParamList } from '../navigation/types';
 import {
   BOOTSTRAP_RELAYS,
@@ -554,7 +555,7 @@ export function PrivateKeyLogin({
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             {auth.pubkey ? (
               <Text style={styles.successText}>
-                Signed in as {auth.pubkey.slice(0, 16)}...
+                Signed in as {shortNpub(auth.pubkey)}
               </Text>
             ) : null}
           </View>
@@ -1671,7 +1672,7 @@ export function ProfileStubModal({
         </View>
         <Text style={styles.stackBody}>
           {auth.pubkey
-            ? `${titles[path]} settings for ${auth.pubkey.slice(0, 16)}...`
+            ? `${titles[path]} settings for ${shortNpub(auth.pubkey)}`
             : 'Sign in to manage this section.'}
         </Text>
       </View>

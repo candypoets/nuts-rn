@@ -66,6 +66,7 @@ import {
   type FeedKind,
 } from '../stores';
 import { useKind0ProfileData } from '../hooks/useKind0ProfileData';
+import {initials, shortNpub} from '../lib/identity';
 import type { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 
@@ -295,17 +296,6 @@ const communityNames: Record<string, string> = {
   'wss://user.kindpag.es': 'Kind Pages',
 };
 
-function initials(name: string) {
-  const words = name
-    .replace(/[^a-zA-Z0-9\s]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!words.length) return '?';
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return `${words[0][0]}${words[1][0]}`.toUpperCase();
-}
-
 const communityColorClasses = [
   'bg-primary',
   'bg-secondary',
@@ -397,7 +387,7 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
             name:
               kind0.name?.()?.trim() ||
               kind0.displayName?.()?.trim() ||
-              pubkey.slice(0, 8),
+              shortNpub(pubkey),
             picture: kind0.picture?.() || null,
           });
           setPreviewProfiles(current => ({
@@ -758,7 +748,7 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
 
         <Text className="text-xl font-bold text-base-content">{name}</Text>
         <Text className="mt-1 text-sm font-medium text-primary">
-          {nip05 || pubkey.slice(0, 8)}
+          {nip05 || shortNpub(pubkey)}
         </Text>
         {lnaddress ? (
           <Text className="mt-1 text-sm font-medium text-primary">
@@ -1180,7 +1170,9 @@ export function Kind0Sub({
   ]);
 
   const name =
-    profile?.name?.()?.trim() || profile?.displayName?.()?.trim() || 'Unnamed';
+    profile?.name?.()?.trim() ||
+    profile?.displayName?.()?.trim() ||
+    (profile ? 'Unnamed' : shortNpub(pubkey));
   const picture = profile?.picture?.() || null;
   const banner = profile?.banner?.() || null;
   const about = profile?.about?.()?.trim() || '';

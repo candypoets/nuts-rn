@@ -8,7 +8,7 @@ import {asKind0, asParsedEvent} from '@candypoets/nipworker/utils';
 import {ChevronDown, ChevronRight, CreditCard, ScanLine, Search, X, Zap} from 'lucide-react-native';
 
 import {Feed} from '../components/Feed';
-import {shortPubkey} from '../components/notes/time';
+import {shortNpub, shortPubkey} from '../lib/identity';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import type {RootStackParamList} from '../navigation/types';
 import {useNostrStore} from '../stores';
@@ -17,6 +17,7 @@ import {useAppTheme} from '../theme';
 type ContactProfile = {
   pubkey: string;
   name: string;
+  nip05: string | null;
   picture: string | null;
   event: ParsedEvent | null;
 };
@@ -31,7 +32,7 @@ function displayName(kind0: Kind0Parsed | null, pubkey: string) {
   return (
     kind0?.name?.()?.trim() ||
     kind0?.displayName?.()?.trim() ||
-    shortPubkey(pubkey)
+    shortNpub(pubkey)
   );
 }
 
@@ -81,6 +82,7 @@ export function SendModal({onClose}: SendModalProps) {
       [contactKey(pubkey)]: {
         pubkey,
         name: displayName(kind0, pubkey),
+        nip05: kind0?.nip05?.()?.trim() || null,
         picture: kind0?.picture?.() || null,
         event: parsed,
       },
@@ -122,7 +124,8 @@ export function SendModal({onClose}: SendModalProps) {
         const profile = profiles[contactKey(pubkey)];
         return profile ?? {
           pubkey,
-          name: shortPubkey(pubkey),
+          name: shortNpub(pubkey),
+          nip05: null,
           picture: null,
           event: null,
         };
@@ -258,6 +261,13 @@ function SendOption({
   );
 }
 
+function contactLetter(contact?: ContactProfile) {
+  if (!contact) return undefined;
+  const name = contact.name.trim();
+  if (!name || name === shortNpub(contact.pubkey)) return '#';
+  return name.slice(0, 1).toUpperCase();
+}
+
 function ContactRow({
   contact,
   previous,
@@ -272,11 +282,14 @@ function ContactRow({
   onPress: () => void;
 }) {
   const theme = useAppTheme();
-  const firstLetter = contact.name.trim().slice(0, 1).toUpperCase() || '#';
-  const previousLetter = previous?.name.trim().slice(0, 1).toUpperCase();
-  const nextLetter = next?.name.trim().slice(0, 1).toUpperCase();
+  const firstLetter = contactLetter(contact) || '#';
+  const previousLetter = contactLetter(previous);
+  const nextLetter = contactLetter(next);
   const isFirst = searching || firstLetter !== previousLetter;
   const isLast = searching || firstLetter !== nextLetter;
+  const fallbackName = shortNpub(contact.pubkey);
+  const subtitle =
+    contact.nip05 || (contact.name === fallbackName ? '' : fallbackName);
 
   return (
     <View>
@@ -300,9 +313,11 @@ function ContactRow({
           <Text className="text-base font-semibold text-base-content" numberOfLines={1}>
             {contact.name}
           </Text>
-          <Text className="mt-0.5 text-xs text-primary-content" numberOfLines={1}>
-            {shortPubkey(contact.pubkey)}
-          </Text>
+          {subtitle ? (
+            <Text className="mt-0.5 text-xs text-primary-content" numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
         </View>
         <ChevronRight size={20} color={theme.colors.primaryContent} strokeWidth={2.1} />
       </Pressable>

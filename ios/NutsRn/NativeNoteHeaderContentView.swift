@@ -25,6 +25,7 @@ class NativeNoteHeaderContentView: UIView {
   private var reposterAvatarRequestUrl: String?
   private var reposterAvatarImageOperation: SDWebImageOperation?
   private var fallbackSubId: String?
+  private var nameFallback = ""
 
   private var pubkey: String = ""
   private var noteId: String = ""
@@ -119,7 +120,7 @@ class NativeNoteHeaderContentView: UIView {
     }
     createdAt = event.createdAt
     if name.isEmpty {
-      name = shortPubkey(pubkey)
+      name = nameFallback
     }
     refreshProfileSubscription()
     setNeedsDisplay()
@@ -212,6 +213,17 @@ class NativeNoteHeaderContentView: UIView {
     setNeedsDisplay()
   }
 
+  @objc(updateNameFallback:)
+  func updateNameFallback(_ value: String?) {
+    let nextValue = value ?? ""
+    if nameFallback == nextValue { return }
+    nameFallback = nextValue
+    if name.isEmpty {
+      name = nextValue
+    }
+    setNeedsDisplay()
+  }
+
   @objc(updatePrimaryTextColor:)
   func updatePrimaryTextColor(_ value: String?) {
     primaryTextColor = UIColor(hexString: value) ?? primaryTextColor
@@ -272,7 +284,7 @@ class NativeNoteHeaderContentView: UIView {
     let primaryFont = UIFont.systemFont(ofSize: main ? 15 : 13, weight: .semibold)
     let secondaryFont = UIFont.systemFont(ofSize: 12, weight: .regular)
 
-    let displayName = name.isEmpty ? (shortPubkey(pubkey).isEmpty ? "unknown" : shortPubkey(pubkey)) : name
+    let displayName = name.isEmpty ? (nameFallback.isEmpty ? "unknown" : nameFallback) : name
     let relayWidth: CGFloat = showRelays ? 48 : 8
     let contentRight = bounds.width - relayWidth
 
@@ -332,7 +344,7 @@ class NativeNoteHeaderContentView: UIView {
     let avatarTop: CGFloat = depth > 0 ? 0 : 2
     let avatarRect = CGRect(x: 0, y: avatarTop, width: avatarSize, height: avatarSize)
     let primaryFont = UIFont.systemFont(ofSize: main ? 15 : 13, weight: .semibold)
-    let displayName = name.isEmpty ? (shortPubkey(pubkey).isEmpty ? "unknown" : shortPubkey(pubkey)) : name
+    let displayName = name.isEmpty ? (nameFallback.isEmpty ? "unknown" : nameFallback) : name
     let textLeft = avatarSize + (depth > 0 ? 2 : 6)
     let nameWidth = (displayName as NSString).size(withAttributes: [.font: primaryFont]).width
     let nameRect = CGRect(x: textLeft, y: 0, width: nameWidth, height: primaryFont.lineHeight)
@@ -362,12 +374,12 @@ class NativeNoteHeaderContentView: UIView {
     createdAt = event.createdAt
     subId = parseWorker(noteBytes)?.subId ?? ""
     if name.isEmpty {
-      name = shortPubkey(pubkey)
+      name = nameFallback
     }
   }
 
   private func resetProfileDisplay() {
-    name = shortPubkey(pubkey)
+    name = nameFallback
     nip05 = ""
     picture = ""
     avatarImage = nil
@@ -684,14 +696,6 @@ class NativeNoteHeaderContentView: UIView {
     context.addLine(to: CGPoint(x: rect.maxX - 3.3, y: rect.minY + 4.2))
     context.strokePath()
     context.restoreGState()
-  }
-
-  private func shortPubkey(_ value: String) -> String {
-    guard value.count > 12 else {
-      return value
-    }
-
-    return "\(value.prefix(6))...\(value.suffix(4))"
   }
 
   private func formatTimeShort(_ timestamp: UInt32) -> String {

@@ -49,6 +49,7 @@ class NativeNoteHeaderView(context: Context) : View(context) {
   private var reposterPubkey: String? = null
   private var authorPubkey: String? = null
   private var fallbackSubId: String? = null
+  private var nameFallback = ""
   private var relayStatuses: Map<String, String> = emptyMap()
 
   private var pubkey = ""
@@ -139,6 +140,14 @@ class NativeNoteHeaderView(context: Context) : View(context) {
     }
   }
 
+  fun setNameFallback(value: String?) {
+    val next = value.orEmpty()
+    if (nameFallback == next) return
+    nameFallback = next
+    if (name.isEmpty()) name = next
+    invalidate()
+  }
+
   internal fun setRelayStatuses(value: Map<String, String>) {
     if (relayStatuses == value) return
     relayStatuses = value
@@ -202,7 +211,7 @@ class NativeNoteHeaderView(context: Context) : View(context) {
     secondaryTextPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     faintTextPaint.textSize = sp(9f)
 
-    val displayName = name.ifEmpty { shortPubkey(pubkey).ifEmpty { "unknown" } }
+    val displayName = name.ifEmpty { nameFallback.ifEmpty { "unknown" } }
     val contentRight = width - dp(if (showRelays) 48f else 8f)
     val primaryBaseline = -primaryTextPaint.fontMetrics.ascent
     val secondaryBaseline = -secondaryTextPaint.fontMetrics.ascent
@@ -231,7 +240,7 @@ class NativeNoteHeaderView(context: Context) : View(context) {
     pubkey = authorPubkey ?: event.pubkey() ?: ""
     createdAt = event.createdAt()
     subId = parseWorker(noteBytes)?.subId() ?: ""
-    name = shortPubkey(pubkey)
+    name = nameFallback
     nip05 = ""; picture = ""; avatarBitmap = null
     refreshProfiles()
   }
@@ -250,7 +259,7 @@ class NativeNoteHeaderView(context: Context) : View(context) {
         val avatarTop = dp(if (depth > 0) 0f else 2f)
         primaryTextPaint.textSize = sp(if (main) 15f else 13f)
         primaryTextPaint.typeface = semiboldTypeface()
-        val displayName = name.ifEmpty { shortPubkey(pubkey).ifEmpty { "unknown" } }
+        val displayName = name.ifEmpty { nameFallback.ifEmpty { "unknown" } }
         val textLeft = avatarSize + dp(if (depth > 0) 2f else 6f)
         val nameRight = textLeft + primaryTextPaint.measureText(displayName)
         val nameBottom = -primaryTextPaint.fontMetrics.ascent + primaryTextPaint.fontMetrics.descent
@@ -337,9 +346,6 @@ class NativeNoteHeaderView(context: Context) : View(context) {
 
   private fun parseColor(value: String?, fallback: Int): Int =
       nativeCssColor(value,fallback)
-
-  private fun shortPubkey(value: String): String =
-      if (value.length <= 12) value else "${value.take(6)}...${value.takeLast(4)}"
 
   private fun ellipsize(value: String, paint: Paint, maxWidth: Float): String {
     if (maxWidth <= 0f || paint.measureText(value) <= maxWidth) {

@@ -20,6 +20,8 @@ class NativeAvatarManager :
   override fun setQuery(view: NativeAvatarView, value: Boolean) = view.setQuery(value)
   override fun setBackgroundColor(view: NativeAvatarView, value: String?) = view.setBackgroundColorString(value)
   override fun setBorderColor(view: NativeAvatarView, value: String?) = view.setBorderColor(value)
+  override fun setInitials(view: NativeAvatarView, value: String?) = view.setInitials(value)
+  override fun setAvatarColor(view: NativeAvatarView, value: String?) = view.setAvatarColor(value)
 
   companion object {
     const val REACT_CLASS = "NativeAvatar"

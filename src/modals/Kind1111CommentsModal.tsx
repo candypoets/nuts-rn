@@ -37,7 +37,8 @@ import {useAuthStore, useNostrStore, useSendStatusStore} from '../stores';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {Avatar, User} from '../components/notes';
 import {ContentBlocks} from '../components/notes/ContentBlocks';
-import {formatTimeShort, shortPubkey} from '../components/notes/time';
+import {formatTimeShort} from '../components/notes/time';
+import {shortNpub} from '../lib/identity';
 import {useKind0Value} from '../hooks/useKind0Value';
 import {useAppTheme} from '../theme';
 import type {RootStackParamList} from '../navigation/types';
@@ -151,11 +152,11 @@ const CommentItem = memo(function CommentItem({
   const pubkey = item.event.pubkey() || '';
   const content = kind1111 ? fbArray(kind1111, 'parsedContent') : [];
   const name = useKind0Value(pubkey, {
-    fallback: shortPubkey(pubkey),
+    fallback: shortNpub(pubkey),
     selector: profile =>
       profile.name?.()?.trim() ||
       profile.displayName?.()?.trim() ||
-      shortPubkey(pubkey),
+      shortNpub(pubkey),
   });
   const highlightStyle = useAnimatedStyle(() => ({
     backgroundColor: isReplyTarget

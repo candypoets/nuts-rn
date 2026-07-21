@@ -12,7 +12,7 @@ import {Camera, QrCode, ScanLine} from 'lucide-react-native';
 import {nip19} from 'nostr-tools';
 import QRCode from 'react-native-qrcode-svg';
 
-import {shortPubkey} from '../components/notes/time';
+import {shortNpub} from '../lib/identity';
 import type {RootStackParamList} from '../navigation/types';
 import {useAuthStore} from '../stores';
 import {type AppTheme, useAppTheme} from '../theme';
@@ -198,7 +198,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
               {shareValue
                 ? copied
                   ? 'Copied'
-                  : `${publicKeyValue ?? shortPubkey(pubkey)}`
+                  : `${publicKeyValue ?? (pubkey ? shortNpub(pubkey) : '')}`
                 : 'Sign in to share your Nostr public key.'}
             </Text>
           </View>

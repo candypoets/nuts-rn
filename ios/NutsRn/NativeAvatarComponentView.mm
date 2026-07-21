@@ -51,6 +51,12 @@ using namespace facebook::react;
   if (oldAvatarProps.borderColor != newAvatarProps.borderColor) {
     [_contentView updateBorderColor:RCTNSStringFromString(newAvatarProps.borderColor)];
   }
+  if (oldAvatarProps.initials != newAvatarProps.initials) {
+    [_contentView updateInitials:RCTNSStringFromString(newAvatarProps.initials)];
+  }
+  if (oldAvatarProps.avatarColor != newAvatarProps.avatarColor) {
+    [_contentView updateAvatarColor:RCTNSStringFromString(newAvatarProps.avatarColor)];
+  }
   [super updateProps:props oldProps:oldProps];
 }
 

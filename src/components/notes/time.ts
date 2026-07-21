@@ -17,7 +17,4 @@ export function formatTimeShort(timestamp: number): string {
   )}/${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function shortPubkey(pubkey: string | null | undefined) {
-  if (!pubkey) return 'unknown';
-  return `${pubkey.slice(0, 12)}...`;
-}
+export {shortPubkey} from '../../lib/identity';

@@ -49,6 +49,8 @@ class NativeAvatarContentView: UIView {
   }()
   private var avatarBackgroundColor = UIColor.secondarySystemBackground
   private var avatarBorderColor = UIColor.separator
+  private var initials = ""
+  private var avatarColor: UIColor?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -111,10 +113,22 @@ class NativeAvatarContentView: UIView {
     setNeedsDisplay()
   }
 
+  @objc(updateInitials:)
+  func updateInitials(_ value: String?) {
+    initials = value ?? ""
+    setNeedsDisplay()
+  }
+
+  @objc(updateAvatarColor:)
+  func updateAvatarColor(_ value: String?) {
+    avatarColor = UIColor(avatarCssColor: value)
+    setNeedsDisplay()
+  }
+
   override func draw(_ rect: CGRect) {
     guard let context = UIGraphicsGetCurrentContext() else { return }
     let avatarRect = bounds.insetBy(dx: 0.5, dy: 0.5)
-    context.setFillColor(avatarBackgroundColor.cgColor)
+    context.setFillColor((avatarColor ?? avatarBackgroundColor).cgColor)
     context.fillEllipse(in: avatarRect)
     if let avatarImage {
       context.saveGState()
@@ -123,22 +137,31 @@ class NativeAvatarContentView: UIView {
       avatarImage.draw(in: avatarRect)
       context.restoreGState()
     } else if !pubkey.isEmpty {
-      drawInitial(in: avatarRect)
+      drawFallback(in: avatarRect)
     }
     context.setStrokeColor(avatarBorderColor.cgColor)
     context.setLineWidth(1)
     context.strokeEllipse(in: avatarRect)
   }
 
-  private func drawInitial(in rect: CGRect) {
-    let initial = String(pubkey.prefix(1)).uppercased()
-    let font = UIFont.systemFont(ofSize: max(10, rect.width * 0.42), weight: .semibold)
+  private func drawFallback(in rect: CGRect) {
+    let fallbackColor = UIColor.white.withAlphaComponent(0.92)
+    if initials.isEmpty {
+      let configuration = UIImage.SymbolConfiguration(pointSize: rect.width * 0.5, weight: .semibold)
+      guard let glyph = UIImage(systemName: "person.fill", withConfiguration: configuration) else { return }
+      let tinted = glyph.withTintColor(fallbackColor, renderingMode: .alwaysOriginal)
+      tinted.draw(
+        at: CGPoint(x: rect.midX - tinted.size.width / 2, y: rect.midY - tinted.size.height / 2)
+      )
+      return
+    }
+    let font = UIFont.systemFont(ofSize: max(10, rect.width * 0.36), weight: .semibold)
     let attributes: [NSAttributedString.Key: Any] = [
       .font: font,
-      .foregroundColor: UIColor.secondaryLabel,
+      .foregroundColor: fallbackColor,
     ]
-    let size = (initial as NSString).size(withAttributes: attributes)
-    (initial as NSString).draw(
+    let size = (initials as NSString).size(withAttributes: attributes)
+    (initials as NSString).draw(
       at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
       withAttributes: attributes
     )

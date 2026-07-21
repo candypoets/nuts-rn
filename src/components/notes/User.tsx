@@ -6,7 +6,7 @@ import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type {RootStackParamList} from '../../navigation/types';
-import {shortPubkey} from './time';
+import {shortNpub} from '../../lib/identity';
 
 type UserProps = {
   pubkey: string;
@@ -21,7 +21,7 @@ function displayName(profile: Kind0Parsed | null, pubkey: string) {
   return (
     profile?.name?.()?.trim() ||
     profile?.displayName?.()?.trim() ||
-    shortPubkey(pubkey)
+    shortNpub(pubkey)
   );
 }
 
@@ -35,7 +35,7 @@ function UserComponent({
   const navigation = useContext(NavigationContext) as
     | NativeStackNavigationProp<RootStackParamList>
     | undefined;
-  const fallbackName = shortPubkey(pubkey);
+  const fallbackName = shortNpub(pubkey);
   const selectName = useCallback(
     (profile: Kind0Parsed) => displayName(profile, pubkey),
     [pubkey],

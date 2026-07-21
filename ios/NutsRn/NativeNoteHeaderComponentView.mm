@@ -104,6 +104,9 @@ using namespace facebook::react;
   if (oldHeaderProps.fallbackSubId != newHeaderProps.fallbackSubId) {
     [_contentView updateFallbackSubId:RCTNSStringFromString(newHeaderProps.fallbackSubId)];
   }
+  if (oldHeaderProps.nameFallback != newHeaderProps.nameFallback) {
+    [_contentView updateNameFallback:RCTNSStringFromString(newHeaderProps.nameFallback)];
+  }
   if (oldHeaderProps.primaryTextColor != newHeaderProps.primaryTextColor) {
     [_contentView updatePrimaryTextColor:RCTNSStringFromString(newHeaderProps.primaryTextColor)];
   }

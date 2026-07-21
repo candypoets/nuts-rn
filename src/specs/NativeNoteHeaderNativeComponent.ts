@@ -22,6 +22,7 @@ export interface NativeProps extends ViewProps {
   authorPubkey?: string;
   reposterPubkey?: string;
   fallbackSubId?: string;
+  nameFallback?: string;
   primaryTextColor?: string;
   secondaryTextColor?: string;
   avatarBackgroundColor?: string;

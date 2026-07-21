@@ -16,6 +16,8 @@ import java.util.concurrent.Future
 
 class NativeAvatarView(context: Context) : View(context) {
   private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+  private val identityPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+  private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.argb(235, 255, 255, 255) }
   private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f) }
   private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
@@ -24,6 +26,8 @@ class NativeAvatarView(context: Context) : View(context) {
   private var pubkey = ""
   private var query = true
   private var picture = ""
+  private var initials = ""
+  private var hasAvatarColor = false
   private var bitmap: Bitmap? = null
   private var imageTask: Future<*>? = null
   private val profileHook = NativeProfileHook { profile ->
@@ -35,19 +39,25 @@ class NativeAvatarView(context: Context) : View(context) {
     setWillNotDraw(false)
     fillPaint.color = Color.rgb(52, 52, 52)
     strokePaint.color = Color.rgb(52, 52, 52)
-    textPaint.color = Color.rgb(155, 158, 164)
+    textPaint.color = Color.argb(235, 255, 255, 255)
   }
 
   fun setPubkey(value: String?) { pubkey = value.orEmpty(); picture = ""; bitmap = null; refreshProfile(); invalidate() }
   fun setQuery(value: Boolean) { query = value; refreshProfile() }
   fun setBackgroundColorString(value: String?) { fillPaint.color = parseColor(value, fillPaint.color); invalidate() }
   fun setBorderColor(value: String?) { strokePaint.color = parseColor(value, strokePaint.color); invalidate() }
+  fun setInitials(value: String?) { initials = value.orEmpty(); invalidate() }
+  fun setAvatarColor(value: String?) {
+    hasAvatarColor = !value.isNullOrBlank()
+    if (hasAvatarColor) identityPaint.color = parseColor(value, fillPaint.color)
+    invalidate()
+  }
 
   override fun onDraw(canvas: Canvas) {
     super.onDraw(canvas)
     val inset = dp(.5f)
     val rect = RectF(inset, inset, width - inset, height - inset)
-    canvas.drawOval(rect, fillPaint)
+    canvas.drawOval(rect, if (hasAvatarColor) identityPaint else fillPaint)
     val image = bitmap
     if (image != null) {
       val shader = BitmapShader(image, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
@@ -62,11 +72,27 @@ class NativeAvatarView(context: Context) : View(context) {
       canvas.drawOval(rect, fillPaint)
       fillPaint.shader = null
     } else if (pubkey.isNotEmpty()) {
-      textPaint.textSize = maxOf(10f * resources.displayMetrics.scaledDensity, rect.width() * 0.42f)
-      val baseline = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
-      canvas.drawText(pubkey.take(1).uppercase(), rect.centerX(), baseline, textPaint)
+      if (initials.isEmpty()) {
+        drawPersonGlyph(canvas, rect)
+      } else {
+        textPaint.textSize = maxOf(10f * resources.displayMetrics.scaledDensity, rect.width() * 0.36f)
+        val baseline = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
+        canvas.drawText(initials, rect.centerX(), baseline, textPaint)
+      }
     }
     canvas.drawOval(rect, strokePaint)
+  }
+
+  private fun drawPersonGlyph(canvas: Canvas, rect: RectF) {
+    val headRadius = rect.width() * 0.16f
+    canvas.drawCircle(rect.centerX(), rect.centerY() - rect.height() * 0.13f, headRadius, glyphPaint)
+    val shoulders = RectF(
+      rect.centerX() - rect.width() * 0.28f,
+      rect.centerY() + rect.height() * 0.08f,
+      rect.centerX() + rect.width() * 0.28f,
+      rect.centerY() + rect.height() * 0.64f,
+    )
+    canvas.drawArc(shoulders, 180f, 180f, true, glyphPaint)
   }
 
   override fun onAttachedToWindow() { super.onAttachedToWindow(); refreshProfile(); if (bitmap == null && picture.isNotEmpty()) loadImage() }

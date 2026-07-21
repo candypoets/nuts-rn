@@ -24,12 +24,12 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import {Wallet as CashuWallet, type Proof} from '@cashu/cashu-ts';
-import {ChevronDown} from 'lucide-react-native';
+import {ChevronDown, Nut, Zap} from 'lucide-react-native';
 import {decode} from 'nostr-tools/nip19';
 import type {Event, EventTemplate} from 'nostr-tools';
 
 import {Avatar} from '../components/notes/Avatar';
-import {shortPubkey} from '../components/notes/time';
+import {shortNpub} from '../lib/identity';
 import {MintCardPicker} from '../components/MintCardPicker';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {publishProofsBackup} from '../nostr/proofBackup';
@@ -49,6 +49,7 @@ import {
   getLightningInvoice,
   getLNURLFromProfile,
   getZapInvoice,
+  inspectZapRequest,
 } from '../lib/wallet';
 
 type SendEcashModalProps = {
@@ -155,7 +156,7 @@ function profileName(kind0: Kind0Parsed | null, pubkey: string) {
   return (
     kind0?.name?.()?.trim() ||
     kind0?.displayName?.()?.trim() ||
-    shortPubkey(pubkey)
+    shortNpub(pubkey)
   );
 }
 
@@ -223,6 +224,7 @@ export function SendEcashModal({
   const [recipientP2pk, setRecipientP2pk] = useState<string | null>(null);
   const [recipientWriteRelays, setRecipientWriteRelays] = useState<string[]>([]);
   const [state, setState] = useState<SendState>('loading');
+  const [zapMode, setZapMode] = useState<'nutszap' | 'zap'>('nutszap');
   const [message, setMessage] = useState('');
   const [fees, setFees] = useState<number | null>(null);
   const [feeLoading, setFeeLoading] = useState(false);
@@ -262,11 +264,13 @@ export function SendEcashModal({
   const hexNoteId = useMemo(() => decodeNoteId(noteId), [noteId]);
   const lnurl = useMemo(() => getLNURLFromProfile(kind0), [kind0]);
   const hasNip61Wallet = !!recipientP2pk && recipientMints.length > 0;
+  const useNutszap = zapMode === 'nutszap' && hasNip61Wallet;
+  const canToggleMode = hasNip61Wallet && !!lnurl;
   const canSend =
     state !== 'sending' &&
     !feeLoading &&
     !!fromMint &&
-    (hasNip61Wallet || !!lnurl) &&
+    (useNutszap || !!lnurl) &&
     Number.isInteger(numericAmount) &&
     numericAmount > 0 &&
     numericAmount + Number(fees || 0) <= balance;
@@ -361,12 +365,12 @@ export function SendEcashModal({
       setFeeLoading(false);
       return;
     }
-    if (hasNip61Wallet && (!toMint || toMint === fromMint)) {
+    if (useNutszap && (!toMint || toMint === fromMint)) {
       setFees(0);
       setFeeLoading(false);
       return;
     }
-    if (!hasNip61Wallet && !lnurl) {
+    if (!useNutszap && !lnurl) {
       setFeeLoading(false);
       return;
     }
@@ -377,7 +381,7 @@ export function SendEcashModal({
         try {
           const fromWallet = new CashuWallet(fromMint);
           await runTimedStep('fee', 'load source mint', () => fromWallet.loadMint());
-          if (hasNip61Wallet && toMint && recipientP2pk) {
+          if (useNutszap && toMint && recipientP2pk) {
             const toWallet = new CashuWallet(toMint);
             await runTimedStep('fee', 'load recipient mint', () => toWallet.loadMint());
             const mintQuote = await runTimedStep('fee', 'create recipient mint quote', () =>
@@ -417,7 +421,7 @@ export function SendEcashModal({
     };
   }, [
     fromMint,
-    hasNip61Wallet,
+    useNutszap,
     hexNoteId,
     lnurl,
     memo,
@@ -442,7 +446,7 @@ export function SendEcashModal({
       const fromWallet = new CashuWallet(fromMint);
       await fromWallet.loadMint();
 
-      if (hasNip61Wallet && recipientP2pk) {
+      if (useNutszap && recipientP2pk) {
         const toMint = recipientMint || recipientMints[0] || fromMint;
         if (toMint !== fromMint) {
           setMessage('Preparing cross-mint quote...');
@@ -623,6 +627,18 @@ export function SendEcashModal({
       const signedZapRequest = await runTimedStep('zap', 'sign zap request', () =>
         signEvent(zapRequest),
       );
+      const zapRequestDiagnostics = inspectZapRequest(signedZapRequest);
+      console.log(
+        '[send-ecash] signed zap request diagnostics',
+        JSON.stringify(zapRequestDiagnostics, null, 2),
+      );
+      if (
+        !zapRequestDiagnostics.checks.structurallyValid ||
+        !zapRequestDiagnostics.checks.signatureValid ||
+        !zapRequestDiagnostics.checks.idMatches
+      ) {
+        throw new Error('Signer returned an invalid zap request');
+      }
       setMessage('Requesting zap invoice...');
       const {pr, allowsNostr} = await runTimedStep(
         'zap',
@@ -709,7 +725,7 @@ export function SendEcashModal({
     checkAndFilterProofs,
     fromMint,
     getUnspentProofsForMint,
-    hasNip61Wallet,
+    useNutszap,
     hexNoteId,
     lnurl,
     memo,
@@ -775,10 +791,28 @@ export function SendEcashModal({
           />
         </View>
 
-        <Text className="mt-6 text-center text-4xl font-light text-primary-content/50">↓</Text>
+        <View className="mt-6 items-center">
+          <Pressable
+            className="h-11 w-11 items-center justify-center rounded-full border border-base-200 bg-base-300"
+            style={!canToggleMode ? styles.toggleDisabled : undefined}
+            disabled={!canToggleMode}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={useNutszap ? 'Switch to Lightning zap' : 'Switch to nutszap'}
+            onPress={() =>
+              setZapMode(current => (current === 'nutszap' ? 'zap' : 'nutszap'))
+            }
+          >
+            {useNutszap ? (
+              <Nut size={20} color="#b7791f" strokeWidth={2.2} />
+            ) : (
+              <Zap size={20} color="#eab308" fill="#eab308" strokeWidth={2.2} />
+            )}
+          </Pressable>
+        </View>
 
         <View className="mt-3 items-center">
-          {hasNip61Wallet ? (
+          {useNutszap ? (
             <View className="w-full max-w-[340px] items-center">
               <View className="mb-3 flex-row items-center rounded-full border border-base-200 bg-base-300 px-4 py-2 shadow-sm">
                 <Avatar pubkey={pubkey} size="xl" />
@@ -815,7 +849,7 @@ export function SendEcashModal({
             ? fees > 0
               ? `A fee of ${fees} sats may apply for this transaction. This covers Lightning network costs and is only reserved - you might get some or all of it refunded.`
               : 'No fees apply.'
-            : hasNip61Wallet
+            : useNutszap
             ? 'Select the recipient mint to calculate fees.'
             : lnurl
             ? 'This will be sent as a normal Lightning zap. A fee may apply.'
@@ -892,5 +926,8 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  toggleDisabled: {
+    opacity: 0.5,
   },
 });

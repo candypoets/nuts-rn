@@ -2,8 +2,48 @@ import type {Kind0Parsed} from '@candypoets/nipworker';
 import {bytesToUtf8, utf8ToBytes} from '@noble/hashes/utils';
 import {bech32} from '@scure/base';
 import type {Event, EventTemplate} from 'nostr-tools';
+import {getEventHash, validateEvent, verifyEvent} from 'nostr-tools/pure';
 
 const HEX_64 = /^[0-9a-f]{64}$/i;
+
+export function inspectZapRequest(zapRequest: Event) {
+  const computedId = getEventHash(zapRequest);
+  const structurallyValid = validateEvent(zapRequest);
+  const signatureValid = structurallyValid && verifyEvent(zapRequest);
+  const tags = zapRequest.tags.filter(
+    tag => Array.isArray(tag) && typeof tag[0] === 'string',
+  );
+  const tagsByName = Object.fromEntries(
+    ['p', 'e', 'a', 'k', 'amount', 'lnurl', 'relays'].map(name => [
+      name,
+      tags.filter(tag => tag[0] === name),
+    ]),
+  );
+
+  return {
+    event: zapRequest,
+    checks: {
+      structurallyValid,
+      signatureValid,
+      idMatches: zapRequest.id === computedId,
+      computedId,
+      kindIs9734: zapRequest.kind === 9734,
+      pubkeyIsHex: HEX_64.test(zapRequest.pubkey),
+      idIsHex: HEX_64.test(zapRequest.id),
+      signatureIsHex: /^[0-9a-f]{128}$/i.test(zapRequest.sig),
+      exactlyOneRecipient: tagsByName.p.length === 1,
+      atMostOneEvent: tagsByName.e.length <= 1,
+      hasRelays: (tagsByName.relays[0]?.length ?? 0) > 1,
+      amountMatchesIntegerMsats:
+        tagsByName.amount.length === 1 &&
+        /^\d+$/.test(tagsByName.amount[0]?.[1] ?? ''),
+      lnurlIsBech32:
+        tagsByName.lnurl.length === 1 &&
+        (tagsByName.lnurl[0]?.[1] ?? '').toLowerCase().startsWith('lnurl1'),
+    },
+    tagsByName,
+  };
+}
 
 export function getLNURLFromProfile(kind0: Kind0Parsed | null): string | null {
   const lud06 = kind0?.lud06?.();
@@ -110,9 +150,19 @@ export async function getZapInvoice(
   const meta = (await response.json()) as {
     callback?: string;
     allowsNostr?: boolean;
+    nostrPubkey?: string;
     commentAllowed?: number;
   };
   if (!meta.callback) throw new Error('No LNURL callback found');
+
+  console.log('[send-ecash] LNURL zap metadata', {
+    endpoint,
+    callbackOrigin: new URL(meta.callback, endpointUrl.origin).origin,
+    allowsNostr: meta.allowsNostr === true,
+    nostrPubkey: meta.nostrPubkey,
+    nostrPubkeyValid: !!meta.nostrPubkey && HEX_64.test(meta.nostrPubkey),
+    commentAllowed: meta.commentAllowed ?? 0,
+  });
 
   const callback = meta.callback.startsWith('http')
     ? meta.callback
@@ -127,11 +177,26 @@ export async function getZapInvoice(
     callbackUrl.searchParams.set('comment', zapRequest.content.slice(0, commentAllowed));
   }
 
+  console.log('[send-ecash] LNURL zap callback request', {
+    callbackOrigin: callbackUrl.origin,
+    callbackPath: callbackUrl.pathname,
+    amount: callbackUrl.searchParams.get('amount'),
+    lnurl: callbackUrl.searchParams.get('lnurl'),
+    nostrBytes: callbackUrl.searchParams.get('nostr')?.length ?? 0,
+    nostr: callbackUrl.searchParams.get('nostr'),
+    hasComment: callbackUrl.searchParams.has('comment'),
+  });
+
   const invoiceResponse = await fetch(callbackUrl.toString(), {
     credentials: 'omit',
     headers: {Accept: 'application/json'},
   });
   if (!invoiceResponse.ok) {
+    const responseBody = await invoiceResponse.text().catch(() => '');
+    console.warn('[send-ecash] LNURL zap callback rejected request', {
+      status: invoiceResponse.status,
+      body: responseBody.slice(0, 1000),
+    });
     throw new Error(`Lightning invoice failed: ${invoiceResponse.status}`);
   }
   const invoice = (await invoiceResponse.json()) as {pr?: string};

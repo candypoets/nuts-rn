@@ -165,13 +165,13 @@ export function ExploreFeed({
   const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
   const viewportStartRef = useRef(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [newNotesCount, setNewNotesCount] = useState(0);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
-  const loadingRef = useRef(false);
+  const loadingRef = useRef(true);
   const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
@@ -237,7 +237,7 @@ export function ExploreFeed({
           requestAuthors.join(','),
         )}`
       : '';
-  const baseSubId = `feed${exploreAudienceMode}${contactFeedKey}${selectedKinds.join(
+  const baseSubId = `feed${exploreAudienceMode}${contactFeedKey}${requestKinds.join(
     ',',
   )}`;
   const feedKey = useMemo(
@@ -253,6 +253,13 @@ export function ExploreFeed({
     selectedKinds.length === 2 &&
     selectedKinds.includes(31922) &&
     selectedKinds.includes(31923);
+  const emptyNoun =
+    EXPLORE_KIND_TABS.find(
+      tab =>
+        tab.kinds &&
+        tab.kinds.length === selectedKinds.length &&
+        tab.kinds.every(kind => selectedKinds.includes(kind)),
+    )?.label.toLowerCase() ?? 'notes';
 
   const defaultHeader = useCallback(
     ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
@@ -825,7 +832,7 @@ export function ExploreFeed({
   const empty = (
     <View className="items-center px-6 py-12">
       <Text className="text-center text-base font-semibold text-primary-content">
-        No notes here yet
+        No {emptyNoun} here yet
       </Text>
       <Text className="mt-2 max-w-72 text-center text-sm text-primary-content">
         Try another community relay or switch scope from contacts to all.
@@ -1386,7 +1393,6 @@ function ExploreHeader({
               selectedKinds={selectedKinds}
               onSelectKinds={setSelectedKinds}
               tabs={EXPLORE_KIND_TABS}
-              deferSelection
             />
           </View>
         ) : null}

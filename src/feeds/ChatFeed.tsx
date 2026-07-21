@@ -150,7 +150,7 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
   const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<ChatListTab>('messages');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [eventsVersion, setEventsVersion] = useState(0);
   const pubkey = useAuthStore(state => state.pubkey);
@@ -284,7 +284,10 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
 
   const startSubscription = useCallback(
     (forceCacheBust = false) => {
-      if (!enabled || !visible || !pubkey || hasSigner === false) return;
+      if (!enabled || !visible || !pubkey || hasSigner === false) {
+        setLoading(false);
+        return;
+      }
 
       const requests = buildRequests(pubkey, relays);
       if (!requests.length) return;

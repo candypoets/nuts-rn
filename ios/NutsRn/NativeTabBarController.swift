@@ -33,6 +33,9 @@ class NativeTabBarController: NSObject {
 
     let appearance = tabBarController.tabBar.standardAppearance.copy()
       as? UITabBarAppearance ?? UITabBarAppearance()
+    appearance.configureWithOpaqueBackground()
+    // Matches theme.colors.base100 of the default matteblack theme (#111111).
+    appearance.backgroundColor = UIColor(red: 17 / 255, green: 17 / 255, blue: 17 / 255, alpha: 1)
     let compactItems = appearance.compactInlineLayoutAppearance
     compactItems.normal.titleTextAttributes[.font] = UIFont.systemFont(ofSize: 10, weight: .medium)
     compactItems.selected.titleTextAttributes[.font] = UIFont.systemFont(ofSize: 10, weight: .semibold)

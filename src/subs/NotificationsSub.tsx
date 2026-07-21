@@ -22,7 +22,7 @@ import {
 } from 'lucide-react-native';
 import {neventEncode} from 'nostr-tools/nip19';
 
-import {Feed} from '../components/Feed';
+import {Feed, FeedSticky} from '../components/Feed';
 import {Avatar, ContentBlocks, Note, User} from '../components/notes';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {RootStackParamList} from '../navigation/types';
@@ -314,7 +314,11 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
   }, [hasMore, loadNextPage, loading, notifications.length, rawEvents.length, visible]);
 
   const renderHeader = useCallback(
-    () => <NotificationsHeader onClose={onClose} />,
+    () => (
+      <FeedSticky>
+        <NotificationsHeader onClose={onClose} />
+      </FeedSticky>
+    ),
     [onClose],
   );
 
@@ -331,7 +335,6 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
         items={[]}
         renderItem={() => null}
         header={renderHeader}
-        stickyHeader={renderHeader}
         empty={<Text className="px-4 py-8 text-center text-primary-content">Sign in to view notifications</Text>}
       />
     );
@@ -343,7 +346,6 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
       getItemId={item => item.id().fnv1aHash()}
       renderItem={renderItem}
       header={renderHeader}
-      stickyHeader={renderHeader}
       loading={loading && notifications.length === 0}
       refreshing={refreshing}
       pullToRefresh

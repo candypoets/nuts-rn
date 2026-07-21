@@ -7,7 +7,7 @@ import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
 import {ChevronLeft} from 'lucide-react-native';
 import {decode, type AddressPointer} from 'nostr-tools/nip19';
 
-import {Feed} from '../components/Feed';
+import {Feed, FeedSticky} from '../components/Feed';
 import {Kind30023Article} from '../components/notes/Kind30023Article';
 import {eventTags, tagValue} from '../components/notes/kindHelpers';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
@@ -207,7 +207,11 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
 
   const items = article ? [article] : EMPTY_ITEMS;
   const renderHeader = useCallback(
-    () => <Kind30023Header onClose={onClose} relays={relays} />,
+    () => (
+      <FeedSticky>
+        <Kind30023Header onClose={onClose} relays={relays} />
+      </FeedSticky>
+    ),
     [onClose, relays],
   );
 
@@ -217,7 +221,6 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
       loading={loading}
       visible={visible}
       header={renderHeader}
-      stickyHeader={renderHeader}
       empty={
         loading ? null : (
           <View className="px-4 py-10">

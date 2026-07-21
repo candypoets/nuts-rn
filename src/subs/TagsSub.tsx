@@ -10,7 +10,7 @@ import {
   ConnectionTracker,
 } from '@candypoets/nipworker/utils';
 import {ArrowLeft} from 'lucide-react-native';
-import {Feed} from '../components/Feed';
+import {Feed, FeedSticky} from '../components/Feed';
 import {Note} from '../components/notes';
 import {RelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -250,7 +250,9 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
 
   const title = cleanTags.map(tag => `#${tag}`).join(' ');
   const renderHeader = useCallback(() => (
-    <TagsHeader title={title} relays={relays} statuses={connectionStatus} onClose={onClose} />
+    <FeedSticky>
+      <TagsHeader title={title} relays={relays} statuses={connectionStatus} onClose={onClose} />
+    </FeedSticky>
   ), [connectionStatus, onClose, relays, title]);
   const renderItem = useCallback(
     ({item, visible: itemVisible}: {item: ParsedEvent; visible: boolean}) => (
@@ -271,7 +273,6 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
       getItemId={(item, index) => item.id() || `missing:${index}`}
       renderItem={renderItem}
       header={renderHeader}
-      stickyHeader={renderHeader}
       loading={loading}
       onNearBottom={handleNearBottom}
       empty={empty}

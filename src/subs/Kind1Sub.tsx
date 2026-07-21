@@ -1120,7 +1120,7 @@ export function Kind1Sub({
       headerSafeArea
       stickyHeader={stickyHeader}
       visible={visible}
-      loading={false}
+      loading={loading}
       onNearBottom={handleNearBottom}
       removeClippedSubviews={false}
       empty={headerItem ? (

@@ -1,7 +1,10 @@
 import React, {
   type ReactElement,
   type ReactNode,
+  createContext,
+  isValidElement,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -9,6 +12,7 @@ import React, {
 } from 'react';
 import * as ReactNative from 'react-native';
 import {
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -88,6 +92,7 @@ export type FeedProps<T> = {
 
 const NEAR_BOTTOM_THRESHOLD = 10;
 const TOP_SAFE_AREA_OFFSET = 8;
+const STICKY_HEADER_HIDE_OFFSET = 72;
 
 type FeedVirtualItem<T> = {
   key: string;
@@ -147,6 +152,38 @@ function defaultGetItemId<T>(item: T, index: number) {
   return index;
 }
 
+const FeedStickyContext = createContext<(node: ReactNode | null) => void>(() => {});
+
+function isSameStickyElement(a: ReactNode, b: ReactNode) {
+  if (a === b) return true;
+  if (!isValidElement(a) || !isValidElement(b)) return false;
+  if (a.type !== b.type || a.key !== b.key) return false;
+  const aProps = a.props as Record<string, unknown>;
+  const bProps = b.props as Record<string, unknown>;
+  const keys = Object.keys(aProps);
+  return (
+    keys.length === Object.keys(bProps).length &&
+    keys.every(key => aProps[key] === bProps[key])
+  );
+}
+
+/**
+ * Tags an element inside a Feed `header` as the sticky element. The children render
+ * in-flow as part of the header, and Feed mirrors them into its sticky overlay.
+ */
+export function FeedSticky({children}: {children: ReactNode}) {
+  const register = useContext(FeedStickyContext);
+  const registeredRef = useRef<ReactNode>(null);
+  useEffect(() => {
+    if (!isSameStickyElement(registeredRef.current, children)) {
+      registeredRef.current = children;
+      register(children);
+    }
+  }, [register, children]);
+  useEffect(() => () => register(null), [register]);
+  return <>{children}</>;
+}
+
 export function Feed<T>({
   items,
   resetScrollKey,
@@ -183,18 +220,22 @@ export function Feed<T>({
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
+  const [nearTop, setNearTop] = useState(true);
+  const [taggedSticky, setTaggedSticky] = useState<ReactNode | null>(null);
   const listRef = useRef<ScrollView>(null);
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const lastTabBarDiagnosticAtRef = useRef(0);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
+  const lastStickyOffsetRef = useRef(0);
   const scrollViewportHeightRef = useRef(0);
   const scrollContentHeightRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
   const lastItemsLengthRef = useRef(items.length);
   const didInitialBottomScrollRef = useRef(false);
-  const headerVisible = useSharedValue(0);
+  const stickyReveal = useSharedValue(0);
+  const stickyHeight = useSharedValue(88);
   const footerVisible = useSharedValue(1);
   const scrollY = useSharedValue(0);
   const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
@@ -299,21 +340,23 @@ export function Feed<T>({
 
   useEffect(() => {
     if (resetScrollKey === undefined || bottom) return;
+    stickyReveal.value = 0;
     requestAnimationFrame(() => {
       listRef.current?.scrollTo({y: 0, animated: false});
       lastOffsetRef.current = 0;
       setDown(true);
     });
-  }, [bottom, resetScrollKey]);
+  }, [bottom, resetScrollKey, stickyReveal]);
 
   useEffect(() => {
     if (scrollToTopKey === undefined) return;
+    stickyReveal.value = 0;
     requestAnimationFrame(() => {
       scrollToTop();
       lastOffsetRef.current = 0;
       setDown(true);
     });
-  }, [scrollToTop, scrollToTopKey]);
+  }, [scrollToTop, scrollToTopKey, stickyReveal]);
 
   useEffect(() => {
     if (scrollToBottomKey === undefined) return;
@@ -333,21 +376,25 @@ export function Feed<T>({
   }, [down, onViewportStateChange, start]);
 
   useEffect(() => {
-    headerVisible.value = withTiming(start >= 1 && !down ? 1 : 0, {
-      duration: 220,
-    });
+    if (nearTop || start < 1) {
+      stickyReveal.value = withTiming(0, {duration: 220});
+    }
     footerVisible.value = withTiming(
       bottom || stickyFooterVisible || !down || start < 1 ? 1 : 0,
       {duration: 220},
     );
-  }, [bottom, down, footerVisible, headerVisible, start, stickyFooterVisible]);
+  }, [bottom, down, footerVisible, nearTop, start, stickyFooterVisible, stickyReveal]);
 
   const stickyHeaderStyle = useAnimatedStyle(() => ({
-    opacity: headerVisible.value,
+    opacity: stickyReveal.value,
     backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base100,
     paddingTop: outerHeaderSafeAreaTop,
-    transform: [{translateY: (1 - headerVisible.value) * -(72 + topInset)}],
-  }), [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base100, topInset]);
+    transform: [{translateY: (stickyReveal.value - 1) * stickyHeight.value}],
+  }), [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base100]);
+
+  const handleStickyLayout = useCallback((event: LayoutChangeEvent) => {
+    stickyHeight.value = event.nativeEvent.layout.height;
+  }, [stickyHeight]);
 
   const stickyFooterStyle = useAnimatedStyle(() => ({
     opacity: footerVisible.value,
@@ -400,6 +447,17 @@ export function Feed<T>({
     scrollViewportHeightRef.current = layoutMeasurement.height;
     scrollContentHeightRef.current = contentSize.height;
     setStart(offset >= 1 ? 1 : 0);
+    setNearTop(offset < STICKY_HEADER_HIDE_OFFSET);
+    const stickyDelta = offset - lastStickyOffsetRef.current;
+    lastStickyOffsetRef.current = offset;
+    if (offset <= STICKY_HEADER_HIDE_OFFSET + stickyHeight.value) {
+      stickyReveal.value = 0;
+    } else {
+      stickyReveal.value = Math.min(
+        1,
+        Math.max(0, stickyReveal.value - stickyDelta / stickyHeight.value),
+      );
+    }
     const distanceFromBottom = Math.max(
       0,
       contentSize.height - layoutMeasurement.height - offset,
@@ -413,7 +471,7 @@ export function Feed<T>({
       setDown(delta > 0);
       lastOffsetRef.current = offset;
     }
-  }, [maybeTriggerNearBottom, nearBottomThreshold, scrollY]);
+  }, [maybeTriggerNearBottom, nearBottomThreshold, scrollY, stickyHeight, stickyReveal]);
 
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     scrollContentHeightRef.current = height;
@@ -513,7 +571,9 @@ export function Feed<T>({
     }
     return empty ? <View className="px-6 py-12">{empty}</View> : null;
   }, [empty, loading]);
+  const stickyContent = stickyHeader ? stickyHeader(chromeProps) : taggedSticky;
   return (
+    <FeedStickyContext.Provider value={setTaggedSticky}>
     <View className="relative flex-1">
       {bottom ? (
         <FlashList
@@ -608,12 +668,13 @@ export function Feed<T>({
           {fixedHeader(chromeProps)}
         </View>
       ) : null}
-      {stickyHeader ? (
+      {stickyContent ? (
         <Animated.View
-          pointerEvents={start >= 1 && !down ? 'auto' : 'none'}
+          pointerEvents={start >= 1 && !down && !nearTop ? 'auto' : 'none'}
           className="absolute left-0 right-0 top-0 z-30"
+          onLayout={handleStickyLayout}
           style={stickyHeaderStyle}>
-          <Pressable onPress={scrollToTop}>{stickyHeader(chromeProps)}</Pressable>
+          <Pressable onPress={scrollToTop}>{stickyContent}</Pressable>
         </Animated.View>
       ) : null}
       {stickyFooter ? (
@@ -625,5 +686,6 @@ export function Feed<T>({
         </Animated.View>
       ) : null}
     </View>
+    </FeedStickyContext.Provider>
   );
 }

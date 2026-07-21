@@ -29,6 +29,7 @@ import {
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
+  asEoce,
   asKind4,
   asParsedEvent,
   fbArray,
@@ -174,6 +175,10 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   );
 
   const handleEvents = useCallback((workerMessage: WorkerMessage) => {
+    if (asEoce(workerMessage)) {
+      setLoading(false);
+      return;
+    }
     const parsed = asParsedEvent(workerMessage);
     if (!parsed || parsed.kind() !== 4) return;
 
@@ -332,26 +337,31 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
 
   const fixedHeader = useCallback(
     () => (
-      <View className="flex-row items-center justify-between px-4 py-3">
-        <Pressable
-          className="h-10 w-10 items-center justify-center rounded-full border border-base-200 bg-base-300"
-          hitSlop={12}
-          onPress={onClose}
-        >
-          <ChevronLeft size={24} color={iconColor} strokeWidth={2.2} />
-        </Pressable>
-        <View className="max-w-[70%] flex-row items-center gap-2 rounded-full border border-base-200 bg-base-300 pr-3">
-          <Avatar pubkey={peerPubkey} size="lg" link />
-          <User
-            pubkey={peerPubkey}
-            link
-            className="shrink text-base font-semibold text-base-content"
-          />
+      <View
+        className="border-b border-base-200 bg-base-100"
+        style={{marginTop: -topInset, paddingTop: topInset}}
+      >
+        <View className="flex-row items-center justify-between px-4 py-3">
+          <Pressable
+            className="h-10 w-10 items-center justify-center rounded-full border border-base-200 bg-base-300"
+            hitSlop={12}
+            onPress={onClose}
+          >
+            <ChevronLeft size={24} color={iconColor} strokeWidth={2.2} />
+          </Pressable>
+          <View className="max-w-[70%] flex-row items-center gap-2 rounded-full border border-base-200 bg-base-300 pr-3">
+            <Avatar pubkey={peerPubkey} size="lg" link />
+            <User
+              pubkey={peerPubkey}
+              link
+              className="shrink text-base font-semibold text-base-content"
+            />
+          </View>
+          <View className="h-10 w-10" />
         </View>
-        <View className="h-10 w-10" />
       </View>
     ),
-    [iconColor, onClose, peerPubkey],
+    [iconColor, onClose, peerPubkey, topInset],
   );
 
   const stickyFooter = useCallback(
@@ -361,7 +371,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
           <TextInput
             className="max-h-28 flex-1 rounded-full border border-base-200 bg-base-300 px-4 py-3 text-base text-base-content"
             multiline
-            placeholder="Aa"
+            placeholder="Message"
             placeholderTextColor={theme.colors.primaryContent}
             value={message}
             onChangeText={setMessage}
@@ -405,6 +415,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         items={items}
         getItemId={item => String(item.id() || '')}
         visible={visible}
+        loading={loading}
         scrollToBottomKey={scrollToBottomKey}
         bottom
         bottomAutoScroll="initial"
@@ -488,7 +499,7 @@ function MessageBubble({
       >
         <View
           className={`relative max-w-[80%] px-4 py-2 ${
-            incoming ? 'bg-base-300' : 'bg-sky-600'
+            incoming ? 'bg-base-300' : 'mr-1 bg-sky-600'
           } ${
             isFirst && isLast
               ? 'rounded-2xl'

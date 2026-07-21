@@ -31,7 +31,9 @@ module.exports = {
     return factory();
   },
   useSharedValue(initialValue) {
-    return { value: initialValue };
+    const ref = React.useRef(null);
+    if (ref.current === null) ref.current = { value: initialValue };
+    return ref.current;
   },
   withSpring(value, _config, callback) {
     callback?.(true);

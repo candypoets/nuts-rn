@@ -481,7 +481,7 @@ function RootNavigator({
         <NativeStack.Screen
           name="Post"
           component={PostScreen}
-          options={{ presentation: 'modal', gestureEnabled: true }}
+          options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
         />
         <NativeStack.Screen
           name="Receive"

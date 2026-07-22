@@ -1,3 +1,5 @@
+def nipworkerMavenRepository = System.getenv("NIPWORKER_MAVEN_URL") ?: "https://candypoets.github.io/nipworker/"
+
 buildscript {
     ext {
         buildToolsVersion = "36.0.0"
@@ -22,6 +24,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url nipworkerMavenRepository }
         maven { url 'https://www.jitpack.io' }
     }
 }

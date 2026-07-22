@@ -648,7 +648,7 @@
 /* Begin XCLocalSwiftPackageReference section */
 		4E2A6B102D2F4C2A00FB0001 /* XCLocalSwiftPackageReference "swift" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../nipworker/swift;
+			relativePath = ../node_modules/@candypoets/nipworker/swift;
 		};
 /* End XCLocalSwiftPackageReference section */
 

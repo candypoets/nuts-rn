@@ -1,5 +1,31 @@
 # Agent Notes
 
+## On-Device Testing with Maestro
+
+Maestro flows live in `maestro/flows/`. `launch.yaml` is the shared setup subflow (launch dev-client, connect to Metro, dismiss dev menu); scenario flows start with `- runFlow: launch.yaml`.
+
+Host setup (Linux, headless):
+
+```sh
+# emulator (see android-emulator-launch skill; test AVD, swiftshader)
+/opt/android-sdk/emulator/emulator -avd test -no-window -no-boot-anim -no-audio -no-snapshot -gpu swiftshader_indirect
+# Metro — port 8081 is taken by a docker container on this host, use 8084
+CI=1 npx expo start --dev-client --port 8084
+adb reverse tcp:8084 tcp:8084
+# run flows
+MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/smoke.yaml
+```
+
+Notes:
+
+- Screenshots come back black under SwiftShader; the uiautomator hierarchy Maestro uses for text assertions works fine, so assert on text, not pixels.
+- The dev launcher cannot auto-discover Metro (adb reverse is host-local); flows type `exp://localhost:8084` into the launcher URL field and tap Connect, then dismiss the dev menu with Continue/Close.
+- `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
+
+### nipworker native lib gotcha (fixed locally 2026-07-22)
+
+`libnipworker_native_ffi.so` (com.candypoets:nipworker-native-ffi-android AAR, 0.97.2/0.97.3) ships **without a SONAME**, so CMake baked the absolute build-machine path into `DT_NEEDED` of `libnipworker_react_native.so` and the app crashed at startup with `UnsatisfiedLinkError` on every device. Fixed in the nipworker repo at `crates/native-ffi/react-native/android/CMakeLists.txt` by linking the prefab lib by name (`-lnipworker_native_ffi`) instead of by imported-target path. Do not "fix" this with patchelf — patchelf 0.14 corrupts the Rust .so's hash sections, and gradle rejects modified transform workspaces anyway. The durable upstream fix is adding `-Wl,-soname,libnipworker_native_ffi.so` to the ffi build.
+
 ## Running the RN App
 
 Use the Expo dev-client flow. A plain Android activity launch can stop at the Expo dev launcher and never start the JS bundle, which makes relay debugging misleading.

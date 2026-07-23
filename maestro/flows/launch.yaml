@@ -1,0 +1,21 @@
+appId: com.nutsrn
+---
+# Setup subflow: launch dev-client, connect to Metro, land in the app.
+- launchApp:
+    clearState: true
+- tapOn: "exp://"
+- inputText: "exp://localhost:8084"
+- tapOn: "Connect"
+# First bundle load from Metro can take a while; dev menu may appear over the app.
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 120000
+- tapOn: "Continue"
+# Dev menu tools panel can open as well; dismiss it.
+- tapOn:
+    text: "Close"
+    optional: true
+# Landed in the app: Explore feed visible.
+- extendedWaitUntil:
+    visible: "Switch to all"
+    timeout: 60000

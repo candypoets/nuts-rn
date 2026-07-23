@@ -1,0 +1,10 @@
+appId: com.nutsrn
+---
+# Smoke: setup + verify the Explore feed structure.
+- runFlow: launch.yaml
+- assertVisible: "Contacts"
+- assertVisible: "Notes"
+- assertVisible: "Home"
+- assertVisible: "Feed"
+- assertVisible: "Chats"
+- takeScreenshot: app-loaded

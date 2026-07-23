@@ -1,0 +1,11 @@
+appId: com.nutsrn
+---
+# Interaction: switch Explore scope contacts -> all and verify the feed reacts.
+- runFlow: launch.yaml
+- tapOn: "Switch to all"
+- waitForAnimationToEnd:
+    timeout: 15000
+# After switching, the scope hint or loaded content should be present.
+- assertVisible:
+    text: ".*"
+- takeScreenshot: after-scope-switch

@@ -43,7 +43,7 @@ import {
   type FeedKindTabId,
 } from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
-import { Note } from '../components/notes';
+import { Note } from '../components/notes/Note';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import {
   CalendarDays,
@@ -111,7 +111,7 @@ const AUTH_FALLBACK_DELAY_MS = 1200;
 const APP_FOOTER_HEIGHT = Platform.OS === 'android' ? 68 : 56;
 const MEDIA_GRID_COLUMNS = 2;
 const MEDIA_TILE_HEIGHT = 286;
-const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6];
+const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6, 1068];
 const REPOSTABLE_FEED_KINDS = new Set<number>([
   1, 20, 22, 1068, 30023, 30311, 31922, 31923,
 ]);
@@ -120,12 +120,18 @@ const EXPLORE_KIND_TABS: Array<{
   label: string;
   kinds?: FeedKind[];
 }> = [
-  { id: 'notes', label: 'Notes', kinds: [1, 6] },
+  { id: 'notes', label: 'Notes', kinds: [1, 6, 1068] },
   { id: 'media', label: 'Media', kinds: [20, 22] },
-  { id: 'polls', label: 'Polls', kinds: [1068] },
   { id: 'articles', label: 'Articles', kinds: [30023] },
   { id: 'events', label: 'Events', kinds: [31922, 31923] },
 ];
+
+function isLegacySeparatedNotesSelection(kinds: FeedKind[]) {
+  return (
+    (kinds.length === 1 && kinds[0] === 1068) ||
+    (kinds.length === 2 && kinds.includes(1) && kinds.includes(6))
+  );
+}
 
 export function ExploreFeed({
   enabled,
@@ -198,7 +204,10 @@ export function ExploreFeed({
   const relaySelectionSubId = 'feedExplore';
   const selectedSubRelays = relaySubs[relaySelectionSubId];
   const requestKinds = useMemo(
-    () => (selectedKinds.length ? selectedKinds : DEFAULT_EXPLORE_KINDS),
+    () =>
+      selectedKinds.length && !isLegacySeparatedNotesSelection(selectedKinds)
+        ? selectedKinds
+        : DEFAULT_EXPLORE_KINDS,
     [selectedKinds],
   );
   const requestAuthors = useMemo(
@@ -219,7 +228,10 @@ export function ExploreFeed({
       selectedSubRelays ??
       exploreRelays ??
       (authPubkey ? accountRelays : GUEST_EXPLORE_RELAYS);
-    return relays.map(normalizeRelayUrl).filter(Boolean);
+    return relays.flatMap(relay => {
+      const normalized = normalizeRelayUrl(relay);
+      return normalized ? [normalized] : [];
+    });
   }, [accountRelays, authPubkey, exploreRelays, selectedSubRelays]);
   const authReadyForExplore = Boolean(authPubkey) || authResolved;
   const followsReadyForExplore =
@@ -523,7 +535,7 @@ export function ExploreFeed({
   );
 
   const handleViewportStateChange = useCallback(
-    ({start}: {start: number; down: boolean}) => {
+    ({ start }: { start: number; down: boolean }) => {
       viewportStartRef.current = start;
       if (start === 0) {
         setNewNotesCount(0);
@@ -763,6 +775,17 @@ export function ExploreFeed({
         }, 500);
       }
     }
+
+    return () => {
+      if (paginationCheckTimeoutRef.current) {
+        clearTimeout(paginationCheckTimeoutRef.current);
+        paginationCheckTimeoutRef.current = null;
+      }
+      if (paginationUnsubscribeTimeoutRef.current) {
+        clearTimeout(paginationUnsubscribeTimeoutRef.current);
+        paginationUnsubscribeTimeoutRef.current = null;
+      }
+    };
   }, [loading]);
 
   useEffect(() => {

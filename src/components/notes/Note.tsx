@@ -33,7 +33,8 @@ import {
 import { pushDistinct } from '../../navigation/pushDistinct';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAppTheme } from '../../theme';
-import { BOOTSTRAP_RELAYS, useNostrStore, useRelayStore } from '../../stores';
+import { BOOTSTRAP_RELAYS, useNostrStore } from '../../stores/nostrStore';
+import { useRelayStore } from '../../stores/relayStore';
 import { ContentBlocks } from './ContentBlocks';
 import { Footer } from './Footer';
 import { Header } from './Header';
@@ -48,6 +49,7 @@ import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 
 const EMPTY_RELAYS: string[] = [];
 const EMPTY_CONTEXT: ParsedEvent[] = [];
+const EMPTY_ANCESTOR_IDS: string[] = [];
 const NOTE_SEARCH_TIMEOUT_MS = 2500;
 const NOTE_BYTES_PER_EVENT = 10 * 1024;
 const NOTE_FALLBACK_RELAYS = [
@@ -108,6 +110,17 @@ function withKnownRelays(
 
 function isMediaEventKind(kind?: number) {
   return kind === 20 || kind === 22;
+}
+
+function isSpecialNoteKind(kind?: number) {
+  return (
+    isMediaEventKind(kind) ||
+    kind === 1068 ||
+    kind === 30023 ||
+    kind === 30311 ||
+    kind === 31922 ||
+    kind === 31923
+  );
 }
 
 function sameStringArray(left: string[], right: string[]) {
@@ -287,6 +300,50 @@ const UnsupportedNoteBody = memo(function UnsupportedNoteBody({
   );
 });
 
+type NoteContentOverrideProps = {
+  note: ParsedEvent;
+  relays: string[];
+  visible: boolean;
+  depth: number;
+  showQuote: boolean;
+  showMedia: boolean;
+  forceFullContent: boolean;
+  renderQuote: RenderQuote;
+};
+
+const NoteContentOverride = memo(function NoteContentOverride({
+  note,
+  relays,
+  visible,
+  depth,
+  showQuote,
+  showMedia,
+  forceFullContent,
+  renderQuote,
+}: NoteContentOverrideProps) {
+  if (isMediaEventKind(note.kind())) {
+    return <Kind20Content note={note} relays={relays} />;
+  }
+  if (note.kind() === 1068) {
+    return (
+      <Kind1068Content
+        note={note}
+        visible={visible}
+        relays={relays}
+        depth={depth}
+        showQuote={showQuote}
+        showMedia={showMedia}
+        forceFullContent={forceFullContent}
+        renderQuote={renderQuote}
+      />
+    );
+  }
+  if (note.kind() === 30023) {
+    return <Kind30023Content note={note} />;
+  }
+  return <KindPreGenericContent note={note} />;
+});
+
 const NoteBody = memo(
   function NoteBody({
     ancestor,
@@ -439,7 +496,7 @@ function NoteComponent({
   depth = 0,
   leading = false,
   tailing = false,
-  ancestorIds = [],
+  ancestorIds = EMPTY_ANCESTOR_IDS,
   showReplies,
 }: NoteProps) {
   const theme = useAppTheme();
@@ -604,9 +661,10 @@ function NoteComponent({
   }, [effectiveNote, lookupRelayKey, noteId, retryNonce, visible]);
 
   const retryWithFallbackRelays = useCallback(() => {
-    const workingRelays = Object.entries(relayStatuses)
-      .filter(([, status]) => status !== 'FAILED' && status !== 'CLOSED')
-      .map(([url]) => url);
+    const workingRelays = Object.entries(relayStatuses).flatMap(
+      ([url, status]) =>
+        status !== 'FAILED' && status !== 'CLOSED' ? [url] : [],
+    );
     const nextRelays = relayList([
       ...extraSearchRelays,
       ...workingRelays,
@@ -627,26 +685,6 @@ function NoteComponent({
     () => (displayNote ? asKind1(displayNote) : null),
     [displayNote],
   );
-  const contentOverride = useMemo(() => {
-    if (!displayNote) return null;
-    if (isMediaEventKind(displayNote.kind())) {
-      return <Kind20Content note={displayNote} relays={relays} />;
-    }
-    if (displayNote.kind() === 1068) {
-      return <Kind1068Content note={displayNote} visible={visible} />;
-    }
-    if (displayNote.kind() === 30023) {
-      return <Kind30023Content note={displayNote} />;
-    }
-    if (
-      displayNote.kind() === 30311 ||
-      displayNote.kind() === 31922 ||
-      displayNote.kind() === 31923
-    ) {
-      return <KindPreGenericContent note={displayNote} />;
-    }
-    return null;
-  }, [displayNote, relays, visible]);
   const isMediaEvent = isMediaEventKind(displayNote?.kind());
   const isKind30023 = displayNote?.kind() === 30023;
   const effectiveMain = main || ((isMediaEvent || isKind30023) && depth === 0);
@@ -675,8 +713,7 @@ function NoteComponent({
     [kind1],
   );
   const visibleReplies = useMemo(
-    () =>
-      showReplies && displayNote ? showReplies(displayNote)(replies) : [],
+    () => (showReplies && displayNote ? showReplies(displayNote)(replies) : []),
     [displayNote, replies, showReplies],
   );
   const shouldRenderAncestor = !!(
@@ -937,7 +974,8 @@ function NoteComponent({
 
   if (
     supportedDisplayNote == null ||
-    (!contentOverride && (supportedDisplayNote?.kind() !== 1 || !kind1))
+    (!isSpecialNoteKind(supportedDisplayNote.kind()) &&
+      (supportedDisplayNote.kind() !== 1 || !kind1))
   ) {
     return (
       <UnsupportedNoteBody
@@ -948,6 +986,19 @@ function NoteComponent({
       />
     );
   }
+
+  const contentOverride = isSpecialNoteKind(supportedDisplayNote.kind()) ? (
+    <NoteContentOverride
+      note={supportedDisplayNote}
+      relays={noteRelays}
+      visible={visible}
+      depth={depth}
+      showQuote={showQuote}
+      showMedia={showMedia}
+      forceFullContent={effectiveMain}
+      renderQuote={renderQuote}
+    />
+  ) : null;
 
   return (
     <>

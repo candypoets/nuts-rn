@@ -1,7 +1,22 @@
-import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Pressable, Text, View} from 'react-native';
-import type {ConnectionStatus, ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
-import {Kind1018Parsed, Kind1068Parsed, PollType} from '@candypoets/nipworker';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Pressable, Text, View } from 'react-native';
+import type {
+  ConnectionStatus,
+  ParsedEvent,
+  WorkerMessage,
+} from '@candypoets/nipworker';
+import {
+  Kind1018Parsed,
+  Kind1068Parsed,
+  PollType,
+} from '@candypoets/nipworker';
 import {
   asConnectionStatus,
   asParsedEvent,
@@ -11,20 +26,39 @@ import {
   usePublish as publishToNostr,
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
-import {BarChart3, Check, CheckCircle2} from 'lucide-react-native';
-import {useAuthStore, useSendStatusStore} from '../../stores';
-import {ContentBlocks} from './ContentBlocks';
-import {formatTimestamp, stringValue} from './kindHelpers';
+import { Check, CheckCircle2 } from 'lucide-react-native';
+import { useAuthStore } from '../../stores/authStore';
+import { useSendStatusStore } from '../../stores/sendStatusStore';
+import { ContentBlocks } from './ContentBlocks';
+import { formatTimestamp, stringValue } from './kindHelpers';
 
 type Kind1068ContentProps = {
   note: ParsedEvent;
   visible: boolean;
+  relays?: string[];
+  depth?: number;
+  showQuote?: boolean;
+  showMedia?: boolean;
+  forceFullContent?: boolean;
+  renderQuote?: (quote: {
+    id: string;
+    author?: string;
+    relays: string[];
+    depth: number;
+    key: string;
+  }) => React.ReactNode;
 };
 
 type VoteState = {
   votes: Map<string, Set<string>>;
   voterTimestamps: Map<string, number>;
   processedIds: Set<string>;
+};
+
+type PollWidgetProps = {
+  note: ParsedEvent;
+  poll: Kind1068Parsed;
+  visible: boolean;
 };
 
 function getKind1068(note: ParsedEvent) {
@@ -43,14 +77,17 @@ function uniqueVoteTotal(votes: Map<string, Set<string>>) {
   return voters.size;
 }
 
-function Kind1068ContentComponent({note, visible}: Kind1068ContentProps) {
-  const poll = useMemo(() => getKind1068(note), [note]);
+function PollWidget({ note, poll, visible }: PollWidgetProps) {
   const pubkey = useAuthStore(state => state.pubkey);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
-  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
-  const [userVotedOptions, setUserVotedOptions] = useState<Set<string>>(new Set());
+  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(
+    new Set(),
+  );
+  const [userVotedOptions, setUserVotedOptions] = useState<Set<string>>(
+    new Set(),
+  );
   const [isVoting, setIsVoting] = useState(false);
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
   const voteStateRef = useRef<VoteState>({
     votes: new Map(),
     voterTimestamps: new Map(),
@@ -58,24 +95,26 @@ function Kind1068ContentComponent({note, visible}: Kind1068ContentProps) {
   });
   const noteId = note.id() || '';
   const pollRelays = useMemo(
-    () => (poll ? fbArray(poll, 'relayUrls').map(url => stringValue(url)).filter(Boolean) : []),
+    () =>
+      fbArray(poll, 'relayUrls').flatMap(url => {
+        const relay = stringValue(url);
+        return relay ? [relay] : [];
+      }),
     [poll],
   );
-  const options = useMemo(() => (poll ? fbArray(poll, 'options') : []), [poll]);
-  const contentBlocks = useMemo(
-    () => (poll ? fbArray(poll, 'contentBlocks') : []),
-    [poll],
-  );
+  const options = useMemo(() => fbArray(poll, 'options'), [poll]);
   const pollEnded = useMemo(() => {
-    const endsAt = poll?.endsAt();
+    const endsAt = poll.endsAt();
     if (!endsAt || endsAt === BigInt(0)) return false;
     return Date.now() > Number(endsAt) * 1000;
   }, [poll]);
-  const endsAtLabel = poll?.endsAt() && poll.endsAt() !== BigInt(0)
-    ? formatTimestamp(poll.endsAt())
-    : '';
+  const endsAtLabel =
+    poll.endsAt() && poll.endsAt() !== BigInt(0)
+      ? formatTimestamp(poll.endsAt())
+      : '';
   const totalVotes = uniqueVoteTotal(voteStateRef.current.votes);
   const hasVoted = !!pubkey && userVotedOptions.size > 0;
+  const showResults = hasVoted || pollEnded;
 
   const applyVote = useCallback(
     (parsedEvent: ParsedEvent, optimistic = false) => {
@@ -100,16 +139,22 @@ function Kind1068ContentComponent({note, visible}: Kind1068ContentProps) {
         }
         if (!voteData || voteData.pollEventId() !== noteId) return;
         const timestamp = parsedEvent.createdAt() || 0;
-        const existingTimestamp = voteState.voterTimestamps.get(voterPubkey) || 0;
+        const existingTimestamp =
+          voteState.voterTimestamps.get(voterPubkey) || 0;
         if (existingTimestamp && timestamp <= existingTimestamp) return;
         voteState.voterTimestamps.set(voterPubkey, timestamp);
-        selected = fbArray(voteData, 'selectedOptions').map(option => stringValue(option));
+        selected = fbArray(voteData, 'selectedOptions').map(option =>
+          stringValue(option),
+        );
       }
 
       const nextVotes = new Map(voteState.votes);
       nextVotes.forEach((voters, optionId) => {
         if (voters.has(voterPubkey)) {
-          nextVotes.set(optionId, new Set([...voters].filter(current => current !== voterPubkey)));
+          nextVotes.set(
+            optionId,
+            new Set([...voters].filter(current => current !== voterPubkey)),
+          );
         }
       });
       selected.forEach(optionId => {
@@ -128,36 +173,34 @@ function Kind1068ContentComponent({note, visible}: Kind1068ContentProps) {
   );
 
   useEffect(() => {
-    voteStateRef.current = {
-      votes: new Map(),
-      voterTimestamps: new Map(),
-      processedIds: new Set(),
-    };
-    setSelectedOptions(new Set());
-    setUserVotedOptions(new Set());
-    setVersion(current => current + 1);
-  }, [noteId]);
-
-  useEffect(() => {
     if (!visible || !noteId) return;
     const unsubscribe = subscribeToNostr(
       `poll_votes_${noteId}`,
-      [{kinds: [1018], tags: {'#e': [noteId]}, limit: 500, relays: pollRelays, cacheFirst: true}],
+      [
+        {
+          kinds: [1018],
+          tags: { '#e': [noteId] },
+          limit: 500,
+          relays: pollRelays,
+          cacheFirst: true,
+        },
+      ],
       (message: WorkerMessage) => {
         if (asConnectionStatus(message)) return;
         const parsed = asParsedEvent(message);
         if (parsed?.kind() === 1018) applyVote(parsed);
       },
-      {closeOnEose: false},
+      { closeOnEose: false },
     );
     return () => unsubscribe();
   }, [applyVote, noteId, pollRelays, visible]);
 
   const toggleOption = useCallback(
     (optionId: string) => {
-      if (!poll || pollEnded || hasVoted) return;
+      if (pollEnded || hasVoted) return;
       setSelectedOptions(current => {
-        if (poll.pollType() === PollType.SingleChoice) return new Set([optionId]);
+        if (poll.pollType() === PollType.SingleChoice)
+          return new Set([optionId]);
         const next = new Set(current);
         if (next.has(optionId)) next.delete(optionId);
         else next.add(optionId);
@@ -195,114 +238,110 @@ function Kind1068ContentComponent({note, visible}: Kind1068ContentProps) {
         sendStatus[relayUrl] = status;
         updateSendStatus(sendId, sendStatus);
       },
-      {defaultRelays: pollRelays.length ? pollRelays : undefined, trackStatus: true},
+      {
+        defaultRelays: pollRelays.length ? pollRelays : undefined,
+        trackStatus: true,
+      },
     );
-  }, [isVoting, note, noteId, pollRelays, pubkey, selectedOptions, updateSendStatus]);
-
-  if (!poll) {
-    return (
-      <View className="mt-2 flex-row items-center gap-2 rounded-lg bg-base-200/70 p-3">
-        <BarChart3 size={18} color="#158777" />
-        <Text className="text-sm text-base-content">
-          Poll (kind 1068) - parsed data not available
-        </Text>
-      </View>
-    );
-  }
+  }, [
+    isVoting,
+    note,
+    noteId,
+    pollRelays,
+    pubkey,
+    selectedOptions,
+    updateSendStatus,
+  ]);
 
   return (
-    <View className="mt-2 overflow-hidden rounded-lg border border-base-200 bg-base-200/50">
-      <View className="p-4">
-        <View className="mb-3 flex-row flex-wrap items-center gap-2">
-          <BarChart3 size={20} color="#158777" />
-          <Text className="text-sm font-medium text-primary-content">Poll</Text>
-          <Text className="rounded-full bg-base-300 px-2 py-0.5 text-xs text-base-content">
-            {poll.pollType() === PollType.SingleChoice ? 'Single choice' : 'Multiple choice'}
-          </Text>
-          {pollEnded ? (
-            <Text className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-600">
-              Ended
-            </Text>
-          ) : endsAtLabel ? (
-            <Text className="rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs text-yellow-700">
-              Ends {endsAtLabel}
-            </Text>
-          ) : null}
-        </View>
-        {contentBlocks.length ? (
-          <ContentBlocks
-            content={contentBlocks}
-            note={note}
-            showMedia={false}
-            showQuote={false}
-            forceFullContent
-          />
-        ) : (
-          <Text className="text-lg font-semibold text-base-content">
-            {stringValue(poll.question())}
-          </Text>
-        )}
-      </View>
-
-      <View className="gap-2 px-4 pb-4">
-        {options.map((option, index) => {
+    <View className="gap-2">
+      <View className="gap-2">
+        {options.map(option => {
           const optionId = stringValue(option.id());
           const label = stringValue(option.label()) || optionId;
           const count = voteStateRef.current.votes.get(optionId)?.size || 0;
-          const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+          const percentage =
+            totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
           const selected = selectedOptions.has(optionId);
           const voted = userVotedOptions.has(optionId);
           return (
             <Pressable
-              key={`${optionId}-${index}`}
-              className={['gap-1', pollEnded ? 'opacity-60' : ''].join(' ')}
+              key={optionId}
+              accessibilityRole={
+                poll.pollType() === PollType.SingleChoice ? 'radio' : 'checkbox'
+              }
+              accessibilityState={{
+                checked: selected || voted,
+                disabled: pollEnded || hasVoted,
+              }}
+              className={[
+                'relative min-h-12 justify-center overflow-hidden rounded-xl border border-base-300 px-3 py-3',
+                !showResults && (selected || voted) ? 'border-primary' : '',
+              ].join(' ')}
               onPress={event => {
                 event.stopPropagation();
                 toggleOption(optionId);
               }}
             >
-              <View
-                className={[
-                  'flex-row items-center justify-between gap-3 rounded-lg border-2 p-3',
-                  selected || voted ? 'border-primary bg-primary/10' : 'border-base-300',
-                ].join(' ')}
-              >
-                <View className="min-w-0 flex-1 flex-row items-center gap-3">
-                  <View
-                    className={[
-                      'h-5 w-5 items-center justify-center rounded-full border-2',
-                      selected || voted ? 'border-primary bg-primary' : 'border-primary-content/40',
-                    ].join(' ')}
-                  >
-                    {selected || voted ? <Check size={13} color="#ffffff" /> : null}
-                  </View>
+              {showResults && percentage > 0 ? (
+                <View
+                  className="absolute bottom-0 left-0 top-0 bg-primary/20"
+                  pointerEvents="none"
+                  style={{ width: `${percentage}%` }}
+                />
+              ) : null}
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  {showResults && voted ? (
+                    <Check size={15} color="#158777" />
+                  ) : null}
+                  {!showResults ? (
+                    <View
+                      className={[
+                        'h-5 w-5 items-center justify-center rounded-full border-2',
+                        poll.pollType() === PollType.MultipleChoice
+                          ? 'rounded-md'
+                          : '',
+                        selected || voted
+                          ? 'border-primary bg-primary'
+                          : 'border-primary-content/40',
+                      ].join(' ')}
+                    >
+                      {selected || voted ? (
+                        <Check size={13} color="#ffffff" />
+                      ) : null}
+                    </View>
+                  ) : null}
                   <Text className="min-w-0 flex-1 font-medium text-base-content">
                     {label}
                   </Text>
                 </View>
-                <Text className="text-xs text-primary-content">
-                  {count} ({percentage}%)
-                </Text>
+                {showResults ? (
+                  <Text className="text-sm font-semibold text-base-content">
+                    {percentage}%
+                  </Text>
+                ) : null}
               </View>
-              {totalVotes > 0 ? (
-                <View className="h-1.5 overflow-hidden rounded-full bg-base-300">
-                  <View
-                    className="h-full rounded-full bg-primary"
-                    style={{width: `${percentage}%`}}
-                  />
-                </View>
-              ) : null}
             </Pressable>
           );
         })}
       </View>
 
-      <View className="flex-row items-center justify-between border-t border-base-300 px-4 py-3">
+      <View className="min-h-9 flex-row items-center justify-between gap-3">
         <Text className="text-sm text-primary-content">
-          {totalVotes} total vote{totalVotes === 1 ? '' : 's'}
+          {!showResults && poll.pollType() === PollType.MultipleChoice
+            ? 'Select one or more'
+            : `${totalVotes} vote${totalVotes === 1 ? '' : 's'}`}
+          {pollEnded
+            ? ' · Final results'
+            : endsAtLabel
+            ? ` · Ends ${endsAtLabel}`
+            : ''}
         </Text>
         {!pollEnded && !hasVoted && selectedOptions.size ? (
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Submit poll vote"
             className="rounded-full bg-primary px-4 py-2"
             onPress={event => {
               event.stopPropagation();
@@ -320,6 +359,59 @@ function Kind1068ContentComponent({note, visible}: Kind1068ContentProps) {
           </View>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function Kind1068ContentComponent({
+  note,
+  visible,
+  relays,
+  depth = 0,
+  showQuote = true,
+  showMedia = true,
+  forceFullContent = false,
+  renderQuote,
+}: Kind1068ContentProps) {
+  const poll = useMemo(() => getKind1068(note), [note]);
+  const contentBlocks = useMemo(
+    () => (poll ? fbArray(poll, 'contentBlocks') : []),
+    [poll],
+  );
+
+  if (!poll) {
+    return (
+      <Text className="text-sm text-primary-content">
+        Poll content is not available.
+      </Text>
+    );
+  }
+
+  return (
+    <View className="gap-3">
+      {contentBlocks.length ? (
+        <ContentBlocks
+          content={contentBlocks}
+          note={note}
+          relays={relays}
+          depth={depth}
+          showQuote={showQuote}
+          showMedia={showMedia}
+          visible={visible}
+          forceFullContent={forceFullContent}
+          renderQuote={renderQuote}
+        />
+      ) : (
+        <Text className="text-[15px] font-normal text-base-content">
+          {stringValue(poll.question())}
+        </Text>
+      )}
+      <PollWidget
+        key={note.id() || 'poll'}
+        note={note}
+        poll={poll}
+        visible={visible}
+      />
     </View>
   );
 }

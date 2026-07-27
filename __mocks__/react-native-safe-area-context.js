@@ -16,4 +16,5 @@ module.exports = {
   useSafeAreaInsets: () => insets,
   useSafeAreaFrame: () => frame,
   initialWindowMetrics: {insets, frame},
+  __setSafeAreaInsets: next => Object.assign(insets, next),
 };

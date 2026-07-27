@@ -87,6 +87,8 @@ type WalletActivity = {
   redeemed?: boolean;
 };
 
+const HOME_REFRESH_TIMEOUT_MS = 3_000;
+
 export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -103,6 +105,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   const collectingProofBackupsRef = useRef(false);
   const resolveProofBackupsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
@@ -215,6 +218,13 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     }
   }, []);
 
+  const clearRefreshWatchdog = useCallback(() => {
+    if (refreshWatchdogRef.current) {
+      clearTimeout(refreshWatchdogRef.current);
+      refreshWatchdogRef.current = null;
+    }
+  }, []);
+
   const commitPendingItems = useCallback(() => {
     const pending = pendingItemsRef.current;
     if (!pending.length) return;
@@ -236,7 +246,8 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     setLoading(false);
     setRefreshing(false);
     clearRefreshTimeout();
-  }, [clearRefreshTimeout, commitPendingItems]);
+    clearRefreshWatchdog();
+  }, [clearRefreshTimeout, clearRefreshWatchdog, commitPendingItems]);
 
   const addEvent = useCallback(
     (parsed: ParsedEvent) => {
@@ -305,7 +316,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     clearRefreshTimeout();
     refreshTimeoutRef.current = setTimeout(() => {
       completeResolvingSubscription('timeout');
-    }, 10000);
+    }, HOME_REFRESH_TIMEOUT_MS);
     return true;
   }, [
     authPubkey,
@@ -556,6 +567,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   useEffect(() => {
     const connectionTracker = connectionTrackerRef.current;
     clearRefreshTimeout();
+    clearRefreshWatchdog();
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
     unsubscribeProofsRef.current?.();
@@ -590,10 +602,12 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       subscriptionResolvingRef.current = false;
       eoceReceivedRef.current = false;
       clearRefreshTimeout();
+      clearRefreshWatchdog();
     };
   }, [
     authPubkey,
     clearRefreshTimeout,
+    clearRefreshWatchdog,
     enabled,
     initFeed,
     initProofs,
@@ -612,14 +626,26 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     clearRefreshTimeout();
     requestCacheRef.current += 1;
     setRefreshing(true);
-    initProofs();
-    if (!initFeed()) {
-      console.warn('[home-refresh] feed initialization skipped');
-      setRefreshing(false);
+    clearRefreshWatchdog();
+    refreshWatchdogRef.current = setTimeout(() => {
+      refreshWatchdogRef.current = null;
+      completeResolvingSubscription('refresh-watchdog');
+    }, HOME_REFRESH_TIMEOUT_MS);
+    try {
+      initProofs();
+      if (!initFeed()) {
+        console.warn('[home-refresh] feed initialization skipped');
+        completeResolvingSubscription('initialization-skipped');
+      }
+    } catch (error) {
+      console.warn('[home-refresh] initialization failed', error);
+      completeResolvingSubscription('initialization-failed');
     }
   }, [
     authPubkey,
     clearRefreshTimeout,
+    clearRefreshWatchdog,
+    completeResolvingSubscription,
     enabled,
     hasSigner,
     homeRelays.length,

@@ -12,6 +12,7 @@ import React, {
 } from 'react';
 import * as ReactNative from 'react-native';
 import {
+  ActivityIndicator,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -34,6 +35,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import {getFeedTopInset} from './feedLayout';
 import {diagnoseNativeTabBarScrollViews} from '../navigation/nativeTabBar';
 import {useAppTheme} from '../theme';
 
@@ -91,7 +93,7 @@ export type FeedProps<T> = {
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
-const TOP_SAFE_AREA_OFFSET = 8;
+const REFRESH_INDICATOR_HEIGHT = 48;
 const STICKY_HEADER_HIDE_OFFSET = 72;
 
 type FeedVirtualItem<T> = {
@@ -238,7 +240,7 @@ export function Feed<T>({
   const stickyHeight = useSharedValue(88);
   const footerVisible = useSharedValue(1);
   const scrollY = useSharedValue(0);
-  const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
+  const topInset = getFeedTopInset(insets.top);
   const refreshInset = headerSafeArea ? topInset : 0;
   const headerSafeAreaTop = headerSafeArea ? topInset : 0;
   const outerHeaderSafeAreaTop = headerOwnsSafeArea ? 0 : headerSafeAreaTop;
@@ -541,20 +543,54 @@ export function Feed<T>({
     [columnWrapperStyle, items, numColumns, renderItem, visible],
   );
 
+  const showCustomRefreshIndicator =
+    !bottom && pullToRefresh && !!onRefresh && refreshing;
   const listHeader = useMemo(() => {
-    if (!header) return null;
+    if (!header && !showCustomRefreshIndicator) return null;
+    const inFlowChromeProps = showCustomRefreshIndicator
+      ? {...chromeProps, safeAreaTop: 0}
+      : chromeProps;
+    const inFlowHeaderPaddingTop = showCustomRefreshIndicator
+      ? 0
+      : outerHeaderSafeAreaTop;
     return (
-      <View
-        className="w-full"
-        style={{
-          backgroundColor: theme.colors.base100,
-          paddingTop: outerHeaderSafeAreaTop,
-        }}
-      >
-        {header({...chromeProps, scrolled: false})}
-      </View>
+      <>
+        {showCustomRefreshIndicator ? (
+          <View
+            accessibilityLabel="Refreshing"
+            accessibilityRole="progressbar"
+            className="w-full items-center justify-center bg-base-100"
+            style={{
+              height: refreshInset + REFRESH_INDICATOR_HEIGHT,
+              paddingTop: refreshInset,
+            }}
+            testID="feed-refresh-indicator"
+          >
+            <ActivityIndicator color={refreshColor} />
+          </View>
+        ) : null}
+        {header ? (
+          <View
+            className="w-full"
+            style={{
+              backgroundColor: theme.colors.base100,
+              paddingTop: inFlowHeaderPaddingTop,
+            }}
+          >
+            {header({...inFlowChromeProps, scrolled: false})}
+          </View>
+        ) : null}
+      </>
     );
-  }, [chromeProps, header, outerHeaderSafeAreaTop, theme.colors.base100]);
+  }, [
+    chromeProps,
+    header,
+    outerHeaderSafeAreaTop,
+    refreshColor,
+    refreshInset,
+    showCustomRefreshIndicator,
+    theme.colors.base100,
+  ]);
 
   const listFooter = useMemo(() => {
     if (!footer) return null;
@@ -606,12 +642,17 @@ export function Feed<T>({
           onViewableItemsChanged={handleViewableItemsChanged}
           refreshControl={
             pullToRefresh && onRefresh ? (
+              // The native spinner can remain visible after `refreshing` turns false.
+              // Keep it as an invisible gesture detector and render the bounded
+              // in-flow indicator above for non-inverted feeds.
               <RefreshControl
-                colors={[refreshColor]}
+                colors={[bottom ? refreshColor : 'transparent']}
                 progressViewOffset={refreshInset}
-                progressBackgroundColor={theme.colors.base200}
-                refreshing={refreshing}
-                tintColor={refreshColor}
+                progressBackgroundColor={
+                  bottom ? theme.colors.base200 : 'transparent'
+                }
+                refreshing={bottom ? refreshing : false}
+                tintColor={bottom ? refreshColor : 'transparent'}
                 onRefresh={onRefresh}
               />
             ) : undefined
@@ -625,18 +666,21 @@ export function Feed<T>({
           contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}
           maintainVisibleContentPosition={
-            shouldMaintainVisibleContentPosition ? {minIndexForVisible: 0} : undefined
+            shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
+              ? {minIndexForVisible: 0}
+              : undefined
           }
           onContentSizeChange={handleContentSizeChange}
           onScroll={handleScroll}
           refreshControl={
             pullToRefresh && onRefresh ? (
+              // See the FlashList refresh control above.
               <RefreshControl
-                colors={[refreshColor]}
+                colors={['transparent']}
                 progressViewOffset={refreshInset}
-                progressBackgroundColor={theme.colors.base200}
-                refreshing={refreshing}
-                tintColor={refreshColor}
+                progressBackgroundColor="transparent"
+                refreshing={false}
+                tintColor="transparent"
                 onRefresh={onRefresh}
               />
             ) : undefined

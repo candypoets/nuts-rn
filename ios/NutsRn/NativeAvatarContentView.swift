@@ -134,7 +134,7 @@ class NativeAvatarContentView: UIView {
       context.saveGState()
       context.addEllipse(in: avatarRect)
       context.clip()
-      avatarImage.draw(in: avatarRect)
+      avatarImage.drawAvatarAspectFill(in: avatarRect)
       context.restoreGState()
     } else if !pubkey.isEmpty {
       drawFallback(in: avatarRect)
@@ -191,6 +191,24 @@ class NativeAvatarContentView: UIView {
       self.avatarImage = image
       self.setNeedsDisplay()
     }
+  }
+}
+
+extension UIImage {
+  func drawAvatarAspectFill(in rect: CGRect) {
+    guard size.width > 0, size.height > 0, rect.width > 0, rect.height > 0 else {
+      return
+    }
+    let scale = max(rect.width / size.width, rect.height / size.height)
+    let drawSize = CGSize(width: size.width * scale, height: size.height * scale)
+    draw(
+      in: CGRect(
+        x: rect.midX - drawSize.width / 2,
+        y: rect.midY - drawSize.height / 2,
+        width: drawSize.width,
+        height: drawSize.height
+      )
+    )
   }
 }
 

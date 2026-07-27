@@ -158,7 +158,7 @@ private final class NativeMediaPlaybackCoordinator {
 
   private init() {}
 
-  func play(_ player: AVPlayer) {
+  func play(_ player: AVPlayer, rate: Float = 1) {
     if !player.isMuted && player.volume > 0 {
       let audioSession = AVAudioSession.sharedInstance()
       do {
@@ -172,7 +172,7 @@ private final class NativeMediaPlaybackCoordinator {
       activePlayer?.pause()
       activePlayer = player
     }
-    player.play()
+    player.playImmediately(atRate: rate)
   }
 
   func pause(_ player: AVPlayer) {
@@ -442,7 +442,7 @@ private final class NativeVideoZoomControlsView: UIView {
       if duration > 0 && player.currentTime().seconds >= duration - 0.25 {
         player.seek(to: .zero)
       }
-      NativeMediaPlaybackCoordinator.shared.play(player)
+      NativeMediaPlaybackCoordinator.shared.play(player, rate: playbackRate)
     }
     refresh()
   }
@@ -450,10 +450,7 @@ private final class NativeVideoZoomControlsView: UIView {
   @objc private func toggleRate() {
     guard let player else { return }
     playbackRate = playbackRate >= 2 ? 1 : playbackRate >= 1.5 ? 2 : 1.5
-    player.rate = playbackRate
-    if player.timeControlStatus != .playing {
-      player.playImmediately(atRate: playbackRate)
-    }
+    NativeMediaPlaybackCoordinator.shared.play(player, rate: playbackRate)
     refresh()
   }
 
@@ -468,7 +465,7 @@ private final class NativeVideoZoomControlsView: UIView {
   @objc private func replay() {
     guard let player else { return }
     player.seek(to: .zero)
-    NativeMediaPlaybackCoordinator.shared.play(player)
+    NativeMediaPlaybackCoordinator.shared.play(player, rate: playbackRate)
     refresh()
   }
 }

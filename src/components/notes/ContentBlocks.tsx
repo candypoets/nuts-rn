@@ -476,7 +476,12 @@ function ContentBlocksComponent({
       }
       renderedBlocks.push(
         isNativeLinkPreviewAvailable ? (
-          <NativeLinkPreview key={blockKey} text={block.text() || url} url={url} />
+          <NativeLinkPreview
+            key={blockKey}
+            text={block.text() || url}
+            url={url}
+            visible={visible}
+          />
         ) : (
           <LinkPreviewCard key={blockKey} text={block.text() || url} url={url} />
         ),

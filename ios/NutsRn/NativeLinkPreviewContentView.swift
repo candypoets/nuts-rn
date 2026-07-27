@@ -2,6 +2,7 @@ import Foundation
 import FlatBuffers
 import NipworkerReactNative
 import AVFoundation
+import SDWebImage
 import UIKit
 @objc(NativeLinkPreviewContentView)
 class NativeLinkPreviewContentView: UIView {
@@ -9,7 +10,6 @@ class NativeLinkPreviewContentView: UIView {
   @objc var onHeightChange: ((CGFloat) -> Void)?
 
   private static let metadataCache = NSCache<NSString, NativeLinkPreviewMetadataBox>()
-  private static let imageCache = NSCache<NSString, UIImage>()
   private static let youtubeThumbnails = ["maxresdefault.jpg", "hqdefault.jpg", "mqdefault.jpg", "default.jpg"]
 
   private let imageView = UIImageView()
@@ -24,7 +24,8 @@ class NativeLinkPreviewContentView: UIView {
   private var preview: LinkPreviewInfo?
   private var metadata: LinkPreviewMetadata?
   private var metadataTask: URLSessionDataTask?
-  private var imageTask: URLSessionDataTask?
+  private var imageOperation: SDWebImageOperation?
+  private var imageSource: String?
   private var thumbnailFallback = 0
   private var lastReportedHeight: CGFloat = 0
 
@@ -44,8 +45,11 @@ class NativeLinkPreviewContentView: UIView {
   }
 
   deinit {
-    metadataTask?.cancel()
-    imageTask?.cancel()
+    cancelPendingLoads()
+  }
+
+  @objc func prepareForRecycle() {
+    cancelPendingLoads()
   }
 
   @objc(updateUrl:text:)
@@ -110,7 +114,9 @@ class NativeLinkPreviewContentView: UIView {
     thumbnailFallback = 0
     imageView.image = nil
     metadataTask?.cancel()
-    imageTask?.cancel()
+    imageOperation?.cancel()
+    imageOperation = nil
+    imageSource = nil
     refreshText()
     loadMetadataIfNeeded()
     loadThumbnailIfNeeded()
@@ -139,6 +145,7 @@ class NativeLinkPreviewContentView: UIView {
     imageView.frame = CGRect(x: 0, y: 0, width: width, height: thumbnailHeight)
     playOverlay.frame = imageView.frame
     layoutPlayLayer()
+    loadThumbnailIfNeeded()
 
     let textTop = thumbnailHeight
     let horizontalPadding: CGFloat = 12
@@ -271,37 +278,54 @@ class NativeLinkPreviewContentView: UIView {
   }
 
   private func loadThumbnailIfNeeded() {
-    guard let source = thumbnailUrl, let url = URL(string: source) else {
+    guard let source = thumbnailUrl else {
+      imageOperation?.cancel()
+      imageOperation = nil
+      imageSource = nil
       imageView.image = nil
       return
     }
-    if let cached = Self.imageCache.object(forKey: source as NSString) {
-      imageView.image = cached
+    if imageSource == source {
       return
     }
-    imageTask?.cancel()
-    imageTask = NativeMediaURLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-      guard let self,
-            let data,
-            let response = response as? HTTPURLResponse,
-            (200..<300).contains(response.statusCode),
-            let image = UIImage(data: data) else {
-        DispatchQueue.main.async {
-          guard let self, self.isYouTube else { return }
-          self.thumbnailFallback += 1
-          self.loadThumbnailIfNeeded()
-        }
-        return
-      }
-      Self.imageCache.setObject(image, forKey: source as NSString)
-      DispatchQueue.main.async {
-        guard self.thumbnailUrl == source else { return }
-        self.imageView.image = image
-        self.setNeedsLayout()
-        self.reportHeightIfNeeded()
-      }
+
+    let width = bounds.width
+    guard width > 0 else {
+      setNeedsLayout()
+      return
     }
-    imageTask?.resume()
+
+    imageOperation?.cancel()
+    imageSource = source
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let targetSize = CGSize(width: width * scale, height: floor(width * 9 / 16) * scale)
+    imageOperation = NativeMediaSessionRegistry.shared.loadImage(
+      for: source,
+      targetSize: targetSize,
+      highPriority: true
+    ) { [weak self] image, finished in
+      guard let self, self.imageSource == source else { return }
+      if let image {
+        self.imageView.image = image
+      }
+      guard finished else { return }
+      self.imageOperation = nil
+      if image == nil, self.isYouTube {
+        self.imageSource = nil
+        self.thumbnailFallback += 1
+        self.loadThumbnailIfNeeded()
+      }
+      self.setNeedsLayout()
+      self.reportHeightIfNeeded()
+    }
+  }
+
+  private func cancelPendingLoads() {
+    metadataTask?.cancel()
+    metadataTask = nil
+    imageOperation?.cancel()
+    imageOperation = nil
+    imageSource = nil
   }
 
   private func reportHeightIfNeeded() {

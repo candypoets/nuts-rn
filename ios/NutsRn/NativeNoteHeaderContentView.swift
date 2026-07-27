@@ -269,7 +269,7 @@ class NativeNoteHeaderContentView: UIView {
       context.saveGState()
       context.addEllipse(in: avatarRect)
       context.clip()
-      avatarImage.draw(in: avatarRect)
+      avatarImage.drawAvatarAspectFill(in: avatarRect)
       context.restoreGState()
     }
 
@@ -604,7 +604,7 @@ class NativeNoteHeaderContentView: UIView {
     if let reposterAvatarImage {
       context.addEllipse(in: badgeRect)
       context.clip()
-      reposterAvatarImage.draw(in: badgeRect)
+      reposterAvatarImage.drawAvatarAspectFill(in: badgeRect)
     } else {
       context.setFillColor(accentColor.cgColor)
       context.fillEllipse(in: badgeRect.insetBy(dx: size * 0.28, dy: size * 0.28))

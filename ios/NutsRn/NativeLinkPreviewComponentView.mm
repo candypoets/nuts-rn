@@ -92,6 +92,12 @@ using namespace facebook::react;
   [super updateProps:props oldProps:oldProps];
 }
 
+- (void)prepareForRecycle
+{
+  [_contentView prepareForRecycle];
+  [super prepareForRecycle];
+}
+
 + (ComponentDescriptorProvider)componentDescriptorProvider
 {
   return concreteComponentDescriptorProvider<NativeLinkPreviewComponentDescriptor>();

@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {Linking, StyleSheet} from 'react-native';
+import {Linking, StyleSheet, View} from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import NativeLinkPreviewComponent from '../../specs/NativeLinkPreviewNativeComponent';
 import {
@@ -13,6 +13,7 @@ export const isNativeLinkPreviewAvailable = true;
 type Props = {
   url: string;
   text: string;
+  visible?: boolean;
 };
 
 function normalizeLinkUrl(url: string) {
@@ -53,7 +54,7 @@ function getYoutubeVideoId(url: string) {
   return null;
 }
 
-export function NativeLinkPreview({url, text}: Props) {
+export function NativeLinkPreview({url, text, visible = true}: Props) {
   const theme = useAppTheme();
   const [height, setHeight] = useState(() =>
     getYoutubeVideoId(url) ? 292 : 96,
@@ -91,7 +92,7 @@ export function NativeLinkPreview({url, text}: Props) {
     [height],
   );
 
-  return (
+  return visible ? (
     <NativeLinkPreviewComponent
       url={url}
       text={text}
@@ -103,6 +104,8 @@ export function NativeLinkPreview({url, text}: Props) {
       onNativeRoute={handleNativeRoute}
       style={style}
     />
+  ) : (
+    <View style={style} />
   );
 }
 

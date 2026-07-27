@@ -18,6 +18,7 @@ import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   ParsedEvent,
   RequestObject,
@@ -38,6 +39,7 @@ import {
 } from '@candypoets/nipworker/utils';
 import { ComposerFooter } from '../components/ComposerFooter';
 import { Feed } from '../components/Feed';
+import { getFeedTopInset } from '../components/feedLayout';
 import {
   FeedKindNavigator,
   type FeedKindTabId,
@@ -102,6 +104,11 @@ type ExploreCalendarEvent = {
   title: string;
 };
 
+type NewNotesState = {
+  count: number;
+  pubkeys: string[];
+};
+
 const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.wine',
   'wss://pyramid.fiatjaf.com',
@@ -111,6 +118,9 @@ const AUTH_FALLBACK_DELAY_MS = 1200;
 const APP_FOOTER_HEIGHT = Platform.OS === 'android' ? 68 : 56;
 const MEDIA_GRID_COLUMNS = 2;
 const MEDIA_TILE_HEIGHT = 286;
+const MAX_NEW_NOTE_AVATARS = 3;
+const NEW_NOTES_WIDGET_HEIGHT = 40;
+const EMPTY_NEW_NOTES: NewNotesState = { count: 0, pubkeys: [] };
 const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6, 1068];
 const REPOSTABLE_FEED_KINDS = new Set<number>([
   1, 20, 22, 1068, 30023, 30311, 31922, 31923,
@@ -174,9 +184,12 @@ export function ExploreFeed({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [newNotesCount, setNewNotesCount] = useState(0);
+  const [newNotes, setNewNotes] = useState<NewNotesState>(EMPTY_NEW_NOTES);
+  const [feedChromeVisible, setFeedChromeVisible] = useState(true);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
+  const insets = useSafeAreaInsets();
+  const feedTopInset = getFeedTopInset(insets.top);
   const loadingRef = useRef(true);
   const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
@@ -447,7 +460,7 @@ export function ExploreFeed({
     rootSubIdRef.current = null;
     pendingItemsRef.current = [];
     connectionTrackerRef.current.reset();
-    setNewNotesCount(0);
+    setNewNotes(EMPTY_NEW_NOTES);
     setItemsVersion(version => version + 1);
   }, []);
 
@@ -524,7 +537,16 @@ export function ExploreFeed({
         topItemCreatedAt !== undefined &&
         parsedEvent.createdAt() > topItemCreatedAt
       ) {
-        setNewNotesCount(count => count + 1);
+        const pubkey = parsedEvent.pubkey();
+        setNewNotes(current => ({
+          count: current.count + 1,
+          pubkeys: pubkey
+            ? [
+                pubkey,
+                ...current.pubkeys.filter(existing => existing !== pubkey),
+              ].slice(0, MAX_NEW_NOTE_AVATARS)
+            : current.pubkeys,
+        }));
       }
       pendingItemsRef.current.push(parsedEvent);
       if (!subscriptionResolvingRef.current) {
@@ -538,15 +560,23 @@ export function ExploreFeed({
     ({ start }: { start: number; down: boolean }) => {
       viewportStartRef.current = start;
       if (start === 0) {
-        setNewNotesCount(0);
+        setNewNotes(EMPTY_NEW_NOTES);
       }
     },
     [],
   );
 
+  const handleChromeVisibilityChange = useCallback(
+    (nextVisible: boolean) => {
+      setFeedChromeVisible(nextVisible);
+      onChromeVisibilityChange?.(nextVisible);
+    },
+    [onChromeVisibilityChange],
+  );
+
   const handleNewNotesPress = useCallback(() => {
     commitPendingItems();
-    setNewNotesCount(0);
+    setNewNotes(EMPTY_NEW_NOTES);
     setScrollToTopKey(key => (key ?? 0) + 1);
   }, [commitPendingItems]);
 
@@ -893,26 +923,38 @@ export function ExploreFeed({
         onRefresh={handleRefresh}
         onNearBottom={handleNearBottom}
         onViewportStateChange={handleViewportStateChange}
-        onChromeVisibilityChange={onChromeVisibilityChange}
+        onChromeVisibilityChange={handleChromeVisibilityChange}
         empty={empty}
         contentContainerClassName="pb-44"
         numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
         columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
       />
-      {newNotesCount > 0 ? (
+      {newNotes.count > 0 ? (
         <View
-          className="absolute left-0 right-0 top-24 z-40 items-center"
+          className={`absolute left-0 right-0 z-40 items-center ${
+            feedChromeVisible ? 'top-24' : 'top-3'
+          }`}
           pointerEvents="box-none"
+          style={{ paddingTop: feedTopInset + NEW_NOTES_WIDGET_HEIGHT }}
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${newNotesCount} more notes`}
+            accessibilityLabel={`${newNotes.count} more ${
+              newNotes.count === 1 ? 'note' : 'notes'
+            }`}
+            accessibilityHint="Show the latest notes"
             onPress={handleNewNotesPress}
           >
-            <View className="rounded-full bg-info px-4 py-2 shadow-lg">
-              <Text className="text-sm font-semibold text-info-content">
-                {newNotesCount} more {newNotesCount === 1 ? 'note' : 'notes'}
-              </Text>
+            <View className="flex-row items-center rounded-full shadow-lg">
+              {newNotes.pubkeys.map((pubkey, index) => (
+                <View
+                  key={pubkey}
+                  className={index === 0 ? '' : '-ml-3'}
+                  style={{ zIndex: newNotes.pubkeys.length - index }}
+                >
+                  <Avatar pubkey={pubkey} size="md" />
+                </View>
+              ))}
             </View>
           </Pressable>
         </View>

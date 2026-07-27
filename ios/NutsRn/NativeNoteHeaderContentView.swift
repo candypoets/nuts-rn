@@ -654,7 +654,7 @@ class NativeNoteHeaderContentView: UIView {
     var cursorX = startX
     if !nip05.isEmpty, cursorX < maxX {
       let badgeSlotWidth: CGFloat = 16
-      drawBadgeCheck(at: CGPoint(x: cursorX + 1, y: y + 1))
+      drawBadgeCheck(at: CGPoint(x: cursorX, y: y + 1))
       cursorX += badgeSlotWidth + 4
       cursorX += drawInlineText(
         nip05,
@@ -679,23 +679,23 @@ class NativeNoteHeaderContentView: UIView {
   }
 
   private func drawBadgeCheck(at point: CGPoint) {
-    guard let context = UIGraphicsGetCurrentContext() else {
+    let rect = CGRect(x: point.x, y: point.y, width: 14, height: 14)
+    let configuration = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+    guard
+      let badge = UIImage(systemName: "checkmark.seal.fill", withConfiguration: configuration)?
+        .withTintColor(accentColor, renderingMode: .alwaysOriginal)
+    else {
       return
     }
 
-    let rect = CGRect(x: point.x, y: point.y, width: 14, height: 14)
-    context.saveGState()
-    context.setFillColor(accentColor.cgColor)
-    context.fillEllipse(in: rect.insetBy(dx: 0.5, dy: 0.5))
-    context.setStrokeColor(UIColor(red: 9 / 255, green: 17 / 255, blue: 28 / 255, alpha: 0.9).cgColor)
-    context.setLineWidth(1.9)
-    context.setLineCap(.round)
-    context.setLineJoin(.round)
-    context.move(to: CGPoint(x: rect.minX + 4.0, y: rect.midY + 0.2))
-    context.addLine(to: CGPoint(x: rect.minX + 6.3, y: rect.maxY - 4.1))
-    context.addLine(to: CGPoint(x: rect.maxX - 3.3, y: rect.minY + 4.2))
-    context.strokePath()
-    context.restoreGState()
+    badge.draw(
+      in: CGRect(
+        x: rect.midX - badge.size.width / 2,
+        y: rect.midY - badge.size.height / 2,
+        width: badge.size.width,
+        height: badge.size.height
+      )
+    )
   }
 
   private func formatTimeShort(_ timestamp: UInt32) -> String {

@@ -5,18 +5,19 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Path
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Matrix
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
+import com.nutsrn.R
 import java.util.concurrent.Future
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -38,6 +39,8 @@ class NativeNoteHeaderView(context: Context) : View(context) {
   private val faintTextPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 107, 114, 128) }
   private val relayDotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val verifiedBadge: Drawable? =
+      context.getDrawable(R.drawable.ic_verified)?.mutate()?.apply { setTint(accentPaint.color) }
 
   private var noteBytes: ByteArray? = null
   private var relays: List<String> = emptyList()
@@ -172,6 +175,7 @@ class NativeNoteHeaderView(context: Context) : View(context) {
 
   fun setAccentColor(value: String?) {
     accentPaint.color = parseColor(value, accentPaint.color)
+    verifiedBadge?.setTint(accentPaint.color)
     invalidate()
   }
 
@@ -289,15 +293,11 @@ class NativeNoteHeaderView(context: Context) : View(context) {
   private fun drawMetaLine(canvas: Canvas, startX: Float, top: Float, maxX: Float, baseline: Float) {
     var x = startX
     if (nip05.isNotEmpty() && x < maxX) {
-      val rect = RectF(x + dp(1f), top + dp(1f), x + dp(15f), top + dp(15f))
-      canvas.drawOval(rect, accentPaint)
-      val check = Path().apply {
-        moveTo(rect.left + dp(3f), rect.centerY() + dp(.2f))
-        lineTo(rect.left + dp(5.3f), rect.bottom - dp(3.1f))
-        lineTo(rect.right - dp(2.3f), rect.top + dp(3.2f))
+      val badgeSize = dp(14f)
+      verifiedBadge?.let { badge ->
+        badge.setBounds(x.toInt(), (top + dp(1f)).toInt(), (x + badgeSize).toInt(), (top + dp(1f) + badgeSize).toInt())
+        badge.draw(canvas)
       }
-      val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE;color=Color.argb(230,9,17,28);strokeWidth=dp(1.9f);strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND }
-      canvas.drawPath(check,checkPaint)
       x += dp(20f)
       val value=ellipsize(nip05,secondaryTextPaint,maxX-x)
       canvas.drawText(value,x,top+baseline,secondaryTextPaint)

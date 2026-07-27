@@ -22,6 +22,7 @@ type Props = {
   links: ImageGridLink[];
   note?: ParsedEvent;
   relays?: string[];
+  visible?: boolean;
   containerWidth?: number;
   height?: number;
   style?: StyleProp<ViewStyle>;
@@ -60,6 +61,7 @@ export function NativeMediaViewer({
   links,
   note,
   relays,
+  visible = true,
   containerWidth,
   height: explicitHeight,
   style,
@@ -138,28 +140,30 @@ export function NativeMediaViewer({
       }}
       style={[styles.root, style, { width, height }]}
     >
-      <NativeMediaViewerComponent
-        urls={urls}
-        types={types}
-        thumbnails={thumbnails}
-        dims={dims}
-        itemKeys={itemKeys}
-        sessionId={sessionId}
-        noteBytes={noteBytes}
-        relays={relays}
-        currentUserPubkey={footerActions.currentUserPubkey}
-        optimisticReactionNonce={footerActions.optimisticReactionNonce}
-        primaryTextColor="#ffffff"
-        secondaryTextColor="rgba(255, 255, 255, 0.76)"
-        avatarBackgroundColor={theme.colors.base200}
-        tintColor={footerColors.tint}
-        primaryColor={footerColors.primary}
-        accentColor={footerColors.accent}
-        zoomBackgroundColor="rgba(15, 23, 42, 0.46)"
-        onNativeRoute={handleNativeRoute}
-        onNativeAction={handleNativeAction}
-        style={StyleSheet.absoluteFill}
-      />
+      {visible ? (
+        <NativeMediaViewerComponent
+          urls={urls}
+          types={types}
+          thumbnails={thumbnails}
+          dims={dims}
+          itemKeys={itemKeys}
+          sessionId={sessionId}
+          noteBytes={noteBytes}
+          relays={relays}
+          currentUserPubkey={footerActions.currentUserPubkey}
+          optimisticReactionNonce={footerActions.optimisticReactionNonce}
+          primaryTextColor="#ffffff"
+          secondaryTextColor="rgba(255, 255, 255, 0.76)"
+          avatarBackgroundColor={theme.colors.base200}
+          tintColor={footerColors.tint}
+          primaryColor={footerColors.primary}
+          accentColor={footerColors.accent}
+          zoomBackgroundColor="rgba(15, 23, 42, 0.46)"
+          onNativeRoute={handleNativeRoute}
+          onNativeAction={handleNativeAction}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
     </Pressable>
   );
 }

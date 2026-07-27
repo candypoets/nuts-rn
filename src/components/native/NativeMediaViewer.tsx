@@ -8,6 +8,7 @@ type Props = {
   links: ImageGridLink[];
   note?: ParsedEvent;
   relays?: string[];
+  visible?: boolean;
   containerWidth?: number;
   height?: number;
   style?: StyleProp<ViewStyle>;

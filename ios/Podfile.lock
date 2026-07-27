@@ -20,6 +20,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - Common (25.12.19)
   - EXConstants (56.0.15):
     - ExpoModulesCore
   - EXJSONUtils (56.0.0)
@@ -274,6 +275,7 @@ PODS:
   - EXUpdatesInterface (56.0.2):
     - ExpoModulesCore
   - FBLazyVector (0.86.0)
+  - FlatBuffers (25.12.19)
   - hermes-engine (250829098.0.14):
     - hermes-engine/Pre-built (= 250829098.0.14)
   - hermes-engine/Pre-built (250829098.0.14)
@@ -294,7 +296,8 @@ PODS:
   - libwebp/sharpyuv (1.5.0)
   - libwebp/webp (1.5.0):
     - libwebp/sharpyuv
-  - NipworkerReactNative (0.97.3):
+  - NipworkerReactNative (0.97.7):
+    - FlatBuffers (~> 25.12.19)
     - RCTRequired
     - RCTTypeSafety
     - React-Core
@@ -2519,6 +2522,7 @@ PODS:
 
 DEPENDENCIES:
   - "AsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
+  - Common (from `./FlatBuffersCommon-25.12.19.podspec`)
   - EXConstants (from `../node_modules/expo/node_modules/expo-constants/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
   - EXManifests (from `../node_modules/expo-manifests/ios`)
@@ -2551,8 +2555,9 @@ DEPENDENCIES:
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - EXUpdatesInterface (from `../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
+  - FlatBuffers (from `./FlatBuffers-25.12.19.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
-  - NipworkerReactNative (from `../node_modules/@candypoets/nipworker`)
+  - "NipworkerReactNative (from `../node_modules/@candypoets/nipworker`)"
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
   - RCTSwiftUI (from `../node_modules/react-native/ReactApple/RCTSwiftUI`)
@@ -2654,6 +2659,8 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   AsyncStorage:
     :path: "../node_modules/@react-native-async-storage/async-storage"
+  Common:
+    :podspec: "./FlatBuffersCommon-25.12.19.podspec"
   EXConstants:
     :path: "../node_modules/expo/node_modules/expo-constants/ios"
   EXJSONUtils:
@@ -2718,6 +2725,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-updates-interface/ios"
   FBLazyVector:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
+  FlatBuffers:
+    :podspec: "./FlatBuffers-25.12.19.podspec"
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v250829098.0.14
@@ -2892,8 +2901,14 @@ EXTERNAL SOURCES:
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
+CHECKOUT OPTIONS:
+  FlatBuffers:
+    :git: https://github.com/google/flatbuffers.git
+    :tag: v25.12.19
+
 SPEC CHECKSUMS:
   AsyncStorage: 37c04a199758ec16b9791c907a3ee00e99ea0b35
+  Common: c123348b964e6d85442bf4e51eb462baa6bee3ea
   EXConstants: 7ad8cebfd251d7275fa2e3878ad0ad64552937e1
   EXJSONUtils: dba2755f4e24009eaf87a876b2d615ea06c16e42
   EXManifests: 7e19be8df665a338493060a419847dae76ffcd43
@@ -2926,11 +2941,12 @@ SPEC CHECKSUMS:
   ExpoWebBrowser: 6e3d90e3fe1952d21a8494872b1e1a485cd50e2f
   EXUpdatesInterface: 25408a97d682355eb9fb37e5aa6e22caece1881f
   FBLazyVector: 688bade2cc6ee3de2ba9a411c85c21fd908af3bc
+  FlatBuffers: 2a21d145dded10868f0c84918cb96aa87790c3f7
   hermes-engine: d3870ad757783f8f946fd92cc3e4f9720e54adef
   libavif: 5f8e715bea24debec477006f21ef9e95432e254d
   libdav1d: 23581a4d8ec811ff171ed5e2e05cd27bad64c39f
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
-  NipworkerReactNative: 94b9bd258ef6aeb1b83fd8479a966049184e3adf
+  NipworkerReactNative: c793a3d3669c7c5e35f029f3ad595691cc02d895
   RCTDeprecation: 8f1dc8057e54ea6fd01df47d0d29487adc92c1a9
   RCTRequired: 9d02105f758490fab48d77fead2599a449321ab7
   RCTSwiftUI: 714ca60953e8b7779821eea889ebdc891851682b
@@ -3022,6 +3038,6 @@ SPEC CHECKSUMS:
   Yoga: 18b7c3b4ad4df70f7c1f90871213fd001e6c3528
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: 2cebcc107249cfd88a56e385fa61f5d5cff7ce94
+PODFILE CHECKSUM: b0e2b99c293168bdba0270c9123404dc2d84da2b
 
 COCOAPODS: 1.16.2

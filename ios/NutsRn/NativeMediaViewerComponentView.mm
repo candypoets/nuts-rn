@@ -128,6 +128,12 @@ static NSString *RCTNSStringFromString(const std::string &value);
   [super updateProps:props oldProps:oldProps];
 }
 
+- (void)prepareForRecycle
+{
+  [_contentView prepareForRecycle];
+  [super prepareForRecycle];
+}
+
 + (ComponentDescriptorProvider)componentDescriptorProvider
 {
   return concreteComponentDescriptorProvider<NativeMediaViewerComponentDescriptor>();

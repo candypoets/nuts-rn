@@ -1,5 +1,5 @@
 import Foundation
-import NipworkerSwift
+import NipworkerReactNative
 
 struct NativeProfileSnapshot: Equatable {
   let pubkey: String

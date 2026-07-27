@@ -1,5 +1,5 @@
 import FlatBuffers
-import NipworkerSwift
+import NipworkerReactNative
 import UIKit
 
 @objc(NativeNoteFooterContentView)

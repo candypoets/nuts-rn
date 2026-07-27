@@ -43,6 +43,7 @@ type ContentBlocksProps = {
   depth?: number;
   showQuote?: boolean;
   showMedia?: boolean;
+  visible?: boolean;
   forceFullContent?: boolean;
   renderQuote?: (quote: {
     id: string;
@@ -292,6 +293,7 @@ function ContentBlocksComponent({
   depth = 0,
   showQuote = true,
   showMedia = true,
+  visible = true,
   forceFullContent = false,
   renderQuote,
   relays,
@@ -499,6 +501,7 @@ function ContentBlocksComponent({
             <NativeMediaViewer
               note={note}
               relays={relays}
+              visible={visible}
               links={[
                 {
                   src: image?.url?.() || block.text() || '',
@@ -541,6 +544,7 @@ function ContentBlocksComponent({
             <NativeMediaViewer
               note={note}
               relays={relays}
+              visible={visible}
               links={[
                 {
                   src: video?.url?.() || block.text() || '',
@@ -597,6 +601,7 @@ function ContentBlocksComponent({
             <NativeMediaViewer
               note={note}
               relays={relays}
+              visible={visible}
               links={
                 mediaGroup
                   ? fbArray(mediaGroup, 'items').map(item => {
@@ -684,6 +689,7 @@ export const ContentBlocks = memo(
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.showQuote ?? true) === (next.showQuote ?? true) &&
     (previous.showMedia ?? true) === (next.showMedia ?? true) &&
+    (previous.visible ?? true) === (next.visible ?? true) &&
     (previous.forceFullContent ?? false) === (next.forceFullContent ?? false) &&
     previous.renderQuote === next.renderQuote,
 );

@@ -363,6 +363,7 @@ const NoteBody = memo(
                   depth={depth}
                   showQuote={showQuote}
                   showMedia={showMedia}
+                  visible={visible}
                   forceFullContent={main}
                   renderQuote={renderQuote}
                 />

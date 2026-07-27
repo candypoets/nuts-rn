@@ -1,7 +1,8 @@
 import Foundation
 import FlatBuffers
-import NipworkerSwift
+import NipworkerReactNative
 import AVFoundation
+import SDWebImage
 import UIKit
 
 enum NativeMediaLayout {
@@ -93,9 +94,6 @@ struct MediaInfo {
 final class NativeMediaSessionRegistry {
   static let shared = NativeMediaSessionRegistry()
 
-  private let imageCache = NSCache<NSString, UIImage>()
-  private var imageTasksByURL: [String: URLSessionDataTask] = [:]
-  private var imageCallbacksByURL: [String: [(UIImage) -> Void]] = [:]
   private var playersByKey: [String: AVPlayer] = [:]
 
   private init() {}
@@ -104,47 +102,38 @@ final class NativeMediaSessionRegistry {
     "\(sessionId)|\(itemKey)"
   }
 
-  func cachedImage(for url: String) -> UIImage? {
-    imageCache.object(forKey: url as NSString)
-  }
-
-  func setCachedImage(_ image: UIImage, for url: String) {
-    imageCache.setObject(image, forKey: url as NSString)
-  }
-
-  func loadImage(for source: String, completion: @escaping (UIImage) -> Void) {
-    if let image = cachedImage(for: source) {
-      completion(image)
-      return
+  @discardableResult
+  func loadImage(
+    for source: String,
+    targetSize: CGSize,
+    highPriority: Bool = false,
+    completion: @escaping (UIImage?, Bool) -> Void
+  ) -> SDWebImageOperation? {
+    guard let url = URL(string: source), targetSize.width > 0, targetSize.height > 0 else {
+      completion(nil, true)
+      return nil
     }
-    guard let url = URL(string: source) else { return }
-
-    if imageTasksByURL[source] != nil {
-      imageCallbacksByURL[source, default: []].append(completion)
-      return
+    let context: [SDWebImageContextOption: Any] = [
+      .imageThumbnailPixelSize: targetSize,
+      .imagePreserveAspectRatio: true,
+    ]
+    var options: SDWebImageOptions = [
+      .retryFailed,
+      .scaleDownLargeImages,
+      .continueInBackground,
+      .progressiveLoad,
+    ]
+    if highPriority {
+      options.insert(.highPriority)
     }
-
-    imageCallbacksByURL[source] = [completion]
-    let task = NativeMediaURLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-      guard let self else { return }
-      guard let data, let image = UIImage(data: data) else {
-        DispatchQueue.main.async {
-          self.imageTasksByURL[source] = nil
-          self.imageCallbacksByURL[source] = nil
-        }
-        return
-      }
-
-      DispatchQueue.main.async {
-        self.setCachedImage(image, for: source)
-        let callbacks = self.imageCallbacksByURL[source] ?? []
-        self.imageTasksByURL[source] = nil
-        self.imageCallbacksByURL[source] = nil
-        callbacks.forEach { $0(image) }
-      }
+    return SDWebImageManager.shared.loadImage(
+      with: url,
+      options: options,
+      context: context,
+      progress: nil
+    ) { image, _, _, _, finished, _ in
+      completion(image, finished)
     }
-    imageTasksByURL[source] = task
-    task.resume()
   }
 
   func player(sessionId: String, itemKey: String, url: URL) -> AVPlayer {
@@ -155,6 +144,8 @@ final class NativeMediaSessionRegistry {
 
     let player = AVPlayer(url: url)
     player.actionAtItemEnd = .none
+    player.automaticallyWaitsToMinimizeStalling = false
+    player.currentItem?.preferredForwardBufferDuration = 1
     playersByKey[key] = player
     return player
   }
@@ -168,12 +159,14 @@ private final class NativeMediaPlaybackCoordinator {
   private init() {}
 
   func play(_ player: AVPlayer) {
-    let audioSession = AVAudioSession.sharedInstance()
-    do {
-      try audioSession.setCategory(.playback, mode: .moviePlayback)
-      try audioSession.setActive(true)
-    } catch {
-      NSLog("[NativeMedia] Failed to activate video audio session: %@", error.localizedDescription)
+    if !player.isMuted && player.volume > 0 {
+      let audioSession = AVAudioSession.sharedInstance()
+      do {
+        try audioSession.setCategory(.playback, mode: .moviePlayback)
+        try audioSession.setActive(true)
+      } catch {
+        NSLog("[NativeMedia] Failed to activate video audio session: %@", error.localizedDescription)
+      }
     }
     if activePlayer !== player {
       activePlayer?.pause()
@@ -936,6 +929,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var noteBytes: [UInt8]?
   private var imageViewsByKey: [String: UIImageView] = [:]
   private var loadingImageKeys = Set<String>()
+  private var imageOperationsByKey: [String: SDWebImageOperation] = [:]
   private var videoPlayersByKey: [String: AVPlayer] = [:]
   private var videoLayersByKey: [String: AVPlayerLayer] = [:]
   private var gridControlsByKey: [String: NativeVideoGridControlsView] = [:]
@@ -1001,6 +995,12 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
 
   deinit {
     overlayView?.removeFromSuperview()
+    cancelAllImageLoads()
+    stopAllVideos()
+  }
+
+  @objc func prepareForRecycle() {
+    cancelAllImageLoads()
     stopAllVideos()
   }
 
@@ -1117,6 +1117,8 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageView.removeFromSuperview()
       imageViewsByKey[key] = nil
       loadingImageKeys.remove(key)
+      imageOperationsByKey[key]?.cancel()
+      imageOperationsByKey[key] = nil
       removeVideo(forKey: key)
     }
 
@@ -1129,8 +1131,14 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     super.layoutSubviews()
     let displayItems = Array(items.prefix(NativeMediaLayout.maxDisplayLinks))
     for (index, item) in displayItems.enumerated() {
+      let tileFrame = NativeMediaLayout.tileFrame(
+        total: displayItems.count,
+        index: index,
+        width: bounds.width,
+        height: bounds.height
+      )
       let imageView = imageViewsByKey[item.key] ?? {
-        let view = UIImageView()
+        let view = UIImageView(frame: tileFrame)
         view.backgroundColor = item.type == "video" ? UIColor.black : UIColor.clear
         view.clipsToBounds = true
         view.contentMode = .scaleAspectFill
@@ -1148,7 +1156,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       }
       imageView.accessibilityIdentifier = "\(index)"
       imageView.contentMode = .scaleAspectFill
-      imageView.frame = NativeMediaLayout.tileFrame(total: displayItems.count, index: index, width: bounds.width, height: bounds.height)
+      imageView.frame = tileFrame
       if item.type == "video" {
         configureVideo(for: item, in: imageView, autoplay: displayItems.count == 1 || index == 0)
       } else {
@@ -1623,12 +1631,21 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
 
     let source = item.type == "video" ? (item.thumbnail ?? item.url) : item.url
     if item.type != "video" || item.thumbnail != nil {
-      if let image = NativeMediaSessionRegistry.shared.cachedImage(for: source) {
-        imageView.image = image
-      } else {
-        NativeMediaSessionRegistry.shared.loadImage(for: source) { [weak self, weak imageView] image in
-          guard self?.overlayView != nil else { return }
+      let operationKey = "overlay:\(item.key)"
+      imageOperationsByKey[operationKey]?.cancel()
+      let scale = window?.screen.scale ?? UIScreen.main.scale
+      let targetSize = CGSize(width: frame.width * scale, height: frame.height * scale)
+      imageOperationsByKey[operationKey] = NativeMediaSessionRegistry.shared.loadImage(
+        for: source,
+        targetSize: targetSize,
+        highPriority: true
+      ) { [weak self, weak imageView] image, finished in
+        guard let self, self.overlayView != nil else { return }
+        if let image {
           imageView?.image = image
+        }
+        if finished {
+          self.imageOperationsByKey[operationKey] = nil
         }
       }
     }
@@ -1961,6 +1978,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       NotificationCenter.default.removeObserver(overlayOrientationObserver)
     }
     OrientationGate().setImageZoomActive(false)
+    cancelOverlayImageLoads()
     overlayView?.removeFromSuperview()
     overlayItem = nil
     overlayView = nil
@@ -2027,16 +2045,26 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     let source = item.type == "video" ? (item.thumbnail ?? item.url) : item.url
     guard item.type != "video" || item.thumbnail != nil else { return }
     guard !loadingImageKeys.contains(item.key) else { return }
-    if let image = NativeMediaSessionRegistry.shared.cachedImage(for: source) {
-      imageView.backgroundColor = .clear
-      imageView.image = image
-      return
-    }
     loadingImageKeys.insert(item.key)
-    NativeMediaSessionRegistry.shared.loadImage(for: source) { [weak self, weak imageView] image in
-      self?.loadingImageKeys.remove(item.key)
-      imageView?.backgroundColor = .clear
-      imageView?.image = image
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let targetSize = CGSize(
+      width: max(imageView.bounds.width, 1) * scale,
+      height: max(imageView.bounds.height, 1) * scale
+    )
+    imageOperationsByKey[item.key] = NativeMediaSessionRegistry.shared.loadImage(
+      for: source,
+      targetSize: targetSize,
+      highPriority: imageViewsByKey.count <= 1
+    ) { [weak self, weak imageView] image, finished in
+      guard let self else { return }
+      if let image {
+        imageView?.backgroundColor = .clear
+        imageView?.image = image
+      }
+      if finished {
+        self.loadingImageKeys.remove(item.key)
+        self.imageOperationsByKey[item.key] = nil
+      }
     }
   }
 
@@ -2128,6 +2156,21 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     gridControlsByKey[key] = nil
     videoLayersByKey[key]?.removeFromSuperlayer()
     videoLayersByKey[key] = nil
+  }
+
+  private func cancelAllImageLoads() {
+    for operation in imageOperationsByKey.values {
+      operation.cancel()
+    }
+    imageOperationsByKey.removeAll()
+    loadingImageKeys.removeAll()
+  }
+
+  private func cancelOverlayImageLoads() {
+    for key in Array(imageOperationsByKey.keys) where key.hasPrefix("overlay:") {
+      imageOperationsByKey[key]?.cancel()
+      imageOperationsByKey[key] = nil
+    }
   }
 
   private func stopAllVideos() {

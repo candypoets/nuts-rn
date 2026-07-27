@@ -1,4 +1,4 @@
-import NipworkerSwift
+import NipworkerReactNative
 import SDWebImage
 import UIKit
 

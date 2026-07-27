@@ -49,6 +49,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Allow Nuts to scan payment and profile QR codes.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Nuts uses Bluetooth to discover and communicate with nearby devices for Nostr mesh networking.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Nuts connects to devices and services on your local network when needed.</string>
 	<key>NSFaceIDUsageDescription</key>

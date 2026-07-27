@@ -1,6 +1,6 @@
 import Foundation
 import FlatBuffers
-import NipworkerSwift
+import NipworkerReactNative
 import AVFoundation
 import UIKit
 @objc(NativeLinkPreviewContentView)

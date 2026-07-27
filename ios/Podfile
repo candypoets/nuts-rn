@@ -22,6 +22,16 @@ end
 target 'NutsRn' do
   use_expo_modules!
 
+  # Nipworker's generated Swift bindings target FlatBuffers 25.12.19, which is
+  # tagged upstream but is not available from the CocoaPods Specs repository.
+  pod 'Common',
+      :podspec => './FlatBuffersCommon-25.12.19.podspec'
+  pod 'FlatBuffers',
+      :podspec => './FlatBuffers-25.12.19.podspec'
+  pod 'React-cxxreact',
+      :path => '../node_modules/react-native/ReactCommon/cxxreact',
+      :modular_headers => true
+
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
   else

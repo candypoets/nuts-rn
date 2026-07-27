@@ -1,0 +1,14 @@
+diff --git a/node_modules/@candypoets/nipworker/crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h b/node_modules/@candypoets/nipworker/crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h
+index cbce3d6..53314f5 100644
+--- a/node_modules/@candypoets/nipworker/crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h
++++ b/node_modules/@candypoets/nipworker/crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h
+@@ -0,0 +1,3 @@
++#import <Foundation/Foundation.h>
++
++#ifdef __cplusplus
+@@ -3,0 +7 @@
++#endif
+@@ -22,0 +27 @@
++#ifdef __cplusplus
+@@ -27,0 +33 @@
++#endif

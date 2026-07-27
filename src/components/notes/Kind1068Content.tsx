@@ -264,19 +264,21 @@ function PollWidget({ note, poll, visible }: PollWidgetProps) {
             totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
           const selected = selectedOptions.has(optionId);
           const voted = userVotedOptions.has(optionId);
+          const isSingleChoice = poll.pollType() === PollType.SingleChoice;
           return (
             <Pressable
               key={optionId}
-              accessibilityRole={
-                poll.pollType() === PollType.SingleChoice ? 'radio' : 'checkbox'
-              }
+              accessibilityRole={isSingleChoice ? 'radio' : 'checkbox'}
               accessibilityState={{
                 checked: selected || voted,
                 disabled: pollEnded || hasVoted,
               }}
               className={[
-                'relative min-h-12 justify-center overflow-hidden rounded-xl border border-base-300 px-3 py-3',
-                !showResults && (selected || voted) ? 'border-primary' : '',
+                'relative min-h-12 justify-center overflow-hidden px-3 py-3',
+                !showResults && isSingleChoice
+                  ? 'rounded-full border-2 border-primary'
+                  : 'rounded-xl border border-base-300',
+                !showResults && selected ? 'bg-primary/10' : '',
               ].join(' ')}
               onPress={event => {
                 event.stopPropagation();
@@ -290,38 +292,41 @@ function PollWidget({ note, poll, visible }: PollWidgetProps) {
                   style={{ width: `${percentage}%` }}
                 />
               ) : null}
-              <View className="flex-row items-center justify-between gap-3">
-                <View className="min-w-0 flex-1 flex-row items-center gap-2">
-                  {showResults && voted ? (
-                    <Check size={15} color="#158777" />
+              {!showResults && isSingleChoice ? (
+                <Text className="text-center text-base font-semibold text-primary">
+                  {label}
+                </Text>
+              ) : (
+                <View className="flex-row items-center justify-between gap-3">
+                  <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                    {showResults && voted ? (
+                      <Check size={15} color="#158777" />
+                    ) : null}
+                    {!showResults ? (
+                      <View
+                        className={[
+                          'h-5 w-5 items-center justify-center rounded-md border-2',
+                          selected || voted
+                            ? 'border-primary bg-primary'
+                            : 'border-primary-content/40',
+                        ].join(' ')}
+                      >
+                        {selected || voted ? (
+                          <Check size={13} color="#ffffff" />
+                        ) : null}
+                      </View>
+                    ) : null}
+                    <Text className="min-w-0 flex-1 font-medium text-base-content">
+                      {label}
+                    </Text>
+                  </View>
+                  {showResults ? (
+                    <Text className="text-sm font-semibold text-base-content">
+                      {percentage}%
+                    </Text>
                   ) : null}
-                  {!showResults ? (
-                    <View
-                      className={[
-                        'h-5 w-5 items-center justify-center rounded-full border-2',
-                        poll.pollType() === PollType.MultipleChoice
-                          ? 'rounded-md'
-                          : '',
-                        selected || voted
-                          ? 'border-primary bg-primary'
-                          : 'border-primary-content/40',
-                      ].join(' ')}
-                    >
-                      {selected || voted ? (
-                        <Check size={13} color="#ffffff" />
-                      ) : null}
-                    </View>
-                  ) : null}
-                  <Text className="min-w-0 flex-1 font-medium text-base-content">
-                    {label}
-                  </Text>
                 </View>
-                {showResults ? (
-                  <Text className="text-sm font-semibold text-base-content">
-                    {percentage}%
-                  </Text>
-                ) : null}
-              </View>
+              )}
             </Pressable>
           );
         })}

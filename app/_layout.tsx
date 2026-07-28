@@ -187,6 +187,70 @@ export default function RootLayout() {
                       name="(tabs)"
                       options={{ freezeOnBlur: false }}
                     />
+                    {/* presentation/animation are read at push time, so they
+                        must be declared here — in-route <Stack.Screen options>
+                        lands post-push via setOptions and is ignored. */}
+                    {/* Push screens */}
+                    <Stack.Screen name="PublicProfile" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="Community" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="CalendarEvent" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="ChatThread" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="Kind1Thread" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="Kind30023Thread" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="Tags" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="Notifications" options={{ animation: 'simple_push' }} />
+                    {/* Modal screens */}
+                    <Stack.Screen name="LiveStream" options={{ presentation: 'modal', gestureEnabled: true }} />
+                    <Stack.Screen name="Mints" options={{ presentation: 'modal', headerShown: true, title: 'Mints' }} />
+                    <Stack.Screen name="Profile" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Login" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Keys" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Theme" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="RelayPreferences" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Wallet" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="FeedBuilder" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Receive" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Minting" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Send" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="NewChat" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="SendEcash" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Scan" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Tapcash" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Lightning" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="ProfileStub" options={{ presentation: 'modal' }} />
+                    {/* Form sheets */}
+                    <Stack.Screen
+                      name="Kind1111Comments"
+                      options={{
+                        presentation: 'formSheet',
+                        sheetAllowedDetents: [0.66, 0.92],
+                        sheetExpandsWhenScrolledToEdge: false,
+                        sheetGrabberVisible: true,
+                        sheetInitialDetentIndex: 0,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Share"
+                      options={{
+                        presentation: 'formSheet',
+                        sheetAllowedDetents: [0.6],
+                        sheetCornerRadius: 18,
+                        sheetGrabberVisible: false,
+                      }}
+                    />
+                    <Stack.Screen name="Logout" options={{ presentation: 'formSheet' }} />
+                    <Stack.Screen
+                      name="RelayInfos"
+                      options={{
+                        presentation: 'formSheet',
+                        sheetAllowedDetents: [0.66],
+                        sheetGrabberVisible: true,
+                        sheetInitialDetentIndex: 0,
+                      }}
+                    />
+                    {/* Full-screen modals */}
+                    <Stack.Screen name="Post" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+                    <Stack.Screen name="CmdK" options={{ presentation: 'fullScreenModal' }} />
                   </Stack>
                   <ImageZoom />
                 </>

@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 import {useIsFocused} from 'expo-router/react-navigation';
 import {Kind0Sub} from '../src/subs';
 
@@ -26,13 +26,10 @@ export default function PublicProfileScreen() {
   }, [isFocused, pubkey]);
 
   return (
-    <>
-      <Stack.Screen options={{animation: 'simple_push'}} />
-      <Kind0Sub
-        pubkey={pubkey}
-        visible={isFocused && subVisible}
-        onClose={() => router.back()}
-      />
-    </>
+    <Kind0Sub
+      pubkey={pubkey}
+      visible={isFocused && subVisible}
+      onClose={() => router.back()}
+    />
   );
 }

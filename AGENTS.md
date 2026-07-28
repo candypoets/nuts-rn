@@ -69,6 +69,7 @@ If that line is missing, the JS app is not running and relay/subscription logs a
 - The wizard flows (SignupModal, MintingModal) embed their own inner stack via `createNativeStackNavigator` deep-imported from `expo-router/build/react-navigation/native-stack`. That is a private path with no semver guarantee — re-check it on every expo-router upgrade.
 - Tabs are JS-rendered (`expo-router` Tabs with a custom tab bar) on both platforms; the native bottom tab bar (NativeTabBarController) was removed.
 - Route file names in `app/` intentionally match the old `RootStackParamList` names, so deep links and existing `router.push('/X')` calls kept working unchanged.
+- Screen `presentation` (modal/formSheet/fullScreenModal) and push `animation` MUST be declared as named `<Stack.Screen>` entries in `app/_layout.tsx`. They are read at push time; in-route `<Stack.Screen options={...}/>` applies via `navigation.setOptions` in a layout effect after the push, so it is silently ignored and the screen opens as a default card push. Do not reintroduce in-route screen options.
 - Typed routes are enabled (`experiments.typedRoutes` in app.json). Expo generates route types into `.expo/types/` when Metro runs; the dir is gitignored and included in tsconfig.
 
 ## Relay Debugging

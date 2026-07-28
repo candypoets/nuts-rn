@@ -6,8 +6,9 @@
  * now expo-router/entry and the shell is app/_layout.tsx. renderRouter()
  * cannot be used here (@testing-library/react-native is not installed), so
  * this mounts the root layout directly under the standard module mocks and
- * asserts the provider tree, the root Stack with its (tabs) screen, the
- * RootServices auth wiring, and the / -> /ExploreTab redirect.
+ * asserts the provider tree, the root Stack with its (tabs) screen and the
+ * named presentation/animation entries, the RootServices auth wiring, and the
+ * / -> /ExploreTab redirect.
  */
 
 import React from 'react';
@@ -57,9 +58,63 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
     headerShown: false,
   });
   const screens = renderer.root.findAllByType(Stack.Screen);
-  expect(screens).toHaveLength(1);
-  expect(screens[0].props.name).toBe('(tabs)');
-  expect(screens[0].props.options).toEqual({freezeOnBlur: false});
+  const optionsByName = Object.fromEntries(
+    screens.map(screen => [screen.props.name, screen.props.options]),
+  );
+  // (tabs) is the only screen that opts out of freezeOnBlur.
+  expect(optionsByName['(tabs)']).toEqual({freezeOnBlur: false});
+  // presentation/animation are read at push time, so they must be declared
+  // on the root Stack — in-route <Stack.Screen options> lands too late.
+  expect(optionsByName.PublicProfile).toEqual({animation: 'simple_push'});
+  expect(optionsByName.Wallet).toEqual({presentation: 'modal'});
+  expect(optionsByName.Kind1111Comments).toEqual({
+    presentation: 'formSheet',
+    sheetAllowedDetents: [0.66, 0.92],
+    sheetExpandsWhenScrolledToEdge: false,
+    sheetGrabberVisible: true,
+    sheetInitialDetentIndex: 0,
+  });
+  expect(optionsByName.Post).toEqual({
+    presentation: 'fullScreenModal',
+    gestureEnabled: false,
+  });
+  expect(Object.keys(optionsByName).sort()).toEqual(
+    [
+      '(tabs)',
+      'CalendarEvent',
+      'ChatThread',
+      'CmdK',
+      'Community',
+      'FeedBuilder',
+      'Keys',
+      'Kind1111Comments',
+      'Kind1Thread',
+      'Kind30023Thread',
+      'Lightning',
+      'LiveStream',
+      'Login',
+      'Logout',
+      'Minting',
+      'Mints',
+      'NewChat',
+      'Notifications',
+      'Post',
+      'Profile',
+      'ProfileStub',
+      'PublicProfile',
+      'Receive',
+      'RelayInfos',
+      'RelayPreferences',
+      'Scan',
+      'Send',
+      'SendEcash',
+      'Share',
+      'Tags',
+      'Tapcash',
+      'Theme',
+      'Wallet',
+    ].sort(),
+  );
 
   // RootServices wires the nostr manager auth event to the auth store.
   expect(mockManager.addEventListener).toHaveBeenCalledWith(

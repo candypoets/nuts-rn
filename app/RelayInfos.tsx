@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { RelayInfosModal } from '../src/modals';
 
@@ -51,22 +51,12 @@ export default function RelayInfosRoute() {
   const mode = rawMode === 'communities' ? 'communities' : rawMode === 'relays' ? 'relays' : undefined;
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          presentation: 'formSheet',
-          sheetAllowedDetents: [0.66],
-          sheetGrabberVisible: true,
-          sheetInitialDetentIndex: 0,
-        }}
-      />
-      <RelayInfosModal
-        subId={first(params.subId)}
-        relays={relays}
-        statuses={statuses}
-        mode={mode}
-        onClose={() => router.back()}
-      />
-    </>
+    <RelayInfosModal
+      subId={first(params.subId)}
+      relays={relays}
+      statuses={statuses}
+      mode={mode}
+      onClose={() => router.back()}
+    />
   );
 }

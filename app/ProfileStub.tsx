@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { ProfileStubModal } from '../src/modals';
 import { useAuthStore } from '../src/stores';
@@ -21,13 +21,10 @@ export default function ProfileStubRoute() {
   const auth = useMemo(() => ({ pubkey, hasSigner }), [hasSigner, pubkey]);
 
   return (
-    <>
-      <Stack.Screen options={{ presentation: 'modal' }} />
-      <ProfileStubModal
-        path={path}
-        auth={auth}
-        onClose={() => router.back()}
-      />
-    </>
+    <ProfileStubModal
+      path={path}
+      auth={auth}
+      onClose={() => router.back()}
+    />
   );
 }

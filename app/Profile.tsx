@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 import { ProfileModal } from '../src/modals';
 import { getSharedNostrManager } from '../src/nostr/manager';
@@ -13,13 +13,10 @@ export default function ProfileRoute() {
   const auth = useMemo(() => ({ pubkey, hasSigner, nsec }), [hasSigner, nsec, pubkey]);
 
   return (
-    <>
-      <Stack.Screen options={{ presentation: 'modal' }} />
-      <ProfileModal
-        auth={auth}
-        manager={getSharedNostrManager()}
-        onClose={() => router.back()}
-      />
-    </>
+    <ProfileModal
+      auth={auth}
+      manager={getSharedNostrManager()}
+      onClose={() => router.back()}
+    />
   );
 }

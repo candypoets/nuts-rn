@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useIsFocused } from 'expo-router/react-navigation';
 
 import { PrivateKeyLogin, SignupModal } from '../src/modals';
@@ -19,24 +19,19 @@ export default function LoginRoute() {
   const onSignup = useCallback(() => setMode('signup'), []);
   const onBackToLogin = useCallback(() => setMode('login'), []);
 
-  return (
-    <>
-      <Stack.Screen options={{ presentation: 'modal' }} />
-      {mode === 'signup' ? (
-        <SignupModal
-          focused={focused}
-          manager={manager}
-          onBackToLogin={onBackToLogin}
-          onDone={onClose}
-        />
-      ) : (
-        <PrivateKeyLogin
-          manager={manager}
-          auth={auth}
-          onDone={onClose}
-          onSignup={onSignup}
-        />
-      )}
-    </>
+  return mode === 'signup' ? (
+    <SignupModal
+      focused={focused}
+      manager={manager}
+      onBackToLogin={onBackToLogin}
+      onDone={onClose}
+    />
+  ) : (
+    <PrivateKeyLogin
+      manager={manager}
+      auth={auth}
+      onDone={onClose}
+      onSignup={onSignup}
+    />
   );
 }

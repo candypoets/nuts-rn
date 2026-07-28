@@ -1,4 +1,4 @@
-import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 import {useIsFocused} from 'expo-router/react-navigation';
 import {TagsSub} from '../src/subs';
 
@@ -12,13 +12,10 @@ export default function TagsScreen() {
   const tagList = Array.isArray(tags) ? tags : tags ? [tags] : [];
 
   return (
-    <>
-      <Stack.Screen options={{animation: 'simple_push'}} />
-      <TagsSub
-        tags={tagList}
-        visible={isFocused}
-        onClose={() => router.back()}
-      />
-    </>
+    <TagsSub
+      tags={tagList}
+      visible={isFocused}
+      onClose={() => router.back()}
+    />
   );
 }

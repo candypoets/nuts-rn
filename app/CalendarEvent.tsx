@@ -1,4 +1,4 @@
-import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 import {CalendarEventModal} from '../src/modals/CalendarEventModal';
 
 export default function CalendarEventScreen() {
@@ -9,13 +9,10 @@ export default function CalendarEventScreen() {
   }>();
 
   return (
-    <>
-      <Stack.Screen options={{animation: 'simple_push'}} />
-      <CalendarEventModal
-        relay={relay}
-        address={address}
-        onClose={() => router.back()}
-      />
-    </>
+    <CalendarEventModal
+      relay={relay}
+      address={address}
+      onClose={() => router.back()}
+    />
   );
 }

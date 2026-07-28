@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 import {useIsFocused} from 'expo-router/react-navigation';
 import {CommunitySub} from '../src/subs';
 
@@ -32,17 +32,14 @@ export default function CommunityScreen() {
   }, [isFocused, params.relay]);
 
   return (
-    <>
-      <Stack.Screen options={{animation: 'simple_push'}} />
-      <CommunitySub
-        description={params.description}
-        icon={params.icon}
-        name={params.name}
-        relationship={params.relationship}
-        relay={params.relay}
-        visible={isFocused && subVisible}
-        onClose={() => router.back()}
-      />
-    </>
+    <CommunitySub
+      description={params.description}
+      icon={params.icon}
+      name={params.name}
+      relationship={params.relationship}
+      relay={params.relay}
+      visible={isFocused && subVisible}
+      onClose={() => router.back()}
+    />
   );
 }

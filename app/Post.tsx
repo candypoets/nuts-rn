@@ -1,5 +1,5 @@
 import React from 'react';
-import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 
 import {PostModal} from '../src/modals/PostModal';
 
@@ -8,15 +8,10 @@ export default function PostRoute() {
   const params = useLocalSearchParams<{reply?: string; quote?: string}>();
 
   return (
-    <>
-      <Stack.Screen
-        options={{presentation: 'fullScreenModal', gestureEnabled: false}}
-      />
-      <PostModal
-        reply={params.reply}
-        quote={params.quote}
-        onClose={() => router.back()}
-      />
-    </>
+    <PostModal
+      reply={params.reply}
+      quote={params.quote}
+      onClose={() => router.back()}
+    />
   );
 }

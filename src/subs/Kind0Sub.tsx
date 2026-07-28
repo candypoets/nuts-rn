@@ -49,9 +49,11 @@ import {
   Zap,
 } from 'lucide-react-native';
 import type { EventTemplate } from 'nostr-tools';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { Feed } from '../components/Feed';
+import {
+  Feed,
+  FeedHeaderDynamic,
+  FeedSticky,
+} from '../components/Feed';
 import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
@@ -70,7 +72,6 @@ import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
-const TOP_SAFE_AREA_OFFSET = 8;
 const PRE_PUBLISH_LOOKUP_TIMEOUT_MS = 1500;
 const REPLACEABLE_LIST_BYTES_PER_EVENT = 128 * 1024;
 const PROFILE_EMPTY_TIMEOUT_MS = 2400;
@@ -95,15 +96,12 @@ type Kind0ProfileHeaderProps = {
   lnaddress: string;
   name: string;
   nip05: string;
-  onClose: () => void;
   onFollowPress: () => void;
-  onKindPress: (id: ProfileKindFilterId) => void;
   onMutePress: () => void;
   onZapPress: () => void;
   picture: string | null;
   pubkey: string;
   scrollY: SharedValue<number>;
-  selectedKind: ProfileKindFilterId | null;
   followPending: boolean;
   following: boolean;
   mutePending: boolean;
@@ -617,15 +615,12 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
   lnaddress,
   name,
   nip05,
-  onClose,
   onFollowPress,
-  onKindPress,
   onMutePress,
   onZapPress,
   picture,
   pubkey,
   scrollY,
-  selectedKind,
   followPending,
   following,
   mutePending,
@@ -633,10 +628,8 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
 }: Kind0ProfileHeaderProps) {
   const theme = useAppTheme();
   const iconColor = readableTextColor(theme.colors.base100);
-  const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const topInset = Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
-  const bannerHeight = 208 + topInset;
+  const bannerHeight = 208;
   const bannerStyle = useAnimatedStyle(() => {
     const pullDistance = Math.max(-scrollY.value, 0);
     return {
@@ -656,19 +649,10 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
       ],
     };
   });
-  const selectedActivityKinds = useMemo(
-    () =>
-      selectedKind
-        ? PROFILE_KIND_FILTERS.find(filter => filter.id === selectedKind)
-            ?.kinds ?? []
-        : [],
-    [selectedKind],
-  );
-
   return (
-    <View className="rounded-lg bg-base-300/95">
+    <View className="bg-base-100">
       <View
-        className="overflow-visible bg-base-300/95"
+        className="overflow-visible bg-base-100"
         style={{
           height: bannerHeight,
           width: screenWidth,
@@ -677,19 +661,6 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
         <Animated.View className="h-full w-full" style={bannerStyle}>
           <Kind0TrackedImage uri={banner} className="h-full w-full" />
         </Animated.View>
-        <View
-          className="absolute left-0 right-0 top-0 h-20 flex-row items-center justify-between px-4"
-          style={{ paddingTop: topInset + 24 }}
-        >
-          <Pressable
-            className="h-9 w-9 items-center justify-center rounded-full bg-base-300/85"
-            hitSlop={12}
-            onPress={onClose}
-          >
-            <ChevronLeft size={22} color={iconColor} />
-          </Pressable>
-          <View className="h-9 w-9" />
-        </View>
       </View>
 
       <View className="px-4 pb-4">
@@ -765,26 +736,47 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
         />
       </View>
 
-      <View className="px-4 pb-2 pt-4">
-        <Text className="text-xl font-bold text-base-content">
-          Recent activity
-        </Text>
-        <View className="mt-3">
-          <FeedKindNavigator
-            selectedKinds={selectedActivityKinds}
-            onSelectKinds={kinds => {
-              const nextFilter = PROFILE_KIND_FILTERS.find(filter =>
+    </View>
+  );
+});
+
+const Kind0ActivityHeader = memo(function Kind0ActivityHeader({
+  onKindPress,
+  selectedKind,
+}: {
+  onKindPress: (id: ProfileKindFilterId) => void;
+  selectedKind: ProfileKindFilterId | null;
+}) {
+  const selectedActivityKinds = useMemo(
+    () =>
+      selectedKind
+        ? PROFILE_KIND_FILTERS.find(filter => filter.id === selectedKind)
+            ?.kinds ?? []
+        : [],
+    [selectedKind],
+  );
+
+  return (
+    <View className="px-4 pb-2 pt-4">
+      <Text className="text-xl font-bold text-base-content">
+        Recent activity
+      </Text>
+      <View className="mt-3">
+        <FeedKindNavigator
+          selectedKinds={selectedActivityKinds}
+          onSelectKinds={kinds => {
+            const nextFilter = PROFILE_KIND_FILTERS.find(
+              filter =>
                 filter.kinds.length === kinds.length &&
                 filter.kinds.every((kind, index) => kind === kinds[index]),
-              );
-              if (!nextFilter) {
-                if (selectedKind) onKindPress(selectedKind);
-                return;
-              }
-              if (selectedKind !== nextFilter.id) onKindPress(nextFilter.id);
-            }}
-          />
-        </View>
+            );
+            if (!nextFilter) {
+              if (selectedKind) onKindPress(selectedKind);
+              return;
+            }
+            if (selectedKind !== nextFilter.id) onKindPress(nextFilter.id);
+          }}
+        />
       </View>
     </View>
   );
@@ -1485,42 +1477,49 @@ export function Kind0Sub({
   const handleZapPress = useCallback(() => {
     navigation.navigate('SendEcash', { pubkey });
   }, [navigation, pubkey]);
-  const stickyHeader = useCallback(
-    ({safeAreaTop}: {safeAreaTop: number}) => (
-      <Kind0StickyHeader
-        onClose={onClose}
-        pubkey={pubkey}
-        safeAreaTop={safeAreaTop}
-      />
-    ),
-    [onClose, pubkey],
-  );
-
-  const header = useCallback(
-    ({scrollY}: {scrollY: SharedValue<number>}) => (
-      <Kind0ProfileHeader
-        about={about}
-        aboutContent={aboutContent}
-        banner={banner}
-        communities={communities}
-        contributionCount={contributionCount}
-        lnaddress={lnaddress}
-        name={name}
-        nip05={nip05}
-        onClose={onClose}
-        onFollowPress={handleFollowPress}
-        onKindPress={handleKindPress}
-        onMutePress={handleMutePress}
-        onZapPress={handleZapPress}
-        picture={picture}
-        pubkey={pubkey}
-        scrollY={scrollY}
-        selectedKind={selectedKind}
-        followPending={followPending}
-        following={following}
-        mutePending={mutePending}
-        muted={muted}
-      />
+  const motionHeader = useCallback(
+    ({
+      safeAreaTop,
+      scrollY,
+    }: {
+      safeAreaTop: number;
+      scrollY: SharedValue<number>;
+    }) => (
+      <View className="border-b border-base-200 bg-base-100">
+        <FeedSticky>
+          <Kind0StickyHeader
+            onClose={onClose}
+            pubkey={pubkey}
+            safeAreaTop={safeAreaTop}
+          />
+        </FeedSticky>
+        <FeedHeaderDynamic>
+          <Kind0ProfileHeader
+            about={about}
+            aboutContent={aboutContent}
+            banner={banner}
+            communities={communities}
+            contributionCount={contributionCount}
+            lnaddress={lnaddress}
+            name={name}
+            nip05={nip05}
+            onFollowPress={handleFollowPress}
+            onMutePress={handleMutePress}
+            onZapPress={handleZapPress}
+            picture={picture}
+            pubkey={pubkey}
+            scrollY={scrollY}
+            followPending={followPending}
+            following={following}
+            mutePending={mutePending}
+            muted={muted}
+          />
+        </FeedHeaderDynamic>
+        <Kind0ActivityHeader
+          onKindPress={handleKindPress}
+          selectedKind={selectedKind}
+        />
+      </View>
     ),
     [
       about,
@@ -1552,10 +1551,9 @@ export function Kind0Sub({
       renderItem={({ item, visible: itemVisible }) => (
         <Note note={item} visible={visible && itemVisible} />
       )}
-      header={header}
+      motionHeader={motionHeader}
       headerSafeArea
       headerOwnsSafeArea
-      stickyHeader={stickyHeader}
       visible={visible}
       loading={loading}
       onNearBottom={handleNearBottom}

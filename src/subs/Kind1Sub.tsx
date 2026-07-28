@@ -15,7 +15,11 @@ import {
 import {ChevronLeft} from 'lucide-react-native';
 import {decode, type EventPointer} from 'nostr-tools/nip19';
 
-import {Feed} from '../components/Feed';
+import {
+  Feed,
+  FeedHeaderDynamic,
+  FeedSticky,
+} from '../components/Feed';
 import {Note} from '../components/notes';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -87,23 +91,6 @@ function pointerRelays(data: EventPointer) {
   return [...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl))];
 }
 
-const Kind1StickyHeader = memo(function Kind1StickyHeader({
-  onClose,
-}: {
-  onClose: () => void;
-}) {
-  const theme = useAppTheme();
-    return (
-    <View className="h-16 flex-row items-center justify-between px-4">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
-        <ChevronLeft size={22} color={theme.colors.primaryContent} />
-      </Pressable>
-      <Text className="text-base font-semibold text-base-content">Post</Text>
-      <View className="h-9 w-9" />
-    </View>
-  );
-});
-
 const Kind1Header = memo(function Kind1Header({
   headerItem,
   onClose,
@@ -113,39 +100,54 @@ const Kind1Header = memo(function Kind1Header({
   const theme = useAppTheme();
 
   return (
-    <View>
-      <View className="h-20 flex-row items-center justify-between rounded-lg bg-base-300/90 px-4 shadow-sm">
-        <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
-          <ChevronLeft size={22} color={theme.colors.primaryContent} />
-        </Pressable>
-        <View className="flex-1 items-end justify-center pl-3">
-          {headerItem ? (
-            <NoteRelaysList
-              note={headerItem}
-              subId={`kind1_header_${headerItem.id() || 'missing'}`}
-              relays={relays}
-              mini
-            />
-          ) : null}
+    <View className="border-b border-base-200 bg-base-100">
+      <FeedSticky>
+        <View className="h-16 flex-row items-center justify-between px-4">
+          <Pressable
+            accessibilityLabel="Close post"
+            className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
+            hitSlop={12}
+            onPress={onClose}>
+            <ChevronLeft size={22} color={theme.colors.primaryContent} />
+          </Pressable>
+          <View
+            className="absolute inset-0 items-center justify-center"
+            pointerEvents="none">
+            <Text className="text-base font-semibold text-base-content">
+              Post
+            </Text>
+          </View>
+          <View className="min-h-9 min-w-9 items-end justify-center">
+            {headerItem ? (
+              <NoteRelaysList
+                note={headerItem}
+                subId={`kind1_header_${headerItem.id() || 'missing'}`}
+                relays={relays}
+                mini
+              />
+            ) : null}
+          </View>
         </View>
-      </View>
+      </FeedSticky>
       {headerItem ? (
-        <View className="mt-2 px-1">
-          {KIND1_RENDER_HEADER_NOTE ? (
-            <Note
-              note={headerItem}
-              visible={visible}
-              main
-              threadCard
-            />
-          ) : (
-            <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
-              <Text className="text-sm text-primary-content">
-                Kind1 header loaded: {headerItem.id()?.slice(0, 12)}
-              </Text>
-            </View>
-          )}
-        </View>
+        <FeedHeaderDynamic>
+          <View className="px-1 pb-2">
+            {KIND1_RENDER_HEADER_NOTE ? (
+              <Note
+                note={headerItem}
+                visible={visible}
+                main
+                threadCard
+              />
+            ) : (
+              <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
+                <Text className="text-sm text-primary-content">
+                  Kind1 header loaded: {headerItem.id()?.slice(0, 12)}
+                </Text>
+              </View>
+            )}
+          </View>
+        </FeedHeaderDynamic>
       ) : null}
     </View>
   );
@@ -1059,11 +1061,7 @@ export function Kind1Sub({
     // Temporarily disabled: do not paginate replies while testing Kind1Sub load behavior.
   }, []);
 
-  const stickyHeader = useCallback(
-    () => <Kind1StickyHeader onClose={onClose} />,
-    [onClose],
-  );
-  const header = useCallback(
+  const motionHeader = useCallback(
     () => (
       <Kind1Header
         headerItem={headerItem}
@@ -1116,9 +1114,8 @@ export function Kind1Sub({
       items={items}
       getItemId={getItemId}
       renderItem={renderItem}
-      header={header}
+      motionHeader={motionHeader}
       headerSafeArea
-      stickyHeader={stickyHeader}
       visible={visible}
       loading={loading}
       onNearBottom={handleNearBottom}

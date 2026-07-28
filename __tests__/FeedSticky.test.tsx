@@ -92,6 +92,34 @@ test('motion header keeps Feed scroll callbacks composed', () => {
   ).toHaveLength(1);
 });
 
+test('motion header keeps the native pull-to-refresh indicator visible', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <Feed<Item>
+        items={[]}
+        renderItem={() => null}
+        motionHeader={() => (
+          <FeedSticky>
+            <Text>Refreshable feed</Text>
+          </FeedSticky>
+        )}
+        pullToRefresh
+        refreshing
+        onRefresh={() => {}}
+        empty={<Text>empty</Text>}
+      />,
+    );
+  });
+
+  const nativeControl = renderer!.root.findByType(RefreshControl);
+  expect(nativeControl.props.refreshing).toBe(true);
+  expect(nativeControl.props.tintColor).not.toBe('transparent');
+  expect(
+    renderer!.root.findAllByProps({testID: 'feed-refresh-indicator'}),
+  ).toHaveLength(0);
+});
+
 test('feed forwards animated scroll events to the glass tab minimizer', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {

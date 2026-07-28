@@ -669,7 +669,7 @@ export function Feed<T>({
   );
 
   const showCustomRefreshIndicator =
-    !bottom && pullToRefresh && !!onRefresh && refreshing;
+    !bottom && !motionHeader && pullToRefresh && !!onRefresh && refreshing;
   const customRefreshInset = motionHeader ? 0 : refreshInset;
   const listHeader = useMemo(() => {
     if (!header && !showCustomRefreshIndicator) return null;
@@ -810,10 +810,10 @@ export function Feed<T>({
           refreshControl={
             pullToRefresh && onRefresh ? (
               <RefreshControl
-                colors={['transparent']}
-                progressBackgroundColor="transparent"
-                refreshing={false}
-                tintColor="transparent"
+                colors={[refreshColor]}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
                 onRefresh={onRefresh}
               />
             ) : undefined

@@ -1,0 +1,18 @@
+import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+
+import {SendPlaceholderModal} from '../src/modals/SendModal';
+
+export default function LightningRoute() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{invoice?: string}>();
+  return (
+    <>
+      <Stack.Screen options={{presentation: 'modal'}} />
+      <SendPlaceholderModal
+        title="Lightning"
+        invoice={params.invoice}
+        onClose={() => router.back()}
+      />
+    </>
+  );
+}

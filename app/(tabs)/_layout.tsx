@@ -1,12 +1,15 @@
 import React, {
   createContext,
+  forwardRef,
   useCallback,
   useContext,
   useEffect,
+  useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-import {type Href, usePathname, useRouter} from 'expo-router';
+import {type Href, usePathname} from 'expo-router';
 import {
   Tabs,
   TabList,
@@ -14,7 +17,10 @@ import {
   TabTrigger,
   type ExpoTabsScreenOptions,
 } from 'expo-router/ui';
-import {useIsFocused} from 'expo-router/react-navigation';
+import {
+  useIsFocused,
+  useNavigation,
+} from 'expo-router/react-navigation';
 import {House, Layers3, MessageCircle} from 'lucide-react-native';
 import type {NostrManagerLike} from '@candypoets/nipworker';
 import {
@@ -134,10 +140,74 @@ export function useMainTabContext(routeId: RouteId) {
   };
 }
 
+type SelectTab = (index: number) => void;
+
+type TabNavigationBridge = {
+  dispatch: (action: {
+    type: 'JUMP_TO';
+    target: string;
+    payload: {name: string};
+  }) => void;
+  emit: (event: {
+    type: 'tabPress';
+    target: string;
+    canPreventDefault: true;
+  }) => {defaultPrevented: boolean};
+  getState: () =>
+    | {
+        index: number;
+        key: string;
+        routes: readonly {key: string; name: string}[];
+      }
+    | undefined;
+};
+
+const TabSelectionBridge = forwardRef<
+  SelectTab,
+  {requestScrollToTop: (routeId: RouteId) => void}
+>(function TabSelectionBridge({requestScrollToTop}, ref) {
+  const navigation = useNavigation<TabNavigationBridge>();
+
+  const selectTab = useCallback<SelectTab>(
+    index => {
+      const tab = MAIN_TABS[index];
+      if (!tab) return;
+
+      const state = navigation.getState();
+      if (!state) return;
+
+      const route = state.routes.find(candidate => candidate.name === tab.name);
+      if (!route) return;
+
+      const event = navigation.emit({
+        type: 'tabPress',
+        target: route.key,
+        canPreventDefault: true,
+      });
+      if (event.defaultPrevented) return;
+
+      if (state.routes[state.index]?.key === route.key) {
+        requestScrollToTop(tab.routeId);
+        return;
+      }
+
+      navigation.dispatch({
+        type: 'JUMP_TO',
+        target: state.key,
+        payload: {name: tab.name},
+      });
+    },
+    [navigation, requestScrollToTop],
+  );
+
+  useImperativeHandle(ref, () => selectTab, [selectTab]);
+  return null;
+});
+
 export default function MainTabsLayout() {
   const theme = useAppTheme();
   const pathname = usePathname();
-  const router = useRouter();
+  const selectTabRef = useRef<SelectTab | null>(null);
   const initialTabIndex = getInitialTabIndex(pathname);
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const manager = useMemo(() => getSharedNostrManager(), []);
@@ -201,24 +271,11 @@ export default function MainTabsLayout() {
     ],
   );
 
-  const activeTabIndex = getInitialTabIndex(pathname);
-  const handleActiveTabPress = useCallback(
-    (index: number) => {
-      const tab = MAIN_TABS[index];
-      if (!tab || index !== activeTabIndex) return false;
-      requestScrollToTop(tab.routeId);
-      return true;
-    },
-    [activeTabIndex, requestScrollToTop],
-  );
-
   const selectTab = useCallback(
     (index: number) => {
-      const tab = MAIN_TABS[index];
-      if (!tab || handleActiveTabPress(index)) return;
-      router.navigate(tab.href);
+      selectTabRef.current?.(index);
     },
-    [handleActiveTabPress, router],
+    [],
   );
 
   return (
@@ -229,6 +286,10 @@ export default function MainTabsLayout() {
             backBehavior: 'initialRoute',
             screenOptions: MAIN_TAB_SCREEN_OPTIONS,
           }}>
+          <TabSelectionBridge
+            ref={selectTabRef}
+            requestScrollToTop={requestScrollToTop}
+          />
           <TabSlot />
           <TabList asChild>
             <GlassTabBar
@@ -241,10 +302,7 @@ export default function MainTabsLayout() {
                   asChild
                   href={item.href}
                   key={item.name}
-                  name={item.name}
-                  onPress={() => {
-                    handleActiveTabPress(index);
-                  }}>
+                  name={item.name}>
                   <GlassTabButton index={index} item={item} />
                 </TabTrigger>
               ))}

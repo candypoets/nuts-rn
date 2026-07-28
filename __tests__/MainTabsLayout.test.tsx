@@ -2,9 +2,23 @@ import React from 'react';
 import ReactTestRenderer, {act} from 'react-test-renderer';
 import {Text} from 'react-native';
 import {GlassTabBar} from 'expo-glass-tabs';
-import {router} from 'expo-router';
 
 let mockTabSlotContent: React.ReactNode = null;
+let mockActiveTabIndex = 1;
+const mockTabRoutes = [
+  {key: 'HomeTab-key', name: 'HomeTab'},
+  {key: 'ExploreTab-key', name: 'ExploreTab'},
+  {key: 'ChatTab-key', name: 'ChatTab'},
+];
+const mockTabNavigation = {
+  dispatch: jest.fn(),
+  emit: jest.fn(() => ({defaultPrevented: false})),
+  getState: jest.fn(() => ({
+    index: mockActiveTabIndex,
+    key: 'main-tabs',
+    routes: mockTabRoutes,
+  })),
+};
 
 jest.mock('expo-router/ui', () => {
   const ReactModule = require('react');
@@ -20,6 +34,7 @@ jest.mock('expo-router/ui', () => {
 
 jest.mock('expo-router/react-navigation', () => ({
   useIsFocused: () => true,
+  useNavigation: () => mockTabNavigation,
 }));
 
 jest.mock('../src/nostr/manager', () => ({
@@ -37,7 +52,10 @@ function ExploreScrollKeyProbe() {
 }
 
 beforeEach(() => {
-  (router.navigate as jest.Mock).mockClear();
+  mockActiveTabIndex = 1;
+  mockTabNavigation.dispatch.mockClear();
+  mockTabNavigation.emit.mockClear();
+  mockTabNavigation.getState.mockClear();
   mockTabSlotContent = <ExploreScrollKeyProbe />;
 });
 
@@ -65,7 +83,7 @@ test('tab bar starts on Explore', () => {
   });
 });
 
-test('selecting Explore again requests scroll-to-top without navigating', () => {
+test('selecting Explore again requests scroll-to-top without dispatching', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(<MainTabsLayout />);
@@ -79,13 +97,18 @@ test('selecting Explore again requests scroll-to-top without navigating', () => 
     renderer!.root.findByType(GlassTabBar).props.onIndexSelected(1);
   });
 
-  expect(router.navigate).not.toHaveBeenCalled();
+  expect(mockTabNavigation.dispatch).not.toHaveBeenCalled();
+  expect(mockTabNavigation.emit).toHaveBeenCalledWith({
+    type: 'tabPress',
+    target: 'ExploreTab-key',
+    canPreventDefault: true,
+  });
   expect(
     renderer!.root.findByProps({testID: 'explore-scroll-key'}).props.children,
   ).toBe(1);
 });
 
-test('selecting another tab navigates without changing the active scroll key', () => {
+test('selecting another tab jumps directly without changing the active scroll key', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(<MainTabsLayout />);
@@ -95,7 +118,29 @@ test('selecting another tab navigates without changing the active scroll key', (
     renderer!.root.findByType(GlassTabBar).props.onIndexSelected(0);
   });
 
-  expect(router.navigate).toHaveBeenCalledWith('/HomeTab');
+  expect(mockTabNavigation.dispatch).toHaveBeenCalledWith({
+    type: 'JUMP_TO',
+    target: 'main-tabs',
+    payload: {name: 'HomeTab'},
+  });
+  expect(
+    renderer!.root.findByProps({testID: 'explore-scroll-key'}).props.children,
+  ).toBe('unset');
+});
+
+test('a prevented tab press neither jumps nor scrolls', () => {
+  mockTabNavigation.emit.mockReturnValueOnce({defaultPrevented: true});
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(<MainTabsLayout />);
+  });
+
+  act(() => {
+    renderer!.root.findByType(GlassTabBar).props.onIndexSelected(1);
+  });
+
+  expect(mockTabNavigation.dispatch).not.toHaveBeenCalled();
   expect(
     renderer!.root.findByProps({testID: 'explore-scroll-key'}).props.children,
   ).toBe('unset');

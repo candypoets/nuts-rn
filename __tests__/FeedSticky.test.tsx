@@ -165,6 +165,26 @@ test('content header stays inside the scroll view when motion chrome is present'
   ]);
 });
 
+test('motion chrome can overlay hero content without adding a top offset', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <Feed<Item>
+        items={[]}
+        renderItem={() => null}
+        motionHeader={() => <Text>Profile controls</Text>}
+        motionHeaderOverlaysContent
+        motionHeaderSurfaceColor="transparent"
+        header={() => <Text>Profile banner</Text>}
+        empty={<Text>empty</Text>}
+      />,
+    );
+  });
+
+  const scrollView = renderer!.root.findByType(ScrollView);
+  expect(scrollView.props.contentContainerStyle).toBeUndefined();
+});
+
 test('feed forwards animated scroll events to the glass tab minimizer', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {

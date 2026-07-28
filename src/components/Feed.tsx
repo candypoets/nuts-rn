@@ -71,6 +71,8 @@ export type FeedProps<T> = {
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   header?: (props: FeedChromeProps) => ReactNode;
   motionHeader?: (props: FeedChromeProps) => ReactNode;
+  motionHeaderOverlaysContent?: boolean;
+  motionHeaderSurfaceColor?: string;
   footer?: (props: FeedChromeProps) => ReactNode;
   stickyHeader?: (props: FeedChromeProps) => ReactNode;
   stickyHeaderSafeAreaColor?: string;
@@ -311,6 +313,8 @@ export function Feed<T>({
   renderItem,
   header,
   motionHeader,
+  motionHeaderOverlaysContent = false,
+  motionHeaderSurfaceColor,
   footer,
   stickyHeader,
   stickyHeaderSafeAreaColor,
@@ -743,7 +747,7 @@ export function Feed<T>({
         <MotionHeader
           paddingTop={outerHeaderSafeAreaTop}
           scrollY={scrollY}
-          surfaceColor={theme.colors.base100}>
+          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base100}>
           {motionHeader(chromeProps)}
         </MotionHeader>
       ) : null}
@@ -801,6 +805,9 @@ export function Feed<T>({
           className="flex-1"
           contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}
+          headerOffsetStrategy={
+            motionHeaderOverlaysContent ? 'none' : undefined
+          }
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
               ? {minIndexForVisible: 0}

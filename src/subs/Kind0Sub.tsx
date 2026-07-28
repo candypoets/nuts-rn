@@ -49,6 +49,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import type { EventTemplate } from 'nostr-tools';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feed } from '../components/Feed';
 import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
@@ -68,6 +69,8 @@ import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
+const KIND0_BANNER_HEIGHT = 208;
+const TOP_SAFE_AREA_OFFSET = 8;
 const PRE_PUBLISH_LOOKUP_TIMEOUT_MS = 1500;
 const REPLACEABLE_LIST_BYTES_PER_EVENT = 128 * 1024;
 const PROFILE_EMPTY_TIMEOUT_MS = 2400;
@@ -108,6 +111,7 @@ type Kind0StickyHeaderProps = {
   onClose: () => void;
   pubkey: string;
   safeAreaTop?: number;
+  scrollY: SharedValue<number>;
 };
 
 type Kind0ImageProps = {
@@ -254,23 +258,55 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
   onClose,
   pubkey,
   safeAreaTop = 0,
+  scrollY,
 }: Kind0StickyHeaderProps) {
   const theme = useAppTheme();
+  const bannerExitOffset = KIND0_BANNER_HEIGHT + safeAreaTop - 64;
+  const surfaceStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [0, bannerExitOffset],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+  }));
+  const identityStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [KIND0_BANNER_HEIGHT / 3, bannerExitOffset],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+  }));
+
   return (
-    <View
+    <Animated.View
       className="flex-row items-center justify-between px-4"
-      style={{height: 64 + safeAreaTop, paddingTop: safeAreaTop}}
-    >
+      style={{height: 64 + safeAreaTop, paddingTop: safeAreaTop}}>
+      <Animated.View
+        className="absolute inset-0 border-b"
+        pointerEvents="none"
+        style={[
+          {
+            backgroundColor: theme.colors.base100,
+            borderBottomColor: theme.colors.base200,
+          },
+          surfaceStyle,
+        ]}
+      />
       <Pressable
-        className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
+        accessibilityLabel="Close profile"
+        className="h-9 w-9 items-center justify-center rounded-full bg-base-300/85"
         hitSlop={12}
         onPress={onClose}
       >
         <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>
-      <Avatar pubkey={pubkey} size="lg" />
+      <Animated.View style={identityStyle}>
+        <Avatar pubkey={pubkey} size="lg" />
+      </Animated.View>
       <View className="h-9 w-9" />
-    </View>
+    </Animated.View>
   );
 });
 
@@ -624,8 +660,10 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
 }: Kind0ProfileHeaderProps) {
   const theme = useAppTheme();
   const iconColor = readableTextColor(theme.colors.base100);
+  const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const bannerHeight = 208;
+  const bannerHeight =
+    KIND0_BANNER_HEIGHT + Math.max(0, insets.top - TOP_SAFE_AREA_OFFSET);
   const bannerStyle = useAnimatedStyle(() => {
     const pullDistance = Math.max(-scrollY.value, 0);
     return {
@@ -1474,12 +1512,19 @@ export function Kind0Sub({
     navigation.navigate('SendEcash', { pubkey });
   }, [navigation, pubkey]);
   const motionHeader = useCallback(
-    ({safeAreaTop}: {safeAreaTop: number}) => (
-      <View className="border-b border-base-200 bg-base-100">
+    ({
+      safeAreaTop,
+      scrollY,
+    }: {
+      safeAreaTop: number;
+      scrollY: SharedValue<number>;
+    }) => (
+      <View>
         <Kind0StickyHeader
           onClose={onClose}
           pubkey={pubkey}
           safeAreaTop={safeAreaTop}
+          scrollY={scrollY}
         />
       </View>
     ),
@@ -1548,6 +1593,8 @@ export function Kind0Sub({
         <Note note={item} visible={visible && itemVisible} />
       )}
       motionHeader={motionHeader}
+      motionHeaderOverlaysContent
+      motionHeaderSurfaceColor="transparent"
       header={header}
       headerSafeArea
       headerOwnsSafeArea

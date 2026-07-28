@@ -507,10 +507,10 @@ export function Feed<T>({
 
   const stickyHeaderStyle = useAnimatedStyle(() => ({
     opacity: stickyReveal.value,
-    backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base100,
+    backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base300,
     paddingTop: outerHeaderSafeAreaTop,
     transform: [{translateY: (stickyReveal.value - 1) * stickyHeight.value}],
-  }), [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base100]);
+  }), [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base300]);
 
   const handleStickyLayout = useCallback((event: LayoutChangeEvent) => {
     stickyHeight.value = event.nativeEvent.layout.height;
@@ -703,7 +703,7 @@ export function Feed<T>({
           <View
             className="w-full"
             style={{
-              backgroundColor: theme.colors.base100,
+              backgroundColor: theme.colors.base300,
               paddingTop: inFlowHeaderPaddingTop,
             }}
           >
@@ -720,7 +720,7 @@ export function Feed<T>({
     outerHeaderSafeAreaTop,
     refreshColor,
     showCustomRefreshIndicator,
-    theme.colors.base100,
+    theme.colors.base300,
   ]);
 
   const listFooter = useMemo(() => {
@@ -747,7 +747,7 @@ export function Feed<T>({
         <MotionHeader
           paddingTop={outerHeaderSafeAreaTop}
           scrollY={scrollY}
-          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base100}>
+          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base300}>
           {motionHeader(chromeProps)}
         </MotionHeader>
       ) : null}

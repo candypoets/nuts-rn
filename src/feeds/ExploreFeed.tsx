@@ -1325,7 +1325,7 @@ function ExploreHeader({
       : [];
 
   return (
-    <View className="border-b border-base-200 bg-base-100">
+    <View className="border-b border-base-200 bg-base-300/95">
       <FeedSticky>
         <View
           className="px-3 pb-2"

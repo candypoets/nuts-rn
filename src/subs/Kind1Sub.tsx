@@ -99,7 +99,7 @@ const Kind1MotionHeader = memo(function Kind1MotionHeader({
   const theme = useAppTheme();
 
   return (
-    <View className="border-b border-base-200 bg-base-100">
+    <View className="border-b border-base-200 bg-base-300/95">
       <View className="h-16 flex-row items-center justify-between px-4">
         <Pressable
           accessibilityLabel="Close post"

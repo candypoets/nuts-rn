@@ -338,7 +338,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const motionHeader = useCallback(
     () => (
       <View
-        className="border-b border-base-200 bg-base-100"
+        className="border-b border-base-200 bg-base-300/95"
         style={{paddingTop: topInset}}
       >
         <View className="flex-row items-center justify-between px-4 py-3">

@@ -451,7 +451,7 @@ function ChatHeader({
 }) {
   const theme = useAppTheme();
   return (
-    <View className="border-b border-base-200 bg-base-100">
+    <View className="border-b border-base-200 bg-base-300/95">
       <FeedHeaderDynamic>
         <View
           className="px-3 pb-2"

@@ -288,7 +288,7 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
         pointerEvents="none"
         style={[
           {
-            backgroundColor: theme.colors.base100,
+            backgroundColor: theme.colors.base300,
             borderBottomColor: theme.colors.base200,
           },
           surfaceStyle,
@@ -684,9 +684,9 @@ const Kind0ProfileHeader = memo(function Kind0ProfileHeader({
     };
   });
   return (
-    <View className="bg-base-100">
+    <View className="bg-base-300/95">
       <View
-        className="overflow-visible bg-base-100"
+        className="overflow-visible bg-base-300/95"
         style={{
           height: bannerHeight,
           width: screenWidth,
@@ -1536,7 +1536,7 @@ export function Kind0Sub({
     }: {
       scrollY: SharedValue<number>;
     }) => (
-      <View className="border-b border-base-200 bg-base-100">
+      <View className="border-b border-base-200 bg-base-300/95">
         <Kind0ProfileHeader
           about={about}
           aboutContent={aboutContent}

@@ -57,7 +57,7 @@ const Kind30023Header = memo(function Kind30023Header({
   const relayStatuses = useRelayStore(state => state.relayStatuses);
 
   return (
-    <View className="h-20 flex-row items-center justify-between rounded-lg bg-base-300/90 px-4 shadow-sm">
+    <View className="h-20 flex-row items-center justify-between rounded-lg bg-base-300/95 px-4 shadow-sm">
       <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
         <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>

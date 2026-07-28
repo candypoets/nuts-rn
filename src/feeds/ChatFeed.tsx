@@ -445,10 +445,10 @@ function ChatHeader({
 }) {
   const theme = useAppTheme();
   return (
-    <View className="bg-base-100">
+    <View className="border-b border-base-200 bg-base-100">
       <FeedHeaderDynamic>
         <View
-          className="bg-base-300/90 px-3 pb-2"
+          className="px-3 pb-2"
           style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
         >
           <View className="h-14 flex-row items-center justify-between">
@@ -469,7 +469,7 @@ function ChatHeader({
           </View>
         </View>
       </FeedHeaderDynamic>
-      <View className="border-b border-base-200 bg-base-100/95 px-3 pb-2 pt-2">
+      <View className="px-3 pb-2 pt-2">
         <View className="flex-row rounded-lg bg-base-200 p-1">
           <ChatTab
             active={activeTab === 'messages'}

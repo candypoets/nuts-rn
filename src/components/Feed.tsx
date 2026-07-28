@@ -31,6 +31,7 @@ import Animated, {
   type SharedValue,
   interpolate,
   useAnimatedRef,
+  useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useComposedEventHandler,
@@ -99,6 +100,7 @@ export type FeedProps<T> = {
 const NEAR_BOTTOM_THRESHOLD = 10;
 const REFRESH_INDICATOR_HEIGHT = 48;
 const STICKY_HEADER_HIDE_OFFSET = 72;
+const MOTION_HEADER_DIRECTION_TOLERANCE = 0.5;
 
 type FeedVirtualItem<T> = {
   key: string;
@@ -210,24 +212,84 @@ export function FeedHeaderDynamic({children}: {children: ReactNode}) {
 function MotionHeader({
   children,
   paddingTop,
+  scrollY,
   surfaceColor,
 }: {
   children: ReactNode;
   paddingTop: number;
+  scrollY: SharedValue<number>;
   surfaceColor: string;
 }) {
   const {progress, progressThreshold} = useMotionProgress();
+  const headerHeight = useSharedValue(0);
+  const revealProgress = useSharedValue(1);
+
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      headerHeight.set(event.nativeEvent.layout.height);
+    },
+    [headerHeight],
+  );
+
+  useAnimatedReaction(
+    () => ({
+      offset: scrollY.get(),
+      progress: progress.get(),
+      threshold: progressThreshold.get(),
+    }),
+    (current, previous) => {
+      const hasDynamicSection = Number.isFinite(current.threshold);
+      const isCollapsed = hasDynamicSection
+        ? current.progress >= 0.999
+        : current.offset > STICKY_HEADER_HIDE_OFFSET;
+
+      if (!isCollapsed || current.offset <= 0) {
+        revealProgress.set(1);
+        return;
+      }
+
+      if (!previous) return;
+      const delta = current.offset - previous.offset;
+      if (Math.abs(delta) < MOTION_HEADER_DIRECTION_TOLERANCE) return;
+
+      const retainedHeight = hasDynamicSection
+        ? Math.max(0, headerHeight.get() - current.threshold)
+        : headerHeight.get();
+      revealProgress.set(
+        Math.min(
+          1,
+          Math.max(
+            0,
+            revealProgress.get() - delta / Math.max(1, retainedHeight),
+          ),
+        ),
+      );
+    },
+    [headerHeight, progress, progressThreshold, revealProgress, scrollY],
+  );
+
   const headerStyle = useAnimatedStyle(() => {
     const threshold = progressThreshold.get();
-    const distance = Number.isFinite(threshold) ? threshold : 0;
+    const hasDynamicSection = Number.isFinite(threshold);
+    const collapseDistance = hasDynamicSection ? threshold : 0;
+    const retainedHeight = hasDynamicSection
+      ? Math.max(0, headerHeight.get() - collapseDistance)
+      : headerHeight.get();
+    const directionalOffset = (1 - revealProgress.get()) * retainedHeight;
     return {
-      transform: [{translateY: distance ? -progress.get() * distance : 0}],
+      transform: [
+        {
+          translateY:
+            -progress.get() * collapseDistance - directionalOffset,
+        },
+      ],
       zIndex: 30,
     };
-  }, [progress, progressThreshold]);
+  }, [headerHeight, progress, progressThreshold, revealProgress]);
 
   return (
     <HeaderMotion.Header
+      onLayout={handleLayout}
       style={[
         {
           backgroundColor: surfaceColor,
@@ -492,7 +554,7 @@ export function Feed<T>({
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
     const offset = contentOffset.y;
-    scrollY.value = offset;
+    scrollY.set(offset);
     scrollViewportHeightRef.current = layoutMeasurement.height;
     scrollContentHeightRef.current = contentSize.height;
     setStart(offset >= 1 ? 1 : 0);
@@ -525,12 +587,13 @@ export function Feed<T>({
   const forwardScrollToReact = useAnimatedScrollHandler(
     event => {
       'worklet';
+      scrollY.set(event.contentOffset.y);
       scheduleOnRN(
         handleScroll,
         {nativeEvent: event} as unknown as NativeSyntheticEvent<NativeScrollEvent>,
       );
     },
-    [handleScroll],
+    [handleScroll, scrollY],
   );
   const animatedScrollHandler = useComposedEventHandler([
     minimizeTabBarOnScroll,
@@ -678,6 +741,7 @@ export function Feed<T>({
       {motionHeader ? (
         <MotionHeader
           paddingTop={outerHeaderSafeAreaTop}
+          scrollY={scrollY}
           surfaceColor={theme.colors.base100}>
           {motionHeader(chromeProps)}
         </MotionHeader>

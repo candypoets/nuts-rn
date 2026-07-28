@@ -1354,10 +1354,10 @@ function ExploreHeader({
       : [];
 
   return (
-    <View className="bg-base-100">
+    <View className="border-b border-base-200 bg-base-100">
       <FeedSticky>
         <View
-          className="border-b border-base-200 bg-base-100/95 px-3 pb-2"
+          className="px-3 pb-2"
           style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
         >
           <View className="h-14 flex-row items-center justify-between">
@@ -1386,26 +1386,24 @@ function ExploreHeader({
       </FeedSticky>
       <FeedHeaderDynamic>
         <View
-          className={`bg-base-300/90 px-3 pt-2 ${
-            showKindSelector ? 'pb-0' : 'pb-3'
-          }`}
+          className={`px-3 pt-2 ${showKindSelector ? 'pb-0' : 'pb-3'}`}
         >
           <HeaderRelaysList
             subId={relaySelectionSubId}
             relays={relays}
             statuses={relayStatuses}
           />
-          {showKindSelector ? (
-            <View className="mt-4">
-              <FeedKindNavigator
-                selectedKinds={selectedKinds}
-                onSelectKinds={setSelectedKinds}
-                tabs={EXPLORE_KIND_TABS}
-              />
-            </View>
-          ) : null}
         </View>
       </FeedHeaderDynamic>
+      {showKindSelector ? (
+        <View className="px-3 pt-4">
+          <FeedKindNavigator
+            selectedKinds={selectedKinds}
+            onSelectKinds={setSelectedKinds}
+            tabs={EXPLORE_KIND_TABS}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }

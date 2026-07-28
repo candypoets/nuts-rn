@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,38 +9,40 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
-  Wallet as CashuWallet,
-  type MintQuoteResponse,
-} from '@cashu/cashu-ts';
+  createNativeStackNavigator,
+  type NativeStackScreenProps,
+} from 'expo-router/build/react-navigation/native-stack';
+import {Wallet as CashuWallet} from '@cashu/cashu-ts';
 import {ArrowLeft, Check, ClipboardCopy, RefreshCw} from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import {AppButton} from '../components/AppButton';
 import {MintCardPicker} from '../components/MintCardPicker';
-import {useAuthStore, useWalletStore} from '../stores';
+import {
+  useAuthStore,
+  useMintingStore,
+  useWalletStore,
+  type MintingStatus,
+} from '../stores';
 import {useAppTheme} from '../theme';
 
 type MintingModalProps = {
   onClose: () => void;
 };
 
-type MintingStatus =
-  | 'idle'
-  | 'creating'
-  | 'waiting'
-  | 'minting'
-  | 'paid'
-  | 'expired'
-  | 'error';
 type MintingStackParamList = {
   MintingAmount: undefined;
   MintingInvoice: undefined;
 };
 
-const NETWORK_RETRY_DELAY_MS = 1200;
+// expo-router 57 hard-errors when app code imports @react-navigation/*, but
+// its own vendored fork is reachable via deep imports inside the expo-router
+// package, which passes the Metro check. This recreates the original
+// pre-migration embedded native stack (slide_from_right, swipe-back).
 const MintingStack = createNativeStackNavigator<MintingStackParamList>();
+
+const NETWORK_RETRY_DELAY_MS = 1200;
 
 function normalizeMintUrl(url: string) {
   return url.trim().replace(/\/$/, '');
@@ -97,22 +99,51 @@ async function retryMintNetworkCall<T>(
   throw lastError;
 }
 
+/**
+ * Minting (topup) wizard: one screen hosting an embedded native stack
+ * (amount -> invoice), like the original pre-migration modal. No
+ * NavigationContainer — the inner stack attaches to expo-router's root
+ * navigation context (same fork). Inter-step state (amount, quote, status)
+ * lives in useMintingStore; the quote object is not serializable, so it is
+ * shared through the store rather than params.
+ */
 export function MintingModal({onClose: _onClose}: MintingModalProps) {
-  const theme = useAppTheme();
+  const resetMinting = useMintingStore(state => state.resetMinting);
+
+  // Fresh state every time the flow is opened.
+  useEffect(() => {
+    resetMinting();
+  }, [resetMinting]);
+
+  return (
+    <MintingStack.Navigator
+      screenOptions={{
+        animation: 'slide_from_right',
+        headerShown: false,
+      }}
+    >
+      <MintingStack.Screen component={MintingAmountScreen} name="MintingAmount" />
+      <MintingStack.Screen component={MintingInvoiceScreen} name="MintingInvoice" />
+    </MintingStack.Navigator>
+  );
+}
+
+/** Amount step: pick a mint and amount, create the mint quote. */
+function MintingAmountScreen({
+  navigation,
+}: NativeStackScreenProps<MintingStackParamList, 'MintingAmount'>) {
   const authPubkey = useAuthStore(state => state.pubkey);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const storedActiveMintUrl = useWalletStore(state => state.activeMintUrl);
   const balanceByMint = useWalletStore(state => state.balanceByMint);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
-  const pendingMintQuotes = useWalletStore(state => state.pendingMintQuotes);
   const savePendingMintQuote = useWalletStore(state => state.savePendingMintQuote);
-  const deletePendingMintQuote = useWalletStore(state => state.deletePendingMintQuote);
-  const [amount, setAmount] = useState('200');
-  const [quote, setQuote] = useState<MintQuoteResponse | null>(null);
-  const [status, setStatus] = useState<MintingStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const amount = useMintingStore(state => state.amount);
+  const status = useMintingStore(state => state.status);
+  const setAmount = useMintingStore(state => state.setAmount);
+  const setQuote = useMintingStore(state => state.setQuote);
+  const setStatus = useMintingStore(state => state.setStatus);
+  const setError = useMintingStore(state => state.setError);
 
   const mints = useMemo(
     () => Array.from(new Set(walletMintUrls.map(normalizeMintUrl))).filter(Boolean),
@@ -122,11 +153,6 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
     storedActiveMintUrl && mints.includes(storedActiveMintUrl)
       ? storedActiveMintUrl
       : mints[0] ?? null;
-  const invoice = quote?.request ?? '';
-  const expiresInSeconds =
-    quote?.expiry && status !== 'paid'
-      ? Math.max(0, quote.expiry - nowSeconds)
-      : null;
   const numericAmount = Number(amount);
   const canCreate =
     !!selectedMint &&
@@ -136,11 +162,10 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
     status !== 'waiting' &&
     status !== 'minting';
 
-  const createInvoice = useCallback(async (onInvoiceCreated?: () => void) => {
+  const createInvoice = useCallback(async () => {
     if (!selectedMint || !canCreate) return;
 
     setError(null);
-    setCopied(false);
     setStatus('creating');
 
     try {
@@ -155,9 +180,8 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
         await savePendingMintQuote(authPubkey, mint, nextQuote);
       }
       setQuote(nextQuote);
-      setNowSeconds(Math.floor(Date.now() / 1000));
-      onInvoiceCreated?.();
       setStatus('waiting');
+      navigation.navigate('MintingInvoice');
     } catch (cause) {
       console.error('[minting] failed to create or mint invoice', cause);
       setError(cause instanceof Error ? cause.message : 'Unknown minting error');
@@ -166,11 +190,80 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
   }, [
     authPubkey,
     canCreate,
+    navigation,
     numericAmount,
     savePendingMintQuote,
     selectedMint,
     setActiveMintUrl,
+    setError,
+    setQuote,
+    setStatus,
   ]);
+
+  const selectMint = useCallback(
+    (mint: string | null) => {
+      if (status === 'creating' || status === 'waiting' || status === 'minting') return;
+      setActiveMintUrl(mint ? normalizeMintUrl(mint) : null);
+    },
+    [setActiveMintUrl, status],
+  );
+
+  return (
+    <MintingAmountStep
+      amount={amount}
+      balanceByMint={balanceByMint}
+      canCreate={canCreate}
+      mints={mints}
+      selectedMint={selectedMint}
+      status={status}
+      onAmountChange={setAmount}
+      onCreateInvoice={createInvoice}
+      onSelectMint={selectMint}
+    />
+  );
+}
+
+/** Invoice step: show the quote QR, watch for payment/expiry. */
+function MintingInvoiceScreen({
+  navigation,
+}: NativeStackScreenProps<MintingStackParamList, 'MintingInvoice'>) {
+  const authPubkey = useAuthStore(state => state.pubkey);
+  const pendingMintQuotes = useWalletStore(state => state.pendingMintQuotes);
+  const deletePendingMintQuote = useWalletStore(state => state.deletePendingMintQuote);
+  const amount = useMintingStore(state => state.amount);
+  const quote = useMintingStore(state => state.quote);
+  const status = useMintingStore(state => state.status);
+  const error = useMintingStore(state => state.error);
+  const setStatus = useMintingStore(state => state.setStatus);
+  const setError = useMintingStore(state => state.setError);
+  const [copied, setCopied] = useState(false);
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+
+  // Back is blocked while a quote is being created or proofs are minting.
+  const backBlocked = status === 'creating' || status === 'minting';
+  const backBlockedRef = useRef(backBlocked);
+  useEffect(() => {
+    backBlockedRef.current = backBlocked;
+  }, [backBlocked]);
+
+  useEffect(() => {
+    navigation.setOptions({gestureEnabled: !backBlocked});
+  }, [backBlocked, navigation]);
+
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', event => {
+        if (!backBlockedRef.current) return;
+        event.preventDefault();
+      }),
+    [navigation],
+  );
+
+  const invoice = quote?.request ?? '';
+  const expiresInSeconds =
+    quote?.expiry && status !== 'paid'
+      ? Math.max(0, quote.expiry - nowSeconds)
+      : null;
 
   useEffect(() => {
     if (!quote || status !== 'waiting') return;
@@ -180,7 +273,7 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
     if (!stillPending) {
       setStatus('paid');
     }
-  }, [pendingMintQuotes, quote, status]);
+  }, [pendingMintQuotes, quote, status, setStatus]);
 
   useEffect(() => {
     if (!quote?.expiry || status === 'paid' || status === 'expired') return;
@@ -206,7 +299,15 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
       setStatus('expired');
       setError('This invoice expired. Go back and create a new invoice.');
     }
-  }, [authPubkey, deletePendingMintQuote, expiresInSeconds, quote, status]);
+  }, [
+    authPubkey,
+    deletePendingMintQuote,
+    expiresInSeconds,
+    quote,
+    status,
+    setError,
+    setStatus,
+  ]);
 
   const copyInvoice = useCallback(async () => {
     if (!invoice) return;
@@ -215,61 +316,22 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
     setTimeout(() => setCopied(false), 1600);
   }, [invoice]);
 
-  const selectMint = useCallback(
-    (mint: string | null) => {
-      if (status === 'creating' || status === 'waiting' || status === 'minting') return;
-      setActiveMintUrl(mint ? normalizeMintUrl(mint) : null);
-    },
-    [setActiveMintUrl, status],
-  );
-
-  const backToAmount = useCallback(() => {
-    if (status === 'creating' || status === 'minting') return;
-  }, [status]);
+  const onBack = useCallback(() => {
+    if (backBlockedRef.current) return;
+    navigation.goBack();
+  }, [navigation]);
 
   return (
-    <MintingStack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right',
-        contentStyle: {backgroundColor: theme.colors.base100},
-      }}
-    >
-      <MintingStack.Screen name="MintingAmount">
-        {({navigation}) => (
-          <MintingAmountStep
-            amount={amount}
-            balanceByMint={balanceByMint}
-            canCreate={canCreate}
-            mints={mints}
-            selectedMint={selectedMint}
-            status={status}
-            onAmountChange={setAmount}
-            onCreateInvoice={() => {
-              createInvoice(() => navigation.navigate('MintingInvoice'));
-            }}
-            onSelectMint={selectMint}
-          />
-        )}
-      </MintingStack.Screen>
-      <MintingStack.Screen name="MintingInvoice">
-        {({navigation}) => (
-          <MintingInvoiceStep
-            amount={amount}
-            copied={copied}
-            error={error}
-            expiresInSeconds={expiresInSeconds}
-            invoice={invoice}
-            status={status}
-            onBack={() => {
-              backToAmount();
-              navigation.goBack();
-            }}
-            onCopyInvoice={copyInvoice}
-          />
-        )}
-      </MintingStack.Screen>
-    </MintingStack.Navigator>
+    <MintingInvoiceStep
+      amount={amount}
+      copied={copied}
+      error={error}
+      expiresInSeconds={expiresInSeconds}
+      invoice={invoice}
+      status={status}
+      onBack={onBack}
+      onCopyInvoice={copyInvoice}
+    />
   );
 }
 

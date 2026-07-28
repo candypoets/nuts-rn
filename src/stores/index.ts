@@ -6,3 +6,4 @@ export * from './relayStore';
 export * from './sendStatusStore';
 export * from './uiStore';
 export * from './feedBuilderStore';
+export * from './mintingStore';

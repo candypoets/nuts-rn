@@ -1,4 +1,13 @@
-import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   FlatList,
   Image,
@@ -11,8 +20,11 @@ import {
   View,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useIsFocused} from '@react-navigation/native';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {
+  createNativeStackNavigator,
+  type NativeStackScreenProps,
+} from 'expo-router/build/react-navigation/native-stack';
+import {useIsFocused} from 'expo-router/react-navigation';
 import type {
   ConnectionStatus,
   NostrManagerLike,
@@ -60,13 +72,39 @@ type SignupModalProps = {
   manager: NostrManagerLike | null;
   onBackToLogin: () => void;
   onDone: () => void;
+  /**
+   * Whether the hosting screen is focused. The pack-search subscription only
+   * runs while the packs step is active AND the screen is focused.
+   */
+  focused?: boolean;
 };
 
-type SignupStep = 'profile' | 'packs';
 type SignupStackParamList = {
   SignupProfile: undefined;
   SignupPacks: undefined;
 };
+
+// expo-router 57 hard-errors when app code imports @react-navigation/*, but
+// its own vendored fork is reachable via deep imports inside the expo-router
+// package, which passes the Metro check. This recreates the original
+// pre-migration embedded native stack (slide_from_right, swipe-back).
+const SignupStack = createNativeStackNavigator<SignupStackParamList>();
+
+type SignupWizardContextValue = {
+  focused: boolean;
+  footerPaddingBottom: number;
+  manager: NostrManagerLike | null;
+  onBackToLogin: () => void;
+  onDone: () => void;
+};
+
+const SignupWizardContext = createContext<SignupWizardContextValue | null>(null);
+
+function useSignupWizard() {
+  const value = useContext(SignupWizardContext);
+  if (!value) throw new Error('Signup wizard screen rendered outside SignupModal');
+  return value;
+}
 
 type SelectedAvatar = LocalUploadAsset & {
   previewUri: string;
@@ -76,8 +114,6 @@ type SeenList = {
   createdAt: number;
   index: number;
 };
-
-const SignupStack = createNativeStackNavigator<SignupStackParamList>();
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -120,16 +156,15 @@ function publishWithStatus(
   );
 }
 
-export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) {
-  const theme = useAppTheme();
-  const insets = useSafeAreaInsets();
+// Profile step state/logic. Nothing here is read by the packs step: the profile
+// fields are consumed by continueFromProfile, which fires when leaving the
+// profile step, so no shared store is needed.
+export function useSignupProfileController(manager: NostrManagerLike | null) {
   const setAuth = useAuthStore(state => state.setAuth);
   const setProfile = useNostrStore(state => state.setProfile);
-  const setFollows = useNostrStore(state => state.setFollows);
   const setTrustedMints = useNostrStore(state => state.setTrustedMints);
   const setWalletReadRelays = useNostrStore(state => state.setWalletReadRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
-  const applySelection = useFeedBuilderStore(state => state.applySelection);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const setWalletMnemonic = useWalletStore(state => state.setWalletMnemonic);
   const setWalletMnemonicIndex = useWalletStore(state => state.setWalletMnemonicIndex);
@@ -138,21 +173,14 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
   const keypairRef = useRef<ReturnType<typeof deriveSignupKeypair> | null>(null);
   const mnemonicRef = useRef<string | null>(null);
-  const publicPacksRef = useRef<ParsedEvent[]>([]);
-  const seenPublicPacksRef = useRef(new Map<string, SeenList>());
-  const [step, setStep] = useState<SignupStep>('profile');
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
   const [avatar, setAvatar] = useState<SelectedAvatar | null>(null);
-  const [search, setSearch] = useState('');
-  const [selectedPacks, setSelectedPacks] = useState<FeedPackSelection[]>([]);
-  const [revision, setRevision] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
   const relays = useMemo(
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
   );
-  const footerPaddingBottom = Math.max(24, insets.bottom + 12);
 
   const prepareFreshAccount = useCallback(() => {
     if (!manager) return null;
@@ -186,62 +214,6 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
     setWalletMnemonicIndex,
     setWalletPassphrase,
   ]);
-
-  useEffect(() => {
-    if (step !== 'packs') return undefined;
-    const seenPublicPacks = seenPublicPacksRef.current;
-    publicPacksRef.current = [];
-    seenPublicPacks.clear();
-    setRevision(current => current + 1);
-
-    const unsubscribe = subscribeToNostr(
-      'signup_followpacks',
-      buildFollowListRequests(null),
-      message => {
-        const parsedEvent = asParsedEvent(message);
-        if (!parsedEvent) return;
-        const list = asNip51(parsedEvent);
-        if (!list?.title()) return;
-        const dTag = list.d();
-        if (!dTag || !includePack(parsedEvent, search)) return;
-        const existing = seenPublicPacks.get(dTag);
-        if (existing) {
-          if (parsedEvent.createdAt() <= existing.createdAt) return;
-          publicPacksRef.current[existing.index] = parsedEvent;
-        } else {
-          publicPacksRef.current = [...publicPacksRef.current, parsedEvent];
-        }
-        publicPacksRef.current = publicPacksRef.current.sort(
-          (left, right) => right.createdAt() - left.createdAt(),
-        );
-        seenPublicPacks.clear();
-        publicPacksRef.current.forEach((event, index) => {
-          const eventDTag = asNip51(event)?.d();
-          if (!eventDTag) return;
-          seenPublicPacks.set(eventDTag, {
-            createdAt: event.createdAt(),
-            index,
-          });
-        });
-        setRevision(current => current + 1);
-      },
-      {closeOnEose: false},
-    );
-
-    return () => unsubscribe();
-  }, [search, step]);
-
-  const packItems = useMemo(
-    () => {
-      void revision;
-      return publicPacksRef.current.filter(event => includePack(event, search));
-    },
-    [revision, search],
-  );
-  const selectedPackIds = useMemo(
-    () => new Set(selectedPacks.map(pack => pack.id)),
-    [selectedPacks],
-  );
 
   const pickAvatar = useCallback(async () => {
     try {
@@ -370,6 +342,98 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
     updateSendStatus,
   ]);
 
+  return {
+    avatar,
+    bio,
+    canContinue: Boolean(name.trim() && manager),
+    continueFromProfile,
+    name,
+    pickAvatar,
+    setBio,
+    setName,
+    status,
+  };
+}
+
+// Packs step state/logic. The follow-pack search subscription is only active
+// while `active` is true (packs step shown AND hosting screen focused).
+export function useSignupPacksController({
+  active,
+  onDone,
+}: {
+  active: boolean;
+  onDone: () => void;
+}) {
+  const setFollows = useNostrStore(state => state.setFollows);
+  const writeRelays = useNostrStore(state => state.writeRelays);
+  const applySelection = useFeedBuilderStore(state => state.applySelection);
+  const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
+  const publicPacksRef = useRef<ParsedEvent[]>([]);
+  const seenPublicPacksRef = useRef(new Map<string, SeenList>());
+  const [search, setSearch] = useState('');
+  const [selectedPacks, setSelectedPacks] = useState<FeedPackSelection[]>([]);
+  const [revision, setRevision] = useState(0);
+  const relays = useMemo(
+    () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
+    [writeRelays],
+  );
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const seenPublicPacks = seenPublicPacksRef.current;
+    publicPacksRef.current = [];
+    seenPublicPacks.clear();
+    setRevision(current => current + 1);
+
+    const unsubscribe = subscribeToNostr(
+      'signup_followpacks',
+      buildFollowListRequests(null),
+      message => {
+        const parsedEvent = asParsedEvent(message);
+        if (!parsedEvent) return;
+        const list = asNip51(parsedEvent);
+        if (!list?.title()) return;
+        const dTag = list.d();
+        if (!dTag || !includePack(parsedEvent, search)) return;
+        const existing = seenPublicPacks.get(dTag);
+        if (existing) {
+          if (parsedEvent.createdAt() <= existing.createdAt) return;
+          publicPacksRef.current[existing.index] = parsedEvent;
+        } else {
+          publicPacksRef.current = [...publicPacksRef.current, parsedEvent];
+        }
+        publicPacksRef.current = publicPacksRef.current.sort(
+          (left, right) => right.createdAt() - left.createdAt(),
+        );
+        seenPublicPacks.clear();
+        publicPacksRef.current.forEach((event, index) => {
+          const eventDTag = asNip51(event)?.d();
+          if (!eventDTag) return;
+          seenPublicPacks.set(eventDTag, {
+            createdAt: event.createdAt(),
+            index,
+          });
+        });
+        setRevision(current => current + 1);
+      },
+      {closeOnEose: false},
+    );
+
+    return () => unsubscribe();
+  }, [active, search]);
+
+  const packItems = useMemo(
+    () => {
+      void revision;
+      return publicPacksRef.current.filter(event => includePack(event, search));
+    },
+    [revision, search],
+  );
+  const selectedPackIds = useMemo(
+    () => new Set(selectedPacks.map(pack => pack.id)),
+    [selectedPacks],
+  );
+
   const togglePack = useCallback((pack: FeedPackSelection) => {
     setSelectedPacks(current =>
       current.some(selected => selected.id === pack.id)
@@ -402,58 +466,111 @@ export function SignupModal({manager, onBackToLogin, onDone}: SignupModalProps) 
     onDone();
   }, [applySelection, onDone, relays, selectedPacks, setFollows, updateSendStatus]);
 
+  return {
+    finish,
+    packItems,
+    search,
+    selectedPackIds,
+    selectedPacksCount: selectedPacks.length,
+    setSearch,
+    togglePack,
+  };
+}
+
+// Signup wizard: one screen hosting an embedded native stack (profile ->
+// packs), like the original pre-migration modal. No NavigationContainer — the
+// inner stack attaches to expo-router's root navigation context (same fork).
+// Also rendered by the pre-expo-router App.tsx monolith, so keep props and
+// shape compatible.
+export function SignupModal({
+  focused = true,
+  manager,
+  onBackToLogin,
+  onDone,
+}: SignupModalProps) {
+  const insets = useSafeAreaInsets();
+  const footerPaddingBottom = Math.max(24, insets.bottom + 12);
+  const contextValue = useMemo(
+    () => ({focused, footerPaddingBottom, manager, onBackToLogin, onDone}),
+    [focused, footerPaddingBottom, manager, onBackToLogin, onDone],
+  );
+
   return (
-    <SignupStack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right',
-        contentStyle: {backgroundColor: theme.colors.base100},
-      }}
-    >
-      <SignupStack.Screen name="SignupProfile">
-        {({navigation}) => (
-          <SignupProfileStep
-            avatar={avatar}
-            bio={bio}
-            canContinue={Boolean(name.trim() && manager)}
-            footerPaddingBottom={footerPaddingBottom}
-            name={name}
-            status={status}
-            onBack={onBackToLogin}
-            onBioChange={setBio}
-            onContinue={() => {
-              navigation.navigate('SignupPacks');
-              InteractionManager.runAfterInteractions(() => {
-                continueFromProfile();
-              });
-            }}
-            onFocus={() => setStep('profile')}
-            onNameChange={setName}
-            onPickAvatar={pickAvatar}
-          />
-        )}
-      </SignupStack.Screen>
-      <SignupStack.Screen name="SignupPacks">
-        {({navigation}) => (
-          <SignupPacksStep
-            footerPaddingBottom={footerPaddingBottom}
-            items={packItems}
-            selectedPackIds={selectedPackIds}
-            selectedPacksCount={selectedPacks.length}
-            search={search}
-            onBack={navigation.goBack}
-            onFinish={finish}
-            onFocus={() => setStep('packs')}
-            onSearchChange={setSearch}
-            onTogglePack={togglePack}
-          />
-        )}
-      </SignupStack.Screen>
-    </SignupStack.Navigator>
+    <SignupWizardContext.Provider value={contextValue}>
+      <SignupStack.Navigator
+        screenOptions={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          headerShown: false,
+        }}
+      >
+        <SignupStack.Screen component={SignupProfileScreen} name="SignupProfile" />
+        <SignupStack.Screen component={SignupPacksScreen} name="SignupPacks" />
+      </SignupStack.Navigator>
+    </SignupWizardContext.Provider>
   );
 }
 
-function SignupProfileStep({
+function SignupProfileScreen({
+  navigation,
+}: NativeStackScreenProps<SignupStackParamList, 'SignupProfile'>) {
+  const {footerPaddingBottom, manager, onBackToLogin} = useSignupWizard();
+  const profile = useSignupProfileController(manager);
+
+  const onContinue = useCallback(() => {
+    navigation.navigate('SignupPacks');
+    // Defer the kind 0/17375/10019 publishes until the push transition has
+    // finished so the network work doesn't jank the animation.
+    InteractionManager.runAfterInteractions(() => {
+      profile.continueFromProfile();
+    });
+  }, [navigation, profile]);
+
+  return (
+    <SignupProfileStep
+      avatar={profile.avatar}
+      bio={profile.bio}
+      canContinue={profile.canContinue}
+      footerPaddingBottom={footerPaddingBottom}
+      name={profile.name}
+      status={profile.status}
+      onBack={onBackToLogin}
+      onBioChange={profile.setBio}
+      onContinue={onContinue}
+      onNameChange={profile.setName}
+      onPickAvatar={profile.pickAvatar}
+    />
+  );
+}
+
+function SignupPacksScreen({
+  navigation,
+}: NativeStackScreenProps<SignupStackParamList, 'SignupPacks'>) {
+  const {focused, footerPaddingBottom, onDone} = useSignupWizard();
+  // Focus of this screen within the embedded stack (fork context).
+  const stepFocused = useIsFocused();
+  const packs = useSignupPacksController({
+    active: stepFocused && focused,
+    onDone,
+  });
+  const onBack = useCallback(() => navigation.goBack(), [navigation]);
+
+  return (
+    <SignupPacksStep
+      footerPaddingBottom={footerPaddingBottom}
+      items={packs.packItems}
+      selectedPackIds={packs.selectedPackIds}
+      selectedPacksCount={packs.selectedPacksCount}
+      search={packs.search}
+      onBack={onBack}
+      onFinish={packs.finish}
+      onSearchChange={packs.setSearch}
+      onTogglePack={packs.togglePack}
+    />
+  );
+}
+
+export function SignupProfileStep({
   avatar,
   bio,
   canContinue,
@@ -463,7 +580,6 @@ function SignupProfileStep({
   onBack,
   onBioChange,
   onContinue,
-  onFocus,
   onNameChange,
   onPickAvatar,
 }: {
@@ -476,16 +592,10 @@ function SignupProfileStep({
   onBack: () => void;
   onBioChange: (value: string) => void;
   onContinue: () => void;
-  onFocus: () => void;
   onNameChange: (value: string) => void;
   onPickAvatar: () => void;
 }) {
   const theme = useAppTheme();
-  const focused = useIsFocused();
-
-  useEffect(() => {
-    if (focused) onFocus();
-  }, [focused, onFocus]);
 
   return (
     <View className="h-full bg-base-100">
@@ -546,7 +656,7 @@ function SignupProfileStep({
   );
 }
 
-function SignupPacksStep({
+export function SignupPacksStep({
   footerPaddingBottom,
   items,
   search,
@@ -554,7 +664,6 @@ function SignupPacksStep({
   selectedPacksCount,
   onBack,
   onFinish,
-  onFocus,
   onSearchChange,
   onTogglePack,
 }: {
@@ -565,16 +674,9 @@ function SignupPacksStep({
   selectedPacksCount: number;
   onBack: () => void;
   onFinish: () => void;
-  onFocus: () => void;
   onSearchChange: (value: string) => void;
   onTogglePack: (selection: FeedPackSelection) => void;
 }) {
-  const focused = useIsFocused();
-
-  useEffect(() => {
-    if (focused) onFocus();
-  }, [focused, onFocus]);
-
   return (
     <View className="h-full bg-base-100">
       <View className="px-4 pt-4">

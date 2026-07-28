@@ -232,8 +232,6 @@ export default function MainTabsLayout() {
           <TabSlot />
           <TabList asChild>
             <GlassTabBar
-              backgroundBlur={false}
-              blurBleed={0}
               haptics
               initialIndex={initialTabIndex}
               onIndexSelected={selectTab}

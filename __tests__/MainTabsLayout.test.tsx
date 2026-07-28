@@ -54,15 +54,13 @@ test.each([
   expect(getInitialTabIndex(pathname)).toBe(expectedIndex);
 });
 
-test('tab bar starts on Explore without the blur bleed', () => {
+test('tab bar starts on Explore', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(<MainTabsLayout />);
   });
 
   expect(renderer!.root.findByType(GlassTabBar).props).toMatchObject({
-    backgroundBlur: false,
-    blurBleed: 0,
     initialIndex: 1,
   });
 });

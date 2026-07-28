@@ -48,7 +48,11 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { AppButton } from '../components/AppButton';
-import { Feed } from '../components/Feed';
+import {
+  Feed,
+  FeedHeaderDynamic,
+  FeedSticky,
+} from '../components/Feed';
 import { MintCardPicker } from '../components/MintCardPicker';
 import { Avatar } from '../components/notes/Avatar';
 import { User } from '../components/notes/User';
@@ -688,39 +692,13 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     ],
   );
 
-  const renderStickyHeader = useCallback(
-    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
-      <HomeHeader
-        safeAreaTop={safeAreaTop}
-        viewHidden={viewHidden}
-        pubkey={authPubkey}
-        mintUrls={[]}
-        activeMintUrl={activeMintUrl}
-        balanceByMint={balanceByMint}
-        onSelectMint={setActiveMintUrl}
-        onToggleView={() => setViewHidden(value => !value)}
-        showMintCards={false}
-        readOnly={!hasSigner}
-      />
-    ),
-    [
-      authPubkey,
-      activeMintUrl,
-      balanceByMint,
-      hasSigner,
-      setActiveMintUrl,
-      viewHidden,
-    ],
-  );
-
   if (!authPubkey) {
     return (
       <Feed
         items={[]}
-        header={renderHeader}
+        motionHeader={renderHeader}
         headerSafeArea
         headerOwnsSafeArea
-        stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<LoggedOutHome />}
@@ -733,10 +711,9 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     return (
       <Feed
         items={[]}
-        header={renderHeader}
+        motionHeader={renderHeader}
         headerSafeArea
         headerOwnsSafeArea
-        stickyHeader={renderStickyHeader}
         renderItem={() => null}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<ReadOnlyWalletStub />}
@@ -750,10 +727,9 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
       items={activities}
       getItemId={item => item.id}
       pullToRefresh
-      header={renderHeader}
+      motionHeader={renderHeader}
       headerSafeArea
       headerOwnsSafeArea
-      stickyHeader={renderStickyHeader}
       renderItem={({ item, index }) => (
         <WalletActivityRow
           activity={item}
@@ -779,7 +755,6 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
 }
 
 function HomeHeader({
-  compact = false,
   safeAreaTop = 0,
   viewHidden,
   pubkey,
@@ -788,10 +763,8 @@ function HomeHeader({
   balanceByMint,
   onSelectMint,
   onToggleView,
-  showMintCards = true,
   readOnly = false,
 }: {
-  compact?: boolean;
   safeAreaTop?: number;
   viewHidden: boolean;
   pubkey: string | null;
@@ -800,7 +773,6 @@ function HomeHeader({
   balanceByMint: Record<string, number>;
   onSelectMint: (mintUrl: string | null) => void;
   onToggleView: () => void;
-  showMintCards?: boolean;
   readOnly?: boolean;
 }) {
   const navigation =
@@ -809,47 +781,45 @@ function HomeHeader({
   const iconColor = theme.colors.primaryContent;
 
   return (
-    <View
-      className={`${
-        compact ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'
-      }`}
-      style={compact && safeAreaTop > 0 ? {paddingTop: safeAreaTop} : undefined}
-    >
-      <View
-        className={`${
-          compact ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'
-        }`}
-        style={!compact && safeAreaTop > 0 ? {paddingTop: safeAreaTop + 12} : undefined}
-      >
-        <View className="h-14 flex-row items-center justify-between">
-          <Text className="text-2xl font-semibold text-base-content">Home</Text>
-          <View className="flex-row items-center gap-2">
-            <HeaderIconButton onPress={onToggleView}>
-              {viewHidden ? (
-                <EyeOff size={19} color={iconColor} strokeWidth={2.2} />
-              ) : (
-                <Eye size={19} color={iconColor} strokeWidth={2.2} />
-              )}
-            </HeaderIconButton>
-            <HeaderIconButton
-              onPress={() => navigation.navigate('Scan', { mode: 'share' })}
-            >
-              <QrCode size={19} color={iconColor} strokeWidth={2.2} />
-            </HeaderIconButton>
-            <HeaderProfileButton pubkey={pubkey} />
+    <View className="bg-base-100">
+      <FeedSticky>
+        <View
+          className="border-b border-base-200 bg-base-100/95 px-3 pb-2"
+          style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
+        >
+          <View className="h-14 flex-row items-center justify-between">
+            <Text className="text-2xl font-semibold text-base-content">Home</Text>
+            <View className="flex-row items-center gap-2">
+              <HeaderIconButton onPress={onToggleView}>
+                {viewHidden ? (
+                  <EyeOff size={19} color={iconColor} strokeWidth={2.2} />
+                ) : (
+                  <Eye size={19} color={iconColor} strokeWidth={2.2} />
+                )}
+              </HeaderIconButton>
+              <HeaderIconButton
+                onPress={() => navigation.navigate('Scan', { mode: 'share' })}
+              >
+                <QrCode size={19} color={iconColor} strokeWidth={2.2} />
+              </HeaderIconButton>
+              <HeaderProfileButton pubkey={pubkey} />
+            </View>
           </View>
         </View>
-        {!compact && pubkey ? (
-          <WalletHeaderSection
-            mintUrls={mintUrls}
-            activeMintUrl={activeMintUrl}
-            balanceByMint={balanceByMint}
-            onSelectMint={onSelectMint}
-            showMintCards={showMintCards}
-            readOnly={readOnly}
-          />
-        ) : null}
-      </View>
+      </FeedSticky>
+      {pubkey ? (
+        <FeedHeaderDynamic>
+          <View className="bg-base-300/90 px-3 pb-3 pt-2">
+            <WalletHeaderSection
+              mintUrls={mintUrls}
+              activeMintUrl={activeMintUrl}
+              balanceByMint={balanceByMint}
+              onSelectMint={onSelectMint}
+              readOnly={readOnly}
+            />
+          </View>
+        </FeedHeaderDynamic>
+      ) : null}
     </View>
   );
 }

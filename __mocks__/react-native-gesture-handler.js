@@ -12,8 +12,10 @@ function chainableGesture() {
     'enabled',
     'failOffsetY',
     'onBegin',
+    'onChange',
     'onEnd',
     'onUpdate',
+    'shouldCancelWhenOutside',
   ];
   methods.forEach(method => {
     gesture[method] = () => gesture;

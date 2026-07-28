@@ -5,10 +5,13 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  View,
 } from 'react-native';
 import * as SafeAreaContext from 'react-native-safe-area-context';
-import {Feed, FeedSticky} from '../src/components/Feed';
+import {
+  Feed,
+  FeedHeaderDynamic,
+  FeedSticky,
+} from '../src/components/Feed';
 
 type Item = {id: string};
 
@@ -36,10 +39,15 @@ function renderFeed() {
       <Feed<Item>
         items={[]}
         renderItem={() => null}
-        header={() => (
-          <FeedSticky>
-            <Text testID="sticky-title">Hashtag feed</Text>
-          </FeedSticky>
+        motionHeader={() => (
+          <>
+            <FeedSticky>
+              <Text testID="sticky-title">Hashtag feed</Text>
+            </FeedSticky>
+            <FeedHeaderDynamic>
+              <Text testID="dynamic-context">Relay context</Text>
+            </FeedHeaderDynamic>
+          </>
         )}
         empty={<Text>empty</Text>}
       />,
@@ -48,50 +56,35 @@ function renderFeed() {
   return renderer!;
 }
 
-function getStickyOverlayOpacity(root: ReactTestRenderer.ReactTestInstance) {
-  const overlays = root.findAll(
-    node => node.type === View && typeof node.props.style?.opacity === 'number',
-  );
-  expect(overlays).toHaveLength(1);
-  return overlays[0].props.style.opacity as number;
-}
-
 afterEach(() => {
   __setSafeAreaInsets({top: 0, bottom: 0, left: 0, right: 0});
 });
 
-test('FeedSticky mirrors the tagged header element into the sticky overlay', () => {
+test('motion header renders one interactive tree with sticky and dynamic sections', () => {
   const renderer = renderFeed();
   const titles = renderer.root.findAll(
     node => node.type === Text && node.props.testID === 'sticky-title',
   );
-  // once in-flow in the header, once in the sticky overlay
-  expect(titles).toHaveLength(2);
+  expect(titles).toHaveLength(1);
+  expect(
+    renderer.root.findAll(
+      node => node.type === Text && node.props.testID === 'dynamic-context',
+    ),
+  ).toHaveLength(1);
 });
 
-test('sticky header reveal is scroll-linked', () => {
+test('motion header keeps Feed scroll callbacks composed', () => {
   const renderer = renderFeed();
   const scrollView = renderer.root.findByType(ScrollView);
 
-  expect(getStickyOverlayOpacity(renderer.root)).toBe(0);
-
-  // scrolling down keeps the header hidden
   act(() => {
     scrollView.props.onScroll(makeScrollEvent(300));
   });
-  expect(getStickyOverlayOpacity(renderer.root)).toBe(0);
-
-  // scrolling back up reveals it proportionally to the scroll delta
-  act(() => {
-    scrollView.props.onScroll(makeScrollEvent(250));
-  });
-  expect(getStickyOverlayOpacity(renderer.root)).toBeCloseTo(50 / 88, 5);
-
-  // near the top it hides again to hand off to the in-flow header
-  act(() => {
-    scrollView.props.onScroll(makeScrollEvent(10));
-  });
-  expect(getStickyOverlayOpacity(renderer.root)).toBe(0);
+  expect(
+    renderer.root.findAll(
+      node => node.type === Text && node.props.testID === 'sticky-title',
+    ),
+  ).toHaveLength(1);
 });
 
 test('refresh indicator owns the safe-area slot and unmounts after refresh', () => {

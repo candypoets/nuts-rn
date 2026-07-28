@@ -220,7 +220,7 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
       items={items}
       loading={loading}
       visible={visible}
-      header={renderHeader}
+      motionHeader={renderHeader}
       empty={
         loading ? null : (
           <View className="px-4 py-10">

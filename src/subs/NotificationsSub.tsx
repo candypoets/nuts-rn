@@ -333,7 +333,7 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
       <Feed
         items={[]}
         renderItem={() => null}
-        header={renderHeader}
+        motionHeader={renderHeader}
         empty={<Text className="px-4 py-8 text-center text-primary-content">Sign in to view notifications</Text>}
       />
     );
@@ -344,7 +344,7 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
       items={notifications}
       getItemId={item => item.id().fnv1aHash()}
       renderItem={renderItem}
-      header={renderHeader}
+      motionHeader={renderHeader}
       loading={loading && notifications.length === 0}
       refreshing={refreshing}
       pullToRefresh

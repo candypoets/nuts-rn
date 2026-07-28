@@ -335,11 +335,11 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
     );
   }, [message, peerPubkey, pubkey, updateSendStatus, writeRelayList]);
 
-  const fixedHeader = useCallback(
+  const motionHeader = useCallback(
     () => (
       <View
         className="border-b border-base-200 bg-base-100"
-        style={{marginTop: -topInset, paddingTop: topInset}}
+        style={{paddingTop: topInset}}
       >
         <View className="flex-row items-center justify-between px-4 py-3">
           <Pressable
@@ -419,7 +419,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
         scrollToBottomKey={scrollToBottomKey}
         bottom
         bottomAutoScroll="initial"
-        fixedHeader={fixedHeader}
+        motionHeader={motionHeader}
         stickyFooter={useKeyboardAccessory ? undefined : stickyFooter}
         stickyFooterVisible={!useKeyboardAccessory}
         onNearBottom={handleNearBottom}

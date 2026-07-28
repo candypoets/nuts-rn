@@ -1,14 +1,38 @@
 const React = require('react');
-const { View } = require('react-native');
+const ReactNative = require('react-native');
 
 const AnimatedView = React.forwardRef((props, ref) =>
-  React.createElement(View, { ...props, ref }),
+  React.createElement(ReactNative.View, { ...props, ref }),
 );
+
+function createAnimatedComponent(Component) {
+  return React.forwardRef((props, ref) =>
+    React.createElement(Component, {...props, ref}),
+  );
+}
+
+function makeSharedValue(initialValue) {
+  return {
+    value: initialValue,
+    get() {
+      return this.value;
+    },
+    set(value) {
+      this.value = typeof value === 'function' ? value(this.value) : value;
+    },
+    modify(modifier) {
+      this.value = modifier(this.value);
+    },
+  };
+}
 
 module.exports = {
   __esModule: true,
   default: {
     View: AnimatedView,
+    ScrollView: createAnimatedComponent(ReactNative.ScrollView),
+    FlatList: createAnimatedComponent(ReactNative.FlatList),
+    createAnimatedComponent,
   },
   Extrapolation: {
     CLAMP: 'clamp',
@@ -27,17 +51,59 @@ module.exports = {
   runOnJS(fn) {
     return fn;
   },
+  cancelAnimation() {},
+  createAnimatedComponent,
+  scrollTo(ref, x, y, animated) {
+    ref.current?.scrollTo?.({x, y, animated});
+  },
+  useAnimatedReaction() {},
+  useAnimatedRef() {
+    const ref = React.useRef(null);
+    const animatedRef = value => {
+      ref.current = value;
+      animatedRef.current = value;
+    };
+    animatedRef.current = ref.current;
+    return animatedRef;
+  },
+  useAnimatedScrollHandler(handlers) {
+    const context = {};
+    const handler = event => {
+      handlers.onScroll?.(event.nativeEvent ?? event, context);
+    };
+    handler.workletEventHandler = {};
+    return handler;
+  },
+  useComposedEventHandler(handlers) {
+    const composed = event => {
+      handlers.filter(Boolean).forEach(handler => handler(event));
+    };
+    composed.workletEventHandler = {};
+    return composed;
+  },
+  useDerivedValue(factory) {
+    return {
+      get: factory,
+      get value() {
+        return factory();
+      },
+    };
+  },
   useAnimatedStyle(factory) {
     return factory();
   },
   useSharedValue(initialValue) {
     const ref = React.useRef(null);
-    if (ref.current === null) ref.current = { value: initialValue };
+    if (ref.current === null) ref.current = makeSharedValue(initialValue);
     return ref.current;
   },
   withSpring(value, _config, callback) {
     callback?.(true);
     return value;
+  },
+  withDecay(_config, callback) {
+    callback?.(true);
+    return 0;
   },
   withTiming(value, _config, callback) {
     callback?.(true);

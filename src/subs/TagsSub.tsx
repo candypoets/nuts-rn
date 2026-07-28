@@ -272,7 +272,7 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
       items={itemsRef.current}
       getItemId={(item, index) => item.id() || `missing:${index}`}
       renderItem={renderItem}
-      header={renderHeader}
+      motionHeader={renderHeader}
       loading={loading}
       onNearBottom={handleNearBottom}
       empty={empty}

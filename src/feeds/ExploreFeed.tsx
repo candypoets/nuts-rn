@@ -37,7 +37,7 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { ComposerFooter } from '../components/ComposerFooter';
-import { Feed } from '../components/Feed';
+import { Feed, FeedHeaderDynamic, FeedSticky } from '../components/Feed';
 import { getFeedTopInset } from '../components/feedLayout';
 import {
   FeedKindNavigator,
@@ -85,7 +85,6 @@ type ExploreFeedProps = {
   enabled: boolean;
   visible: boolean;
   header?: () => React.ReactNode;
-  stickyHeader?: () => React.ReactNode;
   stickyFooter?: () => React.ReactNode;
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
@@ -146,7 +145,6 @@ export function ExploreFeed({
   enabled,
   visible,
   header,
-  stickyHeader,
   stickyFooter,
   onChromeVisibilityChange,
 }: ExploreFeedProps) {
@@ -298,36 +296,6 @@ export function ExploreFeed({
         setAudienceMode={setExploreAudienceMode}
         relaySelectionSubId={relaySelectionSubId}
         showKindSelector
-        surfaceClassName="bg-base-100"
-      />
-    ),
-    [
-      authPubkey,
-      feedRelays,
-      exploreAudienceMode,
-      relayStatuses,
-      relaySelectionSubId,
-      selectedKinds,
-      setExploreAudienceMode,
-      setSelectedKinds,
-    ],
-  );
-
-  const defaultStickyHeader = useCallback(
-    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
-      <ExploreHeader
-        safeAreaTop={safeAreaTop}
-        pubkey={authPubkey}
-        relays={feedRelays}
-        relayStatuses={relayStatuses}
-        selectedKinds={selectedKinds}
-        setSelectedKinds={setSelectedKinds}
-        audienceMode={exploreAudienceMode}
-        setAudienceMode={setExploreAudienceMode}
-        relaySelectionSubId={relaySelectionSubId}
-        showKindIndicators={false}
-        showKindSelector
-        showRelayList={false}
         surfaceClassName="bg-base-100"
       />
     ),
@@ -910,9 +878,8 @@ export function ExploreFeed({
         items={itemsRef.current}
         scrollToTopKey={scrollToTopKey}
         getItemId={getItemId}
-        header={listHeader}
+        motionHeader={listHeader}
         pullToRefresh
-        stickyHeader={stickyHeader ?? defaultStickyHeader}
         headerSafeArea
         headerOwnsSafeArea
         stickyFooter={stickyFooter ?? defaultStickyFooter}
@@ -1357,7 +1324,6 @@ function ExploreComposerFooter() {
 }
 
 function ExploreHeader({
-  mini = false,
   safeAreaTop = 0,
   pubkey,
   relayStatuses,
@@ -1367,12 +1333,9 @@ function ExploreHeader({
   audienceMode,
   setAudienceMode,
   relaySelectionSubId,
-  showKindIndicators = true,
   showKindSelector = false,
-  showRelayList = true,
   surfaceClassName,
 }: {
-  mini?: boolean;
   safeAreaTop?: number;
   pubkey: string | null;
   relayStatuses: Record<string, string>;
@@ -1382,9 +1345,7 @@ function ExploreHeader({
   audienceMode: ExploreAudienceMode;
   setAudienceMode: (mode: ExploreAudienceMode) => void;
   relaySelectionSubId: string;
-  showKindIndicators?: boolean;
   showKindSelector?: boolean;
-  showRelayList?: boolean;
   surfaceClassName: string;
 }) {
   const visibleKinds =
@@ -1393,74 +1354,58 @@ function ExploreHeader({
       : [];
 
   return (
-    <View
-      className={
-        mini ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'
-      }
-      style={mini && safeAreaTop > 0 ? { paddingTop: safeAreaTop } : undefined}
-    >
-      <View
-        className={
-          mini
-            ? 'h-12 flex-row items-center justify-between'
-            : `rounded-lg bg-base-300/90 px-3 pt-3 shadow-sm ${
-                showKindSelector ? 'pb-0' : 'pb-3'
-              }`
-        }
-        style={
-          !mini && safeAreaTop > 0
-            ? { paddingTop: safeAreaTop + 12 }
-            : undefined
-        }
-      >
+    <View className="bg-base-100">
+      <FeedSticky>
         <View
-          className={
-            mini
-              ? 'flex-row items-center justify-between'
-              : 'h-14 flex-row items-center justify-between'
-          }
+          className="border-b border-base-200 bg-base-100/95 px-3 pb-2"
+          style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
         >
-          <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            <ExploreScopeToggle
-              audienceMode={audienceMode}
-              setAudienceMode={setAudienceMode}
-            />
-            {showKindIndicators ? (
+          <View className="h-14 flex-row items-center justify-between">
+            <View className="min-w-0 flex-1 flex-row items-center gap-1">
+              <ExploreScopeToggle
+                audienceMode={audienceMode}
+                setAudienceMode={setAudienceMode}
+              />
               <FeedKindHeaderButtons
                 kinds={showKindSelector ? [] : visibleKinds}
                 surfaceClassName={surfaceClassName}
               />
-            ) : null}
-          </View>
-          <View className="flex-row items-center gap-2">
-            <HeaderSearchButton surfaceClassName={surfaceClassName} />
-            <NotificationBellButton
-              className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
-            />
-            <HeaderProfileButton
-              pubkey={pubkey}
-              className={`h-9 w-9 border-base-200 ${surfaceClassName}`}
-            />
+            </View>
+            <View className="flex-row items-center gap-2">
+              <HeaderSearchButton surfaceClassName={surfaceClassName} />
+              <NotificationBellButton
+                className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
+              />
+              <HeaderProfileButton
+                pubkey={pubkey}
+                className={`h-9 w-9 border-base-200 ${surfaceClassName}`}
+              />
+            </View>
           </View>
         </View>
-        {showRelayList ? (
+      </FeedSticky>
+      <FeedHeaderDynamic>
+        <View
+          className={`bg-base-300/90 px-3 pt-2 ${
+            showKindSelector ? 'pb-0' : 'pb-3'
+          }`}
+        >
           <HeaderRelaysList
             subId={relaySelectionSubId}
             relays={relays}
             statuses={relayStatuses}
-            mini={mini}
           />
-        ) : null}
-        {showKindSelector ? (
-          <View className="mt-4">
-            <FeedKindNavigator
-              selectedKinds={selectedKinds}
-              onSelectKinds={setSelectedKinds}
-              tabs={EXPLORE_KIND_TABS}
-            />
-          </View>
-        ) : null}
-      </View>
+          {showKindSelector ? (
+            <View className="mt-4">
+              <FeedKindNavigator
+                selectedKinds={selectedKinds}
+                onSelectKinds={setSelectedKinds}
+                tabs={EXPLORE_KIND_TABS}
+              />
+            </View>
+          ) : null}
+        </View>
+      </FeedHeaderDynamic>
     </View>
   );
 }

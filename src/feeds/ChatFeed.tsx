@@ -25,7 +25,7 @@ import {
 } from '@candypoets/nipworker/utils';
 import {MessageCirclePlus} from 'lucide-react-native';
 import {AppButton} from '../components/AppButton';
-import {Feed} from '../components/Feed';
+import {Feed, FeedHeaderDynamic} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
@@ -380,26 +380,6 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
     ],
   );
 
-  const stickyHeader = useCallback(
-    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
-      <ChatHeader
-        safeAreaTop={safeAreaTop}
-        activeTab={activeTab}
-        messagesCount={conversations.messages.length}
-        requestsCount={conversations.requests.length}
-        onSelectTab={setActiveTab}
-        onNewChat={openNewChat}
-        sticky
-      />
-    ),
-    [
-      activeTab,
-      conversations.messages.length,
-      conversations.requests.length,
-      openNewChat,
-    ],
-  );
-
   const empty = (
     <View className="px-3 py-16">
       {pubkey && hasSigner === false ? (
@@ -429,10 +409,9 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
       items={items}
       getItemId={item => item.chatId}
       pullToRefresh
-      header={header}
+      motionHeader={header}
       headerSafeArea
       headerOwnsSafeArea
-      stickyHeader={stickyHeader}
       renderItem={({item}) => (
         <ChatRow
           conversation={item}
@@ -456,7 +435,6 @@ function ChatHeader({
   requestsCount,
   onSelectTab,
   onNewChat,
-  sticky = false,
 }: {
   activeTab: ChatListTab;
   safeAreaTop?: number;
@@ -464,35 +442,35 @@ function ChatHeader({
   requestsCount: number;
   onSelectTab: (tab: ChatListTab) => void;
   onNewChat: () => void;
-  sticky?: boolean;
 }) {
   const theme = useAppTheme();
   return (
-    <View
-      className={`${sticky ? 'border-b border-base-200 bg-base-100/95' : 'bg-base-100'}`}
-      style={sticky && safeAreaTop > 0 ? {paddingTop: safeAreaTop} : undefined}
-    >
-      <View
-        className={`${sticky ? '' : 'rounded-lg bg-base-300/90 px-3 py-3 shadow-sm'}`}
-        style={!sticky && safeAreaTop > 0 ? {paddingTop: safeAreaTop + 12} : undefined}
-      >
-        <View className="h-14 flex-row items-center justify-between">
-          <Text className="text-2xl font-bold text-base-content">Messages</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="New chat"
-            className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
-            hitSlop={12}
-            onPress={onNewChat}
-          >
-            <MessageCirclePlus
-              size={19}
-              color={theme.colors.primaryContent}
-              strokeWidth={2.2}
-            />
-          </Pressable>
+    <View className="bg-base-100">
+      <FeedHeaderDynamic>
+        <View
+          className="bg-base-300/90 px-3 pb-2"
+          style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
+        >
+          <View className="h-14 flex-row items-center justify-between">
+            <Text className="text-2xl font-bold text-base-content">Messages</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="New chat"
+              className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
+              hitSlop={12}
+              onPress={onNewChat}
+            >
+              <MessageCirclePlus
+                size={19}
+                color={theme.colors.primaryContent}
+                strokeWidth={2.2}
+              />
+            </Pressable>
+          </View>
         </View>
-        <View className="mt-3 flex-row rounded-lg bg-base-200 p-1">
+      </FeedHeaderDynamic>
+      <View className="border-b border-base-200 bg-base-100/95 px-3 pb-2 pt-2">
+        <View className="flex-row rounded-lg bg-base-200 p-1">
           <ChatTab
             active={activeTab === 'messages'}
             label="messages"

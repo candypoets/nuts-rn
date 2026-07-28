@@ -185,6 +185,35 @@ test('motion chrome can overlay hero content without adding a top offset', () =>
   expect(scrollView.props.contentContainerStyle).toBeUndefined();
 });
 
+test('overlay motion chrome can own the safe area above hero content', () => {
+  __setSafeAreaInsets({top: 32, bottom: 0, left: 0, right: 0});
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <Feed<Item>
+        items={[]}
+        renderItem={() => null}
+        motionHeader={({safeAreaTop}) => (
+          <Text testID="motion-safe-area">{safeAreaTop}</Text>
+        )}
+        motionHeaderOverlaysContent
+        motionHeaderSurfaceColor="transparent"
+        header={() => <Text>Community hero</Text>}
+        headerSafeArea
+        headerOwnsSafeArea
+        empty={<Text>empty</Text>}
+      />,
+    );
+  });
+
+  expect(
+    renderer!.root.findByProps({testID: 'motion-safe-area'}).props.children,
+  ).toBe(24);
+  expect(
+    renderer!.root.findByType(ScrollView).props.contentContainerStyle,
+  ).toBeUndefined();
+});
+
 test('feed forwards animated scroll events to the glass tab minimizer', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {

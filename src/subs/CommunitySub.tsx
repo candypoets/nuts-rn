@@ -11,6 +11,12 @@ import {
 import {Image} from 'expo-image';
 import {MenuView} from '@react-native-menu/menu';
 import {useNavigation} from 'expo-router/react-navigation';
+import Reanimated, {
+  Extrapolation,
+  type SharedValue,
+  interpolate,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import {
   NpubLimiterPipeConfigT,
   ParsePipeConfigT,
@@ -104,6 +110,7 @@ const COMMUNITY_TABS: CommunityTab[] = [
   {id: 'articles', kinds: [30023], label: 'Articles'},
 ];
 const COMMUNITY_EMPTY_TIMEOUT_MS = 2400;
+const COMMUNITY_HERO_HEIGHT = 170;
 const COMMUNITY_EVENT_KINDS = [31922, 31923];
 const RSVP_KIND = 31925;
 const RSVP_LIMIT_PER_PUBKEY = 1;
@@ -373,28 +380,75 @@ function EventCard({
   );
 }
 
-const CommunityStickyHeader = memo(function CommunityStickyHeader({
+const CommunityMotionHeader = memo(function CommunityMotionHeader({
   name,
   onClose,
+  safeAreaTop,
+  scrollY,
 }: {
   name: string;
   onClose: () => void;
+  safeAreaTop: number;
+  scrollY: SharedValue<number>;
 }) {
   const theme = useAppTheme();
+  const heroExitOffset = Math.max(
+    1,
+    COMMUNITY_HERO_HEIGHT + safeAreaTop - 64,
+  );
+  const surfaceStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [0, heroExitOffset],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+  }));
+  const titleStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [COMMUNITY_HERO_HEIGHT / 3, heroExitOffset],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+  }));
+
   return (
-    <View className="h-16 flex-row items-center justify-between px-4">
+    <Reanimated.View
+      className="flex-row items-center justify-between px-4"
+      style={{height: 64 + safeAreaTop, paddingTop: safeAreaTop}}>
+      <Reanimated.View
+        className="absolute inset-0 border-b"
+        pointerEvents="none"
+        style={[
+          {
+            backgroundColor: theme.colors.base300,
+            borderBottomColor: theme.colors.base200,
+          },
+          surfaceStyle,
+        ]}
+      />
       <Pressable
-        className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
+        accessibilityLabel="Close community"
+        className="h-10 w-10 items-center justify-center rounded-full bg-base-300/80"
         hitSlop={12}
-        onPress={onClose}
-      >
+        onPress={onClose}>
         <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>
-      <Text className="text-base font-semibold text-base-content" numberOfLines={1}>
-        {name}
-      </Text>
-      <View className="h-9 w-9" />
-    </View>
+      <Reanimated.View
+        className="min-w-0 flex-1 items-center px-3"
+        pointerEvents="none"
+        style={titleStyle}>
+        <Text
+          className="text-base font-semibold text-base-content"
+          numberOfLines={1}>
+          {name}
+        </Text>
+      </Reanimated.View>
+      <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-base-300/80">
+        <MoreHorizontal size={22} color={theme.colors.primaryContent} />
+      </Pressable>
+    </Reanimated.View>
   );
 });
 
@@ -466,7 +520,6 @@ const CommunityHeader = memo(function CommunityHeader({
   description,
   icon,
   name,
-  onClose,
   relationship,
   relay,
   selectedTab,
@@ -477,7 +530,6 @@ const CommunityHeader = memo(function CommunityHeader({
   description: string;
   icon?: string;
   name: string;
-  onClose: () => void;
   relationship?: 'follow' | 'belong';
   relay: string;
   selectedTab: CommunityKindFilterId;
@@ -491,26 +543,16 @@ const CommunityHeader = memo(function CommunityHeader({
   const memberLabel = relationship === 'belong' ? 'Belongs to' : 'Following';
 
   return (
-    <View className="overflow-hidden rounded-lg bg-base-300/95">
+    <View className="overflow-hidden bg-base-300/95">
       <View
         style={[
           styles.hero,
-          {paddingTop: topInset + 20, backgroundColor: communityColor(relay)},
+          {
+            height: COMMUNITY_HERO_HEIGHT + topInset,
+            backgroundColor: communityColor(relay),
+          },
         ]}
-      >
-        <View className="flex-row items-center justify-between px-4">
-          <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full bg-base-300/80"
-            hitSlop={12}
-            onPress={onClose}
-          >
-            <ChevronLeft size={22} color={theme.colors.primaryContent} />
-          </Pressable>
-          <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-base-300/80">
-            <MoreHorizontal size={22} color={theme.colors.primaryContent} />
-          </Pressable>
-        </View>
-      </View>
+      />
 
       <View className="-mt-10 px-4 pb-4">
         <View className="flex-row items-end justify-between gap-3">
@@ -883,7 +925,6 @@ export function CommunitySub({
         description={description}
         icon={icon}
         name={name}
-        onClose={onClose}
         relationship={relationship}
         relay={normalizedRelay}
         rsvpsByAddress={rsvpsByAddress}
@@ -897,15 +938,27 @@ export function CommunitySub({
       icon,
       name,
       normalizedRelay,
-      onClose,
       relationship,
       rsvpsByAddress,
       selectedTab,
       upcomingEvents,
     ],
   );
-  const stickyHeader = useCallback(
-    () => <CommunityStickyHeader name={name} onClose={onClose} />,
+  const motionHeader = useCallback(
+    ({
+      safeAreaTop,
+      scrollY,
+    }: {
+      safeAreaTop: number;
+      scrollY: SharedValue<number>;
+    }) => (
+      <CommunityMotionHeader
+        name={name}
+        onClose={onClose}
+        safeAreaTop={safeAreaTop}
+        scrollY={scrollY}
+      />
+    ),
     [name, onClose],
   );
   const renderItem = useCallback(
@@ -931,8 +984,11 @@ export function CommunitySub({
       items={items}
       getItemId={getItemId}
       header={header}
-      headerSafeArea={false}
-      stickyHeader={stickyHeader}
+      motionHeader={motionHeader}
+      motionHeaderOverlaysContent
+      motionHeaderSurfaceColor="transparent"
+      headerSafeArea
+      headerOwnsSafeArea
       renderItem={renderItem}
       loading={loading}
       visible={visible}
@@ -945,7 +1001,7 @@ export function CommunitySub({
 
 const styles = StyleSheet.create({
   hero: {
-    height: 170,
+    height: COMMUNITY_HERO_HEIGHT,
   },
   image: {
     height: '100%',

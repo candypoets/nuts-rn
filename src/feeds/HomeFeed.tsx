@@ -72,6 +72,7 @@ import {
 
 type HomeFeedProps = {
   enabled: boolean;
+  scrollToTopKey?: number;
   visible: boolean;
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
@@ -92,7 +93,12 @@ type WalletActivity = {
 
 const HOME_REFRESH_TIMEOUT_MS = 3_000;
 
-export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFeedProps) {
+export function HomeFeed({
+  enabled,
+  scrollToTopKey,
+  visible,
+  onChromeVisibilityChange,
+}: HomeFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -696,6 +702,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     return (
       <Feed
         items={[]}
+        scrollToTopKey={scrollToTopKey}
         motionHeader={renderHeader}
         headerSafeArea
         headerOwnsSafeArea
@@ -711,6 +718,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
     return (
       <Feed
         items={[]}
+        scrollToTopKey={scrollToTopKey}
         motionHeader={renderHeader}
         headerSafeArea
         headerOwnsSafeArea
@@ -725,6 +733,7 @@ export function HomeFeed({ enabled, visible, onChromeVisibilityChange }: HomeFee
   return (
     <Feed
       items={activities}
+      scrollToTopKey={scrollToTopKey}
       getItemId={item => item.id}
       pullToRefresh
       motionHeader={renderHeader}

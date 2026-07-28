@@ -1,8 +1,8 @@
 diff --git a/node_modules/expo-glass-tabs/build/glass-tab-bar.d.ts b/node_modules/expo-glass-tabs/build/glass-tab-bar.d.ts
-index 1ff17b7..d3c1fd1 100644
+index 1ff17b7..5fba1fd 100644
 --- a/node_modules/expo-glass-tabs/build/glass-tab-bar.d.ts
 +++ b/node_modules/expo-glass-tabs/build/glass-tab-bar.d.ts
-@@ -25,6 +25,10 @@ export type GlassTabItem = {
+@@ -25,6 +25,12 @@ export type GlassTabItem = {
  export type GlassTabBarProps = TabListProps & {
      /** Called when a tab is chosen by tap or scrub release. */
      onIndexSelected?: (index: number) => void;
@@ -10,11 +10,13 @@ index 1ff17b7..d3c1fd1 100644
 +    initialIndex?: number;
 +    /** Distance the progressive background blur extends above the bar. */
 +    blurBleed?: number;
++    /** Whether to render the progressive blur behind the floating bar. */
++    backgroundBlur?: boolean;
      theme?: Partial<GlassTabBarTheme>;
      /** Haptic tick while the scrub crosses tab boundaries (iOS). */
      haptics?: boolean;
 diff --git a/node_modules/expo-glass-tabs/build/glass-tab-bar.js b/node_modules/expo-glass-tabs/build/glass-tab-bar.js
-index 420cb04..12d7ab2 100644
+index 420cb04..4049477 100644
 --- a/node_modules/expo-glass-tabs/build/glass-tab-bar.js
 +++ b/node_modules/expo-glass-tabs/build/glass-tab-bar.js
 @@ -49,15 +49,16 @@ const BarContext = createContext(null);
@@ -22,7 +24,7 @@ index 420cb04..12d7ab2 100644
   * with expo-router's headless tabs.
   */
 -export function GlassTabBar({ children, onIndexSelected, theme: themeOverrides, haptics = true, ...props }) {
-+export function GlassTabBar({ blurBleed = BLUR_BLEED, children, initialIndex = 0, onIndexSelected, theme: themeOverrides, haptics = true, ...props }) {
++export function GlassTabBar({ backgroundBlur = true, blurBleed = BLUR_BLEED, children, initialIndex = 0, onIndexSelected, theme: themeOverrides, haptics = true, ...props }) {
      const insets = useSafeAreaInsets();
      const { width: windowWidth } = useWindowDimensions();
      const minimized = useMinimizeState();
@@ -37,20 +39,28 @@ index 420cb04..12d7ab2 100644
      const theme = useMemo(() => ({ ...DEFAULT_THEME, ...themeOverrides }), [themeOverrides]);
      // Picker-style tick while the highlight crosses tab boundaries mid-drag.
      const tick = useCallback(() => {
-@@ -165,7 +166,7 @@ export function GlassTabBar({ children, onIndexSelected, theme: themeOverrides,
+@@ -160,13 +161,13 @@ export function GlassTabBar({ children, onIndexSelected, theme: themeOverrides,
+     });
+     const bottomOffset = Math.max(insets.bottom - 16, 12);
+     const barContext = useMemo(() => ({ slideIndex, isDragging, theme }), [slideIndex, isDragging, theme]);
+-    return (_jsxs(View, { ...props, pointerEvents: "box-none", style: { position: 'absolute', left: 0, right: 0, bottom: 0 }, children: [_jsx(ProgressiveBlur, { direction: "bottom", style: {
++    return (_jsxs(View, { ...props, pointerEvents: "box-none", style: { position: 'absolute', left: 0, right: 0, bottom: 0 }, children: [backgroundBlur ? (_jsx(ProgressiveBlur, { direction: "bottom", style: {
+                     position: 'absolute',
                      left: 0,
                      right: 0,
                      bottom: 0,
 -                    height: bottomOffset + EXPANDED_HEIGHT + BLUR_BLEED,
+-                } }), _jsx(View, { pointerEvents: "box-none", style: { marginHorizontal: BAR_MARGIN, marginBottom: bottomOffset }, children: _jsx(GestureDetector, { gesture: gesture, children: _jsxs(Animated.View, { style: barStyle, children: [isLiquidGlassAvailable() ? (_jsx(AnimatedGlassView, { glassEffectStyle: "regular", style: [
 +                    height: bottomOffset + EXPANDED_HEIGHT + Math.max(blurBleed, 0),
-                 } }), _jsx(View, { pointerEvents: "box-none", style: { marginHorizontal: BAR_MARGIN, marginBottom: bottomOffset }, children: _jsx(GestureDetector, { gesture: gesture, children: _jsxs(Animated.View, { style: barStyle, children: [isLiquidGlassAvailable() ? (_jsx(AnimatedGlassView, { glassEffectStyle: "regular", style: [
++                } })) : null, _jsx(View, { pointerEvents: "box-none", style: { marginHorizontal: BAR_MARGIN, marginBottom: bottomOffset }, children: _jsx(GestureDetector, { gesture: gesture, children: _jsxs(Animated.View, { style: barStyle, children: [isLiquidGlassAvailable() ? (_jsx(AnimatedGlassView, { glassEffectStyle: "regular", style: [
                                      StyleSheet.absoluteFill,
                                      { backgroundColor: theme.glassTint, borderCurve: 'continuous' },
+                                     shapeStyle,
 diff --git a/node_modules/expo-glass-tabs/src/glass-tab-bar.tsx b/node_modules/expo-glass-tabs/src/glass-tab-bar.tsx
-index c0f798b..b910a38 100644
+index c0f798b..602e8c1 100644
 --- a/node_modules/expo-glass-tabs/src/glass-tab-bar.tsx
 +++ b/node_modules/expo-glass-tabs/src/glass-tab-bar.tsx
-@@ -97,6 +97,10 @@ const BarContext = createContext<BarContextValue | null>(null);
+@@ -97,6 +97,12 @@ const BarContext = createContext<BarContextValue | null>(null);
  export type GlassTabBarProps = TabListProps & {
    /** Called when a tab is chosen by tap or scrub release. */
    onIndexSelected?: (index: number) => void;
@@ -58,20 +68,23 @@ index c0f798b..b910a38 100644
 +  initialIndex?: number;
 +  /** Distance the progressive background blur extends above the bar. */
 +  blurBleed?: number;
++  /** Whether to render the progressive blur behind the floating bar. */
++  backgroundBlur?: boolean;
    theme?: Partial<GlassTabBarTheme>;
    /** Haptic tick while the scrub crosses tab boundaries (iOS). */
    haptics?: boolean;
-@@ -108,7 +112,9 @@ export type GlassTabBarProps = TabListProps & {
+@@ -108,7 +114,10 @@ export type GlassTabBarProps = TabListProps & {
   * with expo-router's headless tabs.
   */
  export function GlassTabBar({
++  backgroundBlur = true,
 +  blurBleed = BLUR_BLEED,
    children,
 +  initialIndex = 0,
    onIndexSelected,
    theme: themeOverrides,
    haptics = true,
-@@ -118,10 +124,14 @@ export function GlassTabBar({
+@@ -118,10 +127,14 @@ export function GlassTabBar({
    const { width: windowWidth } = useWindowDimensions();
    const minimized = useMinimizeState();
    const progress = minimized.progress;
@@ -88,12 +101,32 @@ index c0f798b..b910a38 100644
    const theme = useMemo(() => ({ ...DEFAULT_THEME, ...themeOverrides }), [themeOverrides]);
  
    // Picker-style tick while the highlight crosses tab boundaries mid-drag.
-@@ -277,7 +287,7 @@ export function GlassTabBar({
-           left: 0,
-           right: 0,
-           bottom: 0,
+@@ -270,16 +283,18 @@ export function GlassTabBar({
+       pointerEvents="box-none"
+       style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+       {/* Progressive blur rising from the screen's bottom edge behind the pill. */}
+-      <ProgressiveBlur
+-        direction="bottom"
+-        style={{
+-          position: 'absolute',
+-          left: 0,
+-          right: 0,
+-          bottom: 0,
 -          height: bottomOffset + EXPANDED_HEIGHT + BLUR_BLEED,
-+          height: bottomOffset + EXPANDED_HEIGHT + Math.max(blurBleed, 0),
-         }}
-       />
+-        }}
+-      />
++      {backgroundBlur ? (
++        <ProgressiveBlur
++          direction="bottom"
++          style={{
++            position: 'absolute',
++            left: 0,
++            right: 0,
++            bottom: 0,
++            height: bottomOffset + EXPANDED_HEIGHT + Math.max(blurBleed, 0),
++          }}
++        />
++      ) : null}
        <View
+         pointerEvents="box-none"
+         style={{ marginHorizontal: BAR_MARGIN, marginBottom: bottomOffset }}>

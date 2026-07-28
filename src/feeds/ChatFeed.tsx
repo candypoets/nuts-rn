@@ -37,6 +37,7 @@ type ChatListTab = 'messages' | 'requests';
 
 type ChatFeedProps = {
   enabled: boolean;
+  scrollToTopKey?: number;
   visible: boolean;
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
@@ -137,7 +138,12 @@ function groupConversations(
     );
 }
 
-export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedProps) {
+export function ChatFeed({
+  enabled,
+  scrollToTopKey,
+  visible,
+  onChromeVisibilityChange,
+}: ChatFeedProps) {
   const navigation =
     useNavigation<AppNavigationProp>();
   const eventsRef = useRef<ParsedEvent[]>([]);
@@ -407,6 +413,7 @@ export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedP
   return (
     <Feed
       items={items}
+      scrollToTopKey={scrollToTopKey}
       getItemId={item => item.chatId}
       pullToRefresh
       motionHeader={header}

@@ -36,12 +36,14 @@ export type RouteId = 'home' | 'explore' | 'chat';
 
 type MainTabItem = GlassTabItem & {
   href: Href;
+  routeId: RouteId;
 };
 
 const MAIN_TABS: readonly MainTabItem[] = [
   {
     name: 'HomeTab',
     href: '/HomeTab',
+    routeId: 'home',
     label: 'Home',
     renderIcon: ({tint, size}) => (
       <House color={tint} size={size} strokeWidth={2} />
@@ -50,6 +52,7 @@ const MAIN_TABS: readonly MainTabItem[] = [
   {
     name: 'ExploreTab',
     href: '/ExploreTab',
+    routeId: 'explore',
     label: 'Feed',
     renderIcon: ({tint, size}) => (
       <Layers3 color={tint} size={size} strokeWidth={2} />
@@ -58,6 +61,7 @@ const MAIN_TABS: readonly MainTabItem[] = [
   {
     name: 'ChatTab',
     href: '/ChatTab',
+    routeId: 'chat',
     label: 'Chats',
     renderIcon: ({tint, size}) => (
       <MessageCircle color={tint} size={size} strokeWidth={2} />
@@ -97,6 +101,8 @@ function scheduleNostrCleanup(manager: NostrManagerLike | null, delay = 1000) {
 type MainTabContextValue = {
   activatedRoutes: Record<RouteId, boolean>;
   activateRoute: (routeId: RouteId) => void;
+  requestScrollToTop: (routeId: RouteId) => void;
+  scrollToTopKeys: Record<RouteId, number | undefined>;
   manager: NostrManagerLike | null;
   nostrEnabled: boolean;
   themeVars: ReturnType<typeof getAppThemeVars>;
@@ -112,16 +118,18 @@ export function useMainTabContext(routeId: RouteId) {
   }
 
   const isFocused = useIsFocused();
+  const {activateRoute, manager} = context;
 
   useEffect(() => {
     if (!isFocused) return;
-    context.activateRoute(routeId);
-    return scheduleNostrCleanup(context.manager);
-  }, [context, isFocused, routeId]);
+    activateRoute(routeId);
+    return scheduleNostrCleanup(manager);
+  }, [activateRoute, isFocused, manager, routeId]);
 
   return {
     ...context,
     isFocused,
+    scrollToTopKey: context.scrollToTopKeys[routeId],
     visible: context.activatedRoutes[routeId],
   };
 }
@@ -148,6 +156,13 @@ export default function MainTabsLayout() {
     explore: true,
     chat: false,
   });
+  const [scrollToTopKeys, setScrollToTopKeys] = useState<
+    Record<RouteId, number | undefined>
+  >({
+    home: undefined,
+    explore: undefined,
+    chat: undefined,
+  });
 
   const activateRoute = useCallback((routeId: RouteId) => {
     setActivatedRoutes(current => {
@@ -156,10 +171,19 @@ export default function MainTabsLayout() {
     });
   }, []);
 
+  const requestScrollToTop = useCallback((routeId: RouteId) => {
+    setScrollToTopKeys(current => ({
+      ...current,
+      [routeId]: (current[routeId] ?? 0) + 1,
+    }));
+  }, []);
+
   const tabContext = useMemo(
     () => ({
       activatedRoutes,
       activateRoute,
+      requestScrollToTop,
+      scrollToTopKeys,
       manager,
       nostrEnabled,
       themeVars,
@@ -170,19 +194,31 @@ export default function MainTabsLayout() {
       activatedRoutes,
       manager,
       nostrEnabled,
+      requestScrollToTop,
+      scrollToTopKeys,
       theme.colors.base100,
       themeVars,
     ],
   );
 
+  const activeTabIndex = getInitialTabIndex(pathname);
+  const handleActiveTabPress = useCallback(
+    (index: number) => {
+      const tab = MAIN_TABS[index];
+      if (!tab || index !== activeTabIndex) return false;
+      requestScrollToTop(tab.routeId);
+      return true;
+    },
+    [activeTabIndex, requestScrollToTop],
+  );
+
   const selectTab = useCallback(
     (index: number) => {
       const tab = MAIN_TABS[index];
-      if (tab) {
-        router.navigate(tab.href);
-      }
+      if (!tab || handleActiveTabPress(index)) return;
+      router.navigate(tab.href);
     },
-    [router],
+    [handleActiveTabPress, router],
   );
 
   return (
@@ -196,6 +232,7 @@ export default function MainTabsLayout() {
           <TabSlot />
           <TabList asChild>
             <GlassTabBar
+              backgroundBlur={false}
               blurBleed={0}
               haptics
               initialIndex={initialTabIndex}
@@ -206,7 +243,10 @@ export default function MainTabsLayout() {
                   asChild
                   href={item.href}
                   key={item.name}
-                  name={item.name}>
+                  name={item.name}
+                  onPress={() => {
+                    handleActiveTabPress(index);
+                  }}>
                   <GlassTabButton index={index} item={item} />
                 </TabTrigger>
               ))}

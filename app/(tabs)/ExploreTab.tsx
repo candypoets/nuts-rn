@@ -1,10 +1,17 @@
 import React from 'react';
 
-import {ExploreFeed} from '../../src/feeds';
+import {ExploreFeed} from '../../src/feeds/ExploreFeed';
 import {useMainTabContext} from './_layout';
 
 export default function ExploreTabScreen() {
-  const {nostrEnabled, visible} = useMainTabContext('explore');
+  const {nostrEnabled, scrollToTopKey, visible} =
+    useMainTabContext('explore');
 
-  return <ExploreFeed enabled={nostrEnabled} visible={visible} />;
+  return (
+    <ExploreFeed
+      enabled={nostrEnabled}
+      scrollToTopKey={scrollToTopKey}
+      visible={visible}
+    />
+  );
 }

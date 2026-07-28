@@ -83,6 +83,7 @@ import {
 
 type ExploreFeedProps = {
   enabled: boolean;
+  scrollToTopKey?: number;
   visible: boolean;
   header?: () => React.ReactNode;
   stickyFooter?: () => React.ReactNode;
@@ -143,6 +144,7 @@ function isLegacySeparatedNotesSelection(kinds: FeedKind[]) {
 
 export function ExploreFeed({
   enabled,
+  scrollToTopKey: tabScrollToTopKey,
   visible,
   header,
   stickyFooter,
@@ -184,6 +186,10 @@ export function ExploreFeed({
   const [newNotes, setNewNotes] = useState<NewNotesState>(EMPTY_NEW_NOTES);
   const [feedChromeVisible, setFeedChromeVisible] = useState(true);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
+  const combinedScrollToTopKey =
+    tabScrollToTopKey === undefined && scrollToTopKey === undefined
+      ? undefined
+      : `${tabScrollToTopKey ?? 0}:${scrollToTopKey ?? 0}`;
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
   const insets = useSafeAreaInsets();
   const feedTopInset = getFeedTopInset(insets.top);
@@ -876,7 +882,7 @@ export function ExploreFeed({
     <View className="flex-1">
       <Feed
         items={itemsRef.current}
-        scrollToTopKey={scrollToTopKey}
+        scrollToTopKey={combinedScrollToTopKey}
         getItemId={getItemId}
         motionHeader={listHeader}
         pullToRefresh

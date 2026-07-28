@@ -1,10 +1,7 @@
 import React, {
   type ReactElement,
   type ReactNode,
-  createContext,
-  isValidElement,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -30,11 +27,15 @@ import {
 } from '@shopify/flash-list';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
+  Extrapolation,
   type SharedValue,
+  interpolate,
+  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import HeaderMotion, {useMotionProgress} from 'react-native-header-motion';
 import {getFeedTopInset} from './feedLayout';
 import {useAppTheme} from '../theme';
 
@@ -64,11 +65,11 @@ export type FeedProps<T> = {
   getItemId?: (item: T, index: number) => string | number;
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   header?: (props: FeedChromeProps) => ReactNode;
+  motionHeader?: (props: FeedChromeProps) => ReactNode;
   footer?: (props: FeedChromeProps) => ReactNode;
   stickyHeader?: (props: FeedChromeProps) => ReactNode;
   stickyHeaderSafeAreaColor?: string;
   stickyFooter?: (props: FeedChromeProps) => ReactNode;
-  fixedHeader?: (props: FeedChromeProps) => ReactNode;
   headerSafeArea?: boolean;
   headerOwnsSafeArea?: boolean;
   empty?: ReactNode;
@@ -153,36 +154,86 @@ function defaultGetItemId<T>(item: T, index: number) {
   return index;
 }
 
-const FeedStickyContext = createContext<(node: ReactNode | null) => void>(() => {});
+/**
+ * Keeps content in its expanded position while the rest of a motion header
+ * collapses. Use this when the sticky controls appear before the dynamic
+ * section in the expanded layout.
+ */
+export function FeedSticky({children}: {children: ReactNode}) {
+  const {progress, progressThreshold} = useMotionProgress();
+  const stickyStyle = useAnimatedStyle(() => {
+    const threshold = progressThreshold.get();
+    const distance = Number.isFinite(threshold) ? threshold : 0;
+    return {
+      zIndex: 10,
+      transform: [{translateY: distance ? progress.get() * distance : 0}],
+    };
+  }, [progress, progressThreshold]);
 
-function isSameStickyElement(a: ReactNode, b: ReactNode) {
-  if (a === b) return true;
-  if (!isValidElement(a) || !isValidElement(b)) return false;
-  if (a.type !== b.type || a.key !== b.key) return false;
-  const aProps = a.props as Record<string, unknown>;
-  const bProps = b.props as Record<string, unknown>;
-  const keys = Object.keys(aProps);
   return (
-    keys.length === Object.keys(bProps).length &&
-    keys.every(key => aProps[key] === bProps[key])
+    <Animated.View style={stickyStyle}>
+      {children}
+    </Animated.View>
   );
 }
 
 /**
- * Tags an element inside a Feed `header` as the sticky element. The children render
- * in-flow as part of the header, and Feed mirrors them into its sticky overlay.
+ * Marks the measured section that scrolls away as a motion header collapses.
  */
-export function FeedSticky({children}: {children: ReactNode}) {
-  const register = useContext(FeedStickyContext);
-  const registeredRef = useRef<ReactNode>(null);
-  useEffect(() => {
-    if (!isSameStickyElement(registeredRef.current, children)) {
-      registeredRef.current = children;
-      register(children);
-    }
-  }, [register, children]);
-  useEffect(() => () => register(null), [register]);
-  return <>{children}</>;
+export function FeedHeaderDynamic({children}: {children: ReactNode}) {
+  const {progress} = useMotionProgress();
+  const dynamicStyle = useAnimatedStyle(
+    () => ({
+      opacity: interpolate(
+        progress.get(),
+        [0, 0.82],
+        [1, 0],
+        Extrapolation.CLAMP,
+      ),
+    }),
+    [progress],
+  );
+
+  return (
+    <View className="overflow-hidden">
+      <HeaderMotion.Header.Dynamic style={dynamicStyle}>
+        {children}
+      </HeaderMotion.Header.Dynamic>
+    </View>
+  );
+}
+
+function MotionHeader({
+  children,
+  paddingTop,
+  surfaceColor,
+}: {
+  children: ReactNode;
+  paddingTop: number;
+  surfaceColor: string;
+}) {
+  const {progress, progressThreshold} = useMotionProgress();
+  const headerStyle = useAnimatedStyle(() => {
+    const threshold = progressThreshold.get();
+    const distance = Number.isFinite(threshold) ? threshold : 0;
+    return {
+      transform: [{translateY: distance ? -progress.get() * distance : 0}],
+      zIndex: 30,
+    };
+  }, [progress, progressThreshold]);
+
+  return (
+    <HeaderMotion.Header
+      style={[
+        {
+          backgroundColor: surfaceColor,
+          paddingTop,
+        },
+        headerStyle,
+      ]}>
+      {children}
+    </HeaderMotion.Header>
+  );
 }
 
 export function Feed<T>({
@@ -193,11 +244,11 @@ export function Feed<T>({
   getItemId = defaultGetItemId,
   renderItem,
   header,
+  motionHeader,
   footer,
   stickyHeader,
   stickyHeaderSafeAreaColor,
   stickyFooter,
-  fixedHeader,
   headerSafeArea = true,
   headerOwnsSafeArea = false,
   empty,
@@ -222,8 +273,7 @@ export function Feed<T>({
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
   const [nearTop, setNearTop] = useState(true);
-  const [taggedSticky, setTaggedSticky] = useState<ReactNode | null>(null);
-  const listRef = useRef<ScrollView>(null);
+  const listRef = useAnimatedRef<ScrollView>();
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
@@ -291,7 +341,7 @@ export function Feed<T>({
     } else {
       listRef.current?.scrollTo({y: 0, animated: true});
     }
-  }, [bottom]);
+  }, [bottom, listRef]);
 
   const scrollToBottom = useCallback((animated: boolean) => {
     if (bottom) {
@@ -299,7 +349,7 @@ export function Feed<T>({
     } else {
       listRef.current?.scrollToEnd({animated});
     }
-  }, [bottom]);
+  }, [bottom, listRef]);
 
   const chromeProps = useMemo(
     () => ({
@@ -346,7 +396,7 @@ export function Feed<T>({
       lastOffsetRef.current = 0;
       setDown(true);
     });
-  }, [bottom, resetScrollKey, stickyReveal]);
+  }, [bottom, listRef, resetScrollKey, stickyReveal]);
 
   useEffect(() => {
     if (scrollToTopKey === undefined) return;
@@ -538,6 +588,7 @@ export function Feed<T>({
 
   const showCustomRefreshIndicator =
     !bottom && pullToRefresh && !!onRefresh && refreshing;
+  const customRefreshInset = motionHeader ? 0 : refreshInset;
   const listHeader = useMemo(() => {
     if (!header && !showCustomRefreshIndicator) return null;
     const inFlowChromeProps = showCustomRefreshIndicator
@@ -554,8 +605,8 @@ export function Feed<T>({
             accessibilityRole="progressbar"
             className="w-full items-center justify-center bg-base-100"
             style={{
-              height: refreshInset + REFRESH_INDICATOR_HEIGHT,
-              paddingTop: refreshInset,
+              height: customRefreshInset + REFRESH_INDICATOR_HEIGHT,
+              paddingTop: customRefreshInset,
             }}
             testID="feed-refresh-indicator"
           >
@@ -577,10 +628,10 @@ export function Feed<T>({
     );
   }, [
     chromeProps,
+    customRefreshInset,
     header,
     outerHeaderSafeAreaTop,
     refreshColor,
-    refreshInset,
     showCustomRefreshIndicator,
     theme.colors.base100,
   ]);
@@ -600,10 +651,18 @@ export function Feed<T>({
     }
     return empty ? <View className="px-6 py-12">{empty}</View> : null;
   }, [empty, loading]);
-  const stickyContent = stickyHeader ? stickyHeader(chromeProps) : taggedSticky;
-  return (
-    <FeedStickyContext.Provider value={setTaggedSticky}>
-    <View className="relative flex-1">
+  const stickyContent = stickyHeader ? stickyHeader(chromeProps) : null;
+  const feedContent = (
+    <View
+      className="relative flex-1"
+      style={{backgroundColor: theme.colors.base100}}>
+      {motionHeader ? (
+        <MotionHeader
+          paddingTop={outerHeaderSafeAreaTop}
+          surfaceColor={theme.colors.base100}>
+          {motionHeader(chromeProps)}
+        </MotionHeader>
+      ) : null}
       {bottom ? (
         <FlashList
           ref={bottomListRef}
@@ -652,6 +711,47 @@ export function Feed<T>({
           }
           scrollEventThrottle={16}
         />
+      ) : motionHeader ? (
+        <HeaderMotion.ScrollView
+          animatedRef={listRef as never}
+          className="flex-1"
+          contentInsetAdjustmentBehavior="never"
+          contentContainerClassName={contentContainerClassName}
+          maintainVisibleContentPosition={
+            shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
+              ? {minIndexForVisible: 0}
+              : undefined
+          }
+          onContentSizeChange={handleContentSizeChange}
+          onScroll={handleScroll}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={['transparent']}
+                progressBackgroundColor="transparent"
+                refreshing={false}
+                tintColor="transparent"
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          scrollEventThrottle={16}
+        >
+          {listHeader}
+          {items.length === 0 ? (
+            listEmpty
+          ) : (
+            <VirtualColumn
+              items={virtualRowsCollection}
+              itemToKey={row => row.key}
+              removeClippedSubviews={removeClippedSubviews}
+              testID={`feed-virtual-column:${numColumns}`}
+            >
+              {renderVirtualRowContent}
+            </VirtualColumn>
+          )}
+          {listFooter}
+        </HeaderMotion.ScrollView>
       ) : (
         <ScrollView
           ref={listRef}
@@ -696,15 +796,6 @@ export function Feed<T>({
           {listFooter}
         </ScrollView>
       )}
-      {fixedHeader ? (
-        <View
-          pointerEvents="box-none"
-          className="absolute bottom-0 left-0 right-0 top-0 z-40"
-          style={{paddingTop: topInset}}
-        >
-          {fixedHeader(chromeProps)}
-        </View>
-      ) : null}
       {stickyContent ? (
         <Animated.View
           pointerEvents={start >= 1 && !down && !nearTop ? 'auto' : 'none'}
@@ -723,6 +814,13 @@ export function Feed<T>({
         </Animated.View>
       ) : null}
     </View>
-    </FeedStickyContext.Provider>
+  );
+
+  return motionHeader ? (
+    <HeaderMotion measureDynamicMode="update">
+      {feedContent}
+    </HeaderMotion>
+  ) : (
+    feedContent
   );
 }

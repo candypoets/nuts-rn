@@ -5,6 +5,9 @@
     "icon": "./assets/app-icon.png",
     "scheme": "nutsrn",
     "userInterfaceStyle": "automatic",
+    "experiments": {
+      "typedRoutes": true
+    },
     "ios": {
       "bundleIdentifier": "com.nutsrn"
     },
@@ -68,7 +71,9 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-router",
+      "expo-status-bar"
     ]
   }
 }

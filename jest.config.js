@@ -1,7 +1,7 @@
 module.exports = {
   preset: 'jest-expo',
   transformIgnorePatterns: [
-    '/node_modules/(?!(react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|nativewind|react-native-css-interop|@legendapp|@noble|@scure|@candypoets|nostr-tools))',
+    '/node_modules/(?!(react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|expo-router|expo-linking|react-navigation|@react-navigation|nativewind|react-native-css-interop|@legendapp|@noble|@scure|@candypoets|nostr-tools))',
     '/node_modules/react-native-reanimated/plugin/',
     '/node_modules/@react-native/babel-preset/',
   ],
@@ -12,6 +12,11 @@ module.exports = {
     '<rootDir>/build',
   ],
   moduleNameMapper: {
+    '^expo-router/react-navigation$':
+      '<rootDir>/__mocks__/expo-router-react-navigation.js',
+    '^expo-router/build/react-navigation/native-stack$':
+      '<rootDir>/__mocks__/expo-router-native-stack.js',
+    '^expo-router$': '<rootDir>/__mocks__/expo-router.js',
     '\\.(css)$': '<rootDir>/__mocks__/styleMock.js',
     '^@react-native-async-storage/async-storage$':
       '<rootDir>/__mocks__/async-storage.js',

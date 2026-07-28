@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import {type Href, useRouter} from 'expo-router';
+import {type Href, usePathname, useRouter} from 'expo-router';
 import {
   Tabs,
   TabList,
@@ -65,6 +65,13 @@ const MAIN_TABS: readonly MainTabItem[] = [
   },
 ];
 
+const DEFAULT_TAB_INDEX = 1;
+
+export function getInitialTabIndex(pathname: string) {
+  const index = MAIN_TABS.findIndex(item => item.href === pathname);
+  return index >= 0 ? index : DEFAULT_TAB_INDEX;
+}
+
 // Expo Router 57 types `screenOptions` as the fully resolved descriptor
 // shape (including internal title/action fields), although React Navigation
 // accepts the partial defaults at runtime.
@@ -121,7 +128,9 @@ export function useMainTabContext(routeId: RouteId) {
 
 export default function MainTabsLayout() {
   const theme = useAppTheme();
+  const pathname = usePathname();
   const router = useRouter();
+  const initialTabIndex = getInitialTabIndex(pathname);
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const manager = useMemo(() => getSharedNostrManager(), []);
   const nostrEnabled = Boolean(manager);
@@ -187,7 +196,9 @@ export default function MainTabsLayout() {
           <TabSlot />
           <TabList asChild>
             <GlassTabBar
+              blurBleed={0}
               haptics
+              initialIndex={initialTabIndex}
               onIndexSelected={selectTab}
               theme={tabBarTheme}>
               {MAIN_TABS.map((item, index) => (

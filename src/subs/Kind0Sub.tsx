@@ -49,11 +49,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import type { EventTemplate } from 'nostr-tools';
-import {
-  Feed,
-  FeedHeaderDynamic,
-  FeedSticky,
-} from '../components/Feed';
+import { Feed } from '../components/Feed';
 import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
@@ -1478,43 +1474,44 @@ export function Kind0Sub({
     navigation.navigate('SendEcash', { pubkey });
   }, [navigation, pubkey]);
   const motionHeader = useCallback(
+    ({safeAreaTop}: {safeAreaTop: number}) => (
+      <View className="border-b border-base-200 bg-base-100">
+        <Kind0StickyHeader
+          onClose={onClose}
+          pubkey={pubkey}
+          safeAreaTop={safeAreaTop}
+        />
+      </View>
+    ),
+    [onClose, pubkey],
+  );
+  const header = useCallback(
     ({
-      safeAreaTop,
       scrollY,
     }: {
-      safeAreaTop: number;
       scrollY: SharedValue<number>;
     }) => (
       <View className="border-b border-base-200 bg-base-100">
-        <FeedSticky>
-          <Kind0StickyHeader
-            onClose={onClose}
-            pubkey={pubkey}
-            safeAreaTop={safeAreaTop}
-          />
-        </FeedSticky>
-        <FeedHeaderDynamic>
-          <Kind0ProfileHeader
-            about={about}
-            aboutContent={aboutContent}
-            banner={banner}
-            communities={communities}
-            contributionCount={contributionCount}
-            lnaddress={lnaddress}
-            name={name}
-            nip05={nip05}
-            onFollowPress={handleFollowPress}
-            onMutePress={handleMutePress}
-            onZapPress={handleZapPress}
-            picture={picture}
-            pubkey={pubkey}
-            scrollY={scrollY}
-            followPending={followPending}
-            following={following}
-            mutePending={mutePending}
-            muted={muted}
-          />
-        </FeedHeaderDynamic>
+        <Kind0ProfileHeader
+          about={about}
+          aboutContent={aboutContent}
+          banner={banner}
+          communities={communities}
+          contributionCount={contributionCount}
+          lnaddress={lnaddress}
+          name={name}
+          nip05={nip05}
+          onFollowPress={handleFollowPress}
+          onMutePress={handleMutePress}
+          onZapPress={handleZapPress}
+          picture={picture}
+          pubkey={pubkey}
+          scrollY={scrollY}
+          followPending={followPending}
+          following={following}
+          mutePending={mutePending}
+          muted={muted}
+        />
         <Kind0ActivityHeader
           onKindPress={handleKindPress}
           selectedKind={selectedKind}
@@ -1538,7 +1535,6 @@ export function Kind0Sub({
       muted,
       name,
       nip05,
-      onClose,
       picture,
       selectedKind,
       pubkey,
@@ -1552,6 +1548,7 @@ export function Kind0Sub({
         <Note note={item} visible={visible && itemVisible} />
       )}
       motionHeader={motionHeader}
+      header={header}
       headerSafeArea
       headerOwnsSafeArea
       visible={visible}

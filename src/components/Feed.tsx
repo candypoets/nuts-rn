@@ -673,10 +673,10 @@ export function Feed<T>({
   const customRefreshInset = motionHeader ? 0 : refreshInset;
   const listHeader = useMemo(() => {
     if (!header && !showCustomRefreshIndicator) return null;
-    const inFlowChromeProps = showCustomRefreshIndicator
+    const inFlowChromeProps = showCustomRefreshIndicator || motionHeader
       ? {...chromeProps, safeAreaTop: 0}
       : chromeProps;
-    const inFlowHeaderPaddingTop = showCustomRefreshIndicator
+    const inFlowHeaderPaddingTop = showCustomRefreshIndicator || motionHeader
       ? 0
       : outerHeaderSafeAreaTop;
     return (
@@ -712,6 +712,7 @@ export function Feed<T>({
     chromeProps,
     customRefreshInset,
     header,
+    motionHeader,
     outerHeaderSafeAreaTop,
     refreshColor,
     showCustomRefreshIndicator,

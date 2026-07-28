@@ -120,6 +120,51 @@ test('motion header keeps the native pull-to-refresh indicator visible', () => {
   ).toHaveLength(0);
 });
 
+test('content header stays inside the scroll view when motion chrome is present', () => {
+  __setSafeAreaInsets({top: 32, bottom: 0, left: 0, right: 0});
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <Feed<Item>
+        items={[]}
+        renderItem={() => null}
+        motionHeader={() => <Text testID="motion-chrome">Post</Text>}
+        header={({safeAreaTop}) => (
+          <Text testID="in-flow-content">
+            Root content safe area: {safeAreaTop}
+          </Text>
+        )}
+        headerSafeArea
+        empty={<Text>empty</Text>}
+      />,
+    );
+  });
+
+  const scrollView = renderer!.root.findByType(ScrollView);
+  const inFlowContent = renderer!.root.findByProps({
+    testID: 'in-flow-content',
+  });
+  const motionChrome = renderer!.root.findByProps({testID: 'motion-chrome'});
+  const hasAncestor = (
+    node: ReactTestRenderer.ReactTestInstance,
+    ancestor: ReactTestRenderer.ReactTestInstance,
+  ) => {
+    let current = node.parent;
+    while (current) {
+      if (current === ancestor) return true;
+      current = current.parent;
+    }
+    return false;
+  };
+
+  expect(hasAncestor(inFlowContent, scrollView)).toBe(true);
+  expect(hasAncestor(motionChrome, scrollView)).toBe(false);
+  expect(inFlowContent.props.children).toEqual([
+    'Root content safe area: ',
+    0,
+  ]);
+});
+
 test('feed forwards animated scroll events to the glass tab minimizer', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {

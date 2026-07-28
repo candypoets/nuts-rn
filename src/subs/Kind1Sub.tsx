@@ -15,11 +15,7 @@ import {
 import {ChevronLeft} from 'lucide-react-native';
 import {decode, type EventPointer} from 'nostr-tools/nip19';
 
-import {
-  Feed,
-  FeedHeaderDynamic,
-  FeedSticky,
-} from '../components/Feed';
+import {Feed} from '../components/Feed';
 import {Note} from '../components/notes';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -48,10 +44,14 @@ type Kind1SubProps = {
   onClose: () => void;
 };
 
-type Kind1HeaderProps = {
+type Kind1MotionHeaderProps = {
   headerItem: ParsedEvent | null;
   onClose: () => void;
   relays: string[];
+};
+
+type Kind1PostHeaderProps = {
+  headerItem: ParsedEvent | null;
   visible: boolean;
 };
 
@@ -91,64 +91,62 @@ function pointerRelays(data: EventPointer) {
   return [...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl))];
 }
 
-const Kind1Header = memo(function Kind1Header({
+const Kind1MotionHeader = memo(function Kind1MotionHeader({
   headerItem,
   onClose,
   relays,
-  visible,
-}: Kind1HeaderProps) {
+}: Kind1MotionHeaderProps) {
   const theme = useAppTheme();
 
   return (
     <View className="border-b border-base-200 bg-base-100">
-      <FeedSticky>
-        <View className="h-16 flex-row items-center justify-between px-4">
-          <Pressable
-            accessibilityLabel="Close post"
-            className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
-            hitSlop={12}
-            onPress={onClose}>
-            <ChevronLeft size={22} color={theme.colors.primaryContent} />
-          </Pressable>
-          <View
-            className="absolute inset-0 items-center justify-center"
-            pointerEvents="none">
-            <Text className="text-base font-semibold text-base-content">
-              Post
-            </Text>
-          </View>
-          <View className="min-h-9 min-w-9 items-end justify-center">
-            {headerItem ? (
-              <NoteRelaysList
-                note={headerItem}
-                subId={`kind1_header_${headerItem.id() || 'missing'}`}
-                relays={relays}
-                mini
-              />
-            ) : null}
-          </View>
+      <View className="h-16 flex-row items-center justify-between px-4">
+        <Pressable
+          accessibilityLabel="Close post"
+          className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
+          hitSlop={12}
+          onPress={onClose}>
+          <ChevronLeft size={22} color={theme.colors.primaryContent} />
+        </Pressable>
+        <View
+          className="absolute inset-0 items-center justify-center"
+          pointerEvents="none">
+          <Text className="text-base font-semibold text-base-content">
+            Post
+          </Text>
         </View>
-      </FeedSticky>
-      {headerItem ? (
-        <FeedHeaderDynamic>
-          <View className="px-1 pb-2">
-            {KIND1_RENDER_HEADER_NOTE ? (
-              <Note
-                note={headerItem}
-                visible={visible}
-                main
-                threadCard
-              />
-            ) : (
-              <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
-                <Text className="text-sm text-primary-content">
-                  Kind1 header loaded: {headerItem.id()?.slice(0, 12)}
-                </Text>
-              </View>
-            )}
-          </View>
-        </FeedHeaderDynamic>
-      ) : null}
+        <View className="min-h-9 min-w-9 items-end justify-center">
+          {headerItem ? (
+            <NoteRelaysList
+              note={headerItem}
+              subId={`kind1_header_${headerItem.id() || 'missing'}`}
+              relays={relays}
+              mini
+            />
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+});
+
+const Kind1PostHeader = memo(function Kind1PostHeader({
+  headerItem,
+  visible,
+}: Kind1PostHeaderProps) {
+  if (!headerItem) return null;
+
+  return (
+    <View className="px-1 pb-2">
+      {KIND1_RENDER_HEADER_NOTE ? (
+        <Note note={headerItem} visible={visible} main threadCard />
+      ) : (
+        <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
+          <Text className="text-sm text-primary-content">
+            Kind1 header loaded: {headerItem.id()?.slice(0, 12)}
+          </Text>
+        </View>
+      )}
     </View>
   );
 });
@@ -1063,14 +1061,17 @@ export function Kind1Sub({
 
   const motionHeader = useCallback(
     () => (
-      <Kind1Header
+      <Kind1MotionHeader
         headerItem={headerItem}
         onClose={onClose}
         relays={displayedRelays}
-        visible={visible}
       />
     ),
-    [displayedRelays, headerItem, onClose, visible],
+    [displayedRelays, headerItem, onClose],
+  );
+  const header = useCallback(
+    () => <Kind1PostHeader headerItem={headerItem} visible={visible} />,
+    [headerItem, visible],
   );
   const renderItem = useCallback(
     ({item, index, visible: itemVisible}: {item: ParsedEvent; index: number; visible: boolean}) => {
@@ -1115,6 +1116,7 @@ export function Kind1Sub({
       getItemId={getItemId}
       renderItem={renderItem}
       motionHeader={motionHeader}
+      header={header}
       headerSafeArea
       visible={visible}
       loading={loading}

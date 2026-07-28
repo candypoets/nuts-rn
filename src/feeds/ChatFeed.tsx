@@ -418,7 +418,6 @@ export function ChatFeed({
       pullToRefresh
       motionHeader={header}
       headerSafeArea
-      headerOwnsSafeArea
       renderItem={({item}) => (
         <ChatRow
           conversation={item}

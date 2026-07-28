@@ -17,7 +17,6 @@ import {
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useNavigation } from 'expo-router/react-navigation';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   ParsedEvent,
   RequestObject,
@@ -38,7 +37,6 @@ import {
 } from '@candypoets/nipworker/utils';
 import { ComposerFooter } from '../components/ComposerFooter';
 import { Feed, FeedHeaderDynamic, FeedSticky } from '../components/Feed';
-import { getFeedTopInset } from '../components/feedLayout';
 import {
   FeedKindNavigator,
   type FeedKindTabId,
@@ -184,15 +182,12 @@ export function ExploreFeed({
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [newNotes, setNewNotes] = useState<NewNotesState>(EMPTY_NEW_NOTES);
-  const [feedChromeVisible, setFeedChromeVisible] = useState(true);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
   const combinedScrollToTopKey =
     tabScrollToTopKey === undefined && scrollToTopKey === undefined
       ? undefined
       : `${tabScrollToTopKey ?? 0}:${scrollToTopKey ?? 0}`;
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
-  const insets = useSafeAreaInsets();
-  const feedTopInset = getFeedTopInset(insets.top);
   const loadingRef = useRef(true);
   const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
@@ -288,34 +283,6 @@ export function ExploreFeed({
         tab.kinds.length === selectedKinds.length &&
         tab.kinds.every(kind => selectedKinds.includes(kind)),
     )?.label.toLowerCase() ?? 'notes';
-
-  const defaultHeader = useCallback(
-    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
-      <ExploreHeader
-        safeAreaTop={safeAreaTop}
-        pubkey={authPubkey}
-        relays={feedRelays}
-        relayStatuses={relayStatuses}
-        selectedKinds={selectedKinds}
-        setSelectedKinds={setSelectedKinds}
-        audienceMode={exploreAudienceMode}
-        setAudienceMode={setExploreAudienceMode}
-        relaySelectionSubId={relaySelectionSubId}
-        showKindSelector
-        surfaceClassName="bg-base-100"
-      />
-    ),
-    [
-      authPubkey,
-      feedRelays,
-      exploreAudienceMode,
-      relayStatuses,
-      relaySelectionSubId,
-      selectedKinds,
-      setExploreAudienceMode,
-      setSelectedKinds,
-    ],
-  );
 
   const defaultStickyFooter = useCallback(() => <ExploreComposerFooter />, []);
 
@@ -539,19 +506,43 @@ export function ExploreFeed({
     [],
   );
 
-  const handleChromeVisibilityChange = useCallback(
-    (nextVisible: boolean) => {
-      setFeedChromeVisible(nextVisible);
-      onChromeVisibilityChange?.(nextVisible);
-    },
-    [onChromeVisibilityChange],
-  );
-
   const handleNewNotesPress = useCallback(() => {
     commitPendingItems();
     setNewNotes(EMPTY_NEW_NOTES);
     setScrollToTopKey(key => (key ?? 0) + 1);
   }, [commitPendingItems]);
+
+  const defaultHeader = useCallback(
+    ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
+      <ExploreHeader
+        safeAreaTop={safeAreaTop}
+        pubkey={authPubkey}
+        relays={feedRelays}
+        relayStatuses={relayStatuses}
+        selectedKinds={selectedKinds}
+        setSelectedKinds={setSelectedKinds}
+        audienceMode={exploreAudienceMode}
+        setAudienceMode={setExploreAudienceMode}
+        relaySelectionSubId={relaySelectionSubId}
+        showKindSelector
+        surfaceClassName="bg-base-100"
+        newNotes={newNotes}
+        onNewNotesPress={handleNewNotesPress}
+      />
+    ),
+    [
+      authPubkey,
+      exploreAudienceMode,
+      feedRelays,
+      handleNewNotesPress,
+      newNotes,
+      relaySelectionSubId,
+      relayStatuses,
+      selectedKinds,
+      setExploreAudienceMode,
+      setSelectedKinds,
+    ],
+  );
 
   const handleEvents = useCallback(
     (message: WorkerMessage) => {
@@ -895,42 +886,12 @@ export function ExploreFeed({
         onRefresh={handleRefresh}
         onNearBottom={handleNearBottom}
         onViewportStateChange={handleViewportStateChange}
-        onChromeVisibilityChange={handleChromeVisibilityChange}
+        onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}
         contentContainerClassName="pb-44"
         numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
         columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
       />
-      {newNotes.count > 0 ? (
-        <View
-          className={`absolute left-0 right-0 z-40 items-center ${
-            feedChromeVisible ? 'top-24' : 'top-3'
-          }`}
-          pointerEvents="box-none"
-          style={{ paddingTop: feedTopInset + NEW_NOTES_WIDGET_HEIGHT }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${newNotes.count} more ${
-              newNotes.count === 1 ? 'note' : 'notes'
-            }`}
-            accessibilityHint="Show the latest notes"
-            onPress={handleNewNotesPress}
-          >
-            <View className="flex-row items-center rounded-full shadow-lg">
-              {newNotes.pubkeys.map((pubkey, index) => (
-                <View
-                  key={pubkey}
-                  className={index === 0 ? '' : '-ml-3'}
-                  style={{ zIndex: newNotes.pubkeys.length - index }}
-                >
-                  <Avatar pubkey={pubkey} size="md" />
-                </View>
-              ))}
-            </View>
-          </Pressable>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -1341,6 +1302,8 @@ function ExploreHeader({
   relaySelectionSubId,
   showKindSelector = false,
   surfaceClassName,
+  newNotes,
+  onNewNotesPress,
 }: {
   safeAreaTop?: number;
   pubkey: string | null;
@@ -1353,6 +1316,8 @@ function ExploreHeader({
   relaySelectionSubId: string;
   showKindSelector?: boolean;
   surfaceClassName: string;
+  newNotes: NewNotesState;
+  onNewNotesPress: () => void;
 }) {
   const visibleKinds =
     selectedKinds.length > 0 && selectedKinds.length < ALL_FEED_KINDS.length
@@ -1408,6 +1373,35 @@ function ExploreHeader({
             onSelectKinds={setSelectedKinds}
             tabs={EXPLORE_KIND_TABS}
           />
+        </View>
+      ) : null}
+      {newNotes.count > 0 && newNotes.pubkeys.length > 0 ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 z-40 items-center"
+          pointerEvents="box-none"
+          style={{
+            transform: [
+              {translateY: NEW_NOTES_WIDGET_HEIGHT + 8},
+            ],
+          }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${newNotes.count} more ${
+              newNotes.count === 1 ? 'note' : 'notes'
+            }`}
+            accessibilityHint="Show the latest notes"
+            onPress={onNewNotesPress}>
+            <View className="flex-row items-center rounded-full shadow-lg">
+              {newNotes.pubkeys.map((newNotePubkey, index) => (
+                <View
+                  key={newNotePubkey}
+                  className={index === 0 ? '' : '-ml-3'}
+                  style={{zIndex: newNotes.pubkeys.length - index}}>
+                  <Avatar pubkey={newNotePubkey} size="md" />
+                </View>
+              ))}
+            </View>
+          </Pressable>
         </View>
       ) : null}
     </View>

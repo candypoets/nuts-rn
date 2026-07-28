@@ -8,11 +8,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from 'expo-router/react-navigation';
 import { Plus } from 'lucide-react-native';
 import { fetchRelayInfosForRelays, normalizeRelayUrl } from '../nostr/nip11';
-import type { RootStackParamList } from '../navigation/types';
+import type { AppNavigationProp } from '../navigation/types';
 import { useRelayStore } from '../stores';
 import { useAppTheme } from '../theme';
 
@@ -108,7 +107,7 @@ export function RelaysList({
   mini = false,
 }: RelaysListProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
   const storeRelays = useRelayStore(state =>
     subId ? state.relaySubs[subId] : undefined,

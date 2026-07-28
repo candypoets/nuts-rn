@@ -1,6 +1,4 @@
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-
-import type {RootStackParamList} from './types';
+import type {AppNavigationProp, RootStackParamList} from './types';
 
 function sameParams(
   left: RootStackParamList[keyof RootStackParamList],
@@ -22,7 +20,7 @@ function sameParams(
 }
 
 export function pushDistinct<RouteName extends keyof RootStackParamList>(
-  navigation: NativeStackNavigationProp<RootStackParamList>,
+  navigation: AppNavigationProp,
   name: RouteName,
   params: RootStackParamList[RouteName],
 ) {

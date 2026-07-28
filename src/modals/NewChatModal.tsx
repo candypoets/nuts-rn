@@ -7,8 +7,7 @@ import {
   View,
 } from 'react-native';
 import {FlashList, type ListRenderItemInfo} from '@shopify/flash-list';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {nip19} from 'nostr-tools';
 import {ChevronDown, MessageCirclePlus, X} from 'lucide-react-native';
 
@@ -16,7 +15,7 @@ import {AppButton} from '../components/AppButton';
 import {Avatar, User} from '../components/notes';
 import {shortNpub} from '../lib/identity';
 import {pushDistinct} from '../navigation/pushDistinct';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useNostrStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -66,7 +65,7 @@ function validateRecipient(value: string): ValidationResult {
 
 export function NewChatModal({onClose}: NewChatModalProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
   const follows = useNostrStore(state => state.follows);
   const [value, setValue] = useState('');

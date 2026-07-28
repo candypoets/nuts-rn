@@ -1,6 +1,5 @@
 import React from 'react';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type {
   ConnectionStatus,
   ParsedEvent,
@@ -10,7 +9,7 @@ import {usePublish as publishToNostr} from '@candypoets/nipworker/hooks';
 import {isConnectionStatus} from '@candypoets/nipworker/utils';
 import {kinds, type EventTemplate} from 'nostr-tools';
 import {naddrEncode, neventEncode} from 'nostr-tools/nip19';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 import {useAuthStore, useSendStatusStore} from '../../stores';
 import {eventTags, tagValue} from './kindHelpers';
 
@@ -35,7 +34,7 @@ export function useNoteFooterActions(
   relays: string[] = EMPTY_RELAYS,
 ) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const pubkey = useAuthStore(state => state.pubkey);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const reactedRef = React.useRef(false);

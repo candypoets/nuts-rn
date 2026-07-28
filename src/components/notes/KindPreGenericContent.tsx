@@ -1,13 +1,12 @@
 import React, {memo, useCallback, useMemo} from 'react';
 import {Linking, Pressable, Text, View} from 'react-native';
 import {Image} from 'expo-image';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {asPreGeneric, fbArray} from '@candypoets/nipworker/utils';
 import {Calendar, CheckCircle2, Play, Radio, Users, Video} from 'lucide-react-native';
 import {neventEncode} from 'nostr-tools/nip19';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 import {eventTags, formatTimestamp, stringValue, tagValues} from './kindHelpers';
 
 type KindPreGenericContentProps = {
@@ -27,7 +26,7 @@ function statusIcon(status: string) {
 }
 
 function KindPreGenericContentComponent({note}: KindPreGenericContentProps) {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<AppNavigationProp>();
   const generic = useMemo(() => asPreGeneric(note), [note]);
   const title = stringValue(generic?.title()) || stringValue(generic?.content());
   const description = stringValue(generic?.description());

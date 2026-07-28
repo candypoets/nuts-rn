@@ -24,15 +24,14 @@ import {
 } from '@candypoets/nipworker/utils';
 import type {EventTemplate} from 'nostr-tools';
 import {CalendarClock, CalendarX, ChevronLeft, MapPin, Users} from 'lucide-react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {Avatar, User} from '../components/notes';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useAuthStore, useNostrStore, useRelayStore} from '../stores';
 import {normalizeRelayUrl} from '../nostr/nip11';
 import {useAppTheme} from '../theme';
@@ -141,7 +140,7 @@ function formatCalendarDay(timestamp?: number) {
 
 const AttendeeRow = memo(function AttendeeRow({pubkey}: {pubkey: string}) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   return (
     <Pressable
       className="flex-row items-center gap-3 rounded-xl bg-base-200 p-3"
@@ -166,7 +165,7 @@ export function CalendarEventModal({
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const pubkey = useAuthStore(state => state.pubkey);
   const writeRelays = useNostrStore(state => state.writeRelays);
   const setSubRelays = useRelayStore(state => state.setSubRelays);

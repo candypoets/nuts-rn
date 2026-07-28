@@ -1,12 +1,11 @@
 import React, {useCallback, useMemo} from 'react';
 import {StyleSheet} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import NativeNoteHeaderComponent from '../../specs/NativeNoteHeaderNativeComponent';
 import {shortNpub} from '../../lib/identity';
 import {handleProfileRoute} from '../../navigation/nativeRouteEvents';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 import {
   getBaseContentColor,
   getMutedContentColor,
@@ -47,7 +46,7 @@ export function NativeNoteHeader({
 }: Props) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
   const authorPubkey = note.pubkey() || undefined;
   const nameFallback = useMemo(

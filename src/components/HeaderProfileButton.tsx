@@ -1,9 +1,8 @@
 import React from 'react';
 import {Image, Pressable, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {User} from 'lucide-react-native';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useNostrStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -19,7 +18,7 @@ export function HeaderProfileButton({
   className = 'h-9 w-9 border-base-200 bg-base-100',
 }: HeaderProfileButtonProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
   const profile = useNostrStore(state => state.profile);
   const picture =

@@ -10,8 +10,7 @@ import {
 } from 'react-native';
 import {Image} from 'expo-image';
 import {MenuView} from '@react-native-menu/menu';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {
   NpubLimiterPipeConfigT,
   ParsePipeConfigT,
@@ -47,7 +46,7 @@ import {Note} from '../components/notes';
 import {Avatar} from '../components/notes/Avatar';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useRelayStore, type FeedKind} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -279,7 +278,7 @@ function EventCard({
 }) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const goingCount = rsvpSummary.accepted || event.attendeeCount;
   const acceptedPubkeys = rsvpSummary.acceptedPubkeys.slice(0, 3);
   const spotsLeft = event.capacity

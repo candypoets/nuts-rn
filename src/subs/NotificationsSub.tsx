@@ -1,7 +1,6 @@
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, Text, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -25,7 +24,7 @@ import {neventEncode} from 'nostr-tools/nip19';
 import {Feed, FeedSticky} from '../components/Feed';
 import {Avatar, ContentBlocks, Note, User} from '../components/notes';
 import {pushDistinct} from '../navigation/pushDistinct';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {
   type ProcessedNotification,
@@ -612,7 +611,7 @@ const ReferencedPostContent = memo(function ReferencedPostContent({
   visible: boolean;
 }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const [note, setNote] = useState<ParsedEvent | null>(null);
   const seenRef = useRef<string | null>(null);
 
@@ -841,7 +840,7 @@ const ReplyEventPreview = memo(function ReplyEventPreview({
   relays: string[];
 }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const pubkey = eventPubkey(event);
   const kind1 = useMemo(() => (event ? asKind1(event) : null), [event]);
   const content = useMemo(

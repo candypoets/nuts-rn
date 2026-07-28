@@ -1,12 +1,11 @@
 import React, { memo, useCallback, useContext, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { NavigationContext } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { NavigationContext } from 'expo-router/react-navigation';
 import type { Kind0Parsed } from '@candypoets/nipworker';
 import { useKind0Value } from '../../hooks/useKind0Value';
 import { identityColor, initials } from '../../lib/identity';
 import { pushDistinct } from '../../navigation/pushDistinct';
-import type { RootStackParamList } from '../../navigation/types';
+import type { AppNavigationProp } from '../../navigation/types';
 import { NativeAvatar } from '../native/NativeAvatar';
 
 type AvatarSize =
@@ -48,7 +47,7 @@ function AvatarComponent({
   onProfileOpen,
 }: AvatarProps) {
   const navigation = useContext(NavigationContext) as
-    | NativeStackNavigationProp<RootStackParamList>
+    | AppNavigationProp
     | undefined;
   const openProfile = useCallback(() => {
     if (onProfileOpen) {

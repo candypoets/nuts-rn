@@ -10,8 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from 'expo-router/react-navigation';
 import { neventEncode } from 'nostr-tools/nip19';
 import {
   MuteFilterPipeConfigT,
@@ -61,7 +60,7 @@ import {
   useWalletStore,
 } from '../stores';
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
-import type { RootStackParamList } from '../navigation/types';
+import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import {
   uniqueWalletRelays,
@@ -805,7 +804,7 @@ function HomeHeader({
   readOnly?: boolean;
 }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
     const theme = useAppTheme();
   const iconColor = theme.colors.primaryContent;
 
@@ -931,7 +930,7 @@ function WalletHeaderSection({
 
 function WalletActions({ className = '' }: { className?: string }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
 
   return (
@@ -1016,7 +1015,7 @@ function WalletActivityRow({
   isLast: boolean;
 }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
   const isSender =
     activity.sender === currentPubkey ||
@@ -1134,7 +1133,7 @@ function WalletActivityRow({
 function LoggedOutHome() {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
 
   return (
     <View className="px-3 py-16">

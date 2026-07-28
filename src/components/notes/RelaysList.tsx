@@ -1,9 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {Pressable, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type {ParsedEvent} from '@candypoets/nipworker';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 import {useRelayStore} from '../../stores';
 
 export type RelayStatusSink = React.MutableRefObject<
@@ -69,7 +68,7 @@ export function RelaysList({
   limit = 3,
 }: RelaysListProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const statuses = useRelayStatusDots(statusSink);
   const relays = useMemo(() => {

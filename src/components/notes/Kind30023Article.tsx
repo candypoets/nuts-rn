@@ -1,8 +1,7 @@
 import React, {memo, useMemo} from 'react';
 import {Linking, Pressable, Text, View} from 'react-native';
 import {Image} from 'expo-image';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {
   decode,
   naddrEncode,
@@ -24,7 +23,7 @@ import {Avatar} from './Avatar';
 import {User} from './User';
 import {eventTags, formatTimestamp, stringValue, tagValue, tagValues} from './kindHelpers';
 import {pushDistinct} from '../../navigation/pushDistinct';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 
 type Kind30023ArticleProps = {
   note: ParsedEvent;
@@ -57,7 +56,7 @@ function inlineChildren(inline: ArticleInline) {
 }
 
 function openNostrEntity(
-  navigation: NativeStackNavigationProp<RootStackParamList>,
+  navigation: AppNavigationProp,
   entity: string,
 ) {
   if (!entity) return;
@@ -124,7 +123,7 @@ function InlineNodes({
   navigation,
 }: {
   inlines: ArticleInline[];
-  navigation: NativeStackNavigationProp<RootStackParamList>;
+  navigation: AppNavigationProp;
 }) {
   return (
     <>
@@ -230,7 +229,7 @@ function ArticleBlocks({
   navigation,
 }: {
   blocks: ArticleBlock[];
-  navigation: NativeStackNavigationProp<RootStackParamList>;
+  navigation: AppNavigationProp;
 }) {
   return (
     <View className="gap-3">
@@ -324,7 +323,7 @@ function ArticleBlocks({
 
 function Kind30023ArticleComponent({note}: Kind30023ArticleProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const parsed = useMemo(() => getKind30023(note), [note]);
   const tags = useMemo(() => eventTags(note), [note]);
   const title = stringValue(parsed?.title()) || tagValue(tags, 'title');

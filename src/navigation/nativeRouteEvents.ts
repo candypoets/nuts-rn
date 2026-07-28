@@ -1,10 +1,9 @@
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {pushDistinct} from './pushDistinct';
-import type {RootStackParamList} from './types';
+import type {AppNavigationProp} from './types';
 
 export function handleProfileRoute(
   route: string,
-  navigation: NativeStackNavigationProp<RootStackParamList>,
+  navigation: AppNavigationProp,
 ) {
   if (!route.startsWith('profile:')) return false;
 

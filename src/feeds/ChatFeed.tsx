@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {
   ChatLimiterPipeConfigT,
   MuteFilterPipeConfigT,
@@ -30,7 +29,7 @@ import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useAuthStore, useNostrStore, useRelayStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -140,7 +139,7 @@ function groupConversations(
 
 export function ChatFeed({enabled, visible, onChromeVisibilityChange}: ChatFeedProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const eventsRef = useRef<ParsedEvent[]>([]);
   const pendingEventsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -612,7 +611,7 @@ function ChatRow({
   pubkey: string | null;
 }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const kind4 = asKind4(conversation.latest) as Kind4Parsed | null;
   const parsedContent = kind4 ? fbArray(kind4, 'parsedContent') : [];
   const outgoing = conversation.latest.pubkey() === pubkey;

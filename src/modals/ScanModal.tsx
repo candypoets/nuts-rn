@@ -1,7 +1,6 @@
 import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {Linking, Pressable, StyleSheet, Text, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {
   CameraView,
   type BarcodeScanningResult,
@@ -13,7 +12,7 @@ import {nip19} from 'nostr-tools';
 import QRCode from 'react-native-qrcode-svg';
 
 import {shortNpub} from '../lib/identity';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useAuthStore} from '../stores';
 import {type AppTheme, useAppTheme} from '../theme';
 
@@ -79,7 +78,7 @@ export function ScanModal({initialMode}: ScanModalProps) {
   const styles = useMemo(() => createScanStyles(theme), [theme]);
   const contentColor = theme.colors.base100 === '#111111' ? '#ffffff' : '#1a1a1a';
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const pubkey = useAuthStore(state => state.pubkey);
   const npub = useAuthStore(state => state.npub);
   const [permission] = useCameraPermissions();

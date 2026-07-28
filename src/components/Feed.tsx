@@ -36,7 +36,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {getFeedTopInset} from './feedLayout';
-import {diagnoseNativeTabBarScrollViews} from '../navigation/nativeTabBar';
 import {useAppTheme} from '../theme';
 
 type FeedChromeProps = {
@@ -226,7 +225,6 @@ export function Feed<T>({
   const [taggedSticky, setTaggedSticky] = useState<ReactNode | null>(null);
   const listRef = useRef<ScrollView>(null);
   const bottomListRef = useRef<FlashListRef<T>>(null);
-  const lastTabBarDiagnosticAtRef = useRef(0);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
@@ -439,11 +437,6 @@ export function Feed<T>({
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
-    const now = Date.now();
-    if (now - lastTabBarDiagnosticAtRef.current >= 1000) {
-      lastTabBarDiagnosticAtRef.current = now;
-      diagnoseNativeTabBarScrollViews();
-    }
     const offset = contentOffset.y;
     scrollY.value = offset;
     scrollViewportHeightRef.current = layoutMeasurement.height;

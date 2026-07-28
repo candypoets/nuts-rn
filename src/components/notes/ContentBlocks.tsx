@@ -3,8 +3,7 @@ import {Linking, Pressable, StyleSheet, Text, View} from 'react-native';
 import {Image} from 'expo-image';
 import * as WebBrowser from 'expo-web-browser';
 import {ExternalLink, Play} from 'lucide-react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type { ContentBlock, ParsedEvent } from '@candypoets/nipworker';
 import { ContentData } from '@candypoets/nipworker';
 import {
@@ -19,7 +18,7 @@ import {
 import { ImageGrid } from './ImageGrid';
 import { movedTooFar } from './press';
 import { User } from './User';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 import {
   cachedLinkPreview,
   fetchLinkPreview,
@@ -299,7 +298,7 @@ function ContentBlocksComponent({
   relays,
 }: ContentBlocksProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const [showFull, setShowFull] = useState(false);
   const hasShortContent = !!shortContent?.length;
   const canToggleFullContent = hasShortContent && !forceFullContent;

@@ -1,11 +1,10 @@
 import React, {memo, useCallback, useContext} from 'react';
 import {Text} from 'react-native';
-import {NavigationContext} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {NavigationContext} from 'expo-router/react-navigation';
 import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
-import type {RootStackParamList} from '../../navigation/types';
+import type {AppNavigationProp} from '../../navigation/types';
 import {shortNpub} from '../../lib/identity';
 
 type UserProps = {
@@ -33,7 +32,7 @@ function UserComponent({
   onProfileOpen,
 }: UserProps) {
   const navigation = useContext(NavigationContext) as
-    | NativeStackNavigationProp<RootStackParamList>
+    | AppNavigationProp
     | undefined;
   const fallbackName = shortNpub(pubkey);
   const selectName = useCallback(

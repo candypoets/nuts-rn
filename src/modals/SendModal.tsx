@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import type {Kind0Parsed, ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asKind0, asParsedEvent} from '@candypoets/nipworker/utils';
@@ -10,7 +9,7 @@ import {ChevronDown, ChevronRight, CreditCard, ScanLine, Search, X, Zap} from 'l
 import {Feed} from '../components/Feed';
 import {shortNpub, shortPubkey} from '../lib/identity';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useNostrStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -46,7 +45,7 @@ function contactKey(pubkey: string) {
 
 export function SendModal({onClose}: SendModalProps) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
   const iconColor = theme.colors.primaryContent;
   const follows = useNostrStore(state => state.follows);

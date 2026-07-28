@@ -1,10 +1,9 @@
 import React, {memo, useCallback} from 'react';
 import {Pressable, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {Bell} from 'lucide-react-native';
 
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useAppStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -15,7 +14,7 @@ type NotificationBellButtonProps = {
 export const NotificationBellButton = memo(function NotificationBellButton({
   className = 'h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100',
 }: NotificationBellButtonProps) {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<AppNavigationProp>();
   const theme = useAppTheme();
   const missed = useAppStore(state => state.missedNotifications);
 

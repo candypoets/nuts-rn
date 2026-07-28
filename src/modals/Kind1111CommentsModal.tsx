@@ -26,8 +26,7 @@ import {
 import {decode, type EventPointer} from 'nostr-tools/nip19';
 import type {EventTemplate} from 'nostr-tools';
 import {Heart, MessageCircle, Send} from 'lucide-react-native';
-import {StackActions, useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useRouter} from 'expo-router';
 import Animated, {
   useAnimatedStyle,
   withSequence,
@@ -41,8 +40,6 @@ import {formatTimeShort} from '../components/notes/time';
 import {shortNpub} from '../lib/identity';
 import {useKind0Value} from '../hooks/useKind0Value';
 import {useAppTheme} from '../theme';
-import type {RootStackParamList} from '../navigation/types';
-import {rootNavigationRef} from '../navigation/rootNavigation';
 
 type Kind1111CommentsModalProps = {
   nevent: string;
@@ -249,7 +246,7 @@ export function Kind1111CommentsModal({
   onClose: _onClose,
 }: Kind1111CommentsModalProps) {
   const theme = useAppTheme();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const router = useRouter();
   const target = useMemo(() => decodeTarget(nevent), [nevent]);
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
@@ -421,14 +418,11 @@ export function Kind1111CommentsModal({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
   const openProfile = useCallback((nextPubkey: string) => {
-    navigation.goBack();
+    router.back();
     setTimeout(() => {
-      if (!rootNavigationRef.isReady()) return;
-      rootNavigationRef.dispatch(
-        StackActions.push('PublicProfile', {pubkey: nextPubkey}),
-      );
+      router.push({pathname: '/PublicProfile', params: {pubkey: nextPubkey}});
     }, 350);
-  }, [navigation]);
+  }, [router]);
   const emptyContent = !target ? (
     <View className="flex-1 items-center justify-center py-8">
       <Text className="text-primary-content">Invalid note id</Text>

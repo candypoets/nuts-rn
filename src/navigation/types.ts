@@ -49,3 +49,44 @@ export type RootStackParamList = {
   ChatThread: { peerPubkey: string };
   Notifications: undefined;
 };
+
+type NavigationArgs<RouteName extends keyof RootStackParamList> =
+  undefined extends RootStackParamList[RouteName]
+    ?
+        | [screen: RouteName]
+        | [screen: RouteName, params: RootStackParamList[RouteName]]
+    : [screen: RouteName, params: RootStackParamList[RouteName]];
+
+/**
+ * Minimal structural replacement for
+ * NativeStackNavigationProp<RootStackParamList> now that the
+ * @react-navigation/* packages are no longer direct dependencies.
+ * Covers exactly the members call sites use.
+ */
+export type AppNavigationProp = {
+  navigate<RouteName extends keyof RootStackParamList>(
+    ...args: NavigationArgs<RouteName>
+  ): void;
+  push<RouteName extends keyof RootStackParamList>(
+    screen: RouteName,
+    params: RootStackParamList[RouteName]
+  ): void;
+  goBack(): void;
+  replace<RouteName extends keyof RootStackParamList>(
+    ...args: NavigationArgs<RouteName>
+  ): void;
+  setOptions(options: {
+    headerSearchBarOptions?: {
+      onChangeText?: (event: {nativeEvent: {text: string}}) => void;
+      onSearchButtonPress?: (event: {nativeEvent: {text: string}}) => void;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  }): void;
+  getState(): {
+    routes: Array<{
+      name: string;
+      params?: RootStackParamList[keyof RootStackParamList];
+    }>;
+  };
+};

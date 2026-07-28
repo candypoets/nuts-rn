@@ -1,7 +1,6 @@
 import React, {useCallback} from 'react';
 import {Platform, Pressable, StyleSheet, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useNavigation} from 'expo-router/react-navigation';
 import {BlurView} from 'expo-blur';
 import {
   GlassView,
@@ -10,7 +9,7 @@ import {
 } from 'expo-glass-effect';
 import {Plus} from 'lucide-react-native';
 
-import type {RootStackParamList} from '../navigation/types';
+import type {AppNavigationProp} from '../navigation/types';
 import {useAppTheme} from '../theme';
 
 type ComposerFooterProps = {
@@ -26,7 +25,7 @@ export function ComposerFooter({
 }: ComposerFooterProps) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const openPost = useCallback(() => navigation.navigate('Post'), [navigation]);
   const darkMaterial =
     theme.id === 'nightsky' ||

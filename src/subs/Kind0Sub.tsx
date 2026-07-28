@@ -17,8 +17,7 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from 'expo-router/react-navigation';
 import type { ConnectionStatus, ParsedEvent, WorkerMessage } from '@candypoets/nipworker';
 import Animated, {
   Extrapolation,
@@ -67,7 +66,7 @@ import {
 } from '../stores';
 import { useKind0ProfileData } from '../hooks/useKind0ProfileData';
 import {initials, shortNpub} from '../lib/identity';
-import type { RootStackParamList } from '../navigation/types';
+import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
@@ -331,7 +330,7 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
 }) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const relayInfos = useRelayStore(state => state.relayInfos);
   const [selectedRelationship, setSelectedRelationship] = useState<
     ProfileCommunity['relationship']
@@ -910,7 +909,7 @@ export function Kind0Sub({
   onClose: () => void;
 }) {
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const authPubkey = useAuthStore(state => state.pubkey);
   const follows = useNostrStore(state => state.follows);
   const kind3UpdatedAt = useNostrStore(state => state.kind3UpdatedAt);

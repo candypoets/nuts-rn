@@ -16,8 +16,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   ParsedEvent,
@@ -66,7 +65,7 @@ import {
 } from '../stores';
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { RelaysList as HeaderRelaysList } from '../components/RelaysList';
-import type { RootStackParamList } from '../navigation/types';
+import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { FeedKindIcon } from '../components/FeedKindIcon';
 import { Avatar } from '../components/notes/Avatar';
@@ -1047,7 +1046,7 @@ function ExploreEventCard({
 }) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
   const event = useMemo(
     () => parseExploreCalendarEvent(note, relays),
     [note, relays],
@@ -1475,7 +1474,7 @@ function FeedKindHeaderButtons({
 }) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
 
   const openFeedBuilder = useCallback(() => {
     navigation.navigate('FeedBuilder');
@@ -1512,7 +1511,7 @@ function HeaderSearchButton({
 }) {
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
 
   return (
     <Pressable

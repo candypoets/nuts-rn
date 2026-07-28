@@ -14,8 +14,8 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { Image } from 'expo-image';
 import { Mint } from '@cashu/cashu-ts';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { StackActions, useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useRouter } from 'expo-router';
+import { useNavigation } from 'expo-router/react-navigation';
 import QRCode from 'react-native-qrcode-svg';
 import type {
   ConnectionStatus,
@@ -45,9 +45,8 @@ import type {SearchBarCommands} from 'react-native-screens';
 
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { Avatar } from '../components/notes';
-import { rootNavigationRef } from '../navigation/rootNavigation';
 import { shortNpub } from '../lib/identity';
-import type { RootStackParamList } from '../navigation/types';
+import type { AppNavigationProp } from '../navigation/types';
 import {
   BOOTSTRAP_RELAYS,
   useAuthStore,
@@ -136,7 +135,7 @@ function decodePublicKey(input: string) {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function ProfileModal({ auth, manager, onClose }: ProfileModalProps) {
+export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalProps) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const iconColor = theme.colors.primaryContent;
@@ -161,7 +160,8 @@ export function ProfileModal({ auth, manager, onClose }: ProfileModalProps) {
     return entries;
   }, [accounts, auth.hasSigner, auth.nsec, auth.pubkey]);
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const navigate = useCallback(
     (item: ProfileModalTarget) => {
       if (item.type === 'login') {
@@ -194,18 +194,15 @@ export function ProfileModal({ auth, manager, onClose }: ProfileModalProps) {
       }
       if (item.path === 'nprofile' && auth.pubkey) {
         const pubkey = auth.pubkey;
-        onClose();
+        router.back();
         setTimeout(() => {
-          if (!rootNavigationRef.isReady()) return;
-          rootNavigationRef.dispatch(
-            StackActions.push('PublicProfile', { pubkey }),
-          );
+          router.push({ pathname: '/PublicProfile', params: { pubkey } });
         }, 350);
         return;
       }
       navigation.navigate('ProfileStub', { path: item.path });
     },
-    [auth.pubkey, navigation, onClose],
+    [auth.pubkey, navigation, router],
   );
   const switchAccount = useCallback(
     (pubkey: string) => {
@@ -1251,7 +1248,7 @@ export function MintsModal({
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList, 'Mints'>>();
+    useNavigation<AppNavigationProp>();
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const walletPrivateKey = useWalletStore(state => state.walletPrivateKey);
   const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);

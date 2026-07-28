@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   Animated,
   Easing,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -405,6 +406,44 @@ export function PrivateKeyLogin({
   const [error, setError] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const initialPubkeyRef = useRef(auth.pubkey);
+  const nip46AuthUrl = useAuthStore(state => state.nip46AuthUrl);
+  const authError = useAuthStore(state => state.authError);
+  // Signer detection (NIP-55-style): is a signer app installed that can
+  // complete the NIP-46 nostrconnect:// handoff (Amber, Aegis, …)?
+  // Android-only by nature; on iOS this stays false and the QR flow is the
+  // (aligned) path.
+  const [signerInstalled, setSignerInstalled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Linking.canOpenURL('nostrconnect://')
+      .then(can => {
+        if (!cancelled) setSignerInstalled(can);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A signer failure (e.g. NIP-46 connect timeout) ends the pending login.
+  useEffect(() => {
+    if (!authError) return;
+    setLoginPending(false);
+    setError(authError);
+  }, [authError]);
+
+  // Clear any pending NIP-46 auth challenge / auth error when leaving the
+  // login screen.
+  useEffect(
+    () => () => {
+      const store = useAuthStore.getState();
+      if (store.nip46AuthUrl || store.authError) {
+        store.setAuth({ nip46AuthUrl: null, authError: null });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!loginPending || !auth.pubkey) return;
@@ -418,6 +457,9 @@ export function PrivateKeyLogin({
       setError('Nipworker native module is not ready.');
       return;
     }
+
+    // New attempt: drop any previous global auth failure.
+    useAuthStore.getState().setAuth({ authError: null });
 
     try {
       const value = privateKey.trim();
@@ -462,8 +504,14 @@ export function PrivateKeyLogin({
 
     try {
       setError(null);
+      useAuthStore.getState().setAuth({ authError: null });
       setLoginPending(true);
       const nextQrText = await connectWithQRCode('Nuts', DEFAULT_FEED_RELAYS);
+      // Dev-only: log the URL so the QR (nostrconnect) login can be
+      // e2e-tested against a fake signer — see maestro/flows/login-nip46-qr.yaml.
+      if (__DEV__) {
+        console.log('[nip46-test] nostrconnect URL:', nextQrText);
+      }
       setPrivateKey('');
       setQrText(nextQrText);
       setQrLinkCopied(false);
@@ -533,6 +581,16 @@ export function PrivateKeyLogin({
                     </Text>
                   </View>
                 </Pressable>
+                {signerInstalled ? (
+                  <Pressable
+                    style={styles.secondaryAction}
+                    onPress={() => Linking.openURL(qrText)}
+                  >
+                    <Text style={styles.secondaryActionText}>
+                      Open in signing app
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             ) : null}
             <TextInput
@@ -554,6 +612,21 @@ export function PrivateKeyLogin({
               <Text style={styles.successText}>
                 Signed in as {shortNpub(auth.pubkey)}
               </Text>
+            ) : null}
+            {nip46AuthUrl ? (
+              <View>
+                <Text style={styles.stackBody}>
+                  Your signing app asks you to approve this request.
+                </Text>
+                <Pressable
+                  style={styles.secondaryAction}
+                  onPress={() => Linking.openURL(nip46AuthUrl)}
+                >
+                  <Text style={styles.secondaryActionText}>
+                    Open approval page
+                  </Text>
+                </Pressable>
+              </View>
             ) : null}
           </View>
           <View style={styles.loginActions}>

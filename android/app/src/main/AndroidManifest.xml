@@ -14,6 +14,18 @@
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="https" />
       </intent>
+      <!-- NIP-55-style detection of installed signer apps (Amber, Aegis, …);
+           used to offer the NIP-46 "open in signing app" handoff. -->
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="nostrsigner" />
+      </intent>
+      <!-- Handlers for nostrconnect:// — signers that can complete the NIP-46
+           QR handoff (subset/superset of nostrsigner handlers). -->
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="nostrconnect" />
+      </intent>
     </queries>
 
     <application
@@ -41,6 +53,18 @@
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="nutsrn" />
+        </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="nostr" />
+        </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="njump.me" />
         </intent-filter>
       </activity>
     </application>

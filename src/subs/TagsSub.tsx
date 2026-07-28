@@ -211,7 +211,7 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
     const pageSubId = `${subId}_page_${paginationCounterRef.current}_${untilRef.current}`;
     unsubscribePaginationRef.current = subscribeToNostr(pageSubId, requestList(true), handleEvents, {
       bytesPerEvent: 10 * 1024,
-      pagination: prevPaginationSubIdRef.current,
+      pagination: prevPaginationSubIdRef.current ?? undefined,
     });
     prevPaginationSubIdRef.current = pageSubId;
     timeoutRef.current = setTimeout(completeLoading, 10000);

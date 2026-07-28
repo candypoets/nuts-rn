@@ -1,0 +1,28 @@
+appId: com.nutsrn
+---
+# QR (nostrconnect://) login against a fake remote signer, app exactly as
+# shipped: the signer joins the public relays from the app's nostrconnect URL.
+#
+# Requires the mock signer from the nipworker repo (nostrconnect + outbound
+# relay mode) running on the host:
+#   node /root/code/nipworker/tests/e2e-browser/mock-signer-relay.mjs --port 7746
+# and a watcher feeding the app's dev-logged nostrconnect URL to the signer:
+#   rm -f /tmp/nostrconnect-url.txt && adb logcat -c
+#   adb logcat | grep -m1 -o --line-buffered "nostrconnect://[^' ]*" > /tmp/nostrconnect-url.txt
+# The app logs the URL as '[nip46-test] nostrconnect URL:' in dev builds
+# (src/modals/ProfileModal.tsx). Both host and emulator need internet access
+# to the public relays in the URL (damus/nos.lol/nuts.cash).
+- runFlow: launch.yaml
+- tapOn: "Home"
+- assertVisible: "Sign in to load your wallet feed"
+- tapOn: "Sign in"
+- assertVisible: "Authenticate"
+# App shows the nostrconnect QR; the fake signer "scans" it via the URL file.
+- tapOn: "Connect with another app"
+- assertVisible: "Scan this code with your signing app."
+# Success: the modal closes itself once the auth event lands.
+- extendedWaitUntil:
+    notVisible: "Authenticate"
+    timeout: 90000
+- assertNotVisible: "Sign in to load your wallet feed"
+- takeScreenshot: nip46-qr-logged-in

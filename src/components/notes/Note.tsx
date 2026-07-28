@@ -20,6 +20,7 @@ import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks
 import {
   asConnectionStatus,
   asKind1,
+  asKind1111,
   asKind6,
   asParsedEvent,
   fbArray,
@@ -684,12 +685,16 @@ function NoteComponent({
     () => (displayNote ? asKind1(displayNote) : null),
     [displayNote],
   );
+  const kind1111 = useMemo(
+    () => (displayNote ? asKind1111(displayNote) : null),
+    [displayNote],
+  );
   const isMediaEvent = isMediaEventKind(displayNote?.kind());
   const isKind30023 = displayNote?.kind() === 30023;
   const effectiveMain = main || ((isMediaEvent || isKind30023) && depth === 0);
   const cardlessMain = main && depth === 0;
   const fullWidthCardMain = !cardlessMain && effectiveMain && isMediaEvent;
-  const replyId = kind1?.reply()?.id();
+  const replyId = kind1?.reply()?.id() || kind1111?.parentId?.();
   const ancestorReplyId = shouldUseString(replyId) ? replyId : undefined;
   const eventRefs = useMemo(
     () => (kind1 ? fbArray(kind1, 'eventRefs') : []),
@@ -704,8 +709,13 @@ function NoteComponent({
     [eventRefs],
   );
   const parsedContent = useMemo(
-    () => (kind1 ? fbArray(kind1, 'parsedContent') : []),
-    [kind1],
+    () =>
+      kind1
+        ? fbArray(kind1, 'parsedContent')
+        : kind1111
+        ? fbArray(kind1111, 'parsedContent')
+        : [],
+    [kind1, kind1111],
   );
   const shortContent = useMemo(
     () => (kind1 ? fbArray(kind1, 'shortenedContent') : []),
@@ -725,7 +735,9 @@ function NoteComponent({
   );
   const ancestorRelays = useEffectiveAuthorRelays({
     subId: shouldRenderAncestor ? (ancestorReplyId as string) : undefined,
-    pubkey: shouldRenderAncestor ? kind1?.reply()?.author() : undefined,
+    pubkey: shouldRenderAncestor
+      ? kind1?.reply()?.author() || kind1111?.parentAuthor?.()
+      : undefined,
     marker: 'read',
     fallbackRelays: noteRelays,
   });
@@ -970,11 +982,13 @@ function NoteComponent({
   }
 
   const supportedDisplayNote = displayNote;
+  const isParsedTextNote =
+    (supportedDisplayNote?.kind() === 1 && !!kind1) ||
+    (supportedDisplayNote?.kind() === 1111 && !!kind1111);
 
   if (
     supportedDisplayNote == null ||
-    (!isSpecialNoteKind(supportedDisplayNote.kind()) &&
-      (supportedDisplayNote.kind() !== 1 || !kind1))
+    (!isSpecialNoteKind(supportedDisplayNote.kind()) && !isParsedTextNote)
   ) {
     return (
       <UnsupportedNoteBody

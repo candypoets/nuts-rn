@@ -86,11 +86,15 @@ export const useRelayStore = create<RelayStore>()(set => ({
       },
     })),
   setRelayStatus: (url, status) =>
-    set(state =>
-      state.relayStatuses[url] === status
-        ? state
-        : { relayStatuses: { ...state.relayStatuses, [url]: status } },
-    ),
+    set(state => {
+      if (state.relayStatuses[url] === status) return state;
+      // Dev-only: surface relay connectivity in logcat (native relay logs
+      // from nipworker don't reach Android logcat).
+      if (__DEV__) {
+        console.log('[relay-status]', url, '->', status);
+      }
+      return { relayStatuses: { ...state.relayStatuses, [url]: status } };
+    }),
   setSubRelays: (subId, relays) =>
     set(state =>
       state.relaySubs[subId] !== undefined &&

@@ -7,6 +7,7 @@ import {
   Animated,
   Easing,
   Keyboard,
+  Linking,
   Platform,
   StatusBar,
   StyleSheet,
@@ -25,7 +26,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { NostrManagerLike } from '@candypoets/nipworker';
 import { MintQuoteState, Wallet as CashuWallet } from '@cashu/cashu-ts';
 import { nip19 } from 'nostr-tools';
-import { Stack, usePathname } from 'expo-router';
+import {Stack, usePathname, useRouter} from 'expo-router';
 
 import { useFollowListPackSync } from '../src/hooks/useFollowListPackSync';
 import { useNotificationSubscription } from '../src/hooks/useNotificationSubscription';
@@ -41,6 +42,7 @@ import { getAppThemeVars, isAppThemeDark, useAppTheme } from '../src/theme';
 import { startNativeDebugLogRelay } from '../src/debug/nativeDebugBridge';
 import { NativeParityHarness } from '../src/debug/NativeParityHarness';
 import { getSharedNostrManager } from '../src/nostr/manager';
+import {resolveNostrDeepLink} from '../src/navigation/linking';
 
 enableScreens(true);
 enableFreeze(true);
@@ -258,11 +260,55 @@ export default function RootLayout() {
               <SendStatuses />
             </Animated.View>
             <PathnameCleanup manager={manager} />
+            <NostrDeepLinkHandler />
           </View>
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );
+}
+
+function NostrDeepLinkHandler() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const openUrl = (url: string | null) => {
+      if (!url) return;
+      const route = resolveNostrDeepLink(url);
+      if (!route) return;
+
+      switch (route.name) {
+        case 'PublicProfile':
+          router.push({
+            pathname: '/PublicProfile',
+            params: route.params,
+          });
+          break;
+        case 'Kind1Thread':
+          router.push({
+            pathname: '/Kind1Thread',
+            params: route.params,
+          });
+          break;
+        case 'Kind30023Thread':
+          router.push({
+            pathname: '/Kind30023Thread',
+            params: route.params,
+          });
+          break;
+      }
+    };
+
+    Linking.getInitialURL().then(openUrl).catch(error => {
+      console.warn('[deep-link] failed to read initial URL', error);
+    });
+    const subscription = Linking.addEventListener('url', event =>
+      openUrl(event.url),
+    );
+    return () => subscription.remove();
+  }, [router]);
+
+  return null;
 }
 
 /**
@@ -370,6 +416,7 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
             pubkey?: string | null;
             hasSigner?: boolean;
             secretKey?: unknown;
+            error?: string | null;
           };
         }
       ).detail;
@@ -389,6 +436,8 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
         npub: pubkey ? nip19.npubEncode(pubkey) : null,
         hasSigner: detail?.hasSigner ?? false,
         authResolved: true,
+        nip46AuthUrl: null,
+        authError: detail?.error ?? null,
         ...(secretKey
           ? {
               privkey: secretKey,
@@ -401,6 +450,21 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
     manager.addEventListener('auth', handleAuth);
     return () => manager.removeEventListener('auth', handleAuth);
   }, [manager, resetNostrState, resetWalletSession, setAuth]);
+
+  useEffect(() => {
+    if (!manager) return;
+
+    const handleAuthUrl = (event: Event) => {
+      const detail = (
+        event as Event & { detail?: { url?: string; requestId?: string } }
+      ).detail;
+      if (typeof detail?.url !== 'string' || !detail.url) return;
+      setAuth({ nip46AuthUrl: detail.url });
+    };
+
+    manager.addEventListener('authUrl', handleAuthUrl);
+    return () => manager.removeEventListener('authUrl', handleAuthUrl);
+  }, [manager, setAuth]);
 
   useEffect(() => {
     const previousPubkey = activeNostrPubkeyRef.current;

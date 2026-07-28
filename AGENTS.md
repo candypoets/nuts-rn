@@ -22,6 +22,72 @@ Notes:
 - The dev launcher cannot auto-discover Metro (adb reverse is host-local); flows type `exp://localhost:8084` into the launcher URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tap Connect, then dismiss the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
 - `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
 
+### NIP-46 login flows (login-nip46.yaml, login-nip46-qr.yaml)
+
+Both flows test new-user NIP-46 login against a fake remote signer: the nipworker repo's `tests/e2e-browser/mock-signer-relay.mjs`, a combined mock relay + signer (fixed test keypair, pubkey `6a04ab98…83eb3`) that answers `connect`/`get_public_key`/`sign_event` with real signatures. Run it on the host:
+
+```sh
+node /root/code/nipworker/tests/e2e-browser/mock-signer-relay.mjs --port 7746
+```
+
+- `login-nip46.yaml` (bunker://): pastes `bunker://6a04ab98…?relay=ws%3A%2F%2F10.0.2.2%3A7746` into the login field. Use `10.0.2.2` (emulator host loopback), **not** `localhost` — the Rust transport resolves `localhost` itself and `adb reverse` only forwards IPv4. To exercise the public-relay path instead, swap the relay param to `wss%3A%2F%2Fnos.lol` — the signer's outbound mode answers there too (green since the `unix_time` fix below).
+- `login-nip46-qr.yaml` (nostrconnect:// QR): the QR can't be scanned, so in dev builds `ProfileModal.startQrConnect` logs the `nostrconnect://` URL as `[nip46-test]`. The signer's outbound mode joins the public relays listed in the URL (no app-side relay injection needed; host + emulator need internet). Feed the URL to the signer's watch file before running the flow:
+
+```sh
+rm -f /tmp/nostrconnect-url.txt && adb logcat -c
+adb logcat | grep -m1 -o --line-buffered "nostrconnect://[^' ]*" > /tmp/nostrconnect-url.txt &
+MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/login-nip46-qr.yaml
+```
+
+- `login-nip46-authurl.yaml` (auth challenge): signer challenges `connect` with `{result:"auth_url", error:URL}` and answers after approval. Start the signer with `MOCK_AUTH_URL=https://fake-signer.test/approve`, and arm a delayed approver so the modal's approve UI can be asserted before login completes:
+
+```sh
+tail -F -n0 <signer-log> | grep -m1 'auth challenge sent' && sleep 20 && touch /tmp/nip46-approve
+```
+
+Gotcha: the emulator's stub browser opens the approval URL in its own task — `pressKey: Back` lands on the launcher, not the app. Return with `launchApp: {appId: com.nutsrn, stopApp: false}`.
+
+- `login-nip46-timeout.yaml` (negative path): bunker connect to a valid-but-unanswered pubkey → 20 s nip46 timeout → the error text must appear in the modal. Uses a freshly generated valid pubkey; do **not** use an invalid x-only key (e.g. `bb`*32) — the Rust encryption path dies silently on it (no error, no timeout, crypto worker unresponsive). Signer errors surface via `auth` dispatch `error` → `authStore.authError` → the modal's error text (the authStore null-pubkey branch also handles failure events — it must not unconditionally wipe `authError`). Maestro text selectors match the **whole** element text — substring asserts need `.*….*`.
+
+### nipworker 0.97.8 NIP-46 support (2026-07-28)
+
+The app depends on `@candypoets/nipworker` 0.97.8. That release includes the NIP-46 `unix_time()` fix, `AuthUrl` FlatBuffers message and `authUrl` manager event, and the extended mock signer support, so no `patch-package` patch is needed for NIP-46.
+
+App-side auth_url flow: nipworker dispatches `authUrl` → `app/_layout.tsx` stores `authStore.nip46AuthUrl` → the login modal shows "Open approval page" (`Linking.openURL`); the modal closes when the deferred response completes login. Approval window: 300 s (was a flat 20 s timeout before challenge support).
+
+- `login-amber.yaml` (real Amber, intent handoff): install Amber (`amber-x86_64-v6.3.0.apk` from greenart7c3/Amber releases), onboard once with "Use your private key" → `nsec1424242424242424242424242424242424242424242424242424q3dgem8` (= `'aa'*32`, same identity as the mock signer) → "Manually approve each app". The flow taps **Open in signing app** in the QR panel, Amber shows its connection approval, tap `Connect`, back in the app the login completes. Needs internet (nostrconnect relays are the public feed relays).
+
+### Signer detection (NIP-55-style, 2026-07-28)
+
+`AndroidManifest.xml` declares `<queries>` intents for the `nostrsigner` and `nostrconnect` schemes, so `Linking.canOpenURL('nostrconnect://')` answers "is a signer installed that can complete the NIP-46 handoff" — scheme-based, so it finds any NIP-55/46 signer (Amber, Aegis, Primal, …), and multiple installed signers degrade to the Android app chooser. iOS always returns false — NIP-46 is the aligned path there. The login QR panel shows **Open in signing app** when true, handing the `nostrconnect://` URL to the signer via intent. Amber caveats on this AVD: approval dialog only for new connections; crashes at launch on `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` once its service is enabled (`pm clear` + re-onboard resets).
+
+Maestro gotchas hit while writing these:
+
+- `tapOn: "Sign in"` inside the login modal can match the *covered* Home-stub button behind the modal (the hierarchy includes covered nodes). Anchor with `below:` to the modal's input field.
+- `hideKeyboard` sends a Back press when the IME never opened, which dismisses the whole login modal. Dismiss the keyboard by tapping inert text inside the modal's ScrollView instead.
+- Metro started with `CI=1` does not reliably pick up file changes — a freshly launched app can get a stale bundle. Restart Metro after editing app code before running flows.
+- NIP-46 failures used to be invisible in logcat: nipworker core logs via `tracing` but older Android native-ffi builds installed no tracing subscriber, and the JS side swallowed `SetSignerResponse.error`. Current diagnostic builds use logcat tag `nipworker`.
+
+### Local nipworker AAR workflow (x86_64 emulator)
+
+Build a patched native lib and swap it into the app:
+
+```sh
+cd /root/code/nipworker/crates/native-ffi
+ANDROID_NDK_HOME=/opt/android-sdk/ndk/27.1.12297006 cargo ndk -t x86_64 -o android/src/main/jniLibs build --release
+# gradle assembleRelease + publishReleasePublicationToReleaseRepository -PVERSION_NAME=0.97.8
+#   → publishes to crates/native-ffi/android/build/repository
+cd /root/code/nuts-rn/android
+rm -rf ~/.gradle/caches/modules-2/files-2.1/com.candypoets
+NIPWORKER_MAVEN_URL=file:///root/code/nipworker/crates/native-ffi/android/build/repository ./gradlew installDebug
+```
+
+Gotchas: publish with the same version the npm package requests (0.97.8, via `-PVERSION_NAME`); wipe `build/intermediates/cxx` + `.cxx` or the prefab copy goes stale; `mergeReleaseNativeLibs` needs a `pickFirsts` packagingOption for the duplicate .so (init script); clear gradle's `com.candypoets` cache or the old remote AAR is reused.
+
+### nip46 unix_time bug (fixed in nipworker 0.97.8)
+
+`crates/core/src/crypto/signers/nip46/mod.rs` `unix_time()` was `now_millis() as u32 / 1000` — the `as u32` truncated epoch millis to 32 bits before dividing, so every kind-24133 event got `created_at` in Feb 1970. Strict relays (strfry, e.g. nos.lol) reject them: `OK … false "invalid: ephemeral event expired"`, and NIP-46 login silently fails against real relays on all platforms. Local relays/mocks that don't check timestamps mask it. Version 0.97.8 uses `(now_millis() / 1000) as u32`.
+
 ### nipworker native lib gotcha (fixed locally 2026-07-22)
 
 `libnipworker_native_ffi.so` (com.candypoets:nipworker-native-ffi-android AAR, 0.97.2/0.97.3) ships **without a SONAME**, so CMake baked the absolute build-machine path into `DT_NEEDED` of `libnipworker_react_native.so` and the app crashed at startup with `UnsatisfiedLinkError` on every device. Fixed in the nipworker repo at `crates/native-ffi/react-native/android/CMakeLists.txt` by linking the prefab lib by name (`-lnipworker_native_ffi`) instead of by imported-target path. Do not "fix" this with patchelf — patchelf 0.14 corrupts the Rust .so's hash sections, and gradle rejects modified transform workspaces anyway. The durable upstream fix is adding `-Wl,-soname,libnipworker_native_ffi.so` to the ffi build.

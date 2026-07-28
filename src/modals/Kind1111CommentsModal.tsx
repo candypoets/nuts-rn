@@ -315,17 +315,29 @@ export function Kind1111CommentsModal({
   const submit = useCallback(() => {
     if (!target?.id || !canSubmit) return;
     setIsSubmitting(true);
+    const rootEventTag = target.author
+      ? ['E', target.id, relays[0] || '', target.author]
+      : ['E', target.id, relays[0] || ''];
     const rootTags: string[][] = [
-      ['E', target.id, relays[0] || ''],
+      rootEventTag,
       ...(target.kind ? [['K', String(target.kind)]] : []),
-      ...(target.author ? [['P', target.author]] : []),
+      ...(target.author ? [['P', target.author, relays[0] || '']] : []),
     ];
     const replyTags: string[][] = replyTarget
       ? [
-          ['e', replyTarget.id, relays[0] || '', 'reply'],
-          ['p', replyTarget.pubkey],
+          ['e', replyTarget.id, relays[0] || '', replyTarget.pubkey],
+          ['k', '1111'],
+          ['p', replyTarget.pubkey, relays[0] || ''],
         ]
-      : [];
+      : [
+          ...(target.author
+            ? [['e', target.id, relays[0] || '', target.author]]
+            : [['e', target.id, relays[0] || '']]),
+          ...(target.kind ? [['k', String(target.kind)]] : []),
+          ...(target.author
+            ? [['p', target.author, relays[0] || '']]
+            : []),
+        ];
     const event: EventTemplate = {
       kind: 1111,
       created_at: Math.floor(Date.now() / 1000),

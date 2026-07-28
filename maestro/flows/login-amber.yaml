@@ -1,0 +1,40 @@
+appId: com.nutsrn
+---
+# Real-Amber NIP-46 login via the same-device intent handoff.
+#
+# Prerequisites (one-time):
+#   adb install amber-x86_64.apk   # e.g. v6.3.0 from greenart7c3/Amber releases
+#   Amber onboarded with the test key (Use your private key →
+#   nsec1424242424242424242424242424242424242424242424242424q3dgem8,
+#   which is 'aa'*32) and "Manually approve each app".
+# The app needs internet: the nostrconnect URL lists the public feed relays.
+#
+# Caveats observed with Amber v6.3.0 on this slim AVD:
+# - The approval dialog ("Connect") only appears for NEW connections; repeat
+#   handoffs are queued inside Amber's Applications view instead.
+# - After its relay service is enabled, Amber crashes at launch here with
+#   ActivityNotFoundException for REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (the
+#   AVD lacks that settings screen). `adb shell pm clear` + re-onboard resets.
+- runFlow: launch.yaml
+- tapOn: "Home"
+- assertVisible: "Sign in to load your wallet feed"
+- tapOn: "Sign in"
+- assertVisible: "Authenticate"
+- tapOn: "Connect with another app"
+# Button only appears when a signer app is installed (NIP-55-style detection).
+- assertVisible: "Open in signing app"
+- tapOn: "Open in signing app"
+# Amber shows its connection approval for "Nuts".
+- launchApp:
+    appId: com.greenart7c3.nostrsigner
+    stopApp: false
+- tapOn: "Connect"
+# Back in the app: the NIP-46 handshake completes and the modal closes.
+- launchApp:
+    appId: com.nutsrn
+    stopApp: false
+- extendedWaitUntil:
+    notVisible: "Authenticate"
+    timeout: 60000
+- assertNotVisible: "Sign in to load your wallet feed"
+- takeScreenshot: amber-logged-in

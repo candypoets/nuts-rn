@@ -436,7 +436,7 @@ export function FeedBuilderModal({ onClose }: FeedBuilderModalProps) {
       message => handleFollowListMessage(message, true),
       {
         closeOnEose: false,
-        pagination: prevPaginationSubIdRef.current,
+        pagination: prevPaginationSubIdRef.current ?? undefined,
       },
     );
     prevPaginationSubIdRef.current = pageSubId;

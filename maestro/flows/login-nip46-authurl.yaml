@@ -1,0 +1,40 @@
+appId: com.nutsrn
+---
+# NIP-46 auth-challenge (auth_url) login against the fake signer.
+#
+# Requires the mock signer started with its auth-challenge mode:
+#   MOCK_AUTH_URL=https://fake-signer.test/approve \
+#     node /root/code/nipworker/tests/e2e-browser/mock-signer-relay.mjs --port 7746
+# and a host-side approver that fires when the challenge is sent:
+#   tail -F <signer-log> | grep -m1 'auth challenge sent' && touch /tmp/nip46-approve
+# The signer then answers connect with {result:"auth_url", error:<URL>} first,
+# and sends the real ack (same request id) once the approve file appears.
+- runFlow: launch.yaml
+- tapOn: "Home"
+- assertVisible: "Sign in to load your wallet feed"
+- tapOn: "Sign in"
+- assertVisible: "Authenticate"
+- tapOn: "nsec, npub, or connection link"
+- inputText: "bunker://6a04ab98d9e4774ad806e302dddeb63bea16b5cb5f223ee77478e861bb583eb3?relay=ws%3A%2F%2F10.0.2.2%3A7746"
+# Dismiss keyboard via inert text (hideKeyboard can dismiss the whole modal).
+- tapOn: "Connect with your signing app, or paste a key."
+- tapOn:
+    text: "Sign in"
+    below: "nsec, npub, or connection link"
+# The auth challenge surfaces as an approve prompt in the login modal.
+- assertVisible: "Your signing app asks you to approve this request."
+- assertVisible: "Open approval page"
+# Open it (Linking) and come back; the modal must still be pending. The stub
+# browser opens in its own task, so Back would land on the launcher — resume
+# the app explicitly instead (without stopping it).
+- tapOn: "Open approval page"
+- launchApp:
+    appId: com.nutsrn
+    stopApp: false
+- assertVisible: "Authenticate"
+# Host-side approver fires; the deferred ack completes the login.
+- extendedWaitUntil:
+    notVisible: "Authenticate"
+    timeout: 60000
+- assertNotVisible: "Sign in to load your wallet feed"
+- takeScreenshot: nip46-authurl-logged-in

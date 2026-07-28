@@ -17,6 +17,10 @@ export type AuthState = {
   hasSigner: boolean;
   authResolved: boolean;
   accounts: Record<string, AuthAccountState>;
+  /** Pending NIP-46 auth-challenge URL the user must open to approve access. */
+  nip46AuthUrl: string | null;
+  /** Last signer/auth failure (e.g. NIP-46 connect timeout), for display. */
+  authError: string | null;
 };
 
 type AuthStore = AuthState & {
@@ -32,6 +36,8 @@ const initialAuthState: AuthState = {
   hasSigner: false,
   authResolved: false,
   accounts: {},
+  nip46AuthUrl: null,
+  authError: null,
 };
 
 function accountSnapshot(state: AuthState): AuthAccountState {
@@ -69,6 +75,10 @@ function resolveAuthState(
       privkey: null,
       nsec: null,
       hasSigner: false,
+      nip46AuthUrl: null,
+      // pubkey:null also arrives on signer FAILURES (with an error) — honor an
+      // explicitly passed authError instead of always wiping it.
+      authError: auth.authError !== undefined ? auth.authError : null,
       accounts,
     };
   }

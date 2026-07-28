@@ -3,7 +3,7 @@
     "name": "Nuts",
     "slug": "nuts",
     "icon": "./assets/app-icon.png",
-    "scheme": "nutsrn",
+    "scheme": ["nutsrn", "nostr"],
     "userInterfaceStyle": "automatic",
     "experiments": {
       "typedRoutes": true
@@ -12,7 +12,19 @@
       "bundleIdentifier": "com.nutsrn"
     },
     "android": {
-      "package": "com.nutsrn"
+      "package": "com.nutsrn",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "nostr" }],
+          "category": ["DEFAULT", "BROWSABLE"]
+        },
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "https", "host": "njump.me" }],
+          "category": ["DEFAULT", "BROWSABLE"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro"

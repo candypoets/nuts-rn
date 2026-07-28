@@ -123,12 +123,17 @@ class NativeNoteFooterView(context: Context) : View(context) {
     val kinds = if (supportsComments) listOf(6, 7, 1111) else listOf(1, 6, 7)
     val requests = mutableListOf(NipworkerRequest(kinds = if (supportsComments) listOf(6, 7) else kinds, tags = mapOf("#e" to listOf(noteId)), relays = lookup))
     if (supportsComments) requests += NipworkerRequest(kinds = listOf(1111), tags = mapOf("#E" to listOf(noteId)), relays = lookup)
-    mainSub = NipworkerRuntime.useSubscription("f_${noteId}_${lookup.joinToString(",")}", requests, NipworkerSubscriptionOptions(cacheFirst = true, bytesPerEvent = 1024, counterKinds = kinds, counterPubkey = currentUserPubkey)) { messages ->
+    val counterOptions = NipworkerSubscriptionOptions(
+      bytesPerEvent = 256,
+      counterKinds = kinds,
+      counterPubkey = currentUserPubkey,
+    )
+    mainSub = NipworkerRuntime.useSubscription("f_${noteId}_${lookup.joinToString(",")}", requests, counterOptions) { messages ->
       var changed = false
       for (message in messages) { if (forwardRelayStatus(message)) continue; if (message.contentType != Message.CountResponse) continue; val c = message.message.content(CountResponse()) as? CountResponse ?: continue; when (c.kind()) { 1 -> { replies = c.count().toInt(); replied = replied || c.you() }; 1111 -> comments = c.count().toInt(); 6 -> { reposts = c.count().toInt(); reposted = reposted || c.you() }; 7 -> { reactions = if (reacted) maxOf(reactions, c.count().toInt()) else c.count().toInt(); reacted = reacted || c.you() }; else -> continue }; changed = true }
       if (changed) postInvalidate()
     }
-    quoteSub = NipworkerRuntime.useSubscription("fq_${noteId}_${lookup.joinToString(",")}", listOf(NipworkerRequest(kinds = listOf(1), tags = mapOf("#q" to listOf(noteId)), relays = lookup)), NipworkerSubscriptionOptions(cacheFirst = true, bytesPerEvent = 1024, counterKinds = listOf(1), counterPubkey = currentUserPubkey)) { messages ->
+    quoteSub = NipworkerRuntime.useSubscription("fq_${noteId}_${lookup.joinToString(",")}", listOf(NipworkerRequest(kinds = listOf(1), tags = mapOf("#q" to listOf(noteId)), relays = lookup)), counterOptions.copy(counterKinds = listOf(1))) { messages ->
       for (message in messages) { if (forwardRelayStatus(message)) continue; if (message.contentType != Message.CountResponse) continue; val c = message.message.content(CountResponse()) as? CountResponse ?: continue; if (c.kind() == 1) { quotes = c.count().toInt(); reposted = reposted || c.you(); postInvalidate() } }
     }
   }

@@ -1,14 +1,18 @@
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, Text, View} from 'react-native';
-import type {ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
+import type {
+  ParsedEvent,
+  RequestObject,
+  WorkerMessage,
+} from '@candypoets/nipworker';
 import {MessageType} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
+  asKind1111,
   asParsedEvent,
   fbArray,
-  isKind1,
   isKind10002,
   isParsedEvent,
 } from '@candypoets/nipworker/utils';
@@ -89,6 +93,30 @@ function decodeEventPointer(nevent: string): EventPointer {
 
 function pointerRelays(data: EventPointer) {
   return [...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl))];
+}
+
+function replyParentId(event: ParsedEvent) {
+  if (event.kind() === 1) return asKind1(event)?.reply()?.id() || undefined;
+  if (event.kind() === 1111)
+    return asKind1111(event)?.parentId?.() || undefined;
+  return undefined;
+}
+
+function replyRequests(
+  rootId: string,
+  relays: string[],
+  options: Pick<RequestObject, 'cacheFirst' | 'noCache'>,
+): RequestObject[] {
+  const common = {
+    limit: PAGE_LIMIT,
+    noContext: true,
+    relays,
+    ...options,
+  };
+  return [
+    { ...common, kinds: [1], tags: {'#e': [rootId]} },
+    { ...common, kinds: [1111], tags: {'#E': [rootId]} },
+  ];
 }
 
 const Kind1MotionHeader = memo(function Kind1MotionHeader({
@@ -180,11 +208,10 @@ const ReplyThreadNode = memo(
     const showReplies = useCallback(
       (newPost: ParsedEvent) => (replies: ParsedEvent[]) => {
         const matchingReplies = replies.filter(reply => {
-          const kind1 = asKind1(reply);
           return (
             (reply.pubkey() === item.pubkey() ||
               reply.pubkey() === headerAuthorPubkey) &&
-            kind1?.reply()?.id() === newPost.id()
+            replyParentId(reply) === newPost.id()
           );
         });
 
@@ -464,27 +491,32 @@ export function Kind1Sub({
   const addReply = useCallback(
     (event: ParsedEvent) => {
       statsRef.current.arrived += 1;
-      if (event.kind() !== 1) {
+      const kind1 = event.kind() === 1 ? asKind1(event) : null;
+      const kind1111 = event.kind() === 1111 ? asKind1111(event) : null;
+      if (!kind1 && !kind1111) {
         statsRef.current.dropKind += 1;
         return;
       }
-      const kind1 = asKind1(event);
-      if (!kind1) {
-        statsRef.current.dropKind += 1;
-        return;
-      }
-      const replyId = kind1.reply()?.id();
-      const rootRefId = kind1.root()?.id();
-      if (replyId && replyId !== rootId) {
+
+      const parentId = kind1?.reply()?.id() || kind1111?.parentId?.();
+      if (kind1) {
+        const rootRefId = kind1.root()?.id();
+        if (parentId && parentId !== rootId) {
+          statsRef.current.dropNoRootTag += 1;
+          return;
+        }
+        if ((!parentId || parentId === rootRefId) && rootRefId !== rootId) {
+          statsRef.current.dropNoRootTag += 1;
+          return;
+        }
+        if (
+          fbArray(kind1, 'eventRefs').some(eventRef => eventRef.id() === rootId)
+        ) {
+          statsRef.current.dropQuote += 1;
+          return;
+        }
+      } else if (kind1111?.rootId?.() !== rootId) {
         statsRef.current.dropNoRootTag += 1;
-        return;
-      }
-      if ((!replyId || replyId === rootRefId) && rootRefId !== rootId) {
-        statsRef.current.dropNoRootTag += 1;
-        return;
-      }
-      if (fbArray(kind1, 'eventRefs').some(eventRef => eventRef.id() === rootId)) {
-        statsRef.current.dropQuote += 1;
         return;
       }
       if (event.id() === rootId) {
@@ -508,7 +540,7 @@ export function Kind1Sub({
         });
       }
       allRepliesRef.current.push(event);
-      if (!replyId || replyId === rootId) {
+      if (!parentId || parentId === rootId) {
         itemsRef.current.push(event);
       }
       scheduleCommit();
@@ -670,7 +702,7 @@ export function Kind1Sub({
     }, 1500);
     mainUnsubRef.current = subscribeToNostr(
       headerSubId,
-      [{kinds: [1], ids: [rootId], limit: 1, relays: activeRelays, cacheFirst: true}],
+      [{ids: [rootId], limit: 1, relays: activeRelays, cacheFirst: true}],
       message => {
         const status = asConnectionStatus(message);
         if (status) {
@@ -682,8 +714,7 @@ export function Kind1Sub({
           });
         }
         const parsedEvent = isParsedEvent(message);
-        const kind1 = isKind1(message);
-        if (!kind1 || !parsedEvent || parsedEvent.id() !== rootId) return;
+        if (!parsedEvent || parsedEvent.id() !== rootId) return;
         kind1Trace(traceStartedAtRef.current, 'header found', {
           seq: headerSeq,
           elapsed: Date.now() - headerStartedAt,
@@ -778,7 +809,7 @@ export function Kind1Sub({
       });
       repliesCacheUnsubRef.current = subscribeToNostr(
         cacheSubId,
-        [{kinds: [1], tags: {'#e': [rootId]}, limit: PAGE_LIMIT, cacheFirst: true, noContext: true, relays: activeRelays}],
+        replyRequests(rootId, activeRelays, {cacheFirst: true}),
         handleReplyMessage,
         {bytesPerEvent: REPLY_BYTES_PER_EVENT},
       );
@@ -867,7 +898,7 @@ export function Kind1Sub({
       });
       repliesUnsubRef.current = subscribeToNostr(
         repliesSubId,
-        [{kinds: [1], tags: {'#e': [rootId]}, limit: PAGE_LIMIT, noCache: true, noContext: true, relays: activeRelays}],
+        replyRequests(rootId, activeRelays, {noCache: true}),
         handleReplyMessage,
         {bytesPerEvent: REPLY_BYTES_PER_EVENT},
       );
@@ -957,19 +988,10 @@ export function Kind1Sub({
         });
         authorRepliesUnsubRef.current = subscribeToNostr(
           repliesSubId,
-          [
-            {
-              kinds: [1],
-              tags: {'#e': [rootId]},
-              limit: PAGE_LIMIT,
-              noCache: true,
-              noContext: true,
-              relays: incrementalRelays,
-            },
-          ],
-            handleReplyMessage,
-            {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-          );
+          replyRequests(rootId, incrementalRelays, {noCache: true}),
+          handleReplyMessage,
+          {bytesPerEvent: REPLY_BYTES_PER_EVENT},
+        );
       },
       {bytesPerEvent: REPLY_BYTES_PER_EVENT},
     );

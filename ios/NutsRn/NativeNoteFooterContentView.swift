@@ -255,9 +255,11 @@ class NativeNoteFooterContentView: UIView {
       requests: mainRequests,
       callback: { [weak self] messages in DispatchQueue.main.async { self?.handleMainMessages(messages) } },
       options: SubscriptionConfig(
-        pipeline: [.init(.counter(kinds: mainKinds, pubkey: currentUserPubkey))],
-        cacheFirst: true,
-        bytesPerEvent: 1024
+        pipeline: [
+          .init(.saveToDb),
+          .init(.counter(kinds: mainKinds, pubkey: currentUserPubkey)),
+        ],
+        bytesPerEvent: 256
       )
     )
     quoteSubscription = useSubscriptionHandle(
@@ -265,9 +267,11 @@ class NativeNoteFooterContentView: UIView {
       requests: [RequestObject(kinds: [1], tags: ["#q": [noteId]], relays: lookupRelays)],
       callback: { [weak self] messages in DispatchQueue.main.async { self?.handleQuoteMessages(messages) } },
       options: SubscriptionConfig(
-        pipeline: [.init(.counter(kinds: [1], pubkey: currentUserPubkey))],
-        cacheFirst: true,
-        bytesPerEvent: 1024
+        pipeline: [
+          .init(.saveToDb),
+          .init(.counter(kinds: [1], pubkey: currentUserPubkey)),
+        ],
+        bytesPerEvent: 256
       )
     )
   }

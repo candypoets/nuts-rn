@@ -17,6 +17,7 @@ module.exports = {
     '^expo-router/build/react-navigation/native-stack$':
       '<rootDir>/__mocks__/expo-router-native-stack.js',
     '^expo-router$': '<rootDir>/__mocks__/expo-router.js',
+    '^expo-glass-tabs$': '<rootDir>/__mocks__/expo-glass-tabs.js',
     '\\.(css)$': '<rootDir>/__mocks__/styleMock.js',
     '^@react-native-async-storage/async-storage$':
       '<rootDir>/__mocks__/async-storage.js',

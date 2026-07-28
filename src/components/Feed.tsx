@@ -31,11 +31,15 @@ import Animated, {
   type SharedValue,
   interpolate,
   useAnimatedRef,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
+  useComposedEventHandler,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import {scheduleOnRN} from 'react-native-worklets';
 import HeaderMotion, {useMotionProgress} from 'react-native-header-motion';
+import {useMinimizeOnScroll} from 'expo-glass-tabs';
 import {getFeedTopInset} from './feedLayout';
 import {useAppTheme} from '../theme';
 
@@ -517,6 +521,21 @@ export function Feed<T>({
       lastOffsetRef.current = offset;
     }
   }, [maybeTriggerNearBottom, nearBottomThreshold, scrollY, stickyHeight, stickyReveal]);
+  const minimizeTabBarOnScroll = useMinimizeOnScroll();
+  const forwardScrollToReact = useAnimatedScrollHandler(
+    event => {
+      'worklet';
+      scheduleOnRN(
+        handleScroll,
+        {nativeEvent: event} as unknown as NativeSyntheticEvent<NativeScrollEvent>,
+      );
+    },
+    [handleScroll],
+  );
+  const animatedScrollHandler = useComposedEventHandler([
+    minimizeTabBarOnScroll,
+    forwardScrollToReact,
+  ]);
 
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     scrollContentHeightRef.current = height;
@@ -723,7 +742,7 @@ export function Feed<T>({
               : undefined
           }
           onContentSizeChange={handleContentSizeChange}
-          onScroll={handleScroll}
+          onScroll={animatedScrollHandler}
           refreshControl={
             pullToRefresh && onRefresh ? (
               <RefreshControl
@@ -753,7 +772,7 @@ export function Feed<T>({
           {listFooter}
         </HeaderMotion.ScrollView>
       ) : (
-        <ScrollView
+        <Animated.ScrollView
           ref={listRef}
           className="flex-1"
           contentInsetAdjustmentBehavior="never"
@@ -764,7 +783,7 @@ export function Feed<T>({
               : undefined
           }
           onContentSizeChange={handleContentSizeChange}
-          onScroll={handleScroll}
+          onScroll={animatedScrollHandler}
           refreshControl={
             pullToRefresh && onRefresh ? (
               // See the FlashList refresh control above.
@@ -794,7 +813,7 @@ export function Feed<T>({
             </VirtualColumn>
           )}
           {listFooter}
-        </ScrollView>
+        </Animated.ScrollView>
       )}
       {stickyContent ? (
         <Animated.View

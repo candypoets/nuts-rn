@@ -13,6 +13,10 @@ import {
   FeedSticky,
 } from '../src/components/Feed';
 
+const {__mockMinimizeOnScroll} = require('expo-glass-tabs') as {
+  __mockMinimizeOnScroll: jest.Mock;
+};
+
 type Item = {id: string};
 
 const {__setSafeAreaInsets} = SafeAreaContext as typeof SafeAreaContext & {
@@ -57,6 +61,7 @@ function renderFeed() {
 }
 
 afterEach(() => {
+  __mockMinimizeOnScroll.mockClear();
   __setSafeAreaInsets({top: 0, bottom: 0, left: 0, right: 0});
 });
 
@@ -85,6 +90,28 @@ test('motion header keeps Feed scroll callbacks composed', () => {
       node => node.type === Text && node.props.testID === 'sticky-title',
     ),
   ).toHaveLength(1);
+});
+
+test('feed forwards animated scroll events to the glass tab minimizer', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <Feed<Item>
+        items={[]}
+        renderItem={() => null}
+        empty={<Text>empty</Text>}
+      />,
+    );
+  });
+
+  const scrollView = renderer!.root.findByType(ScrollView);
+  act(() => {
+    scrollView.props.onScroll(makeScrollEvent(300));
+  });
+
+  expect(__mockMinimizeOnScroll).toHaveBeenCalledWith(
+    expect.objectContaining({contentOffset: {x: 0, y: 300}}),
+  );
 });
 
 test('refresh indicator owns the safe-area slot and unmounts after refresh', () => {

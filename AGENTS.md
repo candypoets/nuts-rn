@@ -19,7 +19,7 @@ MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/smoke.yaml
 Notes:
 
 - Screenshots come back black under SwiftShader; the uiautomator hierarchy Maestro uses for text assertions works fine, so assert on text, not pixels.
-- The dev launcher cannot auto-discover Metro (adb reverse is host-local); flows type `exp://localhost:8084` into the launcher URL field and tap Connect, then dismiss the dev menu with Continue/Close.
+- The dev launcher cannot auto-discover Metro (adb reverse is host-local); flows type `exp://localhost:8084` into the launcher URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tap Connect, then dismiss the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
 - `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
 
 ### nipworker native lib gotcha (fixed locally 2026-07-22)
@@ -27,6 +27,8 @@ Notes:
 `libnipworker_native_ffi.so` (com.candypoets:nipworker-native-ffi-android AAR, 0.97.2/0.97.3) ships **without a SONAME**, so CMake baked the absolute build-machine path into `DT_NEEDED` of `libnipworker_react_native.so` and the app crashed at startup with `UnsatisfiedLinkError` on every device. Fixed in the nipworker repo at `crates/native-ffi/react-native/android/CMakeLists.txt` by linking the prefab lib by name (`-lnipworker_native_ffi`) instead of by imported-target path. Do not "fix" this with patchelf — patchelf 0.14 corrupts the Rust .so's hash sections, and gradle rejects modified transform workspaces anyway. The durable upstream fix is adding `-Wl,-soname,libnipworker_native_ffi.so` to the ffi build.
 
 ## Running the RN App
+
+The app entry is `expo-router/entry` (package.json `"main"`). Routes live in `app/`; `app/_layout.tsx` hosts the providers and root Stack, and `app/index.tsx` redirects to `/ExploreTab`. There is no `App.tsx`/`index.js` entry anymore — the root component is registered as `main`.
 
 Use the Expo dev-client flow. A plain Android activity launch can stop at the Expo dev launcher and never start the JS bundle, which makes relay debugging misleading.
 
@@ -58,6 +60,16 @@ Running "NutsRn"
 ```
 
 If that line is missing, the JS app is not running and relay/subscription logs are not meaningful.
+
+## Expo Router notes
+
+- Run Metro with `--clear` after adding or renaming route files in `app/`; the route context module is cached and a stale bundle won't pick up new routes.
+- The dev-client launcher's URL placeholder flips between `exp://` and `http://` depending on build/state; maestro `launch.yaml` matches `(exp|http)://` to cover both.
+- Deep-opening the app bare (`nutsrn:///`) lands on `app/index.tsx`, which redirects to `/ExploreTab`.
+- The wizard flows (SignupModal, MintingModal) embed their own inner stack via `createNativeStackNavigator` deep-imported from `expo-router/build/react-navigation/native-stack`. That is a private path with no semver guarantee — re-check it on every expo-router upgrade.
+- Tabs are JS-rendered (`expo-router` Tabs with a custom tab bar) on both platforms; the native bottom tab bar (NativeTabBarController) was removed.
+- Route file names in `app/` intentionally match the old `RootStackParamList` names, so deep links and existing `router.push('/X')` calls kept working unchanged.
+- Typed routes are enabled (`experiments.typedRoutes` in app.json). Expo generates route types into `.expo/types/` when Metro runs; the dir is gitignored and included in tsconfig.
 
 ## Relay Debugging
 

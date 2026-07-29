@@ -26,7 +26,6 @@ import {
   type ListRenderItemInfo as FlashListRenderItemInfo,
 } from '@shopify/flash-list';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {ScrollViewMarker} from 'react-native-screens/experimental';
 import Animated, {
   Extrapolation,
   type SharedValue,
@@ -102,7 +101,6 @@ const NEAR_BOTTOM_THRESHOLD = 10;
 const REFRESH_INDICATOR_HEIGHT = 48;
 const STICKY_HEADER_HIDE_OFFSET = 72;
 const MOTION_HEADER_DIRECTION_TOLERANCE = 0.5;
-const FILL_STYLE = {flex: 1} as const;
 
 type FeedVirtualItem<T> = {
   key: string;
@@ -738,14 +736,6 @@ export function Feed<T>({
     <View
       className="relative flex-1"
       style={{backgroundColor: theme.colors.base100}}>
-      {motionHeader ? (
-        <MotionHeader
-          paddingTop={outerHeaderSafeAreaTop}
-          scrollY={scrollY}
-          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base300}>
-          {motionHeader(chromeProps)}
-        </MotionHeader>
-      ) : null}
       {bottom ? (
         <FlashList
           ref={bottomListRef}
@@ -795,8 +785,7 @@ export function Feed<T>({
           scrollEventThrottle={16}
         />
       ) : motionHeader ? (
-        <ScrollViewMarker style={FILL_STYLE}>
-          <HeaderMotion.ScrollView
+        <HeaderMotion.ScrollView
             animatedRef={listRef as never}
             className="flex-1"
             contentInsetAdjustmentBehavior="never"
@@ -839,10 +828,8 @@ export function Feed<T>({
             )}
             {listFooter}
           </HeaderMotion.ScrollView>
-        </ScrollViewMarker>
       ) : (
-        <ScrollViewMarker style={FILL_STYLE}>
-          <Animated.ScrollView
+        <Animated.ScrollView
             ref={listRef}
             className="flex-1"
             contentInsetAdjustmentBehavior="never"
@@ -884,8 +871,15 @@ export function Feed<T>({
             )}
             {listFooter}
           </Animated.ScrollView>
-        </ScrollViewMarker>
       )}
+      {motionHeader ? (
+        <MotionHeader
+          paddingTop={outerHeaderSafeAreaTop}
+          scrollY={scrollY}
+          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base300}>
+          {motionHeader(chromeProps)}
+        </MotionHeader>
+      ) : null}
       {stickyContent ? (
         <Animated.View
           pointerEvents={start >= 1 && !down && !nearTop ? 'auto' : 'none'}

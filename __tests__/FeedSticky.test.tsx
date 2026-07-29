@@ -7,7 +7,7 @@ import {
   Text,
 } from 'react-native';
 import * as SafeAreaContext from 'react-native-safe-area-context';
-import {ScrollViewMarker} from 'react-native-screens/experimental';
+import HeaderMotion from 'react-native-header-motion';
 import {
   Feed,
   FeedHeaderDynamic,
@@ -88,11 +88,24 @@ test('motion header keeps Feed scroll callbacks composed', () => {
   ).toHaveLength(1);
 });
 
-test('motion feed registers its scroll view with the native tab host', () => {
+test('motion feed exposes its scroll view as the first native descendant', () => {
   const renderer = renderFeed();
-  const marker = renderer.root.findByType(ScrollViewMarker);
+  const feedSurface = renderer.root.find(
+    node =>
+      node.type === 'View' &&
+      node.props.className === 'relative flex-1',
+  );
+  const firstChild = feedSurface.children[0];
 
-  expect(marker.findAllByType(ScrollView)).toHaveLength(1);
+  expect(typeof firstChild).not.toBe('string');
+  expect((firstChild as ReactTestRenderer.ReactTestInstance).type).toBe(
+    HeaderMotion.ScrollView,
+  );
+  expect(
+    (firstChild as ReactTestRenderer.ReactTestInstance).findAllByType(
+      ScrollView,
+    ),
+  ).toHaveLength(1);
 });
 
 test('motion header keeps the native pull-to-refresh indicator visible', () => {

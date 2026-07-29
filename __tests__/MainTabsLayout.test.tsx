@@ -72,6 +72,9 @@ test('renders all three routes through the native tab host', () => {
     'ExploreTab',
     'ChatTab',
   ]);
+  expect(
+    mockTriggerProps.every(props => props.disableAutomaticContentInsets),
+  ).toBe(true);
 });
 
 test('selecting Explore again requests scroll-to-top', () => {

@@ -158,6 +158,7 @@ export default function MainTabsLayout() {
         tintColor={theme.colors.primary}
       >
         <NativeTabs.Trigger
+          disableAutomaticContentInsets
           listeners={tabPressListeners('home')}
           name="HomeTab"
         >
@@ -168,6 +169,7 @@ export default function MainTabsLayout() {
           />
         </NativeTabs.Trigger>
         <NativeTabs.Trigger
+          disableAutomaticContentInsets
           listeners={tabPressListeners('explore')}
           name="ExploreTab"
         >
@@ -181,6 +183,7 @@ export default function MainTabsLayout() {
           />
         </NativeTabs.Trigger>
         <NativeTabs.Trigger
+          disableAutomaticContentInsets
           listeners={tabPressListeners('chat')}
           name="ChatTab"
         >

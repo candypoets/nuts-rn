@@ -734,6 +734,7 @@ export function Feed<T>({
   const stickyContent = stickyHeader ? stickyHeader(chromeProps) : null;
   const feedContent = (
     <View
+      collapsable={false}
       className="relative flex-1"
       style={{backgroundColor: theme.colors.base100}}>
       {bottom ? (
@@ -786,91 +787,91 @@ export function Feed<T>({
         />
       ) : motionHeader ? (
         <HeaderMotion.ScrollView
-            animatedRef={listRef as never}
-            className="flex-1"
-            contentInsetAdjustmentBehavior="never"
-            contentContainerClassName={contentContainerClassName}
-            headerOffsetStrategy={
-              motionHeaderOverlaysContent ? 'none' : undefined
-            }
-            maintainVisibleContentPosition={
-              shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
-                ? {minIndexForVisible: 0}
-                : undefined
-            }
-            onContentSizeChange={handleContentSizeChange}
-            onScroll={forwardScrollToReact}
-            refreshControl={
-              pullToRefresh && onRefresh ? (
-                <RefreshControl
-                  colors={[refreshColor]}
-                  progressBackgroundColor={theme.colors.base200}
-                  refreshing={refreshing}
-                  tintColor={refreshColor}
-                  onRefresh={onRefresh}
-                />
-              ) : undefined
-            }
-            scrollEventThrottle={16}
-          >
-            {listHeader}
-            {items.length === 0 ? (
-              listEmpty
-            ) : (
-              <VirtualColumn
-                items={virtualRowsCollection}
-                itemToKey={row => row.key}
-                removeClippedSubviews={removeClippedSubviews}
-                testID={`feed-virtual-column:${numColumns}`}
-              >
-                {renderVirtualRowContent}
-              </VirtualColumn>
-            )}
-            {listFooter}
-          </HeaderMotion.ScrollView>
+          animatedRef={listRef as never}
+          className="flex-1"
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerClassName={contentContainerClassName}
+          headerOffsetStrategy={
+            motionHeaderOverlaysContent ? 'none' : undefined
+          }
+          maintainVisibleContentPosition={
+            shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
+              ? {minIndexForVisible: 0}
+              : undefined
+          }
+          onContentSizeChange={handleContentSizeChange}
+          onScroll={forwardScrollToReact}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={[refreshColor]}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          scrollEventThrottle={16}
+        >
+          {listHeader}
+          {items.length === 0 ? (
+            listEmpty
+          ) : (
+            <VirtualColumn
+              items={virtualRowsCollection}
+              itemToKey={row => row.key}
+              removeClippedSubviews={removeClippedSubviews}
+              testID={`feed-virtual-column:${numColumns}`}
+            >
+              {renderVirtualRowContent}
+            </VirtualColumn>
+          )}
+          {listFooter}
+        </HeaderMotion.ScrollView>
       ) : (
         <Animated.ScrollView
-            ref={listRef}
-            className="flex-1"
-            contentInsetAdjustmentBehavior="never"
-            contentContainerClassName={contentContainerClassName}
-            maintainVisibleContentPosition={
-              shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
-                ? {minIndexForVisible: 0}
-                : undefined
-            }
-            onContentSizeChange={handleContentSizeChange}
-            onScroll={forwardScrollToReact}
-            refreshControl={
-              pullToRefresh && onRefresh ? (
-                // See the FlashList refresh control above.
-                <RefreshControl
-                  colors={['transparent']}
-                  progressViewOffset={refreshInset}
-                  progressBackgroundColor="transparent"
-                  refreshing={false}
-                  tintColor="transparent"
-                  onRefresh={onRefresh}
-                />
-              ) : undefined
-            }
-            scrollEventThrottle={16}
-          >
-            {listHeader}
-            {items.length === 0 ? (
-              listEmpty
-            ) : (
-              <VirtualColumn
-                items={virtualRowsCollection}
-                itemToKey={row => row.key}
-                removeClippedSubviews={removeClippedSubviews}
-                testID={`feed-virtual-column:${numColumns}`}
-              >
-                {renderVirtualRowContent}
-              </VirtualColumn>
-            )}
-            {listFooter}
-          </Animated.ScrollView>
+          ref={listRef}
+          className="flex-1"
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerClassName={contentContainerClassName}
+          maintainVisibleContentPosition={
+            shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
+              ? {minIndexForVisible: 0}
+              : undefined
+          }
+          onContentSizeChange={handleContentSizeChange}
+          onScroll={forwardScrollToReact}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              // See the FlashList refresh control above.
+              <RefreshControl
+                colors={['transparent']}
+                progressViewOffset={refreshInset}
+                progressBackgroundColor="transparent"
+                refreshing={false}
+                tintColor="transparent"
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          scrollEventThrottle={16}
+        >
+          {listHeader}
+          {items.length === 0 ? (
+            listEmpty
+          ) : (
+            <VirtualColumn
+              items={virtualRowsCollection}
+              itemToKey={row => row.key}
+              removeClippedSubviews={removeClippedSubviews}
+              testID={`feed-virtual-column:${numColumns}`}
+            >
+              {renderVirtualRowContent}
+            </VirtualColumn>
+          )}
+          {listFooter}
+        </Animated.ScrollView>
       )}
       {motionHeader ? (
         <MotionHeader

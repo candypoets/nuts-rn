@@ -97,10 +97,15 @@ test('motion feed exposes its scroll view as the first native descendant', () =>
   );
   const firstChild = feedSurface.children[0];
 
+  expect(feedSurface.props.collapsable).toBe(false);
   expect(typeof firstChild).not.toBe('string');
   expect((firstChild as ReactTestRenderer.ReactTestInstance).type).toBe(
     HeaderMotion.ScrollView,
   );
+  expect(
+    (firstChild as ReactTestRenderer.ReactTestInstance).props
+      .contentInsetAdjustmentBehavior,
+  ).toBe('automatic');
   expect(
     (firstChild as ReactTestRenderer.ReactTestInstance).findAllByType(
       ScrollView,

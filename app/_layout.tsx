@@ -195,6 +195,7 @@ export default function RootLayout() {
                     {/* Push screens */}
                     <Stack.Screen name="PublicProfile" options={{ animation: 'simple_push' }} />
                     <Stack.Screen name="Community" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen name="Store" options={{ animation: 'simple_push' }} />
                     <Stack.Screen name="CalendarEvent" options={{ animation: 'simple_push' }} />
                     <Stack.Screen name="ChatThread" options={{ animation: 'simple_push' }} />
                     <Stack.Screen name="Kind1Thread" options={{ animation: 'simple_push' }} />

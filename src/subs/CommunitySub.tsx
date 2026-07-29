@@ -42,8 +42,10 @@ import {
   MoreHorizontal,
   RadioTower,
   Send,
+  Store,
   UserPlus,
   Users,
+  UtensilsCrossed,
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
@@ -51,8 +53,15 @@ import {Feed} from '../components/Feed';
 import {Note} from '../components/notes';
 import {Avatar} from '../components/notes/Avatar';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
+import {
+  COMMUNITY_PROFILE_D,
+  COMMUNITY_PROFILE_KIND,
+  parseCommunityProfile,
+} from '../lib/communityProfile';
+import type {CommunityType} from '../lib/communityTypes';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
 import type {AppNavigationProp} from '../navigation/types';
+import {pushDistinct} from '../navigation/pushDistinct';
 import {useRelayStore, type FeedKind} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -517,6 +526,7 @@ function CommunityTabs({
 }
 
 const CommunityHeader = memo(function CommunityHeader({
+  communityType,
   description,
   icon,
   name,
@@ -527,6 +537,7 @@ const CommunityHeader = memo(function CommunityHeader({
   upcomingEvents,
   rsvpsByAddress,
 }: {
+  communityType?: CommunityType;
   description: string;
   icon?: string;
   name: string;
@@ -539,8 +550,10 @@ const CommunityHeader = memo(function CommunityHeader({
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<AppNavigationProp>();
   const topInset = Math.max(0, insets.top - 8);
   const memberLabel = relationship === 'belong' ? 'Belongs to' : 'Following';
+  const isHospitality = communityType === 'hospitality';
 
   return (
     <View className="overflow-hidden bg-base-300/95">
@@ -610,6 +623,20 @@ const CommunityHeader = memo(function CommunityHeader({
           <Pressable className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-lg bg-base-200">
             <UserPlus size={20} color={theme.colors.primary} />
             <Text className="text-base font-bold text-base-content">Invite</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-lg bg-base-200"
+            onPress={() => pushDistinct(navigation, 'Store', {relay, name})}
+          >
+            {isHospitality ? (
+              <UtensilsCrossed size={20} color={theme.colors.primary} />
+            ) : (
+              <Store size={20} color={theme.colors.primary} />
+            )}
+            <Text className="text-base font-bold text-base-content">
+              {isHospitality ? 'Menu' : 'Store'}
+            </Text>
           </Pressable>
         </View>
 
@@ -688,6 +715,10 @@ export function CommunitySub({
   const [upcomingEvents, setUpcomingEvents] = useState<CommunityCalendarEvent[]>(
     [],
   );
+  const [communityType, setCommunityType] = useState<CommunityType | undefined>(
+    undefined,
+  );
+  const profileCreatedAtRef = useRef(0);
   const requestKinds = useMemo(
     () => COMMUNITY_TABS.find(tab => tab.id === selectedTab)?.kinds ?? [1, 6],
     [selectedTab],
@@ -699,6 +730,40 @@ export function CommunitySub({
   useEffect(() => {
     fetchRelayInfosForRelays([normalizedRelay]);
   }, [normalizedRelay]);
+
+  // Community profile (kind 30078) selects the store preset for the header's
+  // Store/Menu entry; defaults to 'other' when the relay has none.
+  useEffect(() => {
+    if (!visible || !normalizedRelay) return undefined;
+
+    profileCreatedAtRef.current = 0;
+    setCommunityType(undefined);
+    const subId = `community_store_profile_${relayHash(normalizedRelay)}`;
+    setSubRelays(subId, [normalizedRelay]);
+    const unsubscribe = subscribeToNostr(
+      subId,
+      [
+        {
+          kinds: [COMMUNITY_PROFILE_KIND],
+          limit: 5,
+          noCache: true,
+          relays: [normalizedRelay],
+          tags: {'#d': [COMMUNITY_PROFILE_D]},
+        },
+      ],
+      message => {
+        const parsed = asParsedEvent(message);
+        if (!parsed) return;
+        const profile = parseCommunityProfile(parsed);
+        if (!profile || profile.createdAt <= profileCreatedAtRef.current) return;
+        profileCreatedAtRef.current = profile.createdAt;
+        setCommunityType(profile.type);
+      },
+      {bytesPerEvent: 4 * 1024, closeOnEose: true},
+    );
+
+    return () => unsubscribe();
+  }, [normalizedRelay, setSubRelays, visible]);
 
   useEffect(() => {
     setUpcomingEvents([]);
@@ -922,6 +987,7 @@ export function CommunitySub({
   const header = useCallback(
     () => (
       <CommunityHeader
+        communityType={communityType}
         description={description}
         icon={icon}
         name={name}
@@ -934,6 +1000,7 @@ export function CommunitySub({
       />
     ),
     [
+      communityType,
       description,
       icon,
       name,

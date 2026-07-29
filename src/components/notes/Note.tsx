@@ -509,7 +509,6 @@ function NoteComponent({
   >(null);
   const [contextVersion, setContextVersion] = useState(0);
   const readRelays = useNostrStore(state => state.readRelays);
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
   const [extraSearchRelays, setExtraSearchRelays] = useState<string[]>([]);
   const [replies, setReplies] = useState<ParsedEvent[]>([]);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -661,9 +660,12 @@ function NoteComponent({
   }, [effectiveNote, lookupRelayKey, noteId, retryNonce, visible]);
 
   const retryWithFallbackRelays = useCallback(() => {
-    const workingRelays = Object.entries(relayStatuses).flatMap(
-      ([url, status]) =>
-        status !== 'FAILED' && status !== 'CLOSED' ? [url] : [],
+    // Read the app-wide relay statuses imperatively: subscribing every Note
+    // to the whole map re-renders all mounted Notes on every status change.
+    const workingRelays = Object.entries(
+      useRelayStore.getState().relayStatuses,
+    ).flatMap(([url, status]) =>
+      status !== 'FAILED' && status !== 'CLOSED' ? [url] : [],
     );
     const nextRelays = relayList([
       ...extraSearchRelays,
@@ -679,7 +681,7 @@ function NoteComponent({
     );
     setMissingSearchState('loading');
     setRetryNonce(nonce => nonce + 1);
-  }, [extraSearchRelays, readRelays, relayStatuses]);
+  }, [extraSearchRelays, readRelays]);
 
   const kind1 = useMemo(
     () => (displayNote ? asKind1(displayNote) : null),
@@ -742,13 +744,42 @@ function NoteComponent({
     fallbackRelays: noteRelays,
   });
   const noteSubscriptionId = displayId || effectiveId;
-  const workerSubscriptionId = useMemo(
-    () =>
-      noteSubscriptionId
-        ? `note_${noteSubscriptionId}_${retryNonce}_${hashKey(lookupRelayKey)}`
-        : '',
-    [lookupRelayKey, noteSubscriptionId, retryNonce],
-  );
+  // The ancestor request only rides along while the ancestor event is
+  // missing; kept as a single primitive so request inputs stay comparable
+  // by value instead of by array identity.
+  const pendingAncestorId =
+    ancestorReplyId &&
+    !eventRefIds.includes(ancestorReplyId) &&
+    !ancestorIds.includes(ancestorReplyId) &&
+    !contextEvents.some(event => event?.id?.() === ancestorReplyId)
+      ? ancestorReplyId
+      : undefined;
+  // Hash every input that can change the request list into the subscription
+  // id. Derived arrays (relays, context) churn by identity on every render;
+  // hashing their contents keeps workerSubscriptionId stable while the
+  // requests are effectively unchanged, so the subscription effect below
+  // does not tear down and recreate the worker subscription.
+  const workerSubscriptionId = useMemo(() => {
+    if (!noteSubscriptionId) return '';
+    const requestsKey = hashKey(
+      [
+        lookupRelayKey,
+        displayNote ? '1' : '0',
+        pendingAncestorId ?? '',
+        noteRelays.join('|'),
+        ancestorRelays.join('|'),
+      ].join('|'),
+    );
+    return `note_${noteSubscriptionId}_${retryNonce}_${requestsKey}`;
+  }, [
+    ancestorRelays,
+    displayNote,
+    lookupRelayKey,
+    noteRelays,
+    noteSubscriptionId,
+    pendingAncestorId,
+    retryNonce,
+  ]);
   const noteSubscriptionRequests = useMemo<RequestObject[]>(() => {
     if (!noteSubscriptionId) return [];
 
@@ -760,19 +791,11 @@ function NoteComponent({
           relays: lookupRelays,
           cacheFirst: true,
         };
-    const ancestorRequestIds = replyId
-      ? [replyId].filter(
-          id =>
-            !eventRefIds.includes(id) &&
-            !ancestorIds.includes(id) &&
-            !contextEvents.some(event => event?.id?.() === id),
-        )
-      : [];
-    const ancestorRequests: RequestObject[] = ancestorRequestIds.length
+    const ancestorRequests: RequestObject[] = pendingAncestorId
       ? [
           {
-            ids: ancestorRequestIds,
-            limit: ancestorRequestIds.length * 2,
+            ids: [pendingAncestorId],
+            limit: 2,
             relays: ancestorRelays.length ? ancestorRelays : noteRelays,
           },
         ]
@@ -795,16 +818,13 @@ function NoteComponent({
       ...parsedEventRequests,
     ];
   }, [
-    ancestorIds,
     ancestorRelays,
-    contextEvents,
     displayNote,
     effectiveNote,
-    eventRefIds,
     lookupRelays,
     noteRelays,
     noteSubscriptionId,
-    replyId,
+    pendingAncestorId,
   ]);
   const isQuote = depth > 0;
   const hasTopThreadConnector = shouldRenderAncestor || tailing;
@@ -876,13 +896,20 @@ function NoteComponent({
     </>
   );
 
+  // Latest requests for the subscription effect. The memo above rebuilds
+  // this array whenever a derived input churns by identity, so the effect
+  // reads it from a ref and re-runs only when workerSubscriptionId (the
+  // content hash) or visibility changes.
+  const noteRequestsRef = useRef<RequestObject[]>([]);
+  noteRequestsRef.current = noteSubscriptionRequests;
+
   useEffect(() => {
-    if (!visible || !workerSubscriptionId || !noteSubscriptionRequests.length)
-      return;
+    const requests = noteRequestsRef.current;
+    if (!visible || !workerSubscriptionId || !requests.length) return;
 
     const unsubscribe = subscribeToNostr(
       workerSubscriptionId,
-      noteSubscriptionRequests,
+      requests,
       message => {
         if (handleRelayStatus(message)) return;
         const parsed = asParsedEvent(message);
@@ -910,7 +937,6 @@ function NoteComponent({
     handleRelayStatus,
     noteId,
     noteSubscriptionId,
-    noteSubscriptionRequests,
     showReplies,
     visible,
     workerSubscriptionId,

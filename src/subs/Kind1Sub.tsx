@@ -28,9 +28,11 @@ import {useAppTheme} from '../theme';
 
 const PAGE_LIMIT = 50;
 const REPLY_BYTES_PER_EVENT = 96 * 1024;
+const EMPTY_EVENTS: ParsedEvent[] = [];
+const EMPTY_RELAY_LIST: string[] = [];
 const KIND1_DEBUG = false;
 const KIND1_TRACE = false;
-const KIND1_REACTIVITY_DEBUG = true;
+const KIND1_REACTIVITY_DEBUG = false;
 const KIND1_RENDER_HEADER_NOTE = true;
 
 function shouldLogReactivityCount(count: number) {
@@ -78,7 +80,24 @@ function normalizeRelayUrl(url: string) {
 }
 
 function relayHash(relays: string[]) {
-  return relays.map(relay => relay.replace(/[^a-zA-Z0-9]/g, '')).join('').slice(0, 24);
+  // Hash the full joined relay list: truncating the concatenated urls made
+  // different relay sets with the same first relay(s) collide, letting the
+  // worker silently reuse a stale subscription id.
+  const joined = relays
+    .map(relay => relay.replace(/[^a-zA-Z0-9]/g, ''))
+    .join('|');
+  let hash = 0;
+  for (let index = 0; index < joined.length; index += 1) {
+    hash = (hash * 31 + joined.charCodeAt(index)) % 2147483647;
+  }
+  return hash.toString(36);
+}
+
+function sameStringArray(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function decodeEventPointer(nevent: string): EventPointer {
@@ -308,8 +327,6 @@ export function Kind1Sub({
   const repliesCacheUnsubRef = useRef<(() => void) | null>(null);
   const repliesUnsubRef = useRef<(() => void) | null>(null);
   const paginationUnsubRef = useRef<(() => void) | null>(null);
-  const authorReplyStartFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  const cacheReplyStartFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repliesDebugTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -337,6 +354,11 @@ export function Kind1Sub({
     () => [...new Set([...activeRelays, ...authorReadRelays])],
     [activeRelays, authorReadRelays],
   );
+  // Primitive projections of headerItem. Effects and row renderers depend on
+  // these instead of the headerItem object so a duplicate header delivery
+  // (same id, new FlatBuffers instance) cannot retrigger them.
+  const hasHeader = headerItem !== null;
+  const headerAuthorPubkey = headerItem?.pubkey() ?? undefined;
 
   renderCountRef.current += 1;
   if (
@@ -422,14 +444,6 @@ export function Kind1Sub({
     if (repliesDebugTimeoutRef.current) {
       clearTimeout(repliesDebugTimeoutRef.current);
       repliesDebugTimeoutRef.current = null;
-    }
-    if (authorReplyStartFrameRef.current) {
-      cancelAnimationFrame(authorReplyStartFrameRef.current);
-      authorReplyStartFrameRef.current = null;
-    }
-    if (cacheReplyStartFrameRef.current) {
-      cancelAnimationFrame(cacheReplyStartFrameRef.current);
-      cacheReplyStartFrameRef.current = null;
     }
     if (commitFrameRef.current) {
       cancelAnimationFrame(commitFrameRef.current);
@@ -637,9 +651,11 @@ export function Kind1Sub({
     firstReplyAtRef.current = null;
     firstCommitAtRef.current = null;
     setHeaderItem(null);
-    setAuthorReadRelays([]);
-    setItems([]);
-    setAllReplies([]);
+    // Bail when already empty: fresh [] literals would change state identity
+    // and force an extra render pass on every mount and root change.
+    setAuthorReadRelays(current => (current.length ? EMPTY_RELAY_LIST : current));
+    setItems(current => (current.length ? EMPTY_EVENTS : current));
+    setAllReplies(current => (current.length ? EMPTY_EVENTS : current));
     setHasMore(true);
     setLoading(false);
     cleanupSubscriptions();
@@ -665,9 +681,12 @@ export function Kind1Sub({
     logEffectCycle('header-subscription', 'run', {
       activeRelays: activeRelays.length,
       enabled: enableHeaderSubscription,
-      eligible: enableHeaderSubscription && visible && !!rootId,
+      eligible: enableHeaderSubscription && !!rootId,
     });
-    if (!enableHeaderSubscription || !visible || !rootId) {
+    // Not gated on visible: the header sub is cheap (single id, cacheFirst)
+    // and starting it at mount lets the root event resolve during the push
+    // animation instead of after it (same as the kind0 profile sub).
+    if (!enableHeaderSubscription || !rootId) {
       return undefined;
     }
 
@@ -728,7 +747,12 @@ export function Kind1Sub({
             : null,
         });
         headerFoundRef.current = true;
-        setHeaderItem(parsedEvent);
+        // Guard identity: relays/cache can redeliver the same root event as a
+        // new FlatBuffers instance; keep the previous object so dependents of
+        // headerItem do not re-run.
+        setHeaderItem(current =>
+          current?.id() === parsedEvent.id() ? current : parsedEvent,
+        );
         kind1Debug('header found', {
           rootId: rootId.slice(0, 12),
           pubkey: parsedEvent.pubkey()?.slice(0, 12),
@@ -757,16 +781,13 @@ export function Kind1Sub({
     activeRelays,
     clearTimers,
     enableHeaderSubscription,
-    handleReplyMessage,
     initialRelays,
     logEffectCycle,
-    reset,
     rootId,
     rootReadRelays,
     runLifecycleEffects,
     setRelayStatus,
     setSubRelays,
-    visible,
   ]);
 
   useEffect(() => {
@@ -778,14 +799,14 @@ export function Kind1Sub({
         enableReplySubscriptions &&
         subscriptionVisible &&
         !!rootId &&
-        !!headerItem,
-      header: headerItem?.id()?.slice(0, 12) ?? null,
+        hasHeader,
+      header: hasHeader,
     });
     if (
       !enableReplySubscriptions ||
       !subscriptionVisible ||
       !rootId ||
-      !headerItem
+      !hasHeader
     ) {
       return undefined;
     }
@@ -793,48 +814,42 @@ export function Kind1Sub({
     const repliesSeq = repliesSubSeqRef.current;
     const repliesStartedAt = Date.now();
     const cacheSubId = `replies_cache_${rootId}_${relayHash(activeRelays)}`;
-    let startTimeout: ReturnType<typeof setTimeout> | null = null;
-    let debugTimeout: ReturnType<typeof setTimeout> | null = null;
     repliesCacheUnsubRef.current?.();
-    startTimeout = setTimeout(() => {
-      kind1Trace(traceStartedAtRef.current, 'cache replies subscribe', {
+    kind1Trace(traceStartedAtRef.current, 'cache replies subscribe', {
+      seq: repliesSeq,
+      cacheSubId,
+      rootId: rootId.slice(0, 12),
+      relays: activeRelays,
+    });
+    kind1Debug('subscribe replies cache', {
+      rootId: rootId.slice(0, 12),
+      relays: activeRelays,
+    });
+    repliesCacheUnsubRef.current = subscribeToNostr(
+      cacheSubId,
+      replyRequests(rootId, activeRelays, {cacheFirst: true}),
+      handleReplyMessage,
+      {bytesPerEvent: REPLY_BYTES_PER_EVENT},
+    );
+    repliesDebugTimeoutRef.current = setTimeout(() => {
+      kind1Trace(traceStartedAtRef.current, 'cache replies timeout snapshot', {
         seq: repliesSeq,
-        cacheSubId,
+        elapsed: Date.now() - repliesStartedAt,
         rootId: rootId.slice(0, 12),
-        relays: activeRelays,
+        items: itemsRef.current.length,
+        allReplies: allRepliesRef.current.length,
+        hasHeader: headerFoundRef.current,
+        ...statsRef.current,
       });
-      kind1Debug('subscribe replies cache', {
+      kind1Debug('reply timeout snapshot', {
         rootId: rootId.slice(0, 12),
-        relays: activeRelays,
+        items: itemsRef.current.length,
+        ...statsRef.current,
       });
-      repliesCacheUnsubRef.current = subscribeToNostr(
-        cacheSubId,
-        replyRequests(rootId, activeRelays, {cacheFirst: true}),
-        handleReplyMessage,
-        {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-      );
-      debugTimeout = setTimeout(() => {
-        kind1Trace(traceStartedAtRef.current, 'cache replies timeout snapshot', {
-          seq: repliesSeq,
-          elapsed: Date.now() - repliesStartedAt,
-          rootId: rootId.slice(0, 12),
-          items: itemsRef.current.length,
-          allReplies: allRepliesRef.current.length,
-          hasHeader: headerFoundRef.current,
-          ...statsRef.current,
-        });
-        kind1Debug('reply timeout snapshot', {
-          rootId: rootId.slice(0, 12),
-          items: itemsRef.current.length,
-          ...statsRef.current,
-        });
-      }, 2500);
-      repliesDebugTimeoutRef.current = debugTimeout;
-    }, 120);
+    }, 2500);
 
     return () => {
       logEffectCycle('reply-cache-subscription', 'cleanup');
-      if (startTimeout) clearTimeout(startTimeout);
       kind1Trace(traceStartedAtRef.current, 'cache replies cleanup', {
         seq: repliesSeq,
         elapsed: Date.now() - repliesStartedAt,
@@ -842,7 +857,6 @@ export function Kind1Sub({
       });
       repliesCacheUnsubRef.current?.();
       repliesCacheUnsubRef.current = null;
-      if (debugTimeout) clearTimeout(debugTimeout);
       if (repliesDebugTimeoutRef.current) {
         clearTimeout(repliesDebugTimeoutRef.current);
         repliesDebugTimeoutRef.current = null;
@@ -852,7 +866,7 @@ export function Kind1Sub({
     activeRelays,
     enableReplySubscriptions,
     handleReplyMessage,
-    headerItem,
+    hasHeader,
     logEffectCycle,
     rootId,
     runLifecycleEffects,
@@ -861,7 +875,7 @@ export function Kind1Sub({
 
   useEffect(() => {
     if (!runLifecycleEffects) return undefined;
-    const authorPubkey = headerItem?.pubkey();
+    const authorPubkey = headerAuthorPubkey;
     logEffectCycle('author-relay-subscription', 'run', {
       activeRelays: activeRelays.length,
       enabled: enableReplySubscriptions,
@@ -959,7 +973,11 @@ export function Kind1Sub({
         const incrementalRelays = [
           ...new Set(relays.filter(relay => !activeRelays.includes(relay))),
         ];
-        setAuthorReadRelays(incrementalRelays);
+        // Bail when discovery resolves to the same relays: a new array here
+        // would rerender and churn displayedRelays/motionHeader for nothing.
+        setAuthorReadRelays(current =>
+          sameStringArray(current, incrementalRelays) ? current : incrementalRelays,
+        );
         kind1Trace(traceStartedAtRef.current, 'author relays found', {
           elapsed: Date.now() - authorDiscoveryStartedAt,
           rootId: rootId.slice(0, 12),
@@ -998,10 +1016,6 @@ export function Kind1Sub({
 
     return () => {
       logEffectCycle('author-relay-subscription', 'cleanup');
-      if (authorReplyStartFrameRef.current) {
-        cancelAnimationFrame(authorReplyStartFrameRef.current);
-        authorReplyStartFrameRef.current = null;
-      }
       if (timeout) clearTimeout(timeout);
       authorRelayDiscoveryUnsubRef.current?.();
       authorRelayDiscoveryUnsubRef.current = null;
@@ -1012,7 +1026,7 @@ export function Kind1Sub({
     activeRelays,
     enableReplySubscriptions,
     handleReplyMessage,
-    headerItem,
+    headerAuthorPubkey,
     logEffectCycle,
     rootId,
     runLifecycleEffects,
@@ -1108,14 +1122,14 @@ export function Kind1Sub({
       }
       return (
         <ReplyItem
-          headerAuthorPubkey={headerItem?.pubkey() ?? undefined}
+          headerAuthorPubkey={headerAuthorPubkey}
           index={index}
           item={item}
           visible={visible && itemVisible}
         />
       );
     },
-    [headerItem, rootId, visible],
+    [headerAuthorPubkey, rootId, visible],
   );
   const getItemId = useCallback(
     (item: ParsedEvent) => item.id() || String(item.createdAt()),

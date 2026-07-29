@@ -50,7 +50,7 @@ import {
 } from 'lucide-react-native';
 import type { EventTemplate } from 'nostr-tools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feed } from '../components/Feed';
+import { Feed, type FeedRenderItemInfo } from '../components/Feed';
 import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
@@ -351,6 +351,137 @@ function eventRelayUrls(event: ParsedEvent) {
     .map(normalizeRelayUrl);
 }
 
+const EMPTY_COMMUNITY_PROFILES: CommunityPreviewProfile[] = [];
+
+const Kind0CommunityCard = memo(function Kind0CommunityCard({
+  community,
+  profiles,
+}: {
+  community: ProfileCommunity;
+  profiles: CommunityPreviewProfile[];
+}) {
+  const theme = useAppTheme();
+  const navigation =
+    useNavigation<AppNavigationProp>();
+  // Select only this community's relay info entry: subscribing the whole
+  // section to the relayInfos map rerendered every card on each relay
+  // info fetch.
+  const info = useRelayStore(state => state.relayInfos[community.key]?.info);
+  const name =
+    info?.name?.trim() ||
+    communityNames[community.key] ||
+    community.name;
+  const belongs = community.relationship === 'belong';
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${name} community`}
+      className={`w-56 rounded-lg border p-3 ${
+        belongs
+          ? 'border-primary/35 bg-base-300'
+          : 'border-base-200 bg-base-300'
+      }`}
+      onPress={event => {
+        event.stopPropagation();
+        navigation.navigate('Community', {
+          description: info?.description,
+          icon: info?.icon,
+          name,
+          relationship: community.relationship,
+          relay: community.url,
+        });
+      }}
+    >
+      <View className="flex-row items-start gap-3">
+        <View
+          className={`h-12 w-12 items-center justify-center overflow-hidden rounded-lg ${communityColorClass(
+            community.key,
+          )}`}
+        >
+          {info?.icon ? (
+            <Image
+              source={{ uri: info.icon }}
+              style={styles.trackedImage}
+            />
+          ) : (
+            <Text className="text-sm font-bold text-base-100">
+              {initials(name)}
+            </Text>
+          )}
+        </View>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-center gap-1">
+            <Text
+              className="min-w-0 flex-1 text-[15px] font-bold text-base-content"
+              numberOfLines={1}
+            >
+              {name}
+            </Text>
+            {belongs ? (
+              <ShieldCheck
+                size={15}
+                color={theme.colors.primary}
+                strokeWidth={2.3}
+              />
+            ) : null}
+          </View>
+          <Text className="mt-1 text-xs font-semibold uppercase text-primary">
+            {belongs ? 'Member' : 'Following'}
+          </Text>
+        </View>
+      </View>
+      {info?.description ? (
+        <Text
+          className="mt-3 min-h-10 text-sm leading-5 text-primary-content"
+          numberOfLines={2}
+        >
+          {info.description}
+        </Text>
+      ) : (
+        <Text className="mt-3 min-h-10 text-sm leading-5 text-primary-content">
+          Public community
+        </Text>
+      )}
+      <View className="mt-3 h-6 flex-row items-center">
+        {profiles.length ? (
+          <>
+          {profiles.slice(0, 5).map((profile, index) => (
+            <View
+              key={profile.pubkey}
+              className="h-6 w-6 overflow-hidden rounded-full border border-base-300 bg-base-200"
+              style={{marginLeft: index ? -7 : 0}}
+            >
+              {profile.picture ? (
+                <Image
+                  source={{uri: profile.picture}}
+                  style={styles.trackedImage}
+                />
+              ) : (
+                <Text className="mt-1 text-center text-[9px] font-bold text-primary-content">
+                  {initials(profile.name)}
+                </Text>
+              )}
+            </View>
+          ))}
+          {profiles.length > 5 ? (
+            <Text className="ml-2 text-xs font-semibold text-primary-content">
+              +{profiles.length - 5}
+            </Text>
+          ) : null}
+          </>
+        ) : null}
+      </View>
+      <View className="mt-3 flex-row items-center gap-1">
+        <Users size={14} color={theme.colors.primaryContent} />
+        <Text className="text-xs font-medium text-primary-content">
+          Public
+        </Text>
+      </View>
+    </Pressable>
+  );
+});
+
 const Kind0CommunitySection = memo(function Kind0CommunitySection({
   communities,
   contributionCount,
@@ -361,7 +492,6 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
   const theme = useAppTheme();
   const navigation =
     useNavigation<AppNavigationProp>();
-  const relayInfos = useRelayStore(state => state.relayInfos);
   const [selectedRelationship, setSelectedRelationship] = useState<
     ProfileCommunity['relationship']
   >('belong');
@@ -516,123 +646,13 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
         className="mt-3"
         contentContainerClassName="gap-3"
       >
-        {visibleCommunities.map(community => {
-          const info = relayInfos[community.key]?.info;
-          const name =
-            info?.name?.trim() ||
-            communityNames[community.key] ||
-            community.name;
-          const belongs = community.relationship === 'belong';
-          const profiles = previewProfiles[community.key] ?? [];
-          return (
-            <Pressable
-              key={`${community.relationship}-${community.key}`}
-              accessibilityRole="button"
-              accessibilityLabel={`${name} community`}
-              className={`w-56 rounded-lg border p-3 ${
-                belongs
-                  ? 'border-primary/35 bg-base-300'
-                  : 'border-base-200 bg-base-300'
-              }`}
-              onPress={event => {
-                event.stopPropagation();
-                navigation.navigate('Community', {
-                  description: info?.description,
-                  icon: info?.icon,
-                  name,
-                  relationship: community.relationship,
-                  relay: community.url,
-                });
-              }}
-            >
-              <View className="flex-row items-start gap-3">
-                <View
-                  className={`h-12 w-12 items-center justify-center overflow-hidden rounded-lg ${communityColorClass(
-                    community.key,
-                  )}`}
-                >
-                  {info?.icon ? (
-                    <Image
-                      source={{ uri: info.icon }}
-                      style={styles.trackedImage}
-                    />
-                  ) : (
-                    <Text className="text-sm font-bold text-base-100">
-                      {initials(name)}
-                    </Text>
-                  )}
-                </View>
-                <View className="min-w-0 flex-1">
-                  <View className="flex-row items-center gap-1">
-                    <Text
-                      className="min-w-0 flex-1 text-[15px] font-bold text-base-content"
-                      numberOfLines={1}
-                    >
-                      {name}
-                    </Text>
-                    {belongs ? (
-                      <ShieldCheck
-                        size={15}
-                        color={theme.colors.primary}
-                        strokeWidth={2.3}
-                      />
-                    ) : null}
-                  </View>
-                  <Text className="mt-1 text-xs font-semibold uppercase text-primary">
-                    {belongs ? 'Member' : 'Following'}
-                  </Text>
-                </View>
-              </View>
-              {info?.description ? (
-                <Text
-                  className="mt-3 min-h-10 text-sm leading-5 text-primary-content"
-                  numberOfLines={2}
-                >
-                  {info.description}
-                </Text>
-              ) : (
-                <Text className="mt-3 min-h-10 text-sm leading-5 text-primary-content">
-                  Public community
-                </Text>
-              )}
-              <View className="mt-3 h-6 flex-row items-center">
-                {profiles.length ? (
-                  <>
-                  {profiles.slice(0, 5).map((profile, index) => (
-                    <View
-                      key={profile.pubkey}
-                      className="h-6 w-6 overflow-hidden rounded-full border border-base-300 bg-base-200"
-                      style={{marginLeft: index ? -7 : 0}}
-                    >
-                      {profile.picture ? (
-                        <Image
-                          source={{uri: profile.picture}}
-                          style={styles.trackedImage}
-                        />
-                      ) : (
-                        <Text className="mt-1 text-center text-[9px] font-bold text-primary-content">
-                          {initials(profile.name)}
-                        </Text>
-                      )}
-                    </View>
-                  ))}
-                  {profiles.length > 5 ? (
-                    <Text className="ml-2 text-xs font-semibold text-primary-content">
-                      +{profiles.length - 5}
-                    </Text>
-                  ) : null}
-                  </>
-                ) : null}
-              </View>
-              <View className="mt-3 flex-row items-center gap-1">
-                <Users size={14} color={theme.colors.primaryContent} />
-                <Text className="text-xs font-medium text-primary-content">
-                  Public
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
+        {visibleCommunities.map(community => (
+          <Kind0CommunityCard
+            key={`${community.relationship}-${community.key}`}
+            community={community}
+            profiles={previewProfiles[community.key] ?? EMPTY_COMMUNITY_PROFILES}
+          />
+        ))}
       </ScrollView>
     </View>
   );
@@ -987,11 +1007,10 @@ export function Kind0Sub({
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const {
     fallbackRelays,
-    feedReady,
     profile,
     readRelays,
     writeRelays,
-  } = useKind0ProfileData(pubkey);
+  } = useKind0ProfileData(pubkey, visible);
   const activeRelays = useMemo(
     () => (writeRelays.length ? writeRelays : fallbackRelays),
     [fallbackRelays, writeRelays],
@@ -1089,7 +1108,7 @@ export function Kind0Sub({
   }, [selectedKind]);
 
   useEffect(() => {
-    if (!pubkey || !feedReady) return;
+    if (!pubkey || !visible) return;
     const relays = writeRelays.length ? writeRelays : fallbackRelays;
     const kindsKey = requestKinds.join('-');
     const subId = `kind0P_${pubkey}_${relayHash(relays)}_${kindsKey}`;
@@ -1138,7 +1157,6 @@ export function Kind0Sub({
         if (!event || event.pubkey() !== pubkey) return;
         addProfilePost(event);
         setEmptyTimedOut(false);
-        setEmptyTimedOut(false);
         setLoading(false);
       },
       { closeOnEose: false },
@@ -1186,11 +1204,11 @@ export function Kind0Sub({
   }, [
     addProfilePost,
     fallbackRelays,
-    feedReady,
     pubkey,
     requestKinds,
     setRelayStatus,
     setSubRelays,
+    visible,
     writeRelays,
   ]);
 
@@ -1511,6 +1529,15 @@ export function Kind0Sub({
   const handleZapPress = useCallback(() => {
     navigation.navigate('SendEcash', { pubkey });
   }, [navigation, pubkey]);
+  // Hoisted: an inline renderItem gets a new identity on every Kind0Sub
+  // render (each posts flush, profile field, loading flip), which makes
+  // Feed recreate every row element.
+  const renderItem = useCallback(
+    ({item, visible: itemVisible}: FeedRenderItemInfo<ParsedEvent>) => (
+      <Note note={item} visible={visible && itemVisible} />
+    ),
+    [visible],
+  );
   const motionHeader = useCallback(
     ({
       safeAreaTop,
@@ -1589,9 +1616,7 @@ export function Kind0Sub({
     <Feed
       items={items}
       getItemId={item => item.id() || item.createdAt()}
-      renderItem={({ item, visible: itemVisible }) => (
-        <Note note={item} visible={visible && itemVisible} />
-      )}
+      renderItem={renderItem}
       motionHeader={motionHeader}
       motionHeaderOverlaysContent
       motionHeaderSurfaceColor="transparent"

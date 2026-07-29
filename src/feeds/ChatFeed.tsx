@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {useRouter} from 'expo-router';
 import {useNavigation} from 'expo-router/react-navigation';
 import {
   ChatLimiterPipeConfigT,
@@ -594,8 +595,7 @@ function ChatRow({
   conversation: Conversation;
   pubkey: string | null;
 }) {
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const kind4 = asKind4(conversation.latest) as Kind4Parsed | null;
   const parsedContent = kind4 ? fbArray(kind4, 'parsedContent') : [];
   const outgoing = conversation.latest.pubkey() === pubkey;
@@ -605,8 +605,9 @@ function ChatRow({
       className="mt-1 min-h-24 flex-row gap-3 overflow-hidden rounded-lg bg-base-300/90 px-3 py-4 shadow-sm"
       onPress={event => {
         event.stopPropagation();
-        pushDistinct(navigation, 'ChatThread', {
-          peerPubkey: conversation.peerPubkey,
+        pushDistinct(router, {
+          pathname: '/ChatThread',
+          params: {peerPubkey: conversation.peerPubkey},
         });
       }}
     >

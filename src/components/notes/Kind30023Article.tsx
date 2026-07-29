@@ -1,6 +1,7 @@
 import React, {memo, useMemo} from 'react';
 import {Linking, Pressable, Text, View} from 'react-native';
 import {Image} from 'expo-image';
+import {router} from 'expo-router';
 import {useNavigation} from 'expo-router/react-navigation';
 import {
   decode,
@@ -55,10 +56,7 @@ function inlineChildren(inline: ArticleInline) {
   ).filter((child): child is ArticleInline => !!child);
 }
 
-function openNostrEntity(
-  navigation: AppNavigationProp,
-  entity: string,
-) {
+function openNostrEntity(entity: string) {
   if (!entity) return;
 
   const bech32 = entity.replace(/^nostr:/i, '');
@@ -66,43 +64,56 @@ function openNostrEntity(
     const decoded = decode(bech32);
     switch (decoded.type) {
       case 'npub':
-        pushDistinct(navigation, 'PublicProfile', {pubkey: decoded.data});
+        pushDistinct(router, {
+          pathname: '/PublicProfile',
+          params: {pubkey: decoded.data},
+        });
         return;
       case 'nprofile': {
         const profile = decoded.data as ProfilePointer;
         if (profile.pubkey) {
-          pushDistinct(navigation, 'PublicProfile', {pubkey: profile.pubkey});
+          pushDistinct(router, {
+            pathname: '/PublicProfile',
+            params: {pubkey: profile.pubkey},
+          });
         }
         return;
       }
       case 'note':
-        pushDistinct(navigation, 'Kind1Thread', {
-          nevent: neventEncode({id: decoded.data}),
+        pushDistinct(router, {
+          pathname: '/Kind1Thread',
+          params: {nevent: neventEncode({id: decoded.data})},
         });
         return;
       case 'nevent': {
         const event = decoded.data as EventPointer;
         if (!event.id) return;
-        pushDistinct(navigation, 'Kind1Thread', {
-          nevent: neventEncode({
-            id: event.id,
-            author: event.author,
-            relays: event.relays,
-            kind: event.kind,
-          }),
+        pushDistinct(router, {
+          pathname: '/Kind1Thread',
+          params: {
+            nevent: neventEncode({
+              id: event.id,
+              author: event.author,
+              relays: event.relays,
+              kind: event.kind,
+            }),
+          },
         });
         return;
       }
       case 'naddr': {
         const address = decoded.data as AddressPointer;
         if (address.kind === 30023) {
-          pushDistinct(navigation, 'Kind30023Thread', {
-            naddr: naddrEncode({
-              kind: address.kind,
-              pubkey: address.pubkey,
-              identifier: address.identifier,
-              relays: address.relays,
-            }),
+          pushDistinct(router, {
+            pathname: '/Kind30023Thread',
+            params: {
+              naddr: naddrEncode({
+                kind: address.kind,
+                pubkey: address.pubkey,
+                identifier: address.identifier,
+                relays: address.relays,
+              }),
+            },
           });
         }
         return;
@@ -191,7 +202,7 @@ function InlineNodes({
                 key={key}
                 className="text-primary"
                 onPress={() => {
-                  openNostrEntity(navigation, bech32);
+                  openNostrEntity(bech32);
                 }}
               >
                 {stringValue(inline.text()) || bech32}

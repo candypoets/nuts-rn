@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { Keyboard, Pressable, Text, View, type ViewStyle } from 'react-native';
 import { CloudOff, RefreshCw } from 'lucide-react-native';
-import { useNavigation } from 'expo-router/react-navigation';
+import { useRouter } from 'expo-router';
 import type {
   ContentBlock,
   ParsedEvent,
@@ -31,7 +31,6 @@ import {
   useEffectiveAuthorRelays,
 } from '../../hooks/useAuthorRelays';
 import { pushDistinct } from '../../navigation/pushDistinct';
-import type { AppNavigationProp } from '../../navigation/types';
 import { useAppTheme } from '../../theme';
 import { BOOTSTRAP_RELAYS, useNostrStore } from '../../stores/nostrStore';
 import { useRelayStore } from '../../stores/relayStore';
@@ -500,8 +499,7 @@ function NoteComponent({
   showReplies,
 }: NoteProps) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const fetchedRef = useRef<ParsedEvent | null>(null);
   const contextRef = useRef<ParsedEvent[]>(context);
   const relayStatusSink = useRef<
@@ -593,24 +591,27 @@ function NoteComponent({
         );
         return;
       }
-      pushDistinct(navigation, 'Kind30023Thread', {
-        naddr: naddrEncode({
-          kind,
-          pubkey,
-          identifier,
-          relays: noteRelays,
-        }),
+      pushDistinct(router, {
+        pathname: '/Kind30023Thread',
+        params: {
+          naddr: naddrEncode({
+            kind,
+            pubkey,
+            identifier,
+            relays: noteRelays,
+          }),
+        },
       });
       return;
     }
-    pushDistinct(navigation, 'Kind1Thread', { nevent });
+    pushDistinct(router, { pathname: '/Kind1Thread', params: { nevent } });
   }, [
     disableOpen,
     displayId,
     displayNote,
     effectiveId,
-    navigation,
     noteRelays,
+    router,
   ]);
 
   useEffect(() => {

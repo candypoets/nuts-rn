@@ -1,6 +1,6 @@
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, Text, View} from 'react-native';
-import {useNavigation} from 'expo-router/react-navigation';
+import {useRouter} from 'expo-router';
 import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
@@ -24,7 +24,6 @@ import {neventEncode} from 'nostr-tools/nip19';
 import {Feed, FeedSticky} from '../components/Feed';
 import {Avatar, ContentBlocks, Note, User} from '../components/notes';
 import {pushDistinct} from '../navigation/pushDistinct';
-import type {AppNavigationProp} from '../navigation/types';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {
   type ProcessedNotification,
@@ -610,8 +609,7 @@ const ReferencedPostContent = memo(function ReferencedPostContent({
   relays: string[];
   visible: boolean;
 }) {
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const [note, setNote] = useState<ParsedEvent | null>(null);
   const seenRef = useRef<string | null>(null);
 
@@ -643,13 +641,16 @@ const ReferencedPostContent = memo(function ReferencedPostContent({
   );
   const openPost = () => {
     if (note?.kind?.() === 20) return;
-    pushDistinct(navigation, 'Kind1Thread', {
-      nevent: neventEncode({
-        id: noteId,
-        author: note?.pubkey?.() || undefined,
-        relays,
-        kind: note?.kind?.() || 1,
-      }),
+    pushDistinct(router, {
+      pathname: '/Kind1Thread',
+      params: {
+        nevent: neventEncode({
+          id: noteId,
+          author: note?.pubkey?.() || undefined,
+          relays,
+          kind: note?.kind?.() || 1,
+        }),
+      },
     });
   };
 
@@ -839,8 +840,7 @@ const ReplyEventPreview = memo(function ReplyEventPreview({
   event?: ParsedEvent;
   relays: string[];
 }) {
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const pubkey = eventPubkey(event);
   const kind1 = useMemo(() => (event ? asKind1(event) : null), [event]);
   const content = useMemo(
@@ -856,13 +856,16 @@ const ReplyEventPreview = memo(function ReplyEventPreview({
   const openReply = () => {
     const id = event.id();
     if (!id) return;
-    pushDistinct(navigation, 'Kind1Thread', {
-      nevent: neventEncode({
-        id,
-        author: pubkey,
-        relays,
-        kind: event.kind() || 1,
-      }),
+    pushDistinct(router, {
+      pathname: '/Kind1Thread',
+      params: {
+        nevent: neventEncode({
+          id,
+          author: pubkey,
+          relays,
+          kind: event.kind() || 1,
+        }),
+      },
     });
   };
 

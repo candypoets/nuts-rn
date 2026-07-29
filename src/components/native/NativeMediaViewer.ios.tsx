@@ -6,11 +6,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useNavigation } from 'expo-router/react-navigation';
+import { useRouter } from 'expo-router';
 import type { ParsedEvent } from '@candypoets/nipworker';
 import NativeMediaViewerComponent from '../../specs/NativeMediaViewerNativeComponent';
 import { handleProfileRoute } from '../../navigation/nativeRouteEvents';
-import type { AppNavigationProp } from '../../navigation/types';
 import { useAppTheme } from '../../theme';
 import { footerColors, useNoteFooterActions } from '../notes/footerActions';
 import type { ImageGridLink } from '../notes/ImageGrid';
@@ -66,7 +65,7 @@ export function NativeMediaViewer({
   style,
 }: Props) {
   const theme = useAppTheme();
-  const navigation = useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const footerActions = useNoteFooterActions(note, relays);
   const { width: viewportWidth } = useWindowDimensions();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
@@ -112,9 +111,9 @@ export function NativeMediaViewer({
   );
   const handleNativeRoute = useCallback(
     (event: { nativeEvent: { route: string } }) => {
-      handleProfileRoute(event.nativeEvent.route, navigation);
+      handleProfileRoute(event.nativeEvent.route, router);
     },
-    [navigation],
+    [router],
   );
   const handleNativeAction = useCallback(
     (event: { nativeEvent: { action: string } }) => {

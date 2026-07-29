@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { pushDistinct } from '../navigation/pushDistinct';
 import { BadgeCheck, Ticket } from 'lucide-react-native';
 
 import {
@@ -181,7 +182,7 @@ export function RedeemModal({ relay, token, onDone }: RedeemModalProps) {
           </Text>
           <Pressable
             style={styles.primaryButton}
-            onPress={() => router.push('/Login')}
+            onPress={() => pushDistinct(router, '/Login')}
           >
             <Text style={styles.primaryButtonText}>Log in to claim</Text>
           </Pressable>

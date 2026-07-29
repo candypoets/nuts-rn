@@ -27,6 +27,7 @@ import {decode, type EventPointer} from 'nostr-tools/nip19';
 import type {EventTemplate} from 'nostr-tools';
 import {Heart, MessageCircle, Send} from 'lucide-react-native';
 import {useRouter} from 'expo-router';
+import {pushDistinct} from '../navigation/pushDistinct';
 import Animated, {
   useAnimatedStyle,
   withSequence,
@@ -432,7 +433,10 @@ export function Kind1111CommentsModal({
   const openProfile = useCallback((nextPubkey: string) => {
     router.back();
     setTimeout(() => {
-      router.push({pathname: '/PublicProfile', params: {pubkey: nextPubkey}});
+      pushDistinct(router, {
+        pathname: '/PublicProfile',
+        params: {pubkey: nextPubkey},
+      });
     }, 350);
   }, [router]);
   const emptyContent = !target ? (

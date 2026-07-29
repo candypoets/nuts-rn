@@ -1,11 +1,10 @@
 import React, {useCallback, useMemo} from 'react';
 import {StyleSheet} from 'react-native';
-import {useNavigation} from 'expo-router/react-navigation';
+import {useRouter} from 'expo-router';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import NativeNoteHeaderComponent from '../../specs/NativeNoteHeaderNativeComponent';
 import {shortNpub} from '../../lib/identity';
 import {handleProfileRoute} from '../../navigation/nativeRouteEvents';
-import type {AppNavigationProp} from '../../navigation/types';
 import {
   getBaseContentColor,
   getMutedContentColor,
@@ -45,8 +44,7 @@ export function NativeNoteHeader({
   onNotePress,
 }: Props) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
   const authorPubkey = note.pubkey() || undefined;
   const nameFallback = useMemo(
@@ -65,9 +63,9 @@ export function NativeNoteHeader({
         onNotePress();
         return;
       }
-      handleProfileRoute(event.nativeEvent.route, navigation);
+      handleProfileRoute(event.nativeEvent.route, router);
     },
-    [navigation, onNotePress],
+    [onNotePress, router],
   );
 
   return (

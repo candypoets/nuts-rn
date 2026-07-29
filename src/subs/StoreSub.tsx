@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import {Image} from 'expo-image';
-import {useNavigation} from 'expo-router/react-navigation';
+import {useRouter} from 'expo-router';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
@@ -57,7 +57,6 @@ import {
 import {storePresetFor, type CommunityType} from '../lib/communityTypes';
 import {requestCheckoutUrl} from '../lib/storeCheckout';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
-import type {AppNavigationProp} from '../navigation/types';
 import {pushDistinct} from '../navigation/pushDistinct';
 import {useAuthStore} from '../stores/authStore';
 import {useRelayStore} from '../stores/relayStore';
@@ -419,7 +418,7 @@ const MenuRow = memo(function MenuRow({
 export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubProps) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const normalizedRelay = useMemo(() => normalizeRelayUrl(relay), [relay]);
   const relayInfos = useRelayStore(state => state.relayInfos);
   const relayInfo = relayInfos[normalizedRelay]?.info;
@@ -647,8 +646,8 @@ export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubPro
   );
 
   const openSignIn = useCallback(() => {
-    pushDistinct(navigation, 'Login', undefined);
-  }, [navigation]);
+    pushDistinct(router, '/Login');
+  }, [router]);
 
   const actionProps = useMemo<ItemActionProps>(
     () => ({

@@ -1,45 +1,21 @@
-import type {AppNavigationProp, RootStackParamList} from './types';
+import type {Href, ImperativeRouter} from 'expo-router';
 
-function sameParams(
-  left: RootStackParamList[keyof RootStackParamList],
-  right: RootStackParamList[keyof RootStackParamList],
+// Ignore pushes that land too close after a previous one — almost always an
+// accidental double tap. Programmatic chained pushes within this window are
+// rare enough that swallowing them is the lesser evil.
+const NAV_THROTTLE_MS = 500;
+let lastNavAt = 0;
+
+/**
+ * Pushes an Expo Router href unless another guarded push just claimed the
+ * navigation slot.
+ */
+export function pushDistinct(
+  router: ImperativeRouter,
+  href: Href,
+  now: number = Date.now(),
 ) {
-  if (left === right) return true;
-  if (!left || !right) return false;
-
-  const leftKeys = Object.keys(left).sort();
-  const rightKeys = Object.keys(right).sort();
-  if (leftKeys.length !== rightKeys.length) return false;
-
-  return leftKeys.every((key, index) => {
-    if (key !== rightKeys[index]) return false;
-    return (
-      left[key as keyof typeof left] === right[key as keyof typeof right]
-    );
-  });
-}
-
-export function pushDistinct<RouteName extends keyof RootStackParamList>(
-  navigation: AppNavigationProp,
-  name: RouteName,
-  params: RootStackParamList[RouteName],
-) {
-  const routes = navigation.getState().routes;
-  const current = routes[routes.length - 1];
-
-  if (
-    current?.name === name &&
-    sameParams(
-      current.params as RootStackParamList[keyof RootStackParamList],
-      params,
-    )
-  ) {
-    return;
-  }
-
-  const push = navigation.push as (
-    routeName: RouteName,
-    routeParams: RootStackParamList[RouteName],
-  ) => void;
-  push(name, params);
+  if (now - lastNavAt < NAV_THROTTLE_MS) return;
+  lastNavAt = now;
+  router.push(href);
 }

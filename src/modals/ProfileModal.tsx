@@ -17,6 +17,7 @@ import { Mint } from '@cashu/cashu-ts';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { useRouter } from 'expo-router';
 import { useNavigation } from 'expo-router/react-navigation';
+import { pushDistinct } from '../navigation/pushDistinct';
 import QRCode from 'react-native-qrcode-svg';
 import type {
   ConnectionStatus,
@@ -197,7 +198,10 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
         const pubkey = auth.pubkey;
         router.back();
         setTimeout(() => {
-          router.push({ pathname: '/PublicProfile', params: { pubkey } });
+          pushDistinct(router, {
+            pathname: '/PublicProfile',
+            params: { pubkey },
+          });
         }, 350);
         return;
       }

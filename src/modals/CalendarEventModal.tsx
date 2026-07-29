@@ -24,6 +24,7 @@ import {
 } from '@candypoets/nipworker/utils';
 import type {EventTemplate} from 'nostr-tools';
 import {CalendarClock, CalendarX, ChevronLeft, MapPin, Users} from 'lucide-react-native';
+import {useRouter} from 'expo-router';
 import {useNavigation} from 'expo-router/react-navigation';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
@@ -139,12 +140,16 @@ function formatCalendarDay(timestamp?: number) {
 }
 
 const AttendeeRow = memo(function AttendeeRow({pubkey}: {pubkey: string}) {
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const router = useRouter();
   return (
     <Pressable
       className="flex-row items-center gap-3 rounded-xl bg-base-200 p-3"
-      onPress={() => pushDistinct(navigation, 'PublicProfile', {pubkey})}
+      onPress={() =>
+        pushDistinct(router, {
+          pathname: '/PublicProfile',
+          params: {pubkey},
+        })
+      }
     >
       <Avatar pubkey={pubkey} size="lg" link={false} />
       <View className="min-w-0 flex-1">

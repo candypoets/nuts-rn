@@ -1,11 +1,10 @@
-import React, { memo, useCallback, useContext, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { NavigationContext } from 'expo-router/react-navigation';
+import { useRouter } from 'expo-router';
 import type { Kind0Parsed } from '@candypoets/nipworker';
 import { useKind0Value } from '../../hooks/useKind0Value';
 import { identityColor, initials } from '../../lib/identity';
 import { pushDistinct } from '../../navigation/pushDistinct';
-import type { AppNavigationProp } from '../../navigation/types';
 import { NativeAvatar } from '../native/NativeAvatar';
 
 type AvatarSize =
@@ -46,17 +45,14 @@ function AvatarComponent({
   link = false,
   onProfileOpen,
 }: AvatarProps) {
-  const navigation = useContext(NavigationContext) as
-    | AppNavigationProp
-    | undefined;
+  const router = useRouter();
   const openProfile = useCallback(() => {
     if (onProfileOpen) {
       onProfileOpen(pubkey);
       return;
     }
-    if (!navigation) return;
-    pushDistinct(navigation, 'PublicProfile', { pubkey });
-  }, [navigation, onProfileOpen, pubkey]);
+    pushDistinct(router, { pathname: '/PublicProfile', params: { pubkey } });
+  }, [onProfileOpen, pubkey, router]);
 
   const selectName = useCallback(
     (profile: Kind0Parsed) =>

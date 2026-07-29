@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import {Image} from 'expo-image';
 import {MenuView} from '@react-native-menu/menu';
+import {useRouter} from 'expo-router';
 import {useNavigation} from 'expo-router/react-navigation';
 import Reanimated, {
   Extrapolation,
@@ -550,7 +551,7 @@ const CommunityHeader = memo(function CommunityHeader({
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const topInset = Math.max(0, insets.top - 8);
   const memberLabel = relationship === 'belong' ? 'Belongs to' : 'Following';
   const isHospitality = communityType === 'hospitality';
@@ -627,7 +628,12 @@ const CommunityHeader = memo(function CommunityHeader({
           <Pressable
             accessibilityRole="button"
             className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-lg bg-base-200"
-            onPress={() => pushDistinct(navigation, 'Store', {relay, name})}
+            onPress={() =>
+              pushDistinct(router, {
+                pathname: '/Store',
+                params: {relay, name},
+              })
+            }
           >
             {isHospitality ? (
               <UtensilsCrossed size={20} color={theme.colors.primary} />

@@ -1,10 +1,9 @@
-import React, {memo, useCallback, useContext} from 'react';
+import React, {memo, useCallback} from 'react';
 import {Text} from 'react-native';
-import {NavigationContext} from 'expo-router/react-navigation';
+import {useRouter} from 'expo-router';
 import type {Kind0Parsed} from '@candypoets/nipworker';
 import {useKind0Value} from '../../hooks/useKind0Value';
 import {pushDistinct} from '../../navigation/pushDistinct';
-import type {AppNavigationProp} from '../../navigation/types';
 import {shortNpub} from '../../lib/identity';
 
 type UserProps = {
@@ -31,9 +30,7 @@ function UserComponent({
   className = 'text-sm font-semibold text-base-content',
   onProfileOpen,
 }: UserProps) {
-  const navigation = useContext(NavigationContext) as
-    | AppNavigationProp
-    | undefined;
+  const router = useRouter();
   const fallbackName = shortNpub(pubkey);
   const selectName = useCallback(
     (profile: Kind0Parsed) => displayName(profile, pubkey),
@@ -49,9 +46,8 @@ function UserComponent({
       onProfileOpen(pubkey);
       return;
     }
-    if (!navigation) return;
-    pushDistinct(navigation, 'PublicProfile', {pubkey});
-  }, [navigation, onProfileOpen, pubkey]);
+    pushDistinct(router, {pathname: '/PublicProfile', params: {pubkey}});
+  }, [onProfileOpen, pubkey, router]);
 
   return (
     <Text

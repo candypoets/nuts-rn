@@ -789,7 +789,7 @@ export function Feed<T>({
         <HeaderMotion.ScrollView
           animatedRef={listRef as never}
           className="flex-1"
-          contentInsetAdjustmentBehavior="automatic"
+          contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}
           headerOffsetStrategy={
             motionHeaderOverlaysContent ? 'none' : undefined
@@ -833,7 +833,7 @@ export function Feed<T>({
         <Animated.ScrollView
           ref={listRef}
           className="flex-1"
-          contentInsetAdjustmentBehavior="automatic"
+          contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator

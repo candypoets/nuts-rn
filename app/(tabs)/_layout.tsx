@@ -1,94 +1,23 @@
 import React, {
   createContext,
-  forwardRef,
   useCallback,
   useContext,
   useEffect,
-  useImperativeHandle,
   useMemo,
-  useRef,
   useState,
 } from 'react';
-import {type Href, usePathname} from 'expo-router';
-import {
-  Tabs,
-  TabList,
-  TabSlot,
-  TabTrigger,
-  type ExpoTabsScreenOptions,
-} from 'expo-router/ui';
-import {
-  useIsFocused,
-  useNavigation,
-} from 'expo-router/react-navigation';
-import {House, Layers3, MessageCircle} from 'lucide-react-native';
-import type {NostrManagerLike} from '@candypoets/nipworker';
-import {
-  GlassTabBar,
-  GlassTabButton,
-  TabBarMinimizeProvider,
-  type GlassTabBarTheme,
-  type GlassTabItem,
-} from 'expo-glass-tabs';
+import { useIsFocused } from 'expo-router/react-navigation';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import type { NostrManagerLike } from '@candypoets/nipworker';
 
-import {getSharedNostrManager} from '../../src/nostr/manager';
-import {getAppThemeVars, useAppTheme} from '../../src/theme';
+import { getSharedNostrManager } from '../../src/nostr/manager';
+import { getAppThemeVars, useAppTheme } from '../../src/theme';
 
 export const unstable_settings = {
   initialRouteName: 'ExploreTab',
 };
 
 export type RouteId = 'home' | 'explore' | 'chat';
-
-type MainTabItem = GlassTabItem & {
-  href: Href;
-  routeId: RouteId;
-};
-
-const MAIN_TABS: readonly MainTabItem[] = [
-  {
-    name: 'HomeTab',
-    href: '/HomeTab',
-    routeId: 'home',
-    label: 'Home',
-    renderIcon: ({tint, size}) => (
-      <House color={tint} size={size} strokeWidth={2} />
-    ),
-  },
-  {
-    name: 'ExploreTab',
-    href: '/ExploreTab',
-    routeId: 'explore',
-    label: 'Feed',
-    renderIcon: ({tint, size}) => (
-      <Layers3 color={tint} size={size} strokeWidth={2} />
-    ),
-  },
-  {
-    name: 'ChatTab',
-    href: '/ChatTab',
-    routeId: 'chat',
-    label: 'Chats',
-    renderIcon: ({tint, size}) => (
-      <MessageCircle color={tint} size={size} strokeWidth={2} />
-    ),
-  },
-];
-
-const DEFAULT_TAB_INDEX = 1;
-
-export function getInitialTabIndex(pathname: string) {
-  const index = MAIN_TABS.findIndex(item => item.href === pathname);
-  return index >= 0 ? index : DEFAULT_TAB_INDEX;
-}
-
-// Expo Router 57 types `screenOptions` as the fully resolved descriptor
-// shape (including internal title/action fields), although React Navigation
-// accepts the partial defaults at runtime.
-const MAIN_TAB_SCREEN_OPTIONS = {
-  freezeOnBlur: false,
-  lazy: false,
-} as unknown as ExpoTabsScreenOptions;
 
 function scheduleNostrCleanup(manager: NostrManagerLike | null, delay = 1000) {
   if (!manager) return () => {};
@@ -124,7 +53,7 @@ export function useMainTabContext(routeId: RouteId) {
   }
 
   const isFocused = useIsFocused();
-  const {activateRoute, manager} = context;
+  const { activateRoute, manager } = context;
 
   useEffect(() => {
     if (!isFocused) return;
@@ -140,84 +69,11 @@ export function useMainTabContext(routeId: RouteId) {
   };
 }
 
-type SelectTab = (index: number) => void;
-
-type TabNavigationBridge = {
-  dispatch: (action: {
-    type: 'JUMP_TO';
-    target: string;
-    payload: {name: string};
-  }) => void;
-  emit: (event: {
-    type: 'tabPress';
-    target: string;
-    canPreventDefault: true;
-  }) => {defaultPrevented: boolean};
-  getState: () =>
-    | {
-        index: number;
-        key: string;
-        routes: readonly {key: string; name: string}[];
-      }
-    | undefined;
-};
-
-const TabSelectionBridge = forwardRef<
-  SelectTab,
-  {requestScrollToTop: (routeId: RouteId) => void}
->(function TabSelectionBridge({requestScrollToTop}, ref) {
-  const navigation = useNavigation<TabNavigationBridge>();
-
-  const selectTab = useCallback<SelectTab>(
-    index => {
-      const tab = MAIN_TABS[index];
-      if (!tab) return;
-
-      const state = navigation.getState();
-      if (!state) return;
-
-      const route = state.routes.find(candidate => candidate.name === tab.name);
-      if (!route) return;
-
-      const event = navigation.emit({
-        type: 'tabPress',
-        target: route.key,
-        canPreventDefault: true,
-      });
-      if (event.defaultPrevented) return;
-
-      if (state.routes[state.index]?.key === route.key) {
-        requestScrollToTop(tab.routeId);
-        return;
-      }
-
-      navigation.dispatch({
-        type: 'JUMP_TO',
-        target: state.key,
-        payload: {name: tab.name},
-      });
-    },
-    [navigation, requestScrollToTop],
-  );
-
-  useImperativeHandle(ref, () => selectTab, [selectTab]);
-  return null;
-});
-
 export default function MainTabsLayout() {
   const theme = useAppTheme();
-  const pathname = usePathname();
-  const selectTabRef = useRef<SelectTab | null>(null);
-  const initialTabIndex = getInitialTabIndex(pathname);
   const themeVars = useMemo(() => getAppThemeVars(theme), [theme]);
   const manager = useMemo(() => getSharedNostrManager(), []);
   const nostrEnabled = Boolean(manager);
-  const tabBarTheme = useMemo<Partial<GlassTabBarTheme>>(
-    () => ({
-      highlight: `${theme.colors.primary}66`,
-    }),
-    [theme.colors.primary],
-  );
 
   const [activatedRoutes, setActivatedRoutes] = useState<
     Record<RouteId, boolean>
@@ -237,7 +93,7 @@ export default function MainTabsLayout() {
   const activateRoute = useCallback((routeId: RouteId) => {
     setActivatedRoutes(current => {
       if (current[routeId]) return current;
-      return {...current, [routeId]: true};
+      return { ...current, [routeId]: true };
     });
   }, []);
 
@@ -271,45 +127,73 @@ export default function MainTabsLayout() {
     ],
   );
 
-  const selectTab = useCallback(
-    (index: number) => {
-      selectTabRef.current?.(index);
-    },
-    [],
+  const tabPressListeners = useCallback(
+    (routeId: RouteId) =>
+      ({ navigation }: { navigation: { isFocused: () => boolean } }) => ({
+        tabPress: () => {
+          if (navigation.isFocused()) {
+            requestScrollToTop(routeId);
+          }
+        },
+      }),
+    [requestScrollToTop],
   );
 
   return (
     <MainTabContext.Provider value={tabContext}>
-      <TabBarMinimizeProvider>
-        <Tabs
-          options={{
-            backBehavior: 'initialRoute',
-            screenOptions: MAIN_TAB_SCREEN_OPTIONS,
-          }}>
-          <TabSelectionBridge
-            ref={selectTabRef}
-            requestScrollToTop={requestScrollToTop}
+      <NativeTabs
+        backBehavior="initialRoute"
+        backgroundColor={theme.colors.base100}
+        iconColor={{
+          default: theme.colors.primaryContent,
+          selected: theme.colors.primary,
+        }}
+        labelStyle={{
+          default: { color: theme.colors.primaryContent },
+          selected: { color: theme.colors.primary },
+        }}
+        minimizeBehavior="onScrollDown"
+        shadowColor={`${theme.colors.primary}33`}
+        sidebarAdaptable={false}
+        tintColor={theme.colors.primary}
+      >
+        <NativeTabs.Trigger
+          listeners={tabPressListeners('home')}
+          name="HomeTab"
+        >
+          <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            md="home"
+            sf={{ default: 'house', selected: 'house.fill' }}
           />
-          <TabSlot />
-          <TabList asChild>
-            <GlassTabBar
-              haptics
-              initialIndex={initialTabIndex}
-              onIndexSelected={selectTab}
-              theme={tabBarTheme}>
-              {MAIN_TABS.map((item, index) => (
-                <TabTrigger
-                  asChild
-                  href={item.href}
-                  key={item.name}
-                  name={item.name}>
-                  <GlassTabButton index={index} item={item} />
-                </TabTrigger>
-              ))}
-            </GlassTabBar>
-          </TabList>
-        </Tabs>
-      </TabBarMinimizeProvider>
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger
+          listeners={tabPressListeners('explore')}
+          name="ExploreTab"
+        >
+          <NativeTabs.Trigger.Label>Feed</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            md="layers"
+            sf={{
+              default: 'square.stack.3d.up',
+              selected: 'square.stack.3d.up.fill',
+            }}
+          />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger
+          listeners={tabPressListeners('chat')}
+          name="ChatTab"
+        >
+          <NativeTabs.Trigger.Label>Chats</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            md="chat"
+            sf={{
+              default: 'bubble.left.and.bubble.right',
+              selected: 'bubble.left.and.bubble.right.fill',
+            }}
+          />
+        </NativeTabs.Trigger>
+      </NativeTabs>
     </MainTabContext.Provider>
   );
 }

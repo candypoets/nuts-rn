@@ -7,7 +7,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -112,7 +111,6 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
-const APP_FOOTER_HEIGHT = Platform.OS === 'android' ? 68 : 56;
 const MEDIA_GRID_COLUMNS = 2;
 const MEDIA_TILE_HEIGHT = 286;
 const MAX_NEW_NOTE_AVATARS = 3;
@@ -1285,9 +1283,7 @@ const MediaGridNote = memo(
 );
 
 function ExploreComposerFooter() {
-  return (
-    <ComposerFooter bottomOffset={APP_FOOTER_HEIGHT + 8} floating={false} />
-  );
+  return <ComposerFooter bottomOffset={8} floating={false} />;
 }
 
 function ExploreHeader({

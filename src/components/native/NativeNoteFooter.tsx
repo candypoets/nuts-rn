@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { ParsedEvent } from '@candypoets/nipworker';
 import NativeNoteFooterComponent from '../../specs/NativeNoteFooterNativeComponent';
-import type {RelayStatusSink} from '../notes/RelaysList';
+import type { RelayStatusSink } from '../notes/RelaysList';
 
 type Props = {
   note: ParsedEvent;
@@ -79,8 +79,8 @@ export function NativeNoteFooter({
     [onComments, onLike, onReply, onRepost, onShare, onZap],
   );
   const handleRelayStatus = React.useCallback(
-    (event: {nativeEvent: {relayUrl: string; status: string}}) => {
-      const {relayUrl, status} = event.nativeEvent;
+    (event: { nativeEvent: { relayUrl: string; status: string } }) => {
+      const { relayUrl, status } = event.nativeEvent;
       relayStatusSink?.current?.(relayUrl, status);
     },
     [relayStatusSink],
@@ -97,6 +97,7 @@ export function NativeNoteFooter({
     >
       <NativeNoteFooterComponent
         noteBytes={noteBytes}
+        noteId={note.id() || undefined}
         relays={relays}
         relayResolutionPending={relayResolutionPending}
         currentUserPubkey={currentUserPubkey}

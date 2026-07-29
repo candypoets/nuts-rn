@@ -19,6 +19,7 @@ class NativeNoteFooterManager :
   override fun getDelegate(): ViewManagerDelegate<NativeNoteFooterView> = delegate
   override fun createViewInstance(reactContext: ThemedReactContext): NativeNoteFooterView = NativeNoteFooterView(reactContext)
   override fun setNoteBytes(view: NativeNoteFooterView, value: ReadableArray?) = view.setNoteBytes(value)
+  override fun setNoteId(view: NativeNoteFooterView, value: String?) = view.setNoteId(value)
   override fun setRelays(view: NativeNoteFooterView, value: ReadableArray?) = view.setRelays(value)
   override fun setRelayResolutionPending(view: NativeNoteFooterView, value: Boolean) = view.setRelayResolutionPending(value)
   override fun setCurrentUserPubkey(view: NativeNoteFooterView, value: String?) = view.setCurrentUserPubkey(value)

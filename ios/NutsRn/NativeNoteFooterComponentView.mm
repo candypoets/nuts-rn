@@ -82,6 +82,9 @@ using namespace facebook::react;
   if (oldFooterProps.noteBytes != newFooterProps.noteBytes) {
     [_contentView updateNoteBytes:RCTNSArrayFromIntVector(newFooterProps.noteBytes)];
   }
+  if (oldFooterProps.noteId != newFooterProps.noteId) {
+    [_contentView updateNoteId:RCTNSStringFromString(newFooterProps.noteId)];
+  }
   if (oldFooterProps.relays != newFooterProps.relays) {
     [_contentView updateRelays:RCTNSArrayFromStringVector(newFooterProps.relays)];
   }

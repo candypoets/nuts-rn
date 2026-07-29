@@ -750,6 +750,11 @@ private final class NativeMediaNoteOverlayView: UIView {
     setNeedsLayout()
   }
 
+  @objc(updateNoteId:)
+  func updateNoteId(_ value: String?) {
+    footerView.updateNoteId(value)
+  }
+
   @objc(updateRelays:)
   func updateRelays(_ value: [String]?) {
     headerView.updateRelays(value)
@@ -1056,6 +1061,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       noteOverlayView.setActive(nextBytes != nil)
     }
     layoutOverlayChrome()
+  }
+
+  @objc(updateNoteId:)
+  func updateNoteId(_ value: String?) {
+    noteOverlayView.updateNoteId(value)
   }
 
   @objc(updateRelays:)

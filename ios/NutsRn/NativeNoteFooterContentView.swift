@@ -18,7 +18,11 @@ class NativeNoteFooterContentView: UIView {
   private var relayResolutionPending = false
   private var currentUserPubkey = ""
   private var visible = true
-  private var noteId = ""
+  private var parsedNoteId = ""
+  private var noteIdOverride = ""
+  private var noteId: String {
+    noteIdOverride.isEmpty ? parsedNoteId : noteIdOverride
+  }
   private var notePubkey = ""
   private var noteKind: UInt16 = 0
   private var mainSubscription: NipworkerHookHandle?
@@ -86,10 +90,21 @@ class NativeNoteFooterContentView: UIView {
     refreshSubscriptions()
   }
 
+  @objc(updateNoteId:)
+  func updateNoteId(_ value: String?) {
+    let previousNoteId = noteId
+    noteIdOverride = value ?? ""
+    if previousNoteId != noteId {
+      resetCounts()
+      activeSubscriptionKey = ""
+    }
+    refreshSubscriptions()
+  }
+
   func updateParsedEvent(_ event: nostr_fb_ParsedEvent?) {
     let previousNoteId = noteId
     guard let event else {
-      noteId = ""
+      parsedNoteId = ""
       notePubkey = ""
       noteKind = 0
       supportsComments = true
@@ -101,7 +116,7 @@ class NativeNoteFooterContentView: UIView {
       return
     }
 
-    noteId = event.id ?? ""
+    parsedNoteId = event.id ?? ""
     notePubkey = event.pubkey ?? ""
     noteKind = event.kind
     supportsComments = noteKind != 1 && noteKind != 6
@@ -174,13 +189,13 @@ class NativeNoteFooterContentView: UIView {
         event: "parseNote-miss",
         details: "missing note bytes"
       )
-      noteId = ""
+      parsedNoteId = ""
       notePubkey = ""
       noteKind = 0
       supportsComments = true
       return
     }
-    noteId = event.id
+    parsedNoteId = event.id
     notePubkey = event.pubkey
     noteKind = event.kind
     supportsComments = noteKind != 1 && noteKind != 6

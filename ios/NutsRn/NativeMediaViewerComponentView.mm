@@ -95,6 +95,9 @@ static NSString *RCTNSStringFromString(const std::string &value);
   if (oldViewerProps.noteBytes != newViewerProps.noteBytes) {
     [_contentView updateNoteBytes:RCTNSArrayFromIntVector(newViewerProps.noteBytes)];
   }
+  if (oldViewerProps.noteId != newViewerProps.noteId) {
+    [_contentView updateNoteId:RCTNSStringFromString(newViewerProps.noteId)];
+  }
   if (oldViewerProps.relays != newViewerProps.relays) {
     [_contentView updateRelays:RCTNSArrayFromStringVector(newViewerProps.relays)];
   }

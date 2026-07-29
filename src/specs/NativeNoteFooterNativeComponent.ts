@@ -1,4 +1,4 @@
-import type {HostComponent, ViewProps} from 'react-native';
+import type { HostComponent, ViewProps } from 'react-native';
 import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNativeComponent';
 import type {
   DirectEventHandler,
@@ -17,6 +17,7 @@ type RelayStatusEvent = Readonly<{
 
 export interface NativeProps extends ViewProps {
   noteBytes?: ReadonlyArray<Int32>;
+  noteId?: string;
   relays?: ReadonlyArray<string>;
   relayResolutionPending?: WithDefault<boolean, false>;
   currentUserPubkey?: string;

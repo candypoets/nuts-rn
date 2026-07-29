@@ -66,8 +66,7 @@ export function NativeMediaViewer({
   style,
 }: Props) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
   const footerActions = useNoteFooterActions(note, relays);
   const { width: viewportWidth } = useWindowDimensions();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
@@ -148,6 +147,7 @@ export function NativeMediaViewer({
           itemKeys={itemKeys}
           sessionId={sessionId}
           noteBytes={noteBytes}
+          noteId={note?.id() || undefined}
           relays={relays}
           currentUserPubkey={footerActions.currentUserPubkey}
           optimisticReactionNonce={footerActions.optimisticReactionNonce}

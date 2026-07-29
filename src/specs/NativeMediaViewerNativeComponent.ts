@@ -1,4 +1,4 @@
-import type {HostComponent, ViewProps} from 'react-native';
+import type { HostComponent, ViewProps } from 'react-native';
 import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNativeComponent';
 import type {
   DirectEventHandler,
@@ -22,6 +22,7 @@ export interface NativeProps extends ViewProps {
   itemKeys?: ReadonlyArray<string>;
   sessionId?: string;
   noteBytes?: ReadonlyArray<Int32>;
+  noteId?: string;
   relays?: ReadonlyArray<string>;
   currentUserPubkey?: string;
   optimisticReactionNonce?: WithDefault<Int32, 0>;

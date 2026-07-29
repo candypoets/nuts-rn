@@ -40,7 +40,9 @@ class NativeNoteFooterView(context: Context) : View(context) {
   private var relays = emptyList<String>()
   private var relayResolutionPending = false
   private var currentUserPubkey = ""
-  private var noteId = ""
+  private var parsedNoteId = ""
+  private var noteIdOverride = ""
+  private val noteId get() = noteIdOverride.ifEmpty { parsedNoteId }
   private var noteKind = 0
   private var supportsComments = true
   private var visible = true
@@ -80,6 +82,12 @@ class NativeNoteFooterView(context: Context) : View(context) {
 
   fun setNoteBytes(value: ReadableArray?) { setNoteByteArray(value?.toBytes()) }
   internal fun setNoteByteArray(next:ByteArray?) { if (next?.contentEquals(noteBytes) == true) return; noteBytes = next; val old = noteId; parseNote(); if (old != noteId) resetCounts(); refreshSubscriptions() }
+  fun setNoteId(value: String?) {
+    val old = noteId
+    noteIdOverride = value.orEmpty()
+    if (old != noteId) resetCounts()
+    refreshSubscriptions()
+  }
   fun setRelays(value: ReadableArray?) { setRelayList(value?.toStrings().orEmpty()) }
   internal fun setRelayList(value:List<String>) { relays=value;refreshSubscriptions() }
   fun setRelayResolutionPending(value:Boolean) { if (relayResolutionPending == value) return; relayResolutionPending=value;refreshSubscriptions() }
@@ -105,10 +113,10 @@ class NativeNoteFooterView(context: Context) : View(context) {
   override fun performClick(): Boolean { super.performClick(); return true }
 
   private fun parseNote() {
-    val bytes = noteBytes ?: run { noteId = ""; noteKind = 0; supportsComments = true; return }
+    val bytes = noteBytes ?: run { parsedNoteId = ""; noteKind = 0; supportsComments = true; return }
     val worker = runCatching { WorkerMessage.getRootAsWorkerMessage(ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)) }.getOrNull()
     val event = if (worker?.contentType() == Message.ParsedEvent) worker.content(ParsedEvent()) as? ParsedEvent else null
-    noteId = event?.id().orEmpty(); noteKind = event?.kind() ?: 0; supportsComments = noteKind != 1 && noteKind != 6
+    parsedNoteId = event?.id().orEmpty(); noteKind = event?.kind() ?: 0; supportsComments = noteKind != 1 && noteKind != 6
   }
 
   private fun resetCounts() { comments = 0; replies = 0; reposts = 0; quotes = 0; reactions = 0; replied = false; reposted = false; reacted = false; subscriptionKey = ""; invalidate() }

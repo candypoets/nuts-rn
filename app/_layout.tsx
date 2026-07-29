@@ -42,7 +42,7 @@ import { getAppThemeVars, isAppThemeDark, useAppTheme } from '../src/theme';
 import { startNativeDebugLogRelay } from '../src/debug/nativeDebugBridge';
 import { NativeParityHarness } from '../src/debug/NativeParityHarness';
 import { getSharedNostrManager } from '../src/nostr/manager';
-import {resolveNostrDeepLink} from '../src/navigation/linking';
+import {resolveInviteDeepLink, resolveNostrDeepLink} from '../src/navigation/linking';
 
 enableScreens(true);
 enableFreeze(true);
@@ -242,6 +242,15 @@ export default function RootLayout() {
                     />
                     <Stack.Screen name="Logout" options={{ presentation: 'formSheet' }} />
                     <Stack.Screen
+                      name="Redeem"
+                      options={{
+                        presentation: 'formSheet',
+                        sheetAllowedDetents: [0.6],
+                        sheetCornerRadius: 18,
+                        sheetGrabberVisible: true,
+                      }}
+                    />
+                    <Stack.Screen
                       name="RelayInfos"
                       options={{
                         presentation: 'formSheet',
@@ -274,6 +283,14 @@ function NostrDeepLinkHandler() {
   useEffect(() => {
     const openUrl = (url: string | null) => {
       if (!url) return;
+      const invite = resolveInviteDeepLink(url);
+      if (invite) {
+        router.push({
+          pathname: '/Redeem',
+          params: invite.params,
+        });
+        return;
+      }
       const route = resolveNostrDeepLink(url);
       if (!route) return;
 

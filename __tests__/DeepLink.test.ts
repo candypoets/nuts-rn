@@ -4,7 +4,7 @@
 
 import {nip19} from 'nostr-tools';
 
-import {resolveNostrDeepLink} from '../src/navigation/linking';
+import {resolveInviteDeepLink, resolveNostrDeepLink} from '../src/navigation/linking';
 
 jest.mock('nostr-tools', () => ({
   nip19: jest.requireActual('nostr-tools/nip19'),
@@ -88,5 +88,56 @@ describe('resolveNostrDeepLink', () => {
     expect(
       resolveNostrDeepLink('https://example.com/some/page'),
     ).toBeNull();
+  });
+});
+
+describe('resolveInviteDeepLink', () => {
+  const relay = 'https://community.example.com';
+  const token = 'eyJ2IjoxfQ.c2ln';
+  const query = `relay=${encodeURIComponent(relay)}&token=${encodeURIComponent(
+    token,
+  )}`;
+
+  it('routes https://nuts.cash/redeem links to Redeem with decoded params', () => {
+    expect(resolveInviteDeepLink(`https://nuts.cash/redeem?${query}`)).toEqual({
+      name: 'Redeem',
+      params: {relay, token},
+    });
+  });
+
+  it('accepts a trailing slash on the path', () => {
+    expect(resolveInviteDeepLink(`https://nuts.cash/redeem/?${query}`)).toEqual(
+      {name: 'Redeem', params: {relay, token}},
+    );
+  });
+
+  it('routes the nutsrn://redeem custom-scheme variant', () => {
+    expect(resolveInviteDeepLink(`nutsrn://redeem?${query}`)).toEqual({
+      name: 'Redeem',
+      params: {relay, token},
+    });
+    expect(resolveInviteDeepLink(`nutsrn:///redeem?${query}`)).toEqual({
+      name: 'Redeem',
+      params: {relay, token},
+    });
+  });
+
+  it('returns null when relay or token is missing', () => {
+    expect(
+      resolveInviteDeepLink(
+        `https://nuts.cash/redeem?relay=${encodeURIComponent(relay)}`,
+      ),
+    ).toBeNull();
+    expect(
+      resolveInviteDeepLink(`https://nuts.cash/redeem?token=${token}`),
+    ).toBeNull();
+  });
+
+  it('returns null for other hosts and paths', () => {
+    expect(resolveInviteDeepLink(`https://example.com/redeem?${query}`)).toBeNull();
+    expect(resolveInviteDeepLink('https://nuts.cash/explore')).toBeNull();
+    expect(resolveInviteDeepLink(`https://njump.me/redeem?${query}`)).toBeNull();
+    expect(resolveInviteDeepLink('hello world')).toBeNull();
+    expect(resolveInviteDeepLink('')).toBeNull();
   });
 });

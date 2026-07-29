@@ -48,7 +48,7 @@ function base64Encode(value: string) {
 }
 /* eslint-enable no-bitwise */
 
-function base64UrlEncode(value: string) {
+export function base64UrlEncode(value: string) {
   return base64Encode(value)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -73,7 +73,7 @@ function signEventUnqueued(template: EventTemplate) {
   });
 }
 
-function signEvent(template: EventTemplate) {
+export function signEvent(template: EventTemplate) {
   const next = signQueue.then(() => signEventUnqueued(template));
   signQueue = next.then(
     () => undefined,
@@ -82,7 +82,7 @@ function signEvent(template: EventTemplate) {
   return next;
 }
 
-function canonicalAuthEvent(signed: Event) {
+export function canonicalAuthEvent(signed: Event) {
   if (!signed.id || !signed.pubkey || !signed.sig) {
     throw new Error('Failed to sign upload authorization');
   }

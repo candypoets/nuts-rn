@@ -22,4 +22,5 @@ export { ShareModal } from './ShareModal';
 export { RelayInfosModal } from './RelayInfosModal';
 export { RelayPreferencesModal } from './RelayPreferencesModal';
 export { ReceiveModal } from './ReceiveModal';
+export { RedeemModal } from './RedeemModal';
 export { MintingModal } from './MintingModal';

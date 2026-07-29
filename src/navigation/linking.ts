@@ -7,6 +7,45 @@ export type NostrDeepLinkRoute = {
 }[keyof RootStackParamList];
 
 /**
+ * Maps an invite link shared from the web app —
+ * `https://nuts.cash/redeem?relay=<service-base-url>&token=<token>` or the
+ * `nutsrn://redeem?…` custom-scheme variant — to the Redeem sheet.
+ * Returns null for anything else. The token is opaque; it is passed through
+ * untouched.
+ */
+export function resolveInviteDeepLink(
+  rawPath: string,
+): {name: 'Redeem'; params: RootStackParamList['Redeem']} | null {
+  let url: URL;
+  try {
+    url = new URL(rawPath.trim());
+  } catch {
+    return null;
+  }
+
+  const isWebInvite =
+    (url.protocol === 'https:' || url.protocol === 'http:') &&
+    url.hostname === 'nuts.cash';
+  const isSchemeInvite = url.protocol === 'nutsrn:';
+  if (!isWebInvite && !isSchemeInvite) return null;
+
+  // nutsrn://redeem?… puts 'redeem' in the host; nutsrn:///redeem and
+  // https://nuts.cash/redeem put it in the path.
+  const segment = (
+    url.hostname === 'redeem'
+      ? 'redeem'
+      : url.pathname.replace(/^\/+|\/+$/g, '')
+  ).toLowerCase();
+  if (segment !== 'redeem') return null;
+
+  const relay = url.searchParams.get('relay') || '';
+  const token = url.searchParams.get('token') || '';
+  if (!relay || !token) return null;
+
+  return {name: 'Redeem', params: {relay, token}};
+}
+
+/**
  * Maps a NIP-19 / NIP-21 identifier (npub, nprofile, note, nevent, naddr —
  * optionally prefixed with `nostr:`) to a root stack route. Returns null for
  * anything that is not a decodable nostr identifier.

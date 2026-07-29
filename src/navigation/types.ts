@@ -39,7 +39,9 @@ export type RootStackParamList = {
     relationship?: 'follow' | 'belong';
     relay: string;
   };
+  Redeem: {relay: string; token: string};
   CalendarEvent: { relay: string; address: string };
+  Store: {relay: string; name?: string};
   PublicProfile: { pubkey: string };
   Kind1Thread: { nevent: string };
   Kind30023Thread: { naddr: string };

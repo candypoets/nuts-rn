@@ -138,6 +138,22 @@ If that line is missing, the JS app is not running and relay/subscription logs a
 - Screen `presentation` (modal/formSheet/fullScreenModal) and push `animation` MUST be declared as named `<Stack.Screen>` entries in `app/_layout.tsx`. They are read at push time; in-route `<Stack.Screen options={...}/>` applies via `navigation.setOptions` in a layout effect after the push, so it is silently ignored and the screen opens as a default card push. Do not reintroduce in-route screen options.
 - Typed routes are enabled (`experiments.typedRoutes` in app.json). Expo generates route types into `.expo/types/` when Metro runs; the dir is gitignored and included in tsconfig.
 
+## Invite links (redeem flow)
+
+`https://nuts.cash/redeem?relay=<service-base-url>&token=<token>` (Android intent filter in app.json + AndroidManifest) and the `nutsrn://redeem?…` custom-scheme variant open the `/Redeem` formSheet. Parsing lives in `resolveInviteDeepLink` (`src/navigation/linking.ts`), tried before `resolveNostrDeepLink` in `_layout.tsx`'s `NostrDeepLinkHandler`; the token is opaque and passed through untouched.
+
+`app/+native-intent.tsx` (`redirectSystemPath`) returns null for every URL the manual handler routes (invite links, nostr identifiers, njump), so expo-router's own linking leaves them alone. Without it expo-router rewrites the link to a lowercase path (no route → Unmatched Route screen) and double-encodes query params. Keep the two resolvers in sync with it.
+
+On-device deep-link testing gotchas:
+
+- `adb shell am start -d` eats everything after an unescaped `&` — write the URL as `...?relay=...\&token=...` or the app receives it with params silently dropped.
+- A cold start from a deep link lands on the Expo dev launcher first; load the bundle (RECENTLY OPENED entry) and the pending intent is delivered to JS.
+- Verify rendered text via `adb shell uiautomator dump` (screenshots are black under SwiftShader).
+
+`src/nostr/invites.ts` ports the web flow (nuts-cash `src/routes/redeem/+page.svelte`): NIP-11 fetch for community name/image → NIP-98-signed (kind 27235) `POST {relay}/redeem` → publish membership indexes (kind 10012 `a`-tags, member kind 30002 `nuts-relays-member`, kind 10002 with the community relay read-only) to `INDEXER_RELAYS` + the community relay → replicate kind 0 to the community relay and await its OK (12 s timeout). It also updates `useNostrStore` (relayMarkers / relayDirectoryAddresses / relayRoleSets) so membership shows immediately. Kind-8 `#p` badge award on the community relay = already a member. NIP-98 signing reuses the `signEvent`/`canonicalAuthEvent`/`base64UrlEncode` helpers exported from `src/nostr/upload.ts`.
+
+Not done yet: iOS universal links (needs entitlements + `apple-app-site-association` on nuts.cash; the `nutsrn://redeem` scheme works there), Android `autoVerify` (assetlinks.json), and in-app invite generation (the stub `Invite` button in `CommunitySub.tsx`).
+
 ## Relay Debugging
 
 Use filtered logcat while testing root subscriptions, Home, and wallet loading:

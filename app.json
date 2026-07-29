@@ -23,6 +23,11 @@
           "action": "VIEW",
           "data": [{ "scheme": "https", "host": "njump.me" }],
           "category": ["DEFAULT", "BROWSABLE"]
+        },
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "https", "host": "nuts.cash", "pathPrefix": "/redeem" }],
+          "category": ["DEFAULT", "BROWSABLE"]
         }
       ]
     },

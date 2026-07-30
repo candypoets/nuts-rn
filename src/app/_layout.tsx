@@ -43,9 +43,14 @@ import { startNativeDebugLogRelay } from '../debug/nativeDebugBridge';
 import { NativeParityHarness } from '../debug/NativeParityHarness';
 import { getSharedNostrManager } from '../nostr/manager';
 import {resolveInviteDeepLink, resolveNostrDeepLink} from '../navigation/linking';
+import {
+  configureImageCache,
+  runMediaCacheMaintenance,
+} from '../media/cache';
 
 enableScreens(true);
 enableFreeze(true);
+configureImageCache();
 
 export const unstable_settings = {
   initialRouteName: '(tabs)',
@@ -119,6 +124,12 @@ export default function RootLayout() {
     () => [styles.root, { backgroundColor: theme.colors.base100 }],
     [theme],
   );
+
+  useEffect(() => {
+    runMediaCacheMaintenance().catch(error => {
+      console.warn('[media-cache] startup maintenance failed', error);
+    });
+  }, []);
 
   useEffect(() => {
     return startNativeDebugLogRelay(event => {

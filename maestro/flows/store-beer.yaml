@@ -1,0 +1,86 @@
+appId: com.nutsrn
+env:
+  ITEM_NAME: "QA Beer"
+  ITEM_PRICE: "(€5,00|€5\\.00|5(\\.00)?\\s*EUR)"
+---
+# Hospitality purchase e2e: a fresh member redeems the QA bar invite, opens the
+# community menu, and buys a drink. Stripe is bypassed by the local checkout
+# shim (.qa/qa-checkout-shim.mjs on :7821), which fulfills the payment
+# synchronously — the app is pointed at it via
+# EXPO_PUBLIC_NUTS_API_URL=http://10.0.2.2:7821 (inlined at bundle time, so
+# Metro must be started with it set).
+#
+# Requires:
+#   - node .qa/qa-scenario-commerce.mjs (communities + catalog + invites)
+#   - node .qa/qa-checkout-shim.mjs (port 7821)
+#   - Metro on :8084 started with EXPO_PUBLIC_NUTS_API_URL=http://10.0.2.2:7821
+#
+# Run (values from /tmp/qa-rn-commerce.json):
+#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#     -e TOKEN=<bar-invite> -e RELAY_PORT=7820 -e COMMUNITY_NAME="QA RN Bar <runid>" \
+#     maestro/flows/store-beer.yaml
+#
+# Protocol-level proof afterwards: the shim logs the checkout and the
+# badge_issuer-signed kind 8 award is visible on the bar relay
+# (node .qa/qa-verify-commerce.mjs).
+# Login + invite redeem + land on the community screen (clearState fresh login).
+# Params are passed explicitly: a subflow's own env defaults would win over
+# CLI -e values otherwise.
+- runFlow:
+    file: redeem.yaml
+    env:
+      TOKEN: ${TOKEN}
+      RELAY_PORT: ${RELAY_PORT}
+      NSEC: ${NSEC}
+      COMMUNITY_NAME: ${COMMUNITY_NAME}
+# Community header button flips from Store to Menu once the community profile
+# (kind 30078, hospitality) arrives from the relay.
+- extendedWaitUntil:
+    visible: "Menu"
+    timeout: 60000
+- tapOn: "Menu"
+# Store screen: menu presentation, item from the sellable catalog (kind 30009).
+- extendedWaitUntil:
+    visible: "${ITEM_NAME}"
+    timeout: 90000
+- assertVisible: "Community menu"
+- assertVisible: "Drinks"
+- assertVisible: "Drink"
+- assertVisible:
+    text: "${ITEM_PRICE}"
+    optional: true
+- takeScreenshot: store-beer-menu
+# Buy: accessibilityLabel is "Buy {name}" (visible text is just "Buy").
+- tapOn: "Buy ${ITEM_NAME}"
+# Busy state while the shim answers; usually too fast to catch — informational.
+- assertVisible:
+    text: "Opening checkout…"
+    optional: true
+# The shim's success page ("Payment successful") opens in the browser. Fresh
+# Chrome on the emulator chains two interstitials that swallow the page — the
+# first-run screen and the notification prompt — dismiss both (one-time;
+# Chrome state persists).
+- extendedWaitUntil:
+    visible: ".*(Payment successful|Use without an account|Chrome notifications).*"
+    timeout: 90000
+- runFlow:
+    when:
+      visible: "Use without an account"
+    commands:
+      - tapOn: "Use without an account"
+- runFlow:
+    when:
+      visible: "No thanks"
+    commands:
+      - tapOn: "No thanks"
+- extendedWaitUntil:
+    visible: "Payment successful"
+    timeout: 60000
+- takeScreenshot: store-beer-checkout
+# Back in the app the menu is still there and the busy state has cleared.
+- launchApp:
+    appId: com.nutsrn
+    stopApp: false
+- extendedWaitUntil:
+    visible: "${ITEM_NAME}"
+    timeout: 30000

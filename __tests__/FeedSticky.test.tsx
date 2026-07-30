@@ -92,7 +92,7 @@ test('motion feed exposes its scroll view as the first native descendant', () =>
   const renderer = renderFeed();
   const feedSurface = renderer.root.find(
     node =>
-      node.type === 'View' &&
+      (node.type as unknown) === 'View' &&
       node.props.className === 'relative flex-1',
   );
   const firstChild = feedSurface.children[0];

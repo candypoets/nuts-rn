@@ -9,8 +9,11 @@ Host setup (Linux, headless):
 ```sh
 # emulator (see android-emulator-launch skill; test AVD, swiftshader)
 /opt/android-sdk/emulator/emulator -avd test -no-window -no-boot-anim -no-audio -no-snapshot -gpu swiftshader_indirect
-# Metro — port 8081 is taken by a docker container on this host, use 8084
-CI=1 npx expo start --dev-client --port 8084
+# Metro — port 8081 is taken by a docker container on this host, use 8084.
+# Omit CI=1: the launcher's Metro auto-discovery needs it off, and CI=1 Metro
+# serves stale bundles. Commerce flows also need EXPO_PUBLIC_NUTS_API_URL (see
+# the commerce section below).
+npx expo start --dev-client --port 8084
 adb reverse tcp:8084 tcp:8084
 # run flows
 MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/smoke.yaml
@@ -18,8 +21,10 @@ MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/smoke.yaml
 
 Notes:
 
-- Screenshots come back black under SwiftShader; the uiautomator hierarchy Maestro uses for text assertions works fine, so assert on text, not pixels.
-- The dev launcher cannot auto-discover Metro (adb reverse is host-local); flows type `exp://localhost:8084` into the launcher URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tap Connect, then dismiss the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
+- Screenshots come back black on the `test` AVD — but that is an `aosp_atd` image trait (it composites nothing for its virtual display), NOT a SwiftShader limitation. For pixel-true screenshots use the `google` AVD (`system-images/android-34/google_apis/x86_64`, works headless and windowed under Xvfb `DISPLAY=:99`); `adb exec-out screencap -p` and Maestro `takeScreenshot` both return real pixels there. The uiautomator hierarchy Maestro uses for text assertions works fine on either, so assert on text, not pixels.
+- Emulator crash recovery (2026-07-29): after a qemu crash, the next launch can hang at "detected a hanging thread 'QEMU2 main loop'" with no adb device — the emulator is stuck on an invisible crash-consent dialog. Fix: `pkill -9 -f '[q]emu-system'`, `rm -rf /tmp/android-root/emu-crash-*.db` (it is a directory), remove `~/.android/avd/<avd>.avd/multiinstance.lock`, relaunch. Also: `-gpu host` cannot work headless (RenderLib needs a display), and `pkill -f <pattern>` self-matches the wrapping bash's own cmdline — always write the pattern as `[q]emu-system` / `[m]aestro test`.
+- Android edge-to-edge hides full-screen content under the status bar on the Pixel/google image (unlike the atd image). RN screens that skip `useSafeAreaInsets().top` render their header under the status bar — visibly broken, and uiautomator DROPS those covered nodes, so Maestro selectors for them fail mysteriously (first caught on SignupModal, fixed with a top inset at the wizard root).
+- The dev launcher auto-discovers Metro only when Metro runs WITHOUT `CI=1` — and that discovery layout (a "New development server" row under Development Build) enters the a11y tree LATE (>20 s after pixels show it). `launch.yaml` handles both layouts: it taps the server row when it appears, then still falls back to typing `exp://localhost:8084` into the URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tapping Connect, then dismisses the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
 - `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
 
 ### NIP-46 login flows (login-nip46.yaml, login-nip46-qr.yaml)
@@ -53,9 +58,46 @@ Gotcha: the emulator's stub browser opens the approval URL in its own task — `
 
 The app depends on `@candypoets/nipworker` 0.97.8. That release includes the NIP-46 `unix_time()` fix, `AuthUrl` FlatBuffers message and `authUrl` manager event, and the extended mock signer support, so no `patch-package` patch is needed for NIP-46.
 
-App-side auth_url flow: nipworker dispatches `authUrl` → `app/_layout.tsx` stores `authStore.nip46AuthUrl` → the login modal shows "Open approval page" (`Linking.openURL`); the modal closes when the deferred response completes login. Approval window: 300 s (was a flat 20 s timeout before challenge support).
+App-side auth_url flow: nipworker dispatches `authUrl` → `src/app/_layout.tsx` stores `authStore.nip46AuthUrl` → the login modal shows "Open approval page" (`Linking.openURL`); the modal closes when the deferred response completes login. Approval window: 300 s (was a flat 20 s timeout before challenge support).
 
 - `login-amber.yaml` (real Amber, intent handoff): install Amber (`amber-x86_64-v6.3.0.apk` from greenart7c3/Amber releases), onboard once with "Use your private key" → `nsec1424242424242424242424242424242424242424242424242424q3dgem8` (= `'aa'*32`, same identity as the mock signer) → "Manually approve each app". The flow taps **Open in signing app** in the QR panel, Amber shows its connection approval, tap `Connect`, back in the app the login completes. Needs internet (nostrconnect relays are the public feed relays).
+
+### Invite-redeem e2e (redeem.yaml + .qa/, 2026-07-29)
+
+`maestro/flows/redeem.yaml` + the `.qa/` Node scripts are a full invite-redeem harness (see `.qa/README.md`): `node .qa/qa-bootstrap.mjs` provisions a real strfry-badge community via the coordinator and mints an invite, the flow logs in as keys.users[0] (nsec), `openLink:`s `nutsrn://redeem?…&token=${TOKEN}` (pass `-e TOKEN=…`), claims, and lands on the community screen; `node .qa/qa-verify-redeem.mjs` proves the kind-8 award + kind-0 replica on the relay; `node .qa/qa-teardown.mjs` cleans up.
+
+Gotchas learned the hard way:
+
+- In dev the invite service and strfry run on DIFFERENT loopback ports, but the app derives both from the invite link's single `relay=` param — `.qa/qa-redeem-proxy.mjs` (127.0.0.1:7820, reached from the emulator as 10.0.2.2) routes `POST /redeem` to the invite service and everything else (ws, NIP-11) to strfry. The invite-token `/redeem` endpoint does NOT verify NIP-98, so the proxy origin in the signed `u` tag is harmless; `POST /invites` DOES verify strictly, so bootstrap mints against `base_url` directly.
+- The ws leg of the proxy must be message-level (`ws` library on both sides), NOT a raw TCP pipe: nipworker routinely opens duplicate transports per relay and aborts one mid-handshake, and with raw piping the race surfaced as "Unexpected close, relay marked unreliable" → 30-60 s publish cooldown → the redeem publishes were silently dropped ("relay unreliable during cooldown; dropping queued frame") and the kind-0 OK timed out ("The community relay did not confirm your profile."). Also sanitize close codes when forwarding closes — relay shutdown arrives as 1006, which `ws.close()` rejects with a TypeError that kills an unguarded proxy.
+- Community domain labels use the `rnqa-` prefix: the nuts-cash `.qa/qa-teardown.mjs --sweep` janitor deletes every relay whose domain starts with `qa-` on this shared coordinator, and it ate a `qa-rn-*` community mid-run.
+- The coordinator reports `running` before the container's write gate serves; bootstrap retries the admin kind-0 publish until it round-trips.
+- The invite has `max_redemptions: 1` and `checkExistingMembership` short-circuits the modal to "already a member" once the award exists — a flow rerun against the same community can never pass; always re-bootstrap.
+- Badge-gate membership-cache lag (15-45 s) bites fresh redeems: the kind-0 replica confirm fails on the first attempt while the gate warms. App-side, `publishProfileToCommunity` retries `false` OKs every 2.5 s for 30 s, and `RedeemModal` retries check existing membership first (they used to burn another redemption and surface "token redemption limit reached").
+
+### Commerce e2e (store-beer / gym-pass / capacity, 2026-07-30)
+
+`node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|all]` drives the purchase + capacity flows through the real UI (full details in `.qa/README.md`, gaps pinned in `.qa/SPEC-GAPS.md`): provision with `node .qa/qa-scenario-commerce.mjs` (two communities + proxies 7820/7822 + checkout shim 7821), run Metro with `EXPO_PUBLIC_NUTS_API_URL=http://10.0.2.2:7821` and NO `CI=1` (the flows rely on the launcher's Metro auto-discovery layout; `CI=1` Metro also serves stale bundles). Buying is Stripe-bypassed: the app checks out against the shim, which performs the REAL payment `/redeem` (kind-8 award) signed by the payment-service key (`NUTS_PAYMENT_SERVICE_SECRET_KEY` in `/root/code/nuts-cash/.env`).
+
+- Maestro 2.7 env precedence: a subflow's own `env:` block beats BOTH CLI `-e` and `runFlow` env. `redeem.yaml` declares no env block for exactly this reason — pass TOKEN/RELAY_PORT/NSEC/COMMUNITY_NAME from the caller.
+- Kind 31925 (RSVP) is addressable, so test RSVPs accumulate across runs; `qa-verify-event.mjs capacity()` retracts stale RSVPs before re-seeding or the "2 going" assert fails on reruns.
+- Chrome checkout chain on first run: "Use without an account" → notification prompt ("No thanks") → success page; handle as one-time `when:` branches.
+- If a flow dies on its landing assert with a screenshot showing a STALE screen from the previous flow (e.g. Chrome still on the shim success page), check for a native crash first: `adb logcat -d | grep -A15 'F DEBUG'`. Observed once: SIGSEGV in `mqt_v_js` / `MountingCoordinator::pullTransaction` (Fabric) right after bundle mount — the app dies and Android returns to the previous foreground app. Retry the run; if it recurs, it's a real stability bug, not a flow issue.
+- `CalendarEventModal` bugs fixed for this: declined RSVPs were ignored (no latest-per-pubkey) so cancelled spots never freed, and a deep link without `address` redboxed in `splitAddress`.
+- Web staff-side coverage (gym 10 check-ins + 11th rejection, capacity roster, orders board, QR serve) lives in `/root/code/nuts-cash/.qa/` (`qa-passes-e2e.mjs`, `qa-events-e2e.mjs`, `qa-orders-e2e.mjs`, `qa-scan-e2e.mjs`; `qa-bootstrap.mjs --type sports`).
+
+### Entitlement screens + entitlement e2e (2026-07-30)
+
+Member-side entitlement surfaces (spec `docs/entitlements.md`): `src/app/Award.tsx` + `src/modals/AwardModal.tsx` (one entitlement: status line, remaining uses, live presentation QR, activity), `src/app/Passes.tsx` + `src/modals/PassesModal.tsx` (all passes/memberships grouped by community), plus entry points in `StoreSub` ("Yours" strip), `CalendarEventModal` ("Your ticket" button when the 31923 has `entrance_badge` and the member holds it), and `ProfileModal` ("Passes" row). Data hooks in `src/hooks/useAwards.ts`; derivation ported from web in `src/lib/orders.ts`; the kind-27236 presentation QR port is `src/nostr/presentation.ts` (60 s re-sign, fresh `use:<nonce>` context per signing for passes/memberships — matches web `kind8.svelte`).
+
+- The QR sits on a WHITE card regardless of app theme — deliberate break, scanner contrast beats theme consistency (per `docs/entitlements.md`).
+- QA hook: dev builds log every signed QR payload as `[award-qr] <payload>`; `qa-verify-event.mjs` greps logcat and verifies the 27236 derivation-side (`verifyEntitlementPresentation` in `.qa/qa-derive.mjs`).
+- `node .qa/qa-verify-event.mjs entitlement` (3 phases: pass 10→9 decrement, beer order → "Served", event ticket). Idempotent — each phase seeds a fresh issuer-signed purchase award before driving the UI. **ENTITLEMENT PASS 2026-07-30** (all phases green on 37237).
+- Order/check-in statuses are kind **37237** (addressable) with `d` = `order:<ref>` / `event:<address>` duplicating the context tag — the relay durably keeps the latest status per context (pinned in `qa-verify-commerce.mjs`: stored+served, replace-per-d). Kind 27236 (presentation QR) stays ephemeral by design. Writers publish 37237 only; readers accept legacy 27237 during transition (`LEGACY_BADGE_STATUS_KIND` in `src/lib/orders.ts` / web `notifications.ts`). Member-side, `useAwards.useAwardStatuses` only accepts statuses from authorized signers (`src/lib/communityTrust.ts`: NIP-11 admin ∪ `/community/info` badge_issuer, else role-award permission — 'store' OR 'events', a documented simplification vs web's type-matched single permission); QA statuses signed by the relay NIP-11 admin key pass this check.
+- `entitlement-ticket.yaml` takes EVENT_URL via CLI env and (like `redeem.yaml`) declares no `env:` block — a subflow's own env beats CLI `-e` in maestro 2.7.
+- The community header's store entry is labeled **Menu** for hospitality communities and Store otherwise (`CommunitySub.tsx` preset from the kind-30078 profile) — flows tap `^(Store|Menu)$`.
+- Dev builds without Firebase credentials must NOT `console.error` the push-token failure: the RN LogBox banner never dismisses and its invisible container swallows taps on bottom-bar buttons (blocked "Your ticket" in phase 3; `isMissingFirebaseConfig` in `usePushNotifications.ts` downgrades it to `console.log`). Rule of thumb: expected environment gaps → `console.log`, real failures → `console.error`.
+- Phase-3 seeding fetches the 31923 by `#d`+author, NEVER by the state file's id — kind 31923 is addressable and a previous run's `entrance_badge` update replaced it (stale id = fetch timeout). Same class of bug as the RSVP retraction rule.
 
 ### Signer detection (NIP-55-style, 2026-07-28)
 
@@ -94,7 +136,7 @@ Gotchas: publish with the same version the npm package requests (0.97.8, via `-P
 
 ## Running the RN App
 
-The app entry is `expo-router/entry` (package.json `"main"`). Routes live in `app/`; `app/_layout.tsx` hosts the providers and root Stack, and `app/index.tsx` redirects to `/ExploreTab`. There is no `App.tsx`/`index.js` entry anymore — the root component is registered as `main`.
+The app entry is `expo-router/entry` (package.json `"main"`). Routes live in `src/app/`; `src/app/_layout.tsx` hosts the providers and root Stack, and `src/app/index.tsx` redirects to `/ExploreTab`. There is no `App.tsx`/`index.js` entry anymore — the root component is registered as `main`.
 
 Use the Expo dev-client flow. A plain Android activity launch can stop at the Expo dev launcher and never start the JS bundle, which makes relay debugging misleading.
 
@@ -129,20 +171,20 @@ If that line is missing, the JS app is not running and relay/subscription logs a
 
 ## Expo Router notes
 
-- Run Metro with `--clear` after adding or renaming route files in `app/`; the route context module is cached and a stale bundle won't pick up new routes.
+- Run Metro with `--clear` after adding or renaming route files in `src/app/`; the route context module is cached and a stale bundle won't pick up new routes.
 - The dev-client launcher's URL placeholder flips between `exp://` and `http://` depending on build/state; maestro `launch.yaml` matches `(exp|http)://` to cover both.
-- Deep-opening the app bare (`nutsrn:///`) lands on `app/index.tsx`, which redirects to `/ExploreTab`.
+- Deep-opening the app bare (`nutsrn:///`) lands on `src/app/index.tsx`, which redirects to `/ExploreTab`.
 - The wizard flows (SignupModal, MintingModal) embed their own inner stack via `createNativeStackNavigator` deep-imported from `expo-router/build/react-navigation/native-stack`. That is a private path with no semver guarantee — re-check it on every expo-router upgrade.
 - Tabs are JS-rendered (`expo-router` Tabs with a custom tab bar) on both platforms; the native bottom tab bar (NativeTabBarController) was removed.
-- Route file names in `app/` intentionally match the old `RootStackParamList` names, so deep links and existing `router.push('/X')` calls kept working unchanged.
-- Screen `presentation` (modal/formSheet/fullScreenModal) and push `animation` MUST be declared as named `<Stack.Screen>` entries in `app/_layout.tsx`. They are read at push time; in-route `<Stack.Screen options={...}/>` applies via `navigation.setOptions` in a layout effect after the push, so it is silently ignored and the screen opens as a default card push. Do not reintroduce in-route screen options.
+- Route file names in `src/app/` intentionally match the old `RootStackParamList` names, so deep links and existing `router.push('/X')` calls kept working unchanged.
+- Screen `presentation` (modal/formSheet/fullScreenModal) and push `animation` MUST be declared as named `<Stack.Screen>` entries in `src/app/_layout.tsx`. They are read at push time; in-route `<Stack.Screen options={...}/>` applies via `navigation.setOptions` in a layout effect after the push, so it is silently ignored and the screen opens as a default card push. Do not reintroduce in-route screen options.
 - Typed routes are enabled (`experiments.typedRoutes` in app.json). Expo generates route types into `.expo/types/` when Metro runs; the dir is gitignored and included in tsconfig.
 
 ## Invite links (redeem flow)
 
 `https://nuts.cash/redeem?relay=<service-base-url>&token=<token>` (Android intent filter in app.json + AndroidManifest) and the `nutsrn://redeem?…` custom-scheme variant open the `/Redeem` formSheet. Parsing lives in `resolveInviteDeepLink` (`src/navigation/linking.ts`), tried before `resolveNostrDeepLink` in `_layout.tsx`'s `NostrDeepLinkHandler`; the token is opaque and passed through untouched.
 
-`app/+native-intent.tsx` (`redirectSystemPath`) returns null for every URL the manual handler routes (invite links, nostr identifiers, njump), so expo-router's own linking leaves them alone. Without it expo-router rewrites the link to a lowercase path (no route → Unmatched Route screen) and double-encodes query params. Keep the two resolvers in sync with it.
+`src/app/+native-intent.tsx` (`redirectSystemPath`) returns null for every URL the manual handler routes (invite links, nostr identifiers, njump), so expo-router's own linking leaves them alone. Without it expo-router rewrites the link to a lowercase path (no route → Unmatched Route screen) and double-encodes query params. Keep the two resolvers in sync with it.
 
 On-device deep-link testing gotchas:
 

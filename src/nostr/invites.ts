@@ -281,30 +281,50 @@ function publishProfileToCommunity(
     const targetRelay = normalizeURL(communityRelayUrl);
     let settled = false;
     let unsubscribe: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (retryTimer) clearTimeout(retryTimer);
       unsubscribe?.();
       if (error) reject(error);
       else resolve();
     };
+    // The badge gate's membership cache can lag behind the just-granted
+    // invite award, so a rejected OK is not final — republish until the
+    // relay confirms or the window closes (a single 12s attempt failed
+    // fresh redeems while the gate was cold).
     const timeout = setTimeout(
       () => finish(new Error('The community relay did not confirm your profile.')),
-      12000,
+      30000,
     );
-    unsubscribe = publishToNostr(
-      `invite_profile_${pubkey}`,
-      profileEvent,
-      (message: WorkerMessage) => {
-        const status = isConnectionStatus(message);
-        const relayUrl = status?.relayUrl();
-        if (!status || !relayUrl || normalizeURL(relayUrl) !== targetRelay) return;
-        const value = status.status()?.toString().toLowerCase();
-        if (value === 'true' || value === 'ok') finish();
-      },
-      { trackStatus: true, defaultRelays: [communityRelayUrl] },
-    );
+    const attempt = () => {
+      if (settled) return;
+      unsubscribe?.();
+      unsubscribe = publishToNostr(
+        `invite_profile_${pubkey}`,
+        { ...profileEvent, created_at: now() },
+        (message: WorkerMessage) => {
+          const status = isConnectionStatus(message);
+          const relayUrl = status?.relayUrl();
+          if (!status || !relayUrl || normalizeURL(relayUrl) !== targetRelay) return;
+          const value = status.status()?.toString().toLowerCase();
+          if (value === 'true' || value === 'ok') {
+            finish();
+            return;
+          }
+          if (value?.startsWith('false') && !settled && !retryTimer) {
+            retryTimer = setTimeout(() => {
+              retryTimer = undefined;
+              attempt();
+            }, 2500);
+          }
+        },
+        { trackStatus: true, defaultRelays: [communityRelayUrl] },
+      );
+    };
+    attempt();
   });
 }
 

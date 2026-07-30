@@ -37,6 +37,7 @@ import {
   RefreshCw,
   Plus,
   Radio,
+  Ticket,
   Trash2,
   User,
   Wallet,
@@ -47,8 +48,10 @@ import type {SearchBarCommands} from 'react-native-screens';
 
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { Avatar } from '../components/notes';
+import { getCurrentPushToken } from '../hooks/usePushNotifications';
 import { shortNpub } from '../lib/identity';
 import type { AppNavigationProp } from '../navigation/types';
+import { unregisterPushDevice } from '../notifications/pushRegistration';
 import {
   BOOTSTRAP_RELAYS,
   useAuthStore,
@@ -323,6 +326,12 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
               }
             />
             <ProfileMenuRow
+              icon={<Ticket size={21} color={iconColor} strokeWidth={2.1} />}
+              label="Passes"
+              detail="Memberships, passes and tickets"
+              onPress={() => navigation.navigate('Passes')}
+            />
+            <ProfileMenuRow
               icon={<KeyRound size={21} color={iconColor} strokeWidth={2.1} />}
               label="Keys"
               onPress={() => navigate({ type: 'keys' })}
@@ -412,10 +421,9 @@ export function PrivateKeyLogin({
   const initialPubkeyRef = useRef(auth.pubkey);
   const nip46AuthUrl = useAuthStore(state => state.nip46AuthUrl);
   const authError = useAuthStore(state => state.authError);
-  // Signer detection (NIP-55-style): is a signer app installed that can
-  // complete the NIP-46 nostrconnect:// handoff (Amber, Aegis, …)?
-  // Android-only by nature; on iOS this stays false and the QR flow is the
-  // (aligned) path.
+  // Detect a local signer that can complete the NIP-46 nostrconnect://
+  // handoff. Android exposes this through package visibility; iOS requires
+  // the scheme in LSApplicationQueriesSchemes.
   const [signerInstalled, setSignerInstalled] = useState(false);
 
   useEffect(() => {
@@ -534,6 +542,20 @@ export function PrivateKeyLogin({
     setTimeout(() => setQrLinkCopied(false), 1800);
   }, [qrText]);
 
+  const openSignerApp = useCallback(async () => {
+    if (!qrText) return;
+
+    try {
+      setError(null);
+      await Linking.openURL(qrText);
+    } catch {
+      setSignerInstalled(false);
+      setError(
+        'Could not open a signing app. Copy the connection link and open it from your signer instead.',
+      );
+    }
+  }, [qrText]);
+
   return (
     <View style={styles.modalBody}>
       <View style={styles.fullModalSheet}>
@@ -587,8 +609,9 @@ export function PrivateKeyLogin({
                 </Pressable>
                 {signerInstalled ? (
                   <Pressable
+                    accessibilityRole="button"
                     style={styles.secondaryAction}
-                    onPress={() => Linking.openURL(qrText)}
+                    onPress={openSignerApp}
                   >
                     <Text style={styles.secondaryActionText}>
                       Open in signing app
@@ -744,7 +767,15 @@ export function LogoutModal({
     state => state.setWalletPassphrase,
   );
 
-  const logout = () => {
+  const logout = async () => {
+    const pushToken = getCurrentPushToken();
+    if (pushToken) {
+      try {
+        await unregisterPushDevice(pushToken);
+      } catch (error) {
+        console.error('[push] failed to unregister during logout', error);
+      }
+    }
     clearAuth();
     setWalletMnemonic('');
     setWalletPassphrase('');

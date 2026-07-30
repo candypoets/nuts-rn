@@ -41,6 +41,8 @@ export type RootStackParamList = {
   };
   Redeem: {relay: string; token: string};
   CalendarEvent: { relay: string; address: string };
+  Award: { relay: string; award: string };
+  Passes: undefined;
   Store: {relay: string; name?: string};
   PublicProfile: { pubkey: string };
   Kind1Thread: { nevent: string };

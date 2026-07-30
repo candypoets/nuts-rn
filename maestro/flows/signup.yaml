@@ -1,0 +1,50 @@
+appId: com.nutsrn
+---
+# Signup (create account) e2e: login modal -> signup wizard -> logged in.
+#
+# The wizard has two steps: profile (name/bio/avatar) and follow packs.
+# Continuing from the profile step publishes kind 0/17375/10019; Finish
+# publishes kind 3. Relay-side results are verified separately from logcat
+# ([signup-publish] lines) — see .qa/qa-verify-signup.mjs.
+- runFlow: launch.yaml
+# Home tab shows a sign-in stub when logged out.
+- tapOn: "Home"
+- assertVisible: "Sign in to load your wallet feed"
+- tapOn: "Sign in"
+# Login modal.
+- assertVisible: "Authenticate"
+- takeScreenshot: signup-00-login-modal
+- tapOn: "Create account"
+# Signup wizard, step 1: profile.
+- assertVisible: "Your name"
+- takeScreenshot: signup-01-profile-empty
+- tapOn: "Your name"
+- inputText: "QA Alice"
+# Dismiss the keyboard by tapping the "Name" field label (the step wraps its
+# content in a Keyboard.dismiss handler). Do not use hideKeyboard — it can
+# send a Back press that leaves the wizard; and the wizard header drops out
+# of the a11y tree while the IME is open, so it can't be tapped either.
+- tapOn: "Name"
+- takeScreenshot: signup-02-profile-filled
+- tapOn: "Continue"
+# Step 2: follow packs. Pack list loads from public relays; finishing with
+# zero packs is valid (empty kind 3).
+- extendedWaitUntil:
+    visible: "Choose what to see"
+    timeout: 30000
+- assertVisible: "Finish"
+- takeScreenshot: signup-packs
+- tapOn: "Finish"
+# Success: the wizard CLOSES (router.back pops /Login) and Home shows the
+# logged-in feed. The "Create account" header assertion is the critical one:
+# if the back action is consumed by the wizard's embedded stack, the wizard
+# bounces back to the profile step while every Home-text assertion below
+# passes vacuously — the screenshot is what caught that regression.
+- extendedWaitUntil:
+    notVisible: "Create account"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: "Choose what to see"
+    timeout: 30000
+- assertNotVisible: "Sign in to load your wallet feed"
+- takeScreenshot: signup-done

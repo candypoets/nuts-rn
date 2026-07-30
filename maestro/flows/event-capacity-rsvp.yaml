@@ -1,0 +1,42 @@
+appId: com.nutsrn
+env:
+  EVENT_TITLE: "QA Training"
+---
+# Capacity-freed RSVP e2e (phase B): after event-capacity-full.yaml, the
+# wrapper (.qa/qa-verify-event.mjs) cancels one of the two seeded RSVPs
+# (kind 31925 status=declined, newer created_at). The logged-in member then
+# re-opens the event, sees the freed spot, RSVPs, and the publish OK flips the
+# status to "You are going". The kind 31925 on the gym relay is verified from
+# Node afterwards by the same wrapper.
+#
+# The app is still logged in from phase A — do NOT clearState here.
+#
+# Run (EVENT_URL = pre-encoded deep link built by the wrapper from
+# /tmp/qa-rn-commerce.json, e.g.
+#   nutsrn:///CalendarEvent?relay=ws%3A%2F%2F10.0.2.2%3A7822&address=31923%3A...):
+#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#     -e EVENT_URL="<url>" maestro/flows/event-capacity-rsvp.yaml
+- launchApp:
+    appId: com.nutsrn
+    stopApp: false
+# Fresh push of the event screen so its subscriptions re-fetch from the relay
+# (the cancelled RSVP is already on the relay at this point).
+- openLink: "${EVENT_URL}"
+- extendedWaitUntil:
+    visible: "Who's going"
+    timeout: 60000
+# One spot freed: button is RSVP again (spots 1).
+- extendedWaitUntil:
+    visible: "RSVP"
+    timeout: 60000
+- assertVisible: "1 going"
+- takeScreenshot: event-screen-freed
+- tapOn: "RSVP"
+- assertVisible:
+    text: "Publishing RSVP..."
+    optional: true
+# Relay OK true flips the publish status.
+- extendedWaitUntil:
+    visible: "You are going"
+    timeout: 60000
+- takeScreenshot: event-rsvp-done

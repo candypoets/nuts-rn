@@ -77,6 +77,10 @@ import { Note } from '../../components/notes/Note';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKind0Value } from '../../hooks/useKind0Value';
 import { shortNpub } from '../../lib/identity';
+import {
+  deleteImagePickerAsset,
+  deleteImagePickerAssets,
+} from '../../media/cache';
 import { type AppTheme, useAppTheme } from '../../theme';
 import { GifPicker, type TenorGif } from './GifPicker';
 import { MentionSuggestions, NoteComposer } from './NoteComposer';
@@ -202,22 +206,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createPostModalStyles(theme), [theme]);
-  const closeModal = useCallback(() => {
-    Keyboard.dismiss();
-    onClose();
-  }, [onClose]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => {
-        closeModal();
-        return true;
-      },
-    );
-    return () => subscription.remove();
-  }, [closeModal]);
   const iconColor = theme.colors.primaryContent;
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
@@ -307,6 +295,46 @@ export function PostModal({ reply, quote, onClose }: Props) {
   const [eventPrice, setEventPrice] = useState('');
   const [eventCurrency, setEventCurrency] = useState('EUR');
   const [eventSats, setEventSats] = useState('');
+  const selectedImagesRef = useRef(selectedImages);
+  const eventCoverRef = useRef(eventCover);
+  const isSubmittingRef = useRef(isSubmitting);
+
+  useEffect(() => {
+    selectedImagesRef.current = selectedImages;
+  }, [selectedImages]);
+
+  useEffect(() => {
+    eventCoverRef.current = eventCover;
+  }, [eventCover]);
+
+  const cleanupDraftMedia = useCallback(() => {
+    const uris = [
+      ...selectedImagesRef.current.map(image => image.uri),
+      eventCoverRef.current?.uri,
+    ];
+    selectedImagesRef.current = [];
+    eventCoverRef.current = null;
+    deleteImagePickerAssets(uris);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    Keyboard.dismiss();
+    if (!isSubmittingRef.current) cleanupDraftMedia();
+    onClose();
+  }, [cleanupDraftMedia, onClose]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        closeModal();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [closeModal]);
+
   const destinationLabel = selectedRelay ? relayLabel(selectedRelay) : 'Public';
   const DestinationIcon = selectedRelay ? Users : Globe;
   const isEventMode = composeMode === 'event';
@@ -417,12 +445,13 @@ export function PostModal({ reply, quote, onClose }: Props) {
     ? 'Quote'
     : 'Post';
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+      if (!isSubmittingRef.current) cleanupDraftMedia();
+    };
+  }, [cleanupDraftMedia]);
 
   const updateSelectedImagesIfMounted = useCallback(
     (update: React.SetStateAction<SelectedImage[]>) => {
@@ -625,6 +654,10 @@ export function PostModal({ reply, quote, onClose }: Props) {
     setContentWarning(false);
     setPollEnabled(mode === 'poll');
     if (mode !== 'media') {
+      deleteImagePickerAssets(
+        selectedImagesRef.current.map(image => image.uri),
+      );
+      selectedImagesRef.current = [];
       setSelectedImages([]);
     }
     if (mode !== 'poll') {
@@ -701,6 +734,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       setSubmitStatusIfMounted('Event start time must be in the future.');
       return;
     }
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -838,6 +872,9 @@ export function PostModal({ reply, quote, onClose }: Props) {
         );
       }
 
+      if (eventCover) {
+        deleteImagePickerAsset(eventCover.uri);
+      }
       if (mountedRef.current) {
         setEventTitle('');
         setEventSummary('');
@@ -858,6 +895,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         onClose();
       }
     } finally {
+      isSubmittingRef.current = false;
       if (mountedRef.current) setIsSubmitting(false);
     }
   }, [
@@ -893,6 +931,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       await submitEvent();
       return;
     }
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -1059,6 +1098,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         },
       );
 
+      deleteImagePickerAssets(selectedImages.map(image => image.uri));
       if (mountedRef.current) {
         editorRef.current?.setValue('');
         setText('');
@@ -1074,6 +1114,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         onClose();
       }
     } finally {
+      isSubmittingRef.current = false;
       if (mountedRef.current) setIsSubmitting(false);
     }
   }, [
@@ -1131,7 +1172,17 @@ export function PostModal({ reply, quote, onClose }: Props) {
   );
 
   const removeImage = useCallback((uri: string) => {
+    deleteImagePickerAsset(uri);
     setSelectedImages(current => current.filter(image => image.uri !== uri));
+  }, []);
+
+  const changeEventCover = useCallback((cover: SelectedImage | null) => {
+    const previousUri = eventCoverRef.current?.uri;
+    if (previousUri && previousUri !== cover?.uri) {
+      deleteImagePickerAsset(previousUri);
+    }
+    eventCoverRef.current = cover;
+    setEventCover(cover);
   }, []);
 
   const insertRemoteImage = useCallback(
@@ -1280,7 +1331,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
           onChangeCapacity={setEventCapacity}
           onChangeCategory={setEventCategory}
           onChangeCommunityRelays={selectEventCommunities}
-          onChangeCover={setEventCover}
+          onChangeCover={changeEventCover}
           onChangeCurrency={setEventCurrency}
           onChangeEndsAt={setEventEndsAt}
           onChangeLocation={setEventLocation}

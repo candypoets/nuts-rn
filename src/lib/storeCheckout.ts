@@ -9,8 +9,12 @@ import type {Event, EventTemplate} from 'nostr-tools';
  * The POST contract lives in nuts-cash src/routes/api/stripe/checkout/+server.ts:
  * body {community, eventAddress, returnTo}, NIP-98 Authorization header,
  * response {url}.
+ *
+ * EXPO_PUBLIC_NUTS_API_URL overrides the API origin (QA harness points it at
+ * a local checkout shim — see .qa/README.md). Production default is unchanged.
  */
-export const CHECKOUT_ORIGIN = 'https://nuts.cash';
+export const CHECKOUT_ORIGIN =
+  process.env.EXPO_PUBLIC_NUTS_API_URL?.replace(/\/+$/, '') || 'https://nuts.cash';
 export const CHECKOUT_API_URL = `${CHECKOUT_ORIGIN}/api/stripe/checkout`;
 
 /** Web path the buyer returns to after the hosted checkout completes. */

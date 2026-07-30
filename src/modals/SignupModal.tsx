@@ -52,6 +52,7 @@ import {
   uploadFile,
   type LocalUploadAsset,
 } from '../nostr/upload';
+import {deleteImagePickerAsset} from '../media/cache';
 import { AppButton } from '../components/AppButton';
 import {useAppTheme} from '../theme';
 import {
@@ -177,10 +178,29 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   const [bio, setBio] = useState('');
   const [avatar, setAvatar] = useState<SelectedAvatar | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const avatarRef = useRef(avatar);
+  const avatarUploadsRef = useRef(new Set<string>());
+  const mountedRef = useRef(true);
   const relays = useMemo(
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
   );
+
+  useEffect(() => {
+    avatarRef.current = avatar;
+  }, [avatar]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const avatarUploads = avatarUploadsRef.current;
+    return () => {
+      mountedRef.current = false;
+      const uri = avatarRef.current?.uri;
+      if (uri && !avatarUploads.has(uri)) {
+        deleteImagePickerAsset(uri);
+      }
+    };
+  }, []);
 
   const prepareFreshAccount = useCallback(() => {
     if (!manager) return null;
@@ -224,6 +244,10 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
       });
       if (result.canceled || !result.assets[0]?.uri) return;
       const asset = result.assets[0];
+      const previousUri = avatarRef.current?.uri;
+      if (previousUri && !avatarUploadsRef.current.has(previousUri)) {
+        deleteImagePickerAsset(previousUri);
+      }
       setAvatar({
         uri: asset.uri,
         previewUri: asset.uri,
@@ -259,11 +283,21 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
       try {
         let picture: string | null = null;
         if (signupAvatar) {
-          const uploaded = await uploadFile(signupAvatar, {
-            server: DEFAULT_UPLOAD_SERVER,
-            serverType: 'blossom',
-          });
-          picture = uploaded.url;
+          let uploadSucceeded = false;
+          avatarUploadsRef.current.add(signupAvatar.uri);
+          try {
+            const uploaded = await uploadFile(signupAvatar, {
+              server: DEFAULT_UPLOAD_SERVER,
+              serverType: 'blossom',
+            });
+            picture = uploaded.url;
+            uploadSucceeded = true;
+          } finally {
+            avatarUploadsRef.current.delete(signupAvatar.uri);
+            if (uploadSucceeded || !mountedRef.current) {
+              deleteImagePickerAsset(signupAvatar.uri);
+            }
+          }
           setProfile({
             pubkey: keypair.pubkey,
             name: trimmedName,
@@ -271,6 +305,13 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
             picture,
             updatedAt: now(),
           });
+          if (mountedRef.current) {
+            setAvatar(current =>
+              current?.uri === signupAvatar.uri && picture
+                ? {...current, uri: picture, previewUri: picture}
+                : current,
+            );
+          }
         }
 
         const metadata = {
@@ -497,16 +538,24 @@ export function SignupModal({
 
   return (
     <SignupWizardContext.Provider value={contextValue}>
-      <SignupStack.Navigator
-        screenOptions={{
-          animation: 'slide_from_right',
-          gestureEnabled: true,
-          headerShown: false,
-        }}
+      {/* Top inset: without it the wizard header renders under the status bar
+          (edge-to-edge), which both looks broken and drops the header from the
+          accessibility tree. */}
+      <View
+        className="h-full bg-base-100"
+        style={{paddingTop: insets.top}}
       >
-        <SignupStack.Screen component={SignupProfileScreen} name="SignupProfile" />
-        <SignupStack.Screen component={SignupPacksScreen} name="SignupPacks" />
-      </SignupStack.Navigator>
+        <SignupStack.Navigator
+          screenOptions={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            headerShown: false,
+          }}
+        >
+          <SignupStack.Screen component={SignupProfileScreen} name="SignupProfile" />
+          <SignupStack.Screen component={SignupPacksScreen} name="SignupPacks" />
+        </SignupStack.Navigator>
+      </View>
     </SignupWizardContext.Provider>
   );
 }
@@ -554,6 +603,13 @@ function SignupPacksScreen({
     onDone,
   });
   const onBack = useCallback(() => navigation.goBack(), [navigation]);
+  // onDone router.back()s the hosting /Login route. Pop the embedded stack to
+  // its root first, otherwise the back action is consumed by the inner
+  // navigator (packs -> profile) and the wizard never closes.
+  const onFinish = useCallback(() => {
+    navigation.popToTop();
+    packs.finish();
+  }, [navigation, packs]);
 
   return (
     <SignupPacksStep
@@ -563,7 +619,7 @@ function SignupPacksScreen({
       selectedPacksCount={packs.selectedPacksCount}
       search={packs.search}
       onBack={onBack}
-      onFinish={packs.finish}
+      onFinish={onFinish}
       onSearchChange={packs.setSearch}
       onTogglePack={packs.togglePack}
     />

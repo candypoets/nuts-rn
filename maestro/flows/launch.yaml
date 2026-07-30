@@ -3,7 +3,23 @@ appId: com.nutsrn
 # Setup subflow: launch dev-client, connect to Metro, land in the app.
 - launchApp:
     clearState: true
-# Launcher URL placeholder flips between exp:// and http:// — match either.
+# Launcher home is up (server list/discovery populates asynchronously and its
+# rows are NOT reliably exposed to the a11y tree — do not select on them).
+- extendedWaitUntil:
+    visible: "Development Build"
+    timeout: 30000
+# Two layouts:
+#  A) Metro discovered on the LAN: server rows + "+ New development server".
+#  B) the manual URL form directly (placeholder flips between exp:// and
+#     http://). In layout A, open the form explicitly.
+- runFlow:
+    when:
+      visible: "New development server"
+    commands:
+      - tapOn: "New development server"
+- extendedWaitUntil:
+    visible: "(exp|http)://"
+    timeout: 20000
 - tapOn: "(exp|http)://"
 - inputText: "exp://localhost:8084"
 - tapOn: "Connect"

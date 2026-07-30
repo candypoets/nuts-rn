@@ -106,6 +106,18 @@ export function RedeemModal({ relay, token, onDone }: RedeemModalProps) {
     setState('redeeming');
     setError('');
     try {
+      // A previous failed attempt may already have granted membership — the
+      // award is granted before the later stages (indexes, profile replica)
+      // run — so a retry must not burn another invite redemption.
+      if (state === 'error') {
+        const member = await checkExistingMembership(pubkey, communityRelayUrl);
+        if (!mountedRef.current) return;
+        if (member) {
+          setAlreadyMember(true);
+          setState('done');
+          return;
+        }
+      }
       await redeemInvite({
         token,
         relayBaseUrl,
@@ -122,7 +134,7 @@ export function RedeemModal({ relay, token, onDone }: RedeemModalProps) {
       setError(err instanceof Error ? err.message : 'Could not redeem invite.');
       setState('error');
     }
-  }, [pubkey, linkValid, state, token, relayBaseUrl]);
+  }, [pubkey, linkValid, state, token, relayBaseUrl, communityRelayUrl]);
 
   const openCommunity = useCallback(() => {
     router.replace({

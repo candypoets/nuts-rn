@@ -458,13 +458,6 @@ export function ImageGrid({
   const remainingCount = Math.max(0, validLinks.length - displayLinks.length);
   const resolvedContainerWidth = Math.max(160, containerWidth ?? viewportWidth - 88);
 
-  useEffect(() => {
-    for (const link of displayLinks) {
-      if (link.type === 'video') continue;
-      Image.prefetch(link.src, 'memory-disk').catch(() => {});
-    }
-  }, [displayLinks]);
-
   if (!displayLinks.length) return null;
 
   return (

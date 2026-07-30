@@ -1,0 +1,46 @@
+appId: com.nutsrn
+env:
+  EVENT_TITLE: "QA Training"
+---
+# Capacity-full e2e (phase A): a fresh member redeems the QA gym invite and
+# opens the seeded "QA Training" event (kind 31923, capacity 2) which the
+# scenario has already filled with 2 accepted RSVPs from other members. The
+# card and the event screen must both read Full, and the RSVP button must be
+# disabled — no oversell from the RN client.
+#
+# Requires the same setup as store-gym-pass.yaml (no checkout shim needed).
+# Run (values from /tmp/qa-rn-commerce.json; NSEC = keys.users[2]):
+#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#     -e TOKEN=<gym-invite> -e RELAY_PORT=7822 -e NSEC=<users[2] nsec> \
+#     -e COMMUNITY_NAME="QA RN Gym <runid>" \
+#     maestro/flows/event-capacity-full.yaml
+#
+# Afterwards .qa/qa-verify-event.mjs cancels one of the seeded RSVPs and runs
+# event-capacity-rsvp.yaml (phase B).
+- runFlow:
+    file: redeem.yaml
+    env:
+      TOKEN: ${TOKEN}
+      RELAY_PORT: ${RELAY_PORT}
+      NSEC: ${NSEC}
+      COMMUNITY_NAME: ${COMMUNITY_NAME}
+# Upcoming events card: capacity 2, 2 accepted RSVPs → Full.
+- extendedWaitUntil:
+    visible: "${EVENT_TITLE}"
+    timeout: 90000
+- extendedWaitUntil:
+    visible: "2 going"
+    timeout: 60000
+- assertVisible: "Full"
+- takeScreenshot: event-card-full
+# Open the event screen (CalendarEventModal route).
+- tapOn: "${EVENT_TITLE}"
+- extendedWaitUntil:
+    visible: "Who's going"
+    timeout: 60000
+- assertVisible: "Going"
+- assertVisible: "Capacity"
+- assertVisible: "Spots"
+# Spots value reads Full; the RSVP button also reads Full and is disabled.
+- assertVisible: "Full"
+- takeScreenshot: event-screen-full

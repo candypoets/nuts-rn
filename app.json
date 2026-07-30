@@ -9,7 +9,10 @@
       "typedRoutes": true
     },
     "ios": {
-      "bundleIdentifier": "com.nutsrn"
+      "bundleIdentifier": "com.nutsrn",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["nostrconnect"]
+      }
     },
     "android": {
       "package": "com.nutsrn",

@@ -408,10 +408,9 @@ export function PrivateKeyLogin({
   const initialPubkeyRef = useRef(auth.pubkey);
   const nip46AuthUrl = useAuthStore(state => state.nip46AuthUrl);
   const authError = useAuthStore(state => state.authError);
-  // Signer detection (NIP-55-style): is a signer app installed that can
-  // complete the NIP-46 nostrconnect:// handoff (Amber, Aegis, …)?
-  // Android-only by nature; on iOS this stays false and the QR flow is the
-  // (aligned) path.
+  // Detect a local signer that can complete the NIP-46 nostrconnect://
+  // handoff. Android exposes this through package visibility; iOS requires
+  // the scheme in LSApplicationQueriesSchemes.
   const [signerInstalled, setSignerInstalled] = useState(false);
 
   useEffect(() => {
@@ -530,6 +529,20 @@ export function PrivateKeyLogin({
     setTimeout(() => setQrLinkCopied(false), 1800);
   }, [qrText]);
 
+  const openSignerApp = useCallback(async () => {
+    if (!qrText) return;
+
+    try {
+      setError(null);
+      await Linking.openURL(qrText);
+    } catch {
+      setSignerInstalled(false);
+      setError(
+        'Could not open a signing app. Copy the connection link and open it from your signer instead.',
+      );
+    }
+  }, [qrText]);
+
   return (
     <View style={styles.modalBody}>
       <View style={styles.fullModalSheet}>
@@ -583,8 +596,9 @@ export function PrivateKeyLogin({
                 </Pressable>
                 {signerInstalled ? (
                   <Pressable
+                    accessibilityRole="button"
                     style={styles.secondaryAction}
-                    onPress={() => Linking.openURL(qrText)}
+                    onPress={openSignerApp}
                   >
                     <Text style={styles.secondaryActionText}>
                       Open in signing app

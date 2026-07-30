@@ -178,6 +178,9 @@ export function CalendarEventModal({
   const eventUnsubRef = useRef<(() => void) | null>(null);
   const rsvpUnsubRef = useRef<(() => void) | null>(null);
   const publishUnsubRef = useRef<(() => void) | null>(null);
+  // Latest RSVP status per pubkey, so a newer declined/tentative retracts an
+  // earlier accepted (and out-of-order older events can't resurrect it).
+  const rsvpLatestRef = useRef<Record<string, {createdAt: number; status: string}>>({});
 
   const selectedRelay = useMemo(() => normalizeRelayUrl(relay), [relay]);
   const relays = useMemo(
@@ -221,6 +224,9 @@ export function CalendarEventModal({
     setAttendeeEvents({});
     setRsvpStatus('');
     setLoading(Boolean(address));
+    rsvpLatestRef.current = {};
+
+    if (!address) return undefined;
 
     const parsedAddress = splitAddress(address);
     if (!parsedAddress.kind || !parsedAddress.author || !parsedAddress.d) {
@@ -270,7 +276,22 @@ export function CalendarEventModal({
           stringValue(asPreGeneric(parsed)?.content?.()) ||
           tagValue(tags, 'status') ||
           'accepted';
-        if (status !== 'accepted') return;
+        const createdAt = parsed.createdAt();
+        const latest = rsvpLatestRef.current[rsvpPubkey];
+        if (latest && latest.createdAt >= createdAt) return;
+        rsvpLatestRef.current = {
+          ...rsvpLatestRef.current,
+          [rsvpPubkey]: {createdAt, status},
+        };
+        if (status !== 'accepted') {
+          setAttendeeEvents(current => {
+            if (!current[rsvpPubkey]) return current;
+            const next = {...current};
+            delete next[rsvpPubkey];
+            return next;
+          });
+          return;
+        }
         setAttendeeEvents(current => ({...current, [rsvpPubkey]: parsed}));
       },
       {bytesPerEvent: 4 * 1024, closeOnEose: true},
@@ -322,6 +343,10 @@ export function CalendarEventModal({
         const status = asConnectionStatus(message);
         if (status?.status()?.toString() === 'true') {
           setRsvpStatus('You are going');
+          rsvpLatestRef.current = {
+            ...rsvpLatestRef.current,
+            [pubkey]: {createdAt: template.created_at, status: 'accepted'},
+          };
           setAttendeeEvents(current => ({...current, [pubkey]: eventRaw}));
         }
       },

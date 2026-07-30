@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.nutsrn",
+      "googleServicesFile": "./android/app/google-services.json",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -77,6 +78,7 @@
           }
         }
       ],
+      "expo-notifications",
       "expo-image",
       [
         "expo-splash-screen",

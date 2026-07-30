@@ -30,6 +30,7 @@ import {Stack, usePathname, useRouter} from 'expo-router';
 
 import { useFollowListPackSync } from '../hooks/useFollowListPackSync';
 import { useNotificationSubscription } from '../hooks/useNotificationSubscription';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useRelayTracking } from '../hooks/useRelayTracking';
 import { useRootNostrSubscriptions } from '../hooks/useRootNostrSubscriptions';
 import { useAuthStore, useNostrStore, useWalletStore } from '../stores';
@@ -434,6 +435,7 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
 
   useRootNostrSubscriptions(Boolean(manager));
   useNotificationSubscription(Boolean(manager));
+  usePushNotifications(Boolean(manager));
   useRelayTracking(Boolean(manager));
   useFollowListPackSync();
 

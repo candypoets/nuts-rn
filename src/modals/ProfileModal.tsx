@@ -47,8 +47,10 @@ import type {SearchBarCommands} from 'react-native-screens';
 
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import { Avatar } from '../components/notes';
+import { getCurrentPushToken } from '../hooks/usePushNotifications';
 import { shortNpub } from '../lib/identity';
 import type { AppNavigationProp } from '../navigation/types';
+import { unregisterPushDevice } from '../notifications/pushRegistration';
 import {
   BOOTSTRAP_RELAYS,
   useAuthStore,
@@ -761,7 +763,15 @@ export function LogoutModal({
     state => state.setWalletPassphrase,
   );
 
-  const logout = () => {
+  const logout = async () => {
+    const pushToken = getCurrentPushToken();
+    if (pushToken) {
+      try {
+        await unregisterPushDevice(pushToken);
+      } catch (error) {
+        console.error('[push] failed to unregister during logout', error);
+      }
+    }
     clearAuth();
     setWalletMnemonic('');
     setWalletPassphrase('');

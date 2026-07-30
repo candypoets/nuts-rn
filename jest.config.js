@@ -22,6 +22,7 @@ module.exports = {
       '<rootDir>/__mocks__/async-storage.js',
     '^nostr-tools$': '<rootDir>/__mocks__/nostr-tools.js',
     '^expo-video$': '<rootDir>/__mocks__/expo-video.js',
+    '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.js',
     '^@react-native-community/datetimepicker$':
       '<rootDir>/__mocks__/datetimepicker.js',
     '^@shopify/flash-list$': '<rootDir>/__mocks__/flash-list.js',

@@ -45,6 +45,19 @@ function nativeTokenData(token: Notifications.DevicePushToken) {
     : JSON.stringify(token.data);
 }
 
+// A build without google-services/Firebase credentials can never acquire a
+// token — an expected environment gap, not an error. It must not go through
+// console.error: the dev LogBox banner overlays (and swallows taps meant for)
+// bottom-bar UI on every launch.
+function isMissingFirebaseConfig(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('FirebaseApp is not initialized') ||
+    message.includes('Firebase Messaging instance') ||
+    message.includes('googleServicesFile')
+  );
+}
+
 async function acquireNativePushDevice(): Promise<NativePushDevice | null> {
   const platform = nativePushPlatform();
   if (!platform) return null;
@@ -99,6 +112,12 @@ export function usePushNotifications(enabled: boolean) {
         updateDevice(nextDevice);
       })
       .catch(error => {
+        if (isMissingFirebaseConfig(error)) {
+          console.log(
+            '[push] native push unavailable: Firebase is not configured in this build',
+          );
+          return;
+        }
         console.error('[push] failed to acquire native push token', error);
       });
     const subscription = Notifications.addPushTokenListener(nextToken => {

@@ -229,6 +229,8 @@ export default function RootLayout() {
                     <Stack.Screen name="NewChat" options={{ presentation: 'modal' }} />
                     <Stack.Screen name="SendEcash" options={{ presentation: 'modal' }} />
                     <Stack.Screen name="Scan" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Award" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="Passes" options={{ presentation: 'modal' }} />
                     <Stack.Screen name="Tapcash" options={{ presentation: 'modal' }} />
                     <Stack.Screen name="Lightning" options={{ presentation: 'modal' }} />
                     <Stack.Screen name="ProfileStub" options={{ presentation: 'modal' }} />

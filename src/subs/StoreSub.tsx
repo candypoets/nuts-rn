@@ -16,6 +16,7 @@ import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
 import {
   BadgeCheck,
   ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Coffee,
   LockKeyhole,
@@ -48,7 +49,14 @@ import {
   isStoreCatalogDefinition,
   sellableCatalogSubscriptionId,
   upsertCatalogEvent,
+  type CatalogDefinitionType,
 } from '../lib/catalog';
+import {
+  badgeStatusLabel,
+  latestStatusValue,
+  remainingAwardUses,
+} from '../lib/orders';
+import {awardBadgeAddress, useAwardStatuses, useMyAwards} from '../hooks/useAwards';
 import {
   COMMUNITY_PROFILE_D,
   COMMUNITY_PROFILE_KIND,
@@ -416,6 +424,66 @@ const MenuRow = memo(function MenuRow({
   );
 });
 
+function yoursTypeMeta(type: CatalogDefinitionType | undefined) {
+  switch (type) {
+    case 'pass':
+      return {Icon: Ticket, label: 'Pass'};
+    case 'membership':
+      return {Icon: BadgeCheck, label: 'Membership'};
+    case 'event_access':
+      return {Icon: Ticket, label: 'Ticket'};
+    case 'product':
+    default:
+      return {Icon: Package, label: 'Product'};
+  }
+}
+
+const YoursRow = memo(function YoursRow({
+  award,
+  bordered,
+  definition,
+  onOpen,
+  statuses,
+}: {
+  award: ParsedEvent;
+  bordered?: boolean;
+  definition?: ParsedEvent;
+  onOpen: (awardId: string) => void;
+  statuses: ParsedEvent[];
+}) {
+  const theme = useAppTheme();
+  const type = definition ? catalogType(definition) : undefined;
+  const {Icon, label} = yoursTypeMeta(type);
+  const maxUses = definition ? catalogMaxUses(definition) : undefined;
+  const remaining = definition ? remainingAwardUses(award, definition, statuses) : undefined;
+  const detail =
+    maxUses && maxUses > 1 && remaining !== undefined
+      ? `${remaining} of ${maxUses} uses left`
+      : type === 'membership'
+        ? 'Active membership'
+        : badgeStatusLabel(latestStatusValue(award, statuses) || 'none');
+  return (
+    <Pressable
+      accessibilityRole="button"
+      className={`flex-row items-center gap-3 p-4 ${bordered ? 'border-t border-base-200' : ''}`}
+      onPress={() => onOpen(award.id() || '')}
+    >
+      <View className="h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-base-200">
+        <Icon size={20} color={theme.colors.primary} />
+      </View>
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-black text-base-content" numberOfLines={1}>
+          {definition ? catalogName(definition) || label : label}
+        </Text>
+        <Text className="mt-0.5 text-xs font-semibold text-primary-content" numberOfLines={1}>
+          {detail}
+        </Text>
+      </View>
+      <ChevronRight size={18} color={theme.colors.primaryContent} />
+    </Pressable>
+  );
+});
+
 export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubProps) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -443,6 +511,33 @@ export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubPro
   const preset = storePresetFor(communityType);
   const communityName = nameParam || relayInfo?.name || relayLabel(normalizedRelay);
   const title = preset.presentation === 'menu' ? 'Menu' : preset.title;
+
+  // The member's own entitlements on this community relay ("Yours" strip).
+  const {awards: myAwards, definitions: myDefinitions} = useMyAwards(
+    normalizedRelay,
+    signedIn ? pubkey : undefined,
+    visible && signedIn,
+  );
+  const myAwardIds = useMemo(
+    () => myAwards.map(award => award.id() || '').filter(Boolean),
+    [myAwards],
+  );
+  const myStatuses = useAwardStatuses(
+    normalizedRelay,
+    myAwardIds,
+    visible && myAwardIds.length > 0,
+  );
+  const sortedMyAwards = useMemo(
+    () => myAwards.slice().sort((left, right) => (right.createdAt() || 0) - (left.createdAt() || 0)),
+    [myAwards],
+  );
+  const openAward = useCallback(
+    (awardId: string) => {
+      if (!awardId) return;
+      pushDistinct(navigation, 'Award', {relay: normalizedRelay, award: awardId});
+    },
+    [navigation, normalizedRelay],
+  );
 
   const availableEvents = useMemo(
     () =>
@@ -708,6 +803,26 @@ export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubPro
             <ShoppingBag size={21} color={theme.colors.primary} />
           </View>
         </View>
+
+        {signedIn && sortedMyAwards.length ? (
+          <View className="mt-5">
+            <Text className="text-xs font-black uppercase tracking-widest text-primary">
+              Yours
+            </Text>
+            <View className="mt-2 overflow-hidden rounded-xl border border-base-200 bg-base-100">
+              {sortedMyAwards.map((award, index) => (
+                <YoursRow
+                  key={award.id()}
+                  award={award}
+                  bordered={index > 0}
+                  definition={myDefinitions.get(awardBadgeAddress(award))}
+                  onOpen={openAward}
+                  statuses={myStatuses}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {checkoutError ? (
           <View className="mt-4 flex-row items-start gap-2 rounded-xl border border-base-200 bg-base-200 p-3">

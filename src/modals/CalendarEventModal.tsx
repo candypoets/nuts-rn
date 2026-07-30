@@ -23,12 +23,13 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import type {EventTemplate} from 'nostr-tools';
-import {CalendarClock, CalendarX, ChevronLeft, MapPin, Users} from 'lucide-react-native';
+import {CalendarClock, CalendarX, ChevronLeft, MapPin, Ticket, Users} from 'lucide-react-native';
 import {useNavigation} from 'expo-router/react-navigation';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {Avatar, User} from '../components/notes';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
+import {awardBadgeAddress, useMyAwards} from '../hooks/useAwards';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {AppNavigationProp} from '../navigation/types';
@@ -48,6 +49,7 @@ type CalendarEventDetail = {
   attendeeCount: number;
   capacity: number;
   description: string;
+  entranceBadge?: string;
   image?: string;
   location: string;
   relays: string[];
@@ -106,6 +108,7 @@ function parseCalendarEvent(
     attendeeCount: currentParticipants || participants.length,
     capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : 0,
     description,
+    entranceBadge: tagValue(tags, 'entrance_badge') || undefined,
     image: stringValue(pre?.image()) || tagValue(tags, 'image') || undefined,
     location: stringValue(pre?.location()) || tagValue(tags, 'location'),
     relays,
@@ -193,6 +196,15 @@ export function CalendarEventModal({
   );
   const attendeeCount = attendees.length || event?.attendeeCount || 0;
   const hasRsvped = Boolean(pubkey && attendees.includes(pubkey));
+  // The member's entrance ticket for this event, when they hold one.
+  const {awards: myAwards} = useMyAwards(selectedRelay, pubkey, Boolean(event?.entranceBadge));
+  const ticketAward = useMemo(
+    () =>
+      event?.entranceBadge
+        ? myAwards.find(candidate => awardBadgeAddress(candidate) === event.entranceBadge)
+        : undefined,
+    [event?.entranceBadge, myAwards],
+  );
   const spotsLeft = event?.capacity
     ? Math.max(0, event.capacity - attendeeCount)
     : null;
@@ -511,6 +523,21 @@ export function CalendarEventModal({
                 {rsvpStatus || (hasRsvped ? 'You are on the list' : `${attendeeCount} going`)}
               </Text>
             </View>
+            {ticketAward ? (
+              <Pressable
+                accessibilityRole="button"
+                className="flex-row items-center gap-1.5 rounded-xl bg-primary px-4 py-3"
+                onPress={() =>
+                  pushDistinct(navigation, 'Award', {
+                    relay: selectedRelay,
+                    award: ticketAward.id() || '',
+                  })
+                }
+              >
+                <Ticket size={16} color="#ffffff" />
+                <Text className="text-base font-bold text-white">Your ticket</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               className={`min-w-28 items-center justify-center rounded-xl px-5 py-3 ${
                 hasRsvped || spotsLeft === 0 || !pubkey ? 'bg-base-200' : 'bg-primary'

@@ -81,6 +81,7 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
   expect(Object.keys(optionsByName).sort()).toEqual(
     [
       '(tabs)',
+      'Award',
       'CalendarEvent',
       'ChatThread',
       'CmdK',
@@ -98,6 +99,7 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
       'Mints',
       'NewChat',
       'Notifications',
+      'Passes',
       'Post',
       'Profile',
       'ProfileStub',

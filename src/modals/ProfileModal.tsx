@@ -36,6 +36,7 @@ import {
   RefreshCw,
   Plus,
   Radio,
+  Ticket,
   Trash2,
   User,
   Wallet,
@@ -317,6 +318,12 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
               onPress={() =>
                 navigate({ type: 'profileStub', path: 'nprofile' })
               }
+            />
+            <ProfileMenuRow
+              icon={<Ticket size={21} color={iconColor} strokeWidth={2.1} />}
+              label="Passes"
+              detail="Memberships, passes and tickets"
+              onPress={() => navigation.navigate('Passes')}
             />
             <ProfileMenuRow
               icon={<KeyRound size={21} color={iconColor} strokeWidth={2.1} />}

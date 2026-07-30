@@ -1,4 +1,5 @@
 export { CmdKModal } from './CmdKModal';
+export { AwardModal } from './AwardModal';
 export { CalendarEventModal } from './CalendarEventModal';
 export { FeedBuilderModal } from './FeedBuilderModal';
 export { Kind1111CommentsModal } from './Kind1111CommentsModal';
@@ -16,6 +17,7 @@ export {
   WalletModal,
 } from './ProfileModal';
 export { ScanModal } from './ScanModal';
+export { PassesModal } from './PassesModal';
 export { SendModal, SendPlaceholderModal } from './SendModal';
 export { SendEcashModal } from './SendEcashModal';
 export { ShareModal } from './ShareModal';

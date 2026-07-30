@@ -1,0 +1,24 @@
+appId: com.nutsrn
+---
+# Entitlement phase 3: the member holds an entrance ticket for the QA Training
+# event (seeded by qa-verify-event.mjs: ticket def + entrance_badge on the
+# 31923 + kind-8 award). The event screen must show "Your ticket" and open the
+# Award screen with the event-context presentation QR.
+- runFlow:
+    file: redeem.yaml
+    env:
+      TOKEN: ${TOKEN}
+      RELAY_PORT: ${RELAY_PORT}
+      NSEC: ${NSEC}
+      COMMUNITY_NAME: ${COMMUNITY_NAME}
+- openLink: ${EVENT_URL}
+- extendedWaitUntil:
+    visible: "Your ticket"
+    timeout: 90000
+- takeScreenshot: entitlement-event-ticket
+- tapOn: "Your ticket"
+- extendedWaitUntil:
+    visible: "Tap to present · refreshes automatically"
+    timeout: 60000
+- assertVisible: "Show at the entrance"
+- takeScreenshot: entitlement-ticket-award

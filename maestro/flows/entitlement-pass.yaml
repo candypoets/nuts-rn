@@ -1,0 +1,27 @@
+appId: com.nutsrn
+---
+# Entitlement phase 1A: the member's pass in the Store "Yours" strip, then the
+# Award screen with its live presentation QR. Leaves the app ON the Award
+# screen for entitlement-pass-decrement.yaml. Run via qa-verify-event.mjs.
+- runFlow:
+    file: redeem.yaml
+    env:
+      TOKEN: ${TOKEN}
+      RELAY_PORT: ${RELAY_PORT}
+      NSEC: ${NSEC}
+      COMMUNITY_NAME: ${COMMUNITY_NAME}
+- tapOn: "Store"
+- extendedWaitUntil:
+    visible: "Yours"
+    timeout: 90000
+- extendedWaitUntil:
+    visible: "10 of 10 uses left"
+    timeout: 60000
+- takeScreenshot: entitlement-yours
+- tapOn: "10 of 10 uses left"
+- extendedWaitUntil:
+    visible: "Tap to present · refreshes automatically"
+    timeout: 60000
+- assertVisible: "Activity"
+- assertVisible: "10 of 10 uses left"
+- takeScreenshot: entitlement-award

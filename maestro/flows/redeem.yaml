@@ -1,0 +1,103 @@
+appId: com.nutsrn
+---
+# Invite-redeem e2e: a logged-in user opens an invite deep link, claims the
+# invite in the RedeemModal, and lands on the community screen.
+#
+# Requires:
+#   - a provisioned QA community + minted invite token (node .qa/qa-bootstrap.mjs)
+#   - the redeem proxy running (bootstrap starts it; .qa/qa-redeem-proxy.mjs)
+#   - Metro on :8084 with adb reverse tcp:8084 (maestro/flows/launch.yaml)
+#
+# Run (token/name from qa-bootstrap output / /tmp/qa-rn-community.json; the
+# last three flags have these usual values):
+#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#     -e TOKEN=<token> -e COMMUNITY_NAME="QA RN Cafe <runid>" \
+#     -e RELAY_PORT=7820 \
+#     -e NSEC=nsec1h69a2vcpnyqe6c7rntwfvmwr42l6s344fk98mtxtgyz8qf3n985srsh0pe \
+#     maestro/flows/redeem.yaml
+# (NSEC = keys.users[0] from /root/code/strfry-badge-node/test/env/keys.json.)
+# NOTE: no env defaults are declared here on purpose — in maestro a flow's own
+# env block beats BOTH CLI -e and runFlow env params, which silently broke
+# parameterization. Every variable must come from the caller.
+#
+# Re-runnable against the same community: the modal's "already a member"
+# short-circuit is handled (Open community directly).
+#
+# Also used as a subflow by the commerce flows (store-beer, store-gym-pass,
+# event-capacity-full): they pass TOKEN / RELAY_PORT / NSEC / COMMUNITY_NAME
+# explicitly via runFlow env so each scenario redeems its own community
+# invite as a fresh member.
+#
+# Protocol-level proof afterwards: node .qa/qa-verify-redeem.mjs
+- runFlow: launch.yaml
+# Home tab shows a sign-in stub when logged out.
+- tapOn: "Home"
+- assertVisible: "Sign in to load your wallet feed"
+- tapOn: "Sign in"
+# Login modal (same pattern as login-nip46.yaml, but a plain nsec).
+- assertVisible: "Authenticate"
+- tapOn: "nsec, npub, or connection link"
+- inputText: "${NSEC}"
+# Dismiss the keyboard by tapping inert text inside the modal (hideKeyboard
+# can send a Back press that dismisses the whole modal).
+- tapOn: "Connect with your signing app, or paste a key."
+# "Sign in" also exists on the covered Home stub underneath the modal;
+# anchor to the input field so the modal's submit button is tapped.
+- tapOn:
+    text: "Sign in"
+    below: "nsec, npub, or connection link"
+# Success: the modal closes itself once the auth event lands.
+- extendedWaitUntil:
+    notVisible: "Authenticate"
+    timeout: 60000
+- assertNotVisible: "Sign in to load your wallet feed"
+# Open the invite deep link in the already-running app (no cold-start issue).
+# relay= is the redeem proxy (10.0.2.2 = emulator host loopback); the app
+# derives both the redeem endpoint and the community ws relay from it.
+- openLink: "nutsrn://redeem?relay=http%3A%2F%2F10.0.2.2%3A${RELAY_PORT}&token=${TOKEN}"
+# RedeemModal renders (selectors match whole element text — regex wrap).
+- assertVisible: ".*You're invited to.*"
+# Membership check ("Checking your membership…") must settle first. Two
+# outcomes: fresh invite → "Claim invite"; re-run against the same community →
+# "You're already a member" (checkExistingMembership short-circuit).
+- extendedWaitUntil:
+    visible: ".*(Claim invite|already a member).*"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Claim invite"
+    commands:
+      - tapOn: "Claim invite"
+      # Redeem POST + membership index publishes (~2s timeouts each) + kind-0
+      # replica awaiting the community relay's OK (up to 12s): be generous.
+      # The terminal state is either success or the error "Try again" button.
+      - extendedWaitUntil:
+          visible: ".*(Invite redeemed|Try again).*"
+          timeout: 120000
+# Transient failure ("The community relay did not confirm your profile."):
+# the badge-gate membership cache can lag behind the just-granted award, so
+# the kind-0 replica is rejected while the gate is cold. Retry like a user
+# would — up to three attempts total.
+- runFlow:
+    when:
+      visible: "Try again"
+    commands:
+      - tapOn: "Try again"
+      - extendedWaitUntil:
+          visible: ".*(Invite redeemed|Try again).*"
+          timeout: 120000
+- runFlow:
+    when:
+      visible: "Try again"
+    commands:
+      - tapOn: "Try again"
+      - extendedWaitUntil:
+          visible: ".*Invite redeemed.*"
+          timeout: 120000
+# Both paths converge on the Open community button.
+- tapOn: "Open community"
+# Community screen renders (name passed through from the redeem sheet).
+- extendedWaitUntil:
+    visible: ".*${COMMUNITY_NAME}.*"
+    timeout: 60000
+- takeScreenshot: invite-redeemed

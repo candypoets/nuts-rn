@@ -1,0 +1,39 @@
+appId: com.nutsrn
+---
+# DEV ONLY — visual iteration for the entitlement screens (not part of the
+# suite). Logs in as the gym member (already-member redeem path), then walks:
+# Store Yours strip → Award screen → present mode → Passes list.
+#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#     -e TOKEN=<gym-invite> -e RELAY_PORT=7822 -e NSEC=<users[1] nsec> \
+#     -e COMMUNITY_NAME="QA RN Gym <runid>" \
+#     maestro/flows/dev-entitlement-visual.yaml
+- runFlow:
+    file: redeem.yaml
+    env:
+      TOKEN: ${TOKEN}
+      RELAY_PORT: ${RELAY_PORT}
+      NSEC: ${NSEC}
+      COMMUNITY_NAME: ${COMMUNITY_NAME}
+- tapOn: "Store"
+- extendedWaitUntil:
+    visible: "10 of 10 uses left"
+    timeout: 90000
+- takeScreenshot: dev-store-yours
+- tapOn: "10 of 10 uses left"
+- extendedWaitUntil:
+    visible: "Tap to present · refreshes automatically"
+    timeout: 60000
+- assertVisible: "Activity"
+- takeScreenshot: dev-award-screen
+- tapOn: "Tap to present · refreshes automatically"
+- assertVisible: "Exit present mode"
+- takeScreenshot: dev-award-present
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Activity"
+    timeout: 10000
+- openLink: "nutsrn:///Passes"
+- extendedWaitUntil:
+    visible: "Your memberships, passes and tickets"
+    timeout: 30000
+- takeScreenshot: dev-passes

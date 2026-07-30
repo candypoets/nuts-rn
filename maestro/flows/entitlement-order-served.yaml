@@ -1,0 +1,12 @@
+appId: com.nutsrn
+---
+# Entitlement phase 2B: after qa-verify-event.mjs publishes the fulfilled
+# status (staff served the beer), the still-open Award screen flips to
+# "Served".
+- launchApp:
+    appId: com.nutsrn
+    stopApp: false
+- extendedWaitUntil:
+    visible: "Served"
+    timeout: 60000
+- takeScreenshot: entitlement-order-served

@@ -1,0 +1,23 @@
+appId: com.nutsrn
+---
+# Entitlement phase 2A: a fresh beer order shows "Waiting for staff" in the
+# menu's "Yours" strip and on the Award screen. Leaves the app ON the Award
+# screen for entitlement-order-served.yaml. Run via qa-verify-event.mjs.
+- runFlow:
+    file: redeem.yaml
+    env:
+      TOKEN: ${TOKEN}
+      RELAY_PORT: ${RELAY_PORT}
+      NSEC: ${NSEC}
+      COMMUNITY_NAME: ${COMMUNITY_NAME}
+- tapOn: "Store"
+- extendedWaitUntil:
+    visible: "Waiting for staff"
+    timeout: 90000
+- takeScreenshot: entitlement-order-strip
+- tapOn: "Waiting for staff"
+- extendedWaitUntil:
+    visible: "Tap to present · refreshes automatically"
+    timeout: 60000
+- assertVisible: "Waiting for staff"
+- takeScreenshot: entitlement-order-award

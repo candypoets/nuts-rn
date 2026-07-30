@@ -1,0 +1,12 @@
+appId: com.nutsrn
+---
+# Entitlement phase 1B: after qa-verify-event.mjs publishes ONE fulfilled
+# check-in (kind 27237) for the pass, the still-open Award screen must tick
+# down 10 → 9 via its live status subscription.
+- launchApp:
+    appId: com.nutsrn
+    stopApp: false
+- extendedWaitUntil:
+    visible: "9 of 10 uses left"
+    timeout: 60000
+- takeScreenshot: entitlement-decremented

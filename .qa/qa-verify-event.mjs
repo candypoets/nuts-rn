@@ -285,7 +285,7 @@ async function capacity() {
 //
 // The member-side entitlement screens (docs/entitlements.md): Store "Yours"
 // strip, Award screen with its live presentation QR (kind 27236, verified
-// derivation-side from the dev log line), live status updates (27237), and
+// derivation-side from the dev log line), live status updates (37237), and
 // the event-ticket entry point. Idempotent: each phase seeds a FRESH
 // issuer-signed award first, so reruns never depend on purchase history.
 
@@ -378,7 +378,7 @@ async function entitlement() {
 		},
 		keys.admin.priv
 	);
-	await publishUntilAccepted(gym.relay_url, checkIn, 'staff check-in (27237 fulfilled)');
+	await publishUntilAccepted(gym.relay_url, checkIn, 'staff check-in (37237 fulfilled)');
 	runMaestro('maestro/flows/entitlement-pass-decrement.yaml', {});
 	console.log('ok - Award screen ticked 10 → 9 from the staff check-in');
 
@@ -408,7 +408,7 @@ async function entitlement() {
 		},
 		keys.admin.priv
 	);
-	await publishUntilAccepted(bar.relay_url, served, 'staff served (27237 fulfilled)');
+	await publishUntilAccepted(bar.relay_url, served, 'staff served (37237 fulfilled)');
 	runMaestro('maestro/flows/entitlement-order-served.yaml', {});
 	console.log('ok - Award screen flipped to "Served"');
 
@@ -441,11 +441,20 @@ async function entitlement() {
 		keys.admin.priv
 	);
 	await publishUntilAccepted(gym.relay_url, ticketDef, 'ticket definition (30009)');
-	const currentEvent = await fetchEvent(gym.relay_url, { kinds: [31923], ids: [event.id] }, 'current QA Training event');
+	// Fetch by address, not id: the 31923 is addressable, so a previous run's
+	// entrance_badge update replaced it — the state file's id is stale.
+	const currentEvent = await fetchEvent(
+		gym.relay_url,
+		{ kinds: [31923], authors: [keys.admin.pub], '#d': [eventD] },
+		'current QA Training event'
+	);
 	const updatedEvent = signEvent(
 		{
 			kind: 31923,
-			tags: [...currentEvent.tags, ['entrance_badge', ticketAddress]]
+			tags: [
+				...currentEvent.tags.filter(tag => tag[0] !== 'entrance_badge'),
+				['entrance_badge', ticketAddress]
+			]
 		},
 		keys.admin.priv
 	);

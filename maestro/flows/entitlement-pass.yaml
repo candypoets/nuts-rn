@@ -10,7 +10,7 @@ appId: com.nutsrn
       RELAY_PORT: ${RELAY_PORT}
       NSEC: ${NSEC}
       COMMUNITY_NAME: ${COMMUNITY_NAME}
-- tapOn: "Store"
+- tapOn: "^(Store|Menu)$"
 - extendedWaitUntil:
     visible: "Yours"
     timeout: 90000

@@ -3,7 +3,7 @@
  *
  * The pre-migration App.test rendered App.tsx — a React Navigation container
  * hosting the tab/stack navigators and the initial feed. The entry point is
- * now expo-router/entry and the shell is app/_layout.tsx. renderRouter()
+ * now expo-router/entry and the shell is src/app/_layout.tsx. renderRouter()
  * cannot be used here (@testing-library/react-native is not installed), so
  * this mounts the root layout directly under the standard module mocks and
  * asserts the provider tree, the root Stack with its (tabs) screen and the
@@ -35,8 +35,8 @@ jest.mock('@candypoets/nipworker/hooks', () => ({
   useRelayStatus: () => jest.fn(),
 }));
 
-import RootLayout from '../app/_layout';
-import Index from '../app/index';
+import RootLayout from '../src/app/_layout';
+import Index from '../src/app/index';
 
 beforeEach(() => {
   jest.clearAllMocks();

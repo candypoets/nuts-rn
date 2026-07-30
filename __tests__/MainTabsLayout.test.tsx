@@ -40,7 +40,7 @@ jest.mock('../src/nostr/manager', () => ({
   getSharedNostrManager: () => null,
 }));
 
-import MainTabsLayout, { useMainTabContext } from '../app/(tabs)/_layout';
+import MainTabsLayout, { useMainTabContext } from '../src/app/(tabs)/_layout';
 
 function ExploreScrollKeyProbe() {
   const { scrollToTopKey } = useMainTabContext('explore');

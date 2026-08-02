@@ -8,7 +8,7 @@ import React, {memo, useEffect, useMemo} from 'react';
 import {Pressable, ScrollView, Text, View} from 'react-native';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {BadgeCheck, ChevronLeft, ChevronRight, Package, Shield, Ticket} from 'lucide-react-native';
-import {useNavigation} from 'expo-router/react-navigation';
+import {useRouter} from 'expo-router';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {catalogD, catalogMaxUses, catalogName, catalogRole, catalogType, type CatalogDefinitionType} from '../lib/catalog';
@@ -17,7 +17,6 @@ import {awardBadgeAddress, useAwardStatuses, useMyAwards} from '../hooks/useAwar
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
 import {communityList} from '../modals/post/shared';
 import {pushDistinct} from '../navigation/pushDistinct';
-import type {AppNavigationProp} from '../navigation/types';
 import {useAuthStore} from '../stores/authStore';
 import {useNostrStore, useRelayStore} from '../stores';
 import {useAppTheme} from '../theme';
@@ -99,7 +98,7 @@ const CommunitySection = memo(function CommunitySection({
   relay: string;
   visible: boolean;
 }) {
-  const navigation = useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const pubkey = useAuthStore(state => state.pubkey);
   const relayInfo = useRelayStore(state => state.relayInfos[relay]?.info);
   const {awards, definitions, loading} = useMyAwards(relay, pubkey, visible);
@@ -125,7 +124,7 @@ const CommunitySection = memo(function CommunitySection({
               definition={definitions.get(awardBadgeAddress(award))}
               statuses={statuses}
               onOpen={awardId =>
-                pushDistinct(navigation, 'Award', {relay, award: awardId})
+                pushDistinct(router, {pathname: '/Award', params: {relay, award: awardId}})
               }
             />
           ))

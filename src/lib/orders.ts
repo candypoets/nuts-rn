@@ -11,7 +11,7 @@
  * accessors only (project convention, see src/lib/catalog.ts).
  */
 import {extractTagValue, type ParsedEvent} from '@candypoets/nipworker';
-import {catalogEventAddress, catalogMaxUses, catalogType, catalogUsesQrFulfillment} from './catalog';
+import {catalogEventAddress, catalogMaxUses, catalogRole, catalogType, catalogUsesQrFulfillment} from './catalog';
 
 // Statuses moved off the ephemeral range (strfry evicts those after ~300 s)
 // to the addressable range: the relay itself now keeps the latest status per
@@ -123,7 +123,7 @@ export function presentationContextFor(
     const eventAddress = definition ? catalogEventAddress(definition) : '';
     if (eventAddress) return {eventAddress};
   }
-  if (type === 'pass' || type === 'membership') {
+  if (type === 'pass' || type === 'membership' || (definition ? catalogRole(definition) : false)) {
     return {orderId: `use:${freshUseNonce()}`};
   }
   return {orderId: awardOrderReference(award)};
@@ -159,6 +159,9 @@ export function canPresentEntitlement(
     const remaining = remainingAwardUses(award, definition, statuses);
     return remaining === undefined || remaining > 0;
   }
+  // Roles present like memberships — the QR is how a coach/staff badge is
+  // shown at the entrance.
+  if (catalogRole(definition)) return true;
   return type === 'membership';
 }
 

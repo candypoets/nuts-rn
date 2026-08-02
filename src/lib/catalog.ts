@@ -162,6 +162,14 @@ export function catalogType(event: ParsedEvent): CatalogDefinitionType | undefin
   return isCatalogDefinitionType(value) ? value : undefined;
 }
 
+/** Role badge definition (type role or the role topic) — not a catalog type. */
+export function catalogRole(event: ParsedEvent): boolean {
+  return (
+    extractTagValue(event, 'type') === 'role' ||
+    badgeDefinitionHasTypeTopic(event, 'role')
+  );
+}
+
 export function badgeDefinitionHasTypeTopic(
   event: ParsedEvent,
   type: BadgeDefinitionType,

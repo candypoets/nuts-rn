@@ -164,7 +164,7 @@ export function useNoteFooterActions(
         sendStatus[relayUrl] = status;
         updateSendStatus(sendId, sendStatus);
       },
-      {defaultRelays: relays, trackStatus: true},
+      {defaultRelays: relays, subId: noteId, trackStatus: true},
     );
   }, [noteId, notePubkey, pubkey, relays, updateSendStatus]);
 

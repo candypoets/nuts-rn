@@ -24,11 +24,6 @@ const mockWalletState = {
   activeMintUrl: null,
   balanceByMint: {},
   setActiveMintUrl: jest.fn(),
-  initializeProofWallet: jest.fn(() => Promise.resolve()),
-  clearProofStorageOnce: jest.fn(() => Promise.resolve()),
-  addProofs: jest.fn(() => Promise.resolve()),
-  checkAndFilterProofs: jest.fn(() => Promise.resolve([])),
-  verifyAndCleanProofs: jest.fn(() => Promise.resolve()),
 };
 
 jest.mock('../src/components/Feed', () => {
@@ -55,10 +50,6 @@ jest.mock('../src/stores', () => ({
 
 jest.mock('@candypoets/nipworker/hooks', () => ({
   useSubscription: () => mockSubscribe(),
-}));
-
-jest.mock('../src/hooks/useWalletSubscription', () => ({
-  uniqueWalletRelays: () => [],
 }));
 
 function getFeedProps() {

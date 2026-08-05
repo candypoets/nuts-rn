@@ -34,7 +34,12 @@ import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useRelayTracking } from '../hooks/useRelayTracking';
 import { useRootNostrSubscriptions } from '../hooks/useRootNostrSubscriptions';
 import { useWalletProofSubscription } from '../hooks/useWalletProofSubscription';
-import { useAuthStore, useNostrStore, useWalletStore } from '../stores';
+import {
+  useAuthStore,
+  useFeedBuilderStore,
+  useNostrStore,
+  useWalletStore,
+} from '../stores';
 import { ImageZoom } from '../components/ImageZoom';
 import { SendStatuses } from '../components/SendStatuses';
 import { publishProofsBackup } from '../nostr/proofBackup';
@@ -468,6 +473,10 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
       if (pubkey !== currentPubkey) {
         resetNostrState();
         resetWalletSession();
+      }
+      if (pubkey && pubkey !== currentPubkey) {
+        // Fresh login (any method): land the Explore feed on contacts.
+        useFeedBuilderStore.getState().setExploreAudienceMode('contacts');
       }
       setAuth({
         pubkey,

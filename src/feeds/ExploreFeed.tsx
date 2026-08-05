@@ -46,6 +46,7 @@ import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import {
   CalendarDays,
   ChevronDown,
+  ChevronUp,
   Play,
   Search,
   Users,
@@ -173,13 +174,14 @@ export function ExploreFeed({
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubscribePaginationRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
+  const heldNewItemsRef = useRef<ParsedEvent[]>([]);
   const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
-  const viewportStartRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [newNotes, setNewNotes] = useState<NewNotesState>(EMPTY_NEW_NOTES);
+  const [headerScrolled, setHeaderScrolled] = useState(false);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
   const combinedScrollToTopKey =
     tabScrollToTopKey === undefined && scrollToTopKey === undefined
@@ -397,6 +399,7 @@ export function ExploreFeed({
     prevPaginationSubIdRef.current = null;
     rootSubIdRef.current = null;
     pendingItemsRef.current = [];
+    heldNewItemsRef.current = [];
     connectionTrackerRef.current.reset();
     setNewNotes(EMPTY_NEW_NOTES);
     setItemsVersion(version => version + 1);
@@ -406,6 +409,7 @@ export function ExploreFeed({
     (clearLoading = true) => {
       subscriptionResolvingRef.current = false;
       pendingItemsRef.current = [];
+      heldNewItemsRef.current = [];
       connectionTrackerRef.current.reset();
       if (clearLoading) {
         setLoadingState(false);
@@ -471,10 +475,13 @@ export function ExploreFeed({
       seenIdsRef.current.add(id);
       const topItemCreatedAt = itemsRef.current[0]?.createdAt();
       if (
-        viewportStartRef.current > 0 &&
+        !subscriptionResolvingRef.current &&
         topItemCreatedAt !== undefined &&
         parsedEvent.createdAt() > topItemCreatedAt
       ) {
+        // Live post: hold it back instead of prepending it mid-read. The
+        // "N more posts" header control merges held posts on demand.
+        heldNewItemsRef.current.push(parsedEvent);
         const pubkey = parsedEvent.pubkey();
         setNewNotes(current => ({
           count: current.count + 1,
@@ -485,6 +492,7 @@ export function ExploreFeed({
               ].slice(0, MAX_NEW_NOTE_AVATARS)
             : current.pubkeys,
         }));
+        return;
       }
       pendingItemsRef.current.push(parsedEvent);
       if (!subscriptionResolvingRef.current) {
@@ -496,15 +504,17 @@ export function ExploreFeed({
 
   const handleViewportStateChange = useCallback(
     ({ start }: { start: number; down: boolean }) => {
-      viewportStartRef.current = start;
-      if (start === 0) {
-        setNewNotes(EMPTY_NEW_NOTES);
-      }
+      setHeaderScrolled(start > 0);
     },
     [],
   );
 
   const handleNewNotesPress = useCallback(() => {
+    pendingItemsRef.current = [
+      ...heldNewItemsRef.current,
+      ...pendingItemsRef.current,
+    ];
+    heldNewItemsRef.current = [];
     commitPendingItems();
     setNewNotes(EMPTY_NEW_NOTES);
     setScrollToTopKey(key => (key ?? 0) + 1);
@@ -525,6 +535,7 @@ export function ExploreFeed({
         showKindSelector
         surfaceClassName="bg-base-100"
         newNotes={newNotes}
+        showNewNotesPill={headerScrolled}
         onNewNotesPress={handleNewNotesPress}
       />
     ),
@@ -533,6 +544,7 @@ export function ExploreFeed({
       exploreAudienceMode,
       feedRelays,
       handleNewNotesPress,
+      headerScrolled,
       newNotes,
       relaySelectionSubId,
       relayStatuses,
@@ -673,7 +685,11 @@ export function ExploreFeed({
     setHasMore(true);
     untilRef.current = undefined;
     prevPaginationSubIdRef.current = null;
-    pendingItemsRef.current = [];
+    // Held posts are already in seenIds, so the refreshed subscription will
+    // not re-deliver them; fold them into the pending batch instead.
+    pendingItemsRef.current = heldNewItemsRef.current;
+    heldNewItemsRef.current = [];
+    setNewNotes(EMPTY_NEW_NOTES);
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = true;
     clearTimers();
@@ -1299,6 +1315,7 @@ function ExploreHeader({
   showKindSelector = false,
   surfaceClassName,
   newNotes,
+  showNewNotesPill,
   onNewNotesPress,
 }: {
   safeAreaTop?: number;
@@ -1313,8 +1330,10 @@ function ExploreHeader({
   showKindSelector?: boolean;
   surfaceClassName: string;
   newNotes: NewNotesState;
+  showNewNotesPill: boolean;
   onNewNotesPress: () => void;
 }) {
+  const theme = useAppTheme();
   const visibleKinds =
     selectedKinds.length > 0 && selectedKinds.length < ALL_FEED_KINDS.length
       ? selectedKinds
@@ -1371,13 +1390,33 @@ function ExploreHeader({
           />
         </View>
       ) : null}
-      {newNotes.count > 0 && newNotes.pubkeys.length > 0 ? (
+      {newNotes.count > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${newNotes.count} more ${
+            newNotes.count === 1 ? 'post' : 'posts'
+          }`}
+          accessibilityHint="Show the latest posts"
+          className="mt-2 flex-row items-center justify-center gap-1 border-t border-base-200 py-2"
+          onPress={onNewNotesPress}
+        >
+          <ChevronUp
+            size={14}
+            color={theme.colors.primary}
+            strokeWidth={2.4}
+          />
+          <Text className="text-sm font-semibold text-primary">
+            {newNotes.count} more {newNotes.count === 1 ? 'post' : 'posts'}
+          </Text>
+        </Pressable>
+      ) : null}
+      {showNewNotesPill && newNotes.count > 0 && newNotes.pubkeys.length > 0 ? (
         <View
           className="absolute bottom-0 left-0 right-0 z-40 items-center"
           pointerEvents="box-none"
           style={{
             transform: [
-              {translateY: NEW_NOTES_WIDGET_HEIGHT + 8},
+              {translateY: NEW_NOTES_WIDGET_HEIGHT + 8 + safeAreaTop},
             ],
           }}>
           <Pressable

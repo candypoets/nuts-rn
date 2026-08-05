@@ -27,6 +27,24 @@ Notes:
 - The dev launcher auto-discovers Metro only when Metro runs WITHOUT `CI=1` — and that discovery layout (a "New development server" row under Development Build) enters the a11y tree LATE (>20 s after pixels show it). `launch.yaml` handles both layouts: it taps the server row when it appears, then still falls back to typing `exp://localhost:8084` into the URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tapping Connect, then dismisses the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
 - `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
 
+### Explore new-post hold flow (explore-new-posts.yaml, 2026-08-05)
+
+Tests the "N more posts" hold-then-merge behavior: `.qa/qa-feed-relay.mjs` is a throwaway in-memory NIP-01 relay that seeds 8 kind-1 notes, injects one live note ~8 s after the Explore `feedall` subscription arrives, and publishes the QA user's kind 10002 (read+write = itself) to the app's BOOTSTRAP_RELAYS so a fresh nsec login collapses the account relay set to just it. Run it, then pass the printed NSEC:
+
+```sh
+node .qa/qa-feed-relay.mjs --port 7877   # 7777/7799 are taken on this host
+MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test --device emulator-5556 \
+  -e NSEC=nsec1... -e RELAY_PORT=7877 maestro/flows/explore-new-posts.yaml
+```
+
+Why it works without touching the relay picker UI: the guest feed never subscribes in contacts mode (blocked on kind3), so `relaySubs['feedExplore']` is NOT frozen at launch; after login the flow waits for the header relay chip to become `10.0.2.2:${RELAY_PORT}` (proof the 10002 resolved; the relay serves NIP-11 with NO `name`, so UIs fall back to the URL label), and only then taps "Switch to all" — the first Explore subscription goes straight to the QA relay.
+
+Gotchas learned:
+
+- The flow currently REDBOXES at feed mount: RN 0.86.0 `VirtualViewModeChangeEvent.getEventData()` (unstable_VirtualColumn rows) is not idempotent — `WritableNativeMap.putNativeMap` CONSUMES the value map (ReactAndroid `WritableNativeMap.cpp`), so a second `getEventData()` on one event instance throws `ObjectAlreadyConsumedException: Map already consumed`. Reproduced with ExploreFeed changes stashed (pre-existing; `explore-scope.yaml` also crashes — it "passes" only because its final assert is the vacuous `.*`). Upstream `main` is unpatched and react-android is a prebuilt AAR here, so a node_modules Kotlin patch would need a from-source RN build.
+- `pkill -f` self-match bites twice over when the same command line also starts the process being killed (the literal name appears later in the cmdline): run the `pkill -f '[q]a-feed-relay'` in its OWN Bash call, separate from the launch command.
+- Ports on this host: 7777 = nuts-cash vite, 7798 = coordinator, 7799/7820-7822 = QA harness — qa-feed-relay defaults to 7777, pass `--port 7877`.
+
 ### NIP-46 login flows (login-nip46.yaml, login-nip46-qr.yaml)
 
 Both flows test new-user NIP-46 login against a fake remote signer: the nipworker repo's `tests/e2e-browser/mock-signer-relay.mjs`, a combined mock relay + signer (fixed test keypair, pubkey `6a04ab98…83eb3`) that answers `connect`/`get_public_key`/`sign_event` with real signatures. Run it on the host:

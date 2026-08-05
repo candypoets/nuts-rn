@@ -1,5 +1,6 @@
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {extractTagValue} from '@candypoets/nipworker';
+import {CLASSIFIED_LISTING_KIND, ROLE_MEMBERSHIP_KIND, definitionAddress} from './nip97';
 
 export const BADGE_DEFINITION_TYPES = [
   'role',
@@ -9,32 +10,18 @@ export const BADGE_DEFINITION_TYPES = [
   'pass',
 ] as const;
 
-export const CATALOG_DEFINITION_TYPES = [
-  'product',
-  'membership',
-  'pass',
-  'event_access',
-] as const;
+export const CATALOG_DEFINITION_TYPES = ['product', 'membership', 'pass', 'event_access'] as const;
 
-export const CATALOG_AVAILABILITIES = [
-  'available',
-  'unavailable',
-  'archived',
-] as const;
-export const CATALOG_SELLABLE_TAG = 'sellable';
+export const CATALOG_AVAILABILITIES = ['available', 'unavailable', 'archived'] as const;
 export const BADGE_DEFINITION_TYPE_TOPICS = {
   role: 'role',
   membership: 'membership',
-  event_access: 'event_access',
+  event_access: 'ticket',
   product: 'product',
   pass: 'pass',
 } as const;
-export const PRODUCT_KINDS = [
-  'food',
-  'drink',
-  'merchandise',
-  'generic',
-] as const;
+export const STORE_CATALOG_TOPICS = ['membership', 'product', 'pass'] as const;
+export const PRODUCT_KINDS = ['food', 'drink', 'merchandise', 'generic'] as const;
 export const MEMBERSHIP_BILLING = ['one_time', 'monthly', 'yearly'] as const;
 
 export type BadgeDefinitionType = (typeof BADGE_DEFINITION_TYPES)[number];
@@ -77,10 +64,7 @@ export type CatalogDefinitionInput =
   | MembershipDefinitionInput
   | PassDefinitionInput;
 
-function includesValue<T extends string>(
-  values: readonly T[],
-  value: unknown,
-): value is T {
+function includesValue<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && values.includes(value as T);
 }
 
@@ -114,35 +98,31 @@ function requireText(value: string, field: string) {
   return normalized;
 }
 
-export function isBadgeDefinitionType(
-  value: unknown,
-): value is BadgeDefinitionType {
+export function isBadgeDefinitionType(value: unknown): value is BadgeDefinitionType {
   return includesValue(BADGE_DEFINITION_TYPES, value);
 }
 
-export function isCatalogDefinitionType(
-  value: unknown,
-): value is CatalogDefinitionType {
+export function isCatalogDefinitionType(value: unknown): value is CatalogDefinitionType {
   return includesValue(CATALOG_DEFINITION_TYPES, value);
 }
 
 export function buildBadgeDefinitionClassificationTags(
   type: BadgeDefinitionType,
-  sellable: boolean,
+  _sellable: boolean,
 ): string[][] {
-  return [
-    ['type', type],
-    ['t', BADGE_DEFINITION_TYPE_TOPICS[type]],
-    ...(sellable ? [['t', CATALOG_SELLABLE_TAG]] : []),
-  ];
+  return [['t', BADGE_DEFINITION_TYPE_TOPICS[type]]];
 }
 
-export function catalogDefinitionAddress(pubkey: string, d: string) {
-  return `30009:${pubkey}:${d}`;
+export function catalogDefinitionKind(type: CatalogDefinitionType) {
+  return type === 'membership' ? ROLE_MEMBERSHIP_KIND : CLASSIFIED_LISTING_KIND;
+}
+
+export function catalogDefinitionAddress(kind: number, pubkey: string, d: string) {
+  return definitionAddress(kind, pubkey, d);
 }
 
 export function sellableCatalogSubscriptionId(relay: string) {
-  return `store_sellable_catalog_v2_${relay}`;
+  return `store_nip97_catalog_v3_${relay}`;
 }
 
 export function catalogDFromName(name: string) {
@@ -158,22 +138,22 @@ export function catalogDFromName(name: string) {
  * individual string requested by the caller; they never project an event into a DTO.
  */
 export function catalogType(event: ParsedEvent): CatalogDefinitionType | undefined {
-  const value = extractTagValue(event, 'type');
-  return isCatalogDefinitionType(value) ? value : undefined;
+  if (event.kind() === ROLE_MEMBERSHIP_KIND) {
+    return badgeDefinitionHasTypeTopic(event, 'membership') ? 'membership' : undefined;
+  }
+  if (event.kind() !== CLASSIFIED_LISTING_KIND) return undefined;
+  if (badgeDefinitionHasTypeTopic(event, 'product')) return 'product';
+  if (badgeDefinitionHasTypeTopic(event, 'pass')) return 'pass';
+  if (badgeDefinitionHasTypeTopic(event, 'event_access')) return 'event_access';
+  return undefined;
 }
 
 /** Role badge definition (type role or the role topic) — not a catalog type. */
 export function catalogRole(event: ParsedEvent): boolean {
-  return (
-    extractTagValue(event, 'type') === 'role' ||
-    badgeDefinitionHasTypeTopic(event, 'role')
-  );
+  return extractTagValue(event, 'type') === 'role' || badgeDefinitionHasTypeTopic(event, 'role');
 }
 
-export function badgeDefinitionHasTypeTopic(
-  event: ParsedEvent,
-  type: BadgeDefinitionType,
-) {
+export function badgeDefinitionHasTypeTopic(event: ParsedEvent, type: BadgeDefinitionType) {
   const topic = BADGE_DEFINITION_TYPE_TOPICS[type];
   return (
     extractTagValue(event, 't', {
@@ -183,11 +163,7 @@ export function badgeDefinitionHasTypeTopic(
 }
 
 export function catalogSellable(event: ParsedEvent) {
-  return (
-    extractTagValue(event, 't', {
-      where: tag => tag[1] === CATALOG_SELLABLE_TAG,
-    }) === CATALOG_SELLABLE_TAG
-  );
+  return extractTagValue(event, 'price') !== undefined;
 }
 
 export function catalogD(event: ParsedEvent) {
@@ -197,15 +173,17 @@ export function catalogD(event: ParsedEvent) {
 export function catalogAddress(event: ParsedEvent) {
   const pubkey = event.pubkey();
   const d = catalogD(event);
-  return pubkey && d ? catalogDefinitionAddress(pubkey, d) : '';
+  return pubkey && d ? catalogDefinitionAddress(event.kind(), pubkey, d) : '';
 }
 
 export function catalogName(event: ParsedEvent) {
-  return extractTagValue(event, 'name')?.trim() || catalogD(event);
+  const tag = event.kind() === CLASSIFIED_LISTING_KIND ? 'title' : 'name';
+  return extractTagValue(event, tag)?.trim() || catalogD(event);
 }
 
 export function catalogDescription(event: ParsedEvent) {
-  return extractTagValue(event, 'description')?.trim() || '';
+  const tag = event.kind() === CLASSIFIED_LISTING_KIND ? 'summary' : 'description';
+  return extractTagValue(event, tag)?.trim() || '';
 }
 
 export function catalogImage(event: ParsedEvent) {
@@ -228,12 +206,12 @@ export function catalogPosition(event: ParsedEvent) {
   return nonNegativeInteger(extractTagValue(event, 'position'), 0) ?? 0;
 }
 
-export function catalogAvailability(
-  event: ParsedEvent,
-): CatalogAvailability | undefined {
-  const value = extractTagValue(event, 'availability');
-  if (value === undefined) return 'available';
-  return includesValue(CATALOG_AVAILABILITIES, value) ? value : undefined;
+export function catalogAvailability(event: ParsedEvent): CatalogAvailability | undefined {
+  if (event.kind() === ROLE_MEMBERSHIP_KIND) return 'available';
+  const value = extractTagValue(event, 'status');
+  if (value === 'active') return 'available';
+  if (value === 'sold') return 'unavailable';
+  return undefined;
 }
 
 export function catalogProductKind(event: ParsedEvent): ProductKind | undefined {
@@ -266,7 +244,7 @@ export function catalogStripeAccountId(event: ParsedEvent) {
 export function catalogMaxUses(event: ParsedEvent) {
   const maxUses = positiveInteger(extractTagValue(event, 'max_uses'));
   if (maxUses) return maxUses;
-  return catalogType(event) === 'product' ? 1 : undefined;
+  return event.kind() === CLASSIFIED_LISTING_KIND ? 1 : undefined;
 }
 
 export function catalogPriceSats(event: ParsedEvent) {
@@ -287,19 +265,19 @@ export function catalogEditable(event: ParsedEvent) {
 }
 
 export function isCatalogDefinition(event: ParsedEvent) {
-  if (event.kind() !== 30009 || !event.pubkey() || !event.id() || !catalogD(event)) {
-    return false;
-  }
-  const type = catalogType(event);
   if (
-    !type ||
-    !catalogPrice(event) ||
-    !catalogCurrency(event) ||
-    !catalogAvailability(event)
+    (event.kind() !== ROLE_MEMBERSHIP_KIND && event.kind() !== CLASSIFIED_LISTING_KIND) ||
+    !event.pubkey() ||
+    !event.id() ||
+    !catalogD(event)
   ) {
     return false;
   }
-  if (!badgeDefinitionHasTypeTopic(event, type)) return false;
+  const type = catalogType(event);
+  if (!type || !catalogPrice(event) || !catalogCurrency(event) || !catalogAvailability(event)) {
+    return false;
+  }
+  if (catalogDefinitionKind(type) !== event.kind()) return false;
   const rawPosition = extractTagValue(event, 'position');
   if (rawPosition !== undefined && nonNegativeInteger(rawPosition, 0) === undefined) {
     return false;
@@ -361,27 +339,19 @@ export function isNewerCatalogEvent(candidate: ParsedEvent, current: ParsedEvent
 export function upsertCatalogEvent(events: ParsedEvent[], candidate: ParsedEvent) {
   if (!isCatalogDefinition(candidate)) return events;
   const address = catalogAddress(candidate);
-  const existingIndex = events.findIndex(
-    event => catalogAddress(event) === address,
-  );
+  const existingIndex = events.findIndex(event => catalogAddress(event) === address);
   if (existingIndex === -1) return [...events, candidate];
   if (!isNewerCatalogEvent(candidate, events[existingIndex])) return events;
-  return events.map((event, index) =>
-    index === existingIndex ? candidate : event,
-  );
+  return events.map((event, index) => (index === existingIndex ? candidate : event));
 }
 
-export function buildCatalogDefinitionTags(
-  definition: CatalogDefinitionInput,
-): string[][] {
+export function buildCatalogDefinitionTags(definition: CatalogDefinitionInput): string[][] {
   const d = requireText(definition.d, 'd');
   const name = requireText(definition.name, 'name');
   const price = positiveDecimal(String(definition.price).trim());
   const currency = currencyCode(definition.currency);
   const priceSats =
-    definition.priceSats === undefined
-      ? undefined
-      : positiveInteger(String(definition.priceSats));
+    definition.priceSats === undefined ? undefined : positiveInteger(String(definition.priceSats));
   const availability = definition.availability ?? 'available';
   const position = definition.position ?? 0;
 
@@ -400,12 +370,17 @@ export function buildCatalogDefinitionTags(
   const tags: string[][] = [
     ['d', d],
     ...buildBadgeDefinitionClassificationTags(definition.type, true),
-    ['name', name],
-    ['description', definition.description?.trim() || ''],
     ['price', price, currency],
     ['position', String(position)],
-    ['availability', availability],
   ];
+  if (definition.type === 'membership') {
+    tags.push(['name', name]);
+    tags.push(['description', definition.description?.trim() || '']);
+  } else {
+    tags.push(['title', name]);
+    tags.push(['summary', definition.description?.trim() || '']);
+    tags.push(['status', availability === 'available' ? 'active' : 'sold']);
+  }
   const image = definition.image?.trim();
   const section = definition.section?.trim();
   if (priceSats) tags.push(['price_sats', String(priceSats)]);

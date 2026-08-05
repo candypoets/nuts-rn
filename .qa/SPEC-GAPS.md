@@ -7,6 +7,11 @@ reference; `src/lib/orders.ts` there is the canonical derivation.
 
 ## RN app gaps vs the web spec
 
+- **Coordinated web checkout deployment required.** RN now submits NIP-97
+  `30402` product/pass addresses. The sibling nuts-cash production checkout
+  handler still accepts the pre-NIP `30009` catalog shape as of 2026-08-04;
+  deploy its NIP-97 checkout migration before releasing this RN change. The
+  local `.qa/qa-checkout-shim.mjs` already validates the new shape.
 - ~~**No remaining-uses display.**~~ CLOSED (2026-07-30): `src/lib/orders.ts`
   ports the derivation; shown in the StoreSub "Yours" strip, Passes screen,
   and Award screen.
@@ -73,12 +78,10 @@ reference; `src/lib/orders.ts` there is the canonical derivation.
   (react to award events) or the redeem flow (grant → wait-for-gate).
 - **Gate cache never un-caches revoked members.** Membership revocation is
   not honored until gate restart (pinned in qa-commerce.mjs).
-- ~~**Stock strfry stores kind 27237**~~ RESOLVED (2026-07-30): order/check-in
-  statuses moved to kind **37237** (addressable, `d` = `order:<ref>` /
-  `event:<address>`) — standard relay behavior, no longer dependent on
-  strfry's non-standard ephemeral storage; a relay swap is now safe. Writers
-  publish 37237 only; readers accept legacy 27237 during transition (no data
-  migration — ephemeral statuses self-delete in ~5 min anyway).
+- ~~**Ephemeral fulfillment history**~~ RESOLVED: NIP-97 kind **37237** is
+  addressable (`d` = `order:<ref>` / `event:<address>`), so a relay swap does
+  not depend on non-standard ephemeral retention. Readers and writers use
+  37237 only.
 - **No server-side capacity enforcement.** 3 accepted RSVPs over a capacity-2
   event are all accepted by the relay; "Full" is purely a client-side
   derivation (pinned in qa-verify-commerce.mjs with a TODO to flip the

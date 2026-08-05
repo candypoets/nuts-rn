@@ -7,7 +7,7 @@
 //       payload hash, staleness; SKIPS the strict u-tag origin check — the
 //       app signs against 10.0.2.2:7821, production signs against nuts.cash)
 //     - maps `community` (a ws URL, usually ws://10.0.2.2:7820|7822) to the
-//       community in /tmp/qa-rn-commerce.json and re-fetches the 30009
+//       community in /tmp/qa-rn-commerce.json and re-fetches the NIP-97
 //       definition from that community's strfry port directly
 //     - applies the same catalog validation as nuts-cash
 //       src/routes/api/stripe/checkout/+server.ts (sellable, available,
@@ -89,13 +89,14 @@ async function fetchDefinition(relayUrl, kind, author, identifier) {
 	}
 }
 
-// Port of the +server.ts validation for the direct-catalog (kind 30009) case.
+// NIP-97 validation for direct catalog definitions.
 function validateDefinition(definition, purchaseType, eventAddress) {
 	const tags = definition.tags;
-	if (!hasTagValue(tags, 't', purchaseType) || !hasTagValue(tags, 't', 'sellable')) {
+	const topic = purchaseType === 'event' ? 'ticket' : purchaseType;
+	if (!hasTagValue(tags, 't', topic) || !tagValue(tags, 'price')) {
 		throw new CheckoutError(422, 'Badge definition is not a buyable store item');
 	}
-	if (tagValue(tags, 'availability') !== 'available') {
+	if (definition.kind === 30402 && tagValue(tags, 'status') !== 'active') {
 		throw new CheckoutError(422, 'This badge is not currently available for purchase');
 	}
 	if (purchaseType === 'product') {
@@ -126,7 +127,7 @@ function validateDefinition(definition, purchaseType, eventAddress) {
 		throw new CheckoutError(422, 'Catalog price is invalid');
 	}
 	// The badge address the award will reference.
-	if (eventAddress !== `30009:${definition.pubkey}:${tagValue(tags, 'd')}`) {
+	if (eventAddress !== `${definition.kind}:${definition.pubkey}:${tagValue(tags, 'd')}`) {
 		throw new CheckoutError(400, 'Item address does not match the fetched definition');
 	}
 }
@@ -152,14 +153,23 @@ async function handleCheckout(req, res, body) {
 	const [kindValue, author, ...identifierParts] = String(input.eventAddress).split(':');
 	const kind = Number(kindValue);
 	const identifier = identifierParts.join(':');
-	if (kind !== 30009 || !/^[0-9a-f]{64}$/i.test(author || '') || !identifier) {
+	if (![30009, 30402].includes(kind) || !/^[0-9a-f]{64}$/i.test(author || '') || !identifier) {
 		throw new CheckoutError(400, 'Invalid item address (the shim sells catalog items directly)');
 	}
 
 	const community = resolveCommunity(input.community);
 	const definition = await fetchDefinition(community.relay_url, kind, author, identifier);
 	if (!definition) throw new CheckoutError(404, 'Item not found on the community relay');
-	const purchaseType = tagValue(definition.tags, 'type');
+	const purchaseType = definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'membership')
+		? 'membership'
+		: definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'product')
+			? 'product'
+			: definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'pass')
+				? 'pass'
+				: '';
+	if ((purchaseType === 'membership') !== (kind === 30009)) {
+		throw new CheckoutError(422, 'Catalog definition kind does not match its type');
+	}
 	if (!DIRECT_TYPES.has(purchaseType)) {
 		throw new CheckoutError(422, 'Badge definition is not a buyable store item');
 	}

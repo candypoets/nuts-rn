@@ -6,21 +6,18 @@
 //   node .qa/qa-verify-commerce.mjs
 //
 //   A. gym pass punch card: award a 10-use pass to keys.users[0] via the
-//      payment-redemption path, publish 10 fulfilled 27237 check-in statuses
-//      (admin key, contexts checkin-<award>-<i>) observed through a LIVE
-//      subscription (27237 is NIP-01-ephemeral — clients must never rely on
-//      queries for it), then the derivation must say 0 remaining and the
+//      payment-redemption path, publish 10 fulfilled 37237 check-in statuses
+//      (anchor-admin key, contexts checkin-<award>-<i>) observed through a
+//      live subscription, then the derivation must say 0 remaining and the
 //      scanner rule must reject an 11th fulfillment (derivation-level —
-//      enforcement is client-side, the relay accepts any admin-signed 27237).
+//      enforcement is client-side, the relay accepts any authorized 37237).
 //   B. capacity pin: 3 RSVPs from 3 member keys over the capacity-2 "QA
 //      Training" event — the relay ACCEPTS all 3 (pins the
 //      no-server-enforcement gap; see TODO at the assertion).
 //   C. gate: non-member kind 1 rejected, member kind 1 accepted, kind-5
 //      revocation of the pass award by the badge issuer removes it
-//      (relay-side NIP-09 + derivation-level). Also pins the observed 27237
-//      relay behavior: stock strfry does NOT implement NIP-01 ephemeral
-//      semantics — it stores and serves 27237 to queries (clients still
-//      must treat it as ephemeral; other relays drop it).
+//      (relay-side NIP-09 + derivation-level). Also pins addressable 37237
+//      storage and replacement semantics.
 //
 // Membership for the test users is established directly from Node through the
 // invite /redeem endpoint (token + pubkey, no app needed).
@@ -128,7 +125,7 @@ async function main() {
 	const pass = gym.catalog['qa-10-session-pass'];
 	assert(pass, 'commerce state has the qa-10-session-pass catalog item');
 	const definition = await fetchEvent(
-		{ kinds: [30009], authors: [keys.admin.pub], '#d': [pass.d] },
+		{ kinds: [30402], authors: [keys.admin.pub], '#d': [pass.d] },
 		'pass definition'
 	);
 	pass.id = definition.id; // in case a rescan re-published it

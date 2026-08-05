@@ -2,15 +2,14 @@
 // Ports the nuts-cash protocol shapes to plain Node against provisioned
 // strfry-badge communities:
 //
-//   - buildCatalogDefinitionTags / catalogDefinition  (kind 30009, catalog.ts)
-//   - communityProfile                                (kind 30078, communityProfile.ts)
+//   - buildCatalogDefinitionTags / catalogDefinition  (30009/30402, NIP-97)
+//   - communityAnchor                                 (kind 31727, root-signed)
 //   - paymentRedemption                               (POST /redeem payment body,
 //                                                      stripe webhook +server.ts)
-//   - badgeStatus                                     (kind 27237, orders.ts)
+//   - badgeStatus                                     (kind 37237, orders.ts)
 //   - calendarEvent                                   (kind 31923)
 //   - rsvp                                            (kind 31925)
-//   - subscribeLive                                   (live-sub helper for the
-//                                                      ephemeral kind 27237)
+//   - subscribeLive                                   (live-sub helper)
 //   - publishResult                                   (OK-level accept/reject
 //                                                      probe for gate tests)
 //
@@ -29,13 +28,13 @@ import {
 } from './qa-lib.mjs';
 
 export const BADGE_DEFINITION_KIND = 30009;
+export const CLASSIFIED_LISTING_KIND = 30402;
 export const BADGE_AWARD_KIND = 8;
 export const BADGE_STATUS_KIND = 37237; // addressable — relay keeps latest per d (context); see subscribeLive
-export const LEGACY_BADGE_STATUS_KIND = 27237; // NIP-01-ephemeral, legacy transition reads only
 export const CALENDAR_EVENT_KIND = 31923;
 export const RSVP_KIND = 31925;
-export const COMMUNITY_PROFILE_KIND = 30078;
-export const COMMUNITY_PROFILE_D = 'nuts-community-profile';
+export const COMMUNITY_ANCHOR_KIND = 31727;
+export const COMMUNITY_ANCHOR_D = 'community';
 export const DELETION_KIND = 5;
 
 // The payment-service key the local coordinator was started with
@@ -78,8 +77,7 @@ function currencyCode(value) {
 	return normalized && /^[A-Z]{3}$/.test(normalized) ? normalized : undefined;
 }
 
-// Port of buildCatalogDefinitionTags (~catalog.ts:319). `sellable` is always
-// true here — QA seeds store items. The r=<relayUrl> tag is appended by
+// NIP-97/NIP-99 catalog tags. The r=<relayUrl> tag is appended by
 // catalogDefinition() when relayUrl is given (mirrors the web builder caller).
 export function buildCatalogDefinitionTags(definition) {
 	const d = String(definition.d || '').trim();
@@ -101,15 +99,18 @@ export function buildCatalogDefinitionTags(definition) {
 
 	const tags = [
 		['d', d],
-		['type', definition.type],
-		['t', definition.type], // BADGE_DEFINITION_TYPE_TOPICS is identity for catalog types
-		['t', 'sellable'],
-		['name', name],
-		['description', definition.description?.trim() || ''],
+		['t', definition.type === 'event_access' ? 'ticket' : definition.type],
 		['price', price, currency],
-		['position', String(position)],
-		['availability', availability]
+		['position', String(position)]
 	];
+	if (definition.type === 'membership') {
+		tags.push(['name', name]);
+		tags.push(['description', definition.description?.trim() || '']);
+	} else {
+		tags.push(['title', name]);
+		tags.push(['summary', definition.description?.trim() || '']);
+		tags.push(['status', availability === 'available' ? 'active' : 'sold']);
+	}
 	if (definition.image?.trim()) tags.push(['image', definition.image.trim()]);
 	if (definition.section?.trim()) tags.push(['section', definition.section.trim()]);
 	if (definition.priceSats !== undefined) tags.push(['price_sats', String(definition.priceSats)]);
@@ -133,25 +134,31 @@ export function buildCatalogDefinitionTags(definition) {
 	return tags;
 }
 
-// Signs a kind 30009 catalog definition with the given (admin) key.
+// Memberships are 30009; products, passes and tickets are 30402.
 export function catalogDefinition(definition, privHex, { relayUrl } = {}) {
 	const tags = buildCatalogDefinitionTags(definition);
 	if (relayUrl) tags.push(['r', relayUrl]);
-	return signEvent({ kind: BADGE_DEFINITION_KIND, tags }, privHex);
+	const kind =
+		definition.type === 'membership' ? BADGE_DEFINITION_KIND : CLASSIFIED_LISTING_KIND;
+	return signEvent({ kind, tags }, privHex);
 }
 
-// --- Community profile (port of communityProfile.ts buildCommunityProfileTags) -
+// --- Community anchor -------------------------------------------------------
 
-export function communityProfile({ type, description = '', image = '', menuUrl = '', bookingUrl = '' }, privHex) {
+export function communityAnchor(
+	{ admins, badgeIssuer, name = '', type, description = '', image = '' },
+	privHex
+) {
 	const tags = [
-		['d', COMMUNITY_PROFILE_D],
-		['type', type],
+		['d', COMMUNITY_ANCHOR_D],
 		['description', description]
 	];
+	for (const admin of admins) tags.push(['p', admin]);
+	if (badgeIssuer) tags.push(['badge_issuer', badgeIssuer]);
+	if (name) tags.push(['name', name]);
+	if (type) tags.push(['type', type]);
 	if (/^https?:\/\//.test(image)) tags.push(['image', image]);
-	if (/^https?:\/\//.test(menuUrl)) tags.push(['menu_url', menuUrl]);
-	if (/^https?:\/\//.test(bookingUrl)) tags.push(['booking_url', bookingUrl]);
-	return signEvent({ kind: COMMUNITY_PROFILE_KIND, tags }, privHex);
+	return signEvent({ kind: COMMUNITY_ANCHOR_KIND, tags }, privHex);
 }
 
 // --- Payment redemption (port of the stripe webhook /redeem body) --------------
@@ -236,24 +243,6 @@ export function badgeStatus(status, { awardId, badgeAddress, holder, contextTag 
 	);
 }
 
-// Legacy kind-27237 shape (no d tag) — for transition/back-compat pins only.
-export function legacyBadgeStatus(status, { awardId, badgeAddress, holder, contextTag }, privHex, createdAt) {
-	return signEvent(
-		{
-			kind: LEGACY_BADGE_STATUS_KIND,
-			...(createdAt ? { created_at: createdAt } : {}),
-			tags: [
-				['status', status],
-				['a', badgeAddress],
-				['e', awardId],
-				['p', holder],
-				contextTag
-			]
-		},
-		privHex
-	);
-}
-
 // Port of orders.ts checkInContextTag.
 export function checkInContextTag(awardId, now = nowSeconds()) {
 	return ['order', `checkin-${awardId}-${now}`];
@@ -326,12 +315,8 @@ export async function publishOk(pool, relayUrl, event, label) {
 	return result;
 }
 
-// Live subscription for ephemeral kinds (27237): NIP-01 says these are
-// ephemeral, so clients can only rely on observing them while a subscription
-// is open. (Stock strfry does NOT implement that — it stores and serves
-// 27237 to queries — but other relays drop them, so live-sub remains the
-// correct client semantic. qa-verify-commerce.mjs pins both behaviors.)
-// Returns a handle with the collected events, a predicate waiter, and close().
+// Live subscription helper used to prove delivery to an already-open RN
+// entitlement screen. Kind 37237 is also durable and queryable.
 export function subscribeLive(pool, relayUrls, filter, { onevent } = {}) {
 	const events = [];
 	const waiters = new Set();
@@ -418,7 +403,6 @@ export function decodeNip98(header, body) {
 function nip98PayloadHash(body) {
 	return bytesToHex(sha256(new TextEncoder().encode(body || '')));
 }
-
 // --- Commerce scenario state + process lifecycle --------------------------------
 
 import { spawn } from 'child_process';

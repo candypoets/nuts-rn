@@ -3,10 +3,10 @@
 //
 //   node .qa/qa-scenario-commerce.mjs
 //
-//   - "QA RN Bar <runid>" (community profile type=hospitality), proxy :7820
+//   - "QA RN Bar <runid>" (anchor extension type=hospitality), proxy :7820
 //       catalog: product "QA Beer", 5.00 EUR, section "Drinks",
 //                product_kind drink, max_uses 1, sellable, available
-//   - "QA RN Gym <runid>" (community profile type=sports), proxy :7822
+//   - "QA RN Gym <runid>" (anchor extension type=sports), proxy :7822
 //       catalog: pass "QA 10-Session Pass", 49.00 EUR, max_uses 10
 //       event:   "QA Training" (kind 31923, starts +2 days, 1h, capacity 2)
 //   - both get an invite (max_redemptions 5) for the redeem-based flows
@@ -32,6 +32,7 @@ import {
 	nip98Header,
 	requireCoordinator,
 	signEvent,
+	sleep,
 	waitRelayRunning,
 	writeCommunity
 } from './qa-lib.mjs';
@@ -39,7 +40,7 @@ import {
 	calendarEvent,
 	catalogDefinition,
 	COMMERCE_STATE_PATH,
-	communityProfile,
+	communityAnchor,
 	communityProxyEmulatorUrl,
 	communityProxyPort,
 	ensureCheckoutShim,
@@ -88,16 +89,25 @@ async function provisionCommunity({ key, name, domainLabel, profileType }) {
 		authors: [keys.admin.pub]
 	});
 
-	// Community profile (kind 30078) — the type tag drives downstream views
-	// (hospitality = orders queue, sports = check-ins).
-	const communityProfileEvent = communityProfile(
-		{ type: profileType, description: `${name} — QA commerce seed` },
-		keys.admin.priv
+	// Replace the bootstrap anchor with a root-signed NIP-97 anchor carrying
+	// the Nuts-only display archetype extension used by the RN store UI.
+	assert(
+		/^[0-9a-f]{64}$/i.test(created.community_root_secret_key || ''),
+		'coordinator returned the one-time community root secret'
 	);
-	await publishUntilStored(pool, relay.relay_url, communityProfileEvent, {
-		kinds: [30078],
-		authors: [keys.admin.pub],
-		'#d': ['nuts-community-profile']
+	await sleep(1100);
+	const anchor = communityAnchor(
+		{
+			admins: [relay.community_root_pubkey, keys.admin.pub],
+			badgeIssuer: relay.badge_issuer_pubkey,
+			name,
+			type: profileType,
+			description: `${name} — QA commerce seed`
+		},
+		created.community_root_secret_key
+	);
+	await publishUntilStored(pool, relay.relay_url, anchor, {
+		ids: [anchor.id]
 	});
 
 	return {

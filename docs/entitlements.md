@@ -12,18 +12,21 @@ Client-side only. The member can: see what they hold per community and across
 communities, present a scannable entitlement QR at the venue, and track
 order/pass status. No staff actions anywhere.
 
-## Protocol surface (no new formats — ports only)
+## Protocol surface (NIP-97)
 
-- **Award** = kind 8, `#a` = 30009 badge-definition address, `#p` = holder.
-- **Status** = kind **37237** (addressable — was ephemeral 27237 until
-  2026-07-30; strfry's RelayCron evicted those ~300 s after publish, silently
-  erasing use-count history). `#e` = award id, `status` tag, exactly one
+- **Trust** = relay NIP-11 `pubkey` → current root-signed kind `31727`,
+  `d=community` anchor. Its `p` tags are admins and `badge_issuer` is the
+  delegated issuer. `/community/info` is never used for authorization.
+- **Definition** = kind `30009` for roles/memberships, kind `30402` for
+  products/passes/tickets, or a free calendar event (`31922`/`31923`).
+- **Award** = kind 8, `#a` = definition address, `#p` = holder. Priced
+  definitions may be awarded by an anchor admin or `badge_issuer`; unpriced
+  definitions require an anchor admin.
+- **Status** = kind **37237**. `#e` = award id, `status` tag, exactly one
   context tag (`['order', id]` or `['event', coordinate]`) plus `['d',
   'order:<id>' | 'event:<coordinate>']` — the `d` makes the relay keep only
-  the latest status per context. Readers accept BOTH kinds during the
-  transition (`LEGACY_BADGE_STATUS_KIND`); writers publish 37237 only. Only
-  statuses from authorized signers count (community trust / staff roles —
-  `src/lib/communityTrust.ts`, port of web `adminAccess.ts`).
+  the latest status per context. Only statuses from anchor admins,
+  `badge_issuer`, or holders of a valid `37237`-write role award count.
 - **Presentation QR** = `nuts:present:<base64url(JSON(signed kind 27236))>`,
   tags: `type=nuts_entitlement_presentation`, `expiration=created+90`,
   `nonce`, `e`=award id, `a`=badge address, `r`=community relay (ws URL),
@@ -40,8 +43,9 @@ order/pass status. No staff actions anywhere.
 |---|---|
 | `src/lib/orders.ts` | Port of the derivation: `latestStatusEvents` (latest per context by created_at, lower-id tie-break), `fulfilledUseCount`, `remainingAwardUses`, `awardOrderReference`, `isAwardExpired`, status labels. ParsedEvent stays a FlatBuffer view; strings materialized in accessors only. |
 | `src/nostr/presentation.ts` | Port of web `presentation.ts` (template builder + encode/decode + validators), `buildEntitlementPresentation(input)` → `signEvent` → `encodePresentation`. Reuses `base64UrlEncode` from `src/nostr/upload.ts`; nonce via `expo-crypto` if present, else secure-random fallback (NOT `crypto.randomUUID` — absent in Hermes). |
-| `src/hooks/useAwards.ts` | Hooks: `useMyAwards(relay, pubkey, visible)` (kind 8 `#p` + 30009 defs by `#d`+author), `useAwardStatuses(relay, awardIds, visible)` (kinds `[37237, 27237]` `#e`, live, signer-authorized via `communityTrust.ts`). Follows the `useSubscription` conventions from StoreSub. Subscription ids MUST include the relay url AND a full hash of the id set (prefix slices collide across screens — nipworker silently reuses the other sub's buffer). |
-| `src/lib/communityTrust.ts` | Port of web `adminAccess.ts` (member-side subset): relay authority pubkeys (NIP-11 admin fields + `/community/info` badge issuer) and role-award permission resolution; `fetchStatusSignerAuthorized(relay, signer)` gates which statuses count. |
+| `src/lib/nip97.ts` | Anchor, definition-kind, address, and permission primitives. |
+| `src/hooks/useAwards.ts` | Hooks: `useMyAwards` resolves kind-8 candidates, their NIP-97 definitions and kind-5 revocations against the current anchor; `useAwardStatuses` subscribes to 37237 and filters unauthorized signers. Subscription ids include the relay and a full hash of the id set. |
+| `src/lib/communityTrust.ts` | Resolves NIP-11 root → 31727 anchor from the community relay and evaluates award/status signer authorization and kind-scoped role permissions. |
 | `src/app/Award.tsx` + `src/modals/AwardModal.tsx` | Award detail screen (the core). Route params: `relay`, `award` (event id). Registered in `src/app/_layout.tsx` as `<Stack.Screen name="Award" options={{presentation:'modal'}}/>`. |
 | `src/app/Passes.tsx` + `src/modals/PassesModal.tsx` | Cross-community "your passes & memberships" list. Entry: new `ProfileMenuRow` "Passes" in ProfileModal. |
 | `src/subs/StoreSub.tsx` | "Yours" strip above the catalog: member's awards on THIS community relay (name + remaining uses/status), tap → Award. |
@@ -69,8 +73,7 @@ Composition (follows active theme except where noted):
 4. **Activity**: latest status per context, most recent first (check-ins or
    order ladder steps), timestamped. Empty state explains the loop ("Show the
    QR to staff to redeem").
-5. Expired/revoked states render distinctly (status from derivation; kind-5
-   handling deferred — noted in SPEC-GAPS).
+5. Expired or revoked awards are excluded after NIP-97 validity resolution.
 
 Passes list: rows grouped by community (name, type pill, remaining uses or
 status, chevron). StoreSub strip: single compact row per award, same content,
@@ -102,5 +105,5 @@ provisioned state:
 ## Deferrals (stay in SPEC-GAPS)
 
 - Notifications entries for 37237 order updates (separate feature).
-- Kind-5 revocation display, membership-expiration UI.
+- Dedicated revocation/expiration history UI (invalid awards are already excluded).
 - Offline QR verification (staff side verifies online; out of RN scope).

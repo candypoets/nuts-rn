@@ -1,8 +1,8 @@
 /**
  * Member-side order/pass derivation — port of the web reference
  * (`nuts-cash/src/lib/orders.ts` + `src/routes/notifications/notifications.ts`).
- * Truth is computed from relay events: kind-8 awards, their 30009 definitions,
- * and kind-37237 statuses (legacy kind-27237 read during the transition).
+ * Truth is computed from relay events: kind-8 awards, their NIP-97 definitions,
+ * and NIP-97 kind-37237 statuses.
  * There is NO server-side enforcement of max uses or
  * capacity (see .qa/SPEC-GAPS.md) — this derivation is what the member sees,
  * and it must agree with what staff sees, so keep it in lockstep with the web.
@@ -11,14 +11,16 @@
  * accessors only (project convention, see src/lib/catalog.ts).
  */
 import {extractTagValue, type ParsedEvent} from '@candypoets/nipworker';
-import {catalogEventAddress, catalogMaxUses, catalogRole, catalogType, catalogUsesQrFulfillment} from './catalog';
+import {
+  catalogEventAddress,
+  catalogMaxUses,
+  catalogRole,
+  catalogType,
+  catalogUsesQrFulfillment,
+} from './catalog';
+import {FULFILLMENT_KIND} from './nip97';
 
-// Statuses moved off the ephemeral range (strfry evicts those after ~300 s)
-// to the addressable range: the relay itself now keeps the latest status per
-// context (`d` = 'order:<ref>' | 'event:<address>'). Read BOTH kinds during
-// the transition; writers (web scanner) publish 37237 only.
-export const BADGE_STATUS_KIND = 37237;
-export const LEGACY_BADGE_STATUS_KIND = 27237;
+export const BADGE_STATUS_KIND = FULFILLMENT_KIND;
 
 export const BADGE_STATUSES = [
   'pending',
@@ -45,7 +47,7 @@ export function latestStatusEvents(award: ParsedEvent, statuses: ParsedEvent[]):
   const latest = new Map<string, ParsedEvent>();
   for (const event of statuses) {
     if (
-      (event.kind() !== BADGE_STATUS_KIND && event.kind() !== LEGACY_BADGE_STATUS_KIND) ||
+      event.kind() !== BADGE_STATUS_KIND ||
       extractTagValue(event, 'e') !== awardId ||
       extractTagValue(event, 'a') !== address ||
       extractTagValue(event, 'p') !== recipient ||
@@ -56,9 +58,9 @@ export function latestStatusEvents(award: ParsedEvent, statuses: ParsedEvent[]):
     const order = extractTagValue(event, 'order');
     const eventContext = extractTagValue(event, 'event');
     if (Boolean(order) === Boolean(eventContext)) continue;
-    // d carries the same context for addressability on 37237; legacy 27237
-    // events have no d, so fall back to the order/event tags.
-    const contextKey = extractTagValue(event, 'd') || (order ? `order:${order}` : `event:${eventContext}`);
+    const expectedContext = order ? `order:${order}` : `event:${eventContext}`;
+    const contextKey = extractTagValue(event, 'd');
+    if (contextKey !== expectedContext) continue;
     const current = latest.get(contextKey);
     if (
       !current ||

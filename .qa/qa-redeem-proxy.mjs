@@ -157,7 +157,7 @@ server.on('upgrade', (req, clientSocket, head) => {
 			console.log('[proxy] ws upstream connected');
 			for (const message of queue.splice(0)) forward(upstream, message, false);
 		});
-		// PROXY_TAP=1: log REQ/CLOSE frames from clients and 27237 EVENT frames
+		// PROXY_TAP=1: log REQ/CLOSE frames from clients and 37237 EVENT frames
 		// to clients — diagnoses live-sub delivery through the proxy.
 		const TAP = process.env.PROXY_TAP === '1';
 		const tap = (direction, data) => {
@@ -175,9 +175,9 @@ server.on('upgrade', (req, clientSocket, head) => {
 					console.log(`[tap] REQ ${msg[1]} ${filters}`);
 				} else if (direction === 'in' && msg[0] === 'CLOSE') {
 					console.log(`[tap] CLOSE ${msg[1]}`);
-				} else if (direction === 'out' && msg[0] === 'EVENT' && msg[2]?.kind === 27237) {
+				} else if (direction === 'out' && msg[0] === 'EVENT' && msg[2]?.kind === 37237) {
 					console.log(
-						`[tap] EVENT 27237 -> client (sub ${msg[1]}, e=${msg[2].tags?.find((t) => t[0] === 'e')?.[1]?.slice(0, 6)})`
+						`[tap] EVENT 37237 -> client (sub ${msg[1]}, e=${msg[2].tags?.find((t) => t[0] === 'e')?.[1]?.slice(0, 6)})`
 					);
 				}
 			} catch {

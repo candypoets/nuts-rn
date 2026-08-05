@@ -134,7 +134,8 @@ async function publishUntilAccepted(relayUrl, event, label, timeoutMs = 45000) {
 
 async function verifyPurchase({ community, itemD, purchaseType, buyerPub }) {
 	const issuer = (await getRelay(community.id, keys)).badge_issuer_pubkey;
-	const address = `30009:${keys.admin.pub}:${itemD}`;
+	const definitionKind = purchaseType === 'membership' ? 30009 : 30402;
+	const address = `${definitionKind}:${keys.admin.pub}:${itemD}`;
 	// Filter by the catalog address: the same issuer also granted the buyer's
 	// membership award (#p matches), so #p alone is ambiguous.
 	const award = await fetchEvent(
@@ -144,7 +145,7 @@ async function verifyPurchase({ community, itemD, purchaseType, buyerPub }) {
 	);
 	const definition = await fetchEvent(
 		community.relay_url,
-		{ kinds: [30009], authors: [keys.admin.pub], '#d': [itemD] },
+		{ kinds: [definitionKind], authors: [keys.admin.pub], '#d': [itemD] },
 		`catalog definition ${itemD}`
 	);
 	assert(
@@ -290,7 +291,7 @@ async function capacity() {
 // issuer-signed award first, so reruns never depend on purchase history.
 
 function adminCatalogAddress(itemD) {
-	return `30009:${keys.admin.pub}:${itemD}`;
+	return `30402:${keys.admin.pub}:${itemD}`;
 }
 
 async function latestAward(relayUrl, address, pubkey) {
@@ -423,24 +424,22 @@ async function entitlement() {
 	await redeemInvite(gym, gym.token, ticketHolder.pub, issuer);
 	const ticketDef = signEvent(
 		{
-			kind: 30009,
+			kind: 30402,
 			tags: [
 				['d', ticketD],
-				['type', 'event_access'],
-				['t', 'event_access'],
-				['t', 'sellable'],
-				['name', 'QA Training entrance'],
-				['description', 'QA ticket for the entitlement scenario'],
+				['t', 'ticket'],
+				['title', 'QA Training entrance'],
+				['summary', 'QA ticket for the entitlement scenario'],
+				['status', 'active'],
 				['price', '10.00', 'EUR'],
 				['position', '9'],
-				['availability', 'available'],
 				['a', event.address],
 				['max_uses', '1']
 			]
 		},
 		keys.admin.priv
 	);
-	await publishUntilAccepted(gym.relay_url, ticketDef, 'ticket definition (30009)');
+	await publishUntilAccepted(gym.relay_url, ticketDef, 'ticket definition (30402)');
 	// Fetch by address, not id: the 31923 is addressable, so a previous run's
 	// entrance_badge update replaced it — the state file's id is stale.
 	const currentEvent = await fetchEvent(

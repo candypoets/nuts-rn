@@ -33,13 +33,13 @@ env:
       RELAY_PORT: ${RELAY_PORT}
       NSEC: ${NSEC}
       COMMUNITY_NAME: ${COMMUNITY_NAME}
-# Community header button flips from Store to Menu once the community profile
-# (kind 30078, hospitality) arrives from the relay.
+# Community header button flips from Store to Menu once the community anchor
+# (root-signed kind 31727, hospitality extension) arrives from the relay.
 - extendedWaitUntil:
     visible: "Menu"
     timeout: 60000
 - tapOn: "Menu"
-# Store screen: menu presentation, item from the sellable catalog (kind 30009).
+# Store screen: menu presentation, item from the NIP-99 catalog (kind 30402).
 - extendedWaitUntil:
     visible: "${ITEM_NAME}"
     timeout: 90000

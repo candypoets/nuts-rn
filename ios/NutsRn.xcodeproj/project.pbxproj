@@ -262,7 +262,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nexport ENTRY_FILE=\"$PROJECT_DIR/../node_modules/expo-router/entry.js\"\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"\\\"$WITH_ENVIRONMENT\\\" \\\"$REACT_NATIVE_XCODE\\\"\"\n";
+			shellScript = "set -e\n\nif [[ -f \"$PROJECT_DIR/.xcode.env\" ]]; then\n  source \"$PROJECT_DIR/.xcode.env\"\nfi\nif [[ -f \"$PROJECT_DIR/.xcode.env.local\" ]]; then\n  source \"$PROJECT_DIR/.xcode.env.local\"\nfi\n\nexport PROJECT_ROOT=\"$PROJECT_DIR/..\"\nexport ENTRY_FILE=\"$($NODE_BINARY -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nexport CLI_PATH=\"$($NODE_BINARY --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nexport BUNDLE_COMMAND=\"export:embed\"\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"\\\"$WITH_ENVIRONMENT\\\" \\\"$REACT_NATIVE_XCODE\\\"\"\n";
 		};
 		00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -292,6 +292,7 @@
 			inputPaths = (
 				"$(SRCROOT)/.xcode.env",
 				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/NutsRn/NutsRn.entitlements",
 				"$(SRCROOT)/Pods/Target Support Files/Pods-NutsRn/expo-configure-project.sh",
 			);
 			name = "[Expo] Configure project";

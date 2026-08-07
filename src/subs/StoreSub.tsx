@@ -533,9 +533,12 @@ export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubPro
   const openAward = useCallback(
     (awardId: string) => {
       if (!awardId) return;
-      pushDistinct(navigation, 'Award', {relay: normalizedRelay, award: awardId});
+      pushDistinct(router, {
+        pathname: '/Award',
+        params: {relay: normalizedRelay, award: awardId},
+      });
     },
-    [navigation, normalizedRelay],
+    [normalizedRelay, router],
   );
 
   const availableEvents = useMemo(

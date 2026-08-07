@@ -179,6 +179,7 @@ export function CalendarEventModal({
 }: CalendarEventModalProps) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const navigation =
     useNavigation<AppNavigationProp>();
   const pubkey = useAuthStore(state => state.pubkey);
@@ -540,9 +541,12 @@ export function CalendarEventModal({
                 accessibilityRole="button"
                 className="flex-row items-center gap-1.5 rounded-xl bg-primary px-4 py-3"
                 onPress={() =>
-                  pushDistinct(navigation, 'Award', {
-                    relay: selectedRelay,
-                    award: ticketAward.id() || '',
+                  pushDistinct(router, {
+                    pathname: '/Award',
+                    params: {
+                      relay: selectedRelay,
+                      award: ticketAward.id() || '',
+                    },
                   })
                 }
               >

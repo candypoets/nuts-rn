@@ -6,7 +6,11 @@ import type {
   WorkerMessage,
 } from '@candypoets/nipworker';
 import {MessageType} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import {
+  createPaginatedSubscription,
+  type PaginatedSubscription,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
@@ -23,6 +27,7 @@ import {Feed} from '../components/Feed';
 import {Note} from '../components/notes';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {useNostrStore, useRelayStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -306,7 +311,6 @@ export function Kind1Sub({
   const [items, setItems] = useState<ParsedEvent[]>([]);
   const [allReplies, setAllReplies] = useState<ParsedEvent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const itemsRef = useRef<ParsedEvent[]>([]);
   const allRepliesRef = useRef<ParsedEvent[]>([]);
   const renderedItemsLengthRef = useRef(0);
@@ -323,15 +327,8 @@ export function Kind1Sub({
   const commitFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const mainUnsubRef = useRef<(() => void) | null>(null);
   const authorRelayDiscoveryUnsubRef = useRef<(() => void) | null>(null);
-  const authorRepliesUnsubRef = useRef<(() => void) | null>(null);
-  const repliesCacheUnsubRef = useRef<(() => void) | null>(null);
-  const repliesUnsubRef = useRef<(() => void) | null>(null);
-  const paginationUnsubRef = useRef<(() => void) | null>(null);
+  const repliesSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const repliesDebugTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const itemsBeforePaginationRef = useRef(0);
-  const paginationCounterRef = useRef(0);
   const headerSubSeqRef = useRef(0);
   const repliesSubSeqRef = useRef(0);
   const firstReplyAtRef = useRef<number | null>(null);
@@ -375,7 +372,6 @@ export function Kind1Sub({
       items: items.length,
       allReplies: allReplies.length,
       loading,
-      hasMore,
       rootReadRelays: rootReadRelays.length,
       activeRelays: activeRelays.length,
       authorReadRelays: authorReadRelays.length,
@@ -437,14 +433,6 @@ export function Kind1Sub({
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    if (paginationTimeoutRef.current) {
-      clearTimeout(paginationTimeoutRef.current);
-      paginationTimeoutRef.current = null;
-    }
-    if (repliesDebugTimeoutRef.current) {
-      clearTimeout(repliesDebugTimeoutRef.current);
-      repliesDebugTimeoutRef.current = null;
-    }
     if (commitFrameRef.current) {
       cancelAnimationFrame(commitFrameRef.current);
       commitFrameRef.current = null;
@@ -503,13 +491,13 @@ export function Kind1Sub({
   }, [commitItems]);
 
   const addReply = useCallback(
-    (event: ParsedEvent) => {
+    (event: ParsedEvent): number | undefined => {
       statsRef.current.arrived += 1;
       const kind1 = event.kind() === 1 ? asKind1(event) : null;
       const kind1111 = event.kind() === 1111 ? asKind1111(event) : null;
       if (!kind1 && !kind1111) {
         statsRef.current.dropKind += 1;
-        return;
+        return undefined;
       }
 
       const parentId = kind1?.reply()?.id() || kind1111?.parentId?.();
@@ -517,30 +505,30 @@ export function Kind1Sub({
         const rootRefId = kind1.root()?.id();
         if (parentId && parentId !== rootId) {
           statsRef.current.dropNoRootTag += 1;
-          return;
+          return undefined;
         }
         if ((!parentId || parentId === rootRefId) && rootRefId !== rootId) {
           statsRef.current.dropNoRootTag += 1;
-          return;
+          return undefined;
         }
         if (
           fbArray(kind1, 'eventRefs').some(eventRef => eventRef.id() === rootId)
         ) {
           statsRef.current.dropQuote += 1;
-          return;
+          return undefined;
         }
       } else if (kind1111?.rootId?.() !== rootId) {
         statsRef.current.dropNoRootTag += 1;
-        return;
+        return undefined;
       }
       if (event.id() === rootId) {
         statsRef.current.dropRoot += 1;
-        return;
+        return undefined;
       }
       const id = event.id();
       if (!id || seenIdsRef.current.has(id)) {
         statsRef.current.duplicate += 1;
-        return;
+        return undefined;
       }
       seenIdsRef.current.add(id);
       statsRef.current.accepted += 1;
@@ -558,12 +546,13 @@ export function Kind1Sub({
         itemsRef.current.push(event);
       }
       scheduleCommit();
+      return event.createdAt();
     },
     [rootId, scheduleCommit],
   );
 
   const handleReplyMessage = useCallback(
-    (message: WorkerMessage) => {
+    (message: WorkerMessage): number | undefined => {
       if (message.type() === MessageType.Eoce) {
         kind1Trace(traceStartedAtRef.current, 'reply eoce', {
           rootId: rootId.slice(0, 12),
@@ -572,8 +561,7 @@ export function Kind1Sub({
           ...statsRef.current,
         });
         commitItemsIfNeeded('reply eoce');
-        setLoading(false);
-        return;
+        return undefined;
       }
 
       const status = asConnectionStatus(message);
@@ -590,14 +578,13 @@ export function Kind1Sub({
             ...statsRef.current,
           });
           commitItemsIfNeeded('reply relay eose');
-          setLoading(false);
         }
-        return;
+        return undefined;
       }
 
       const parsed = asParsedEvent(message);
       if (parsed) {
-        addReply(parsed);
+        const acceptedAt = addReply(parsed);
         if (statsRef.current.arrived % 25 === 0) {
           kind1Debug('reply progress', {
             rootId: rootId.slice(0, 12),
@@ -605,7 +592,9 @@ export function Kind1Sub({
             ...statsRef.current,
           });
         }
+        return acceptedAt;
       }
+      return undefined;
     },
     [addReply, commitItemsIfNeeded, rootId, setRelayStatus],
   );
@@ -613,16 +602,10 @@ export function Kind1Sub({
   const cleanupSubscriptions = useCallback(() => {
     mainUnsubRef.current?.();
     authorRelayDiscoveryUnsubRef.current?.();
-    authorRepliesUnsubRef.current?.();
-    repliesCacheUnsubRef.current?.();
-    repliesUnsubRef.current?.();
-    paginationUnsubRef.current?.();
+    repliesSubscriptionRef.current?.close();
     mainUnsubRef.current = null;
     authorRelayDiscoveryUnsubRef.current = null;
-    authorRepliesUnsubRef.current = null;
-    repliesCacheUnsubRef.current = null;
-    repliesUnsubRef.current = null;
-    paginationUnsubRef.current = null;
+    repliesSubscriptionRef.current = null;
     clearTimers();
   }, [clearTimers]);
 
@@ -645,8 +628,6 @@ export function Kind1Sub({
       dropQuote: 0,
       dropRoot: 0,
     };
-    paginationCounterRef.current = 0;
-    itemsBeforePaginationRef.current = 0;
     headerFoundRef.current = false;
     firstReplyAtRef.current = null;
     firstCommitAtRef.current = null;
@@ -656,7 +637,6 @@ export function Kind1Sub({
     setAuthorReadRelays(current => (current.length ? EMPTY_RELAY_LIST : current));
     setItems(current => (current.length ? EMPTY_EVENTS : current));
     setAllReplies(current => (current.length ? EMPTY_EVENTS : current));
-    setHasMore(true);
     setLoading(false);
     cleanupSubscriptions();
   }, [cleanupSubscriptions, rootId]);
@@ -792,8 +772,8 @@ export function Kind1Sub({
 
   useEffect(() => {
     if (!runLifecycleEffects) return undefined;
-    logEffectCycle('reply-cache-subscription', 'run', {
-      activeRelays: activeRelays.length,
+    logEffectCycle('reply-subscription', 'run', {
+      relays: displayedRelays.length,
       enabled: enableReplySubscriptions,
       eligible:
         enableReplySubscriptions &&
@@ -806,70 +786,63 @@ export function Kind1Sub({
       !enableReplySubscriptions ||
       !subscriptionVisible ||
       !rootId ||
-      !hasHeader
+      !hasHeader ||
+      !displayedRelays.length
     ) {
       return undefined;
     }
+
     repliesSubSeqRef.current += 1;
     const repliesSeq = repliesSubSeqRef.current;
     const repliesStartedAt = Date.now();
-    const cacheSubId = `replies_cache_${rootId}_${relayHash(activeRelays)}`;
-    repliesCacheUnsubRef.current?.();
-    kind1Trace(traceStartedAtRef.current, 'cache replies subscribe', {
+    const subId = `replies_${rootId}_${relayHash(displayedRelays)}`;
+    setSubRelays(subId, displayedRelays);
+    displayedRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
+    kind1Trace(traceStartedAtRef.current, 'replies subscribe', {
       seq: repliesSeq,
-      cacheSubId,
+      subId,
       rootId: rootId.slice(0, 12),
-      relays: activeRelays,
+      relays: displayedRelays,
     });
-    kind1Debug('subscribe replies cache', {
-      rootId: rootId.slice(0, 12),
-      relays: activeRelays,
+
+    repliesSubscriptionRef.current?.close();
+    repliesSubscriptionRef.current = createPaginatedSubscription({
+      subId,
+      requests: replyRequests(rootId, displayedRelays, {cacheFirst: true}),
+      pageRequests: replyRequests(rootId, displayedRelays, {noCache: true}),
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      initialLoading: false,
+      onMessage: handleReplyMessage,
+      onStateChange: state => {
+        if (!state.loading) commitItemsIfNeeded('reply subscription settled');
+        setLoading(state.loading);
+      },
+      options: {bytesPerEvent: REPLY_BYTES_PER_EVENT},
     });
-    repliesCacheUnsubRef.current = subscribeToNostr(
-      cacheSubId,
-      replyRequests(rootId, activeRelays, {cacheFirst: true}),
-      handleReplyMessage,
-      {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-    );
-    repliesDebugTimeoutRef.current = setTimeout(() => {
-      kind1Trace(traceStartedAtRef.current, 'cache replies timeout snapshot', {
-        seq: repliesSeq,
-        elapsed: Date.now() - repliesStartedAt,
-        rootId: rootId.slice(0, 12),
-        items: itemsRef.current.length,
-        allReplies: allRepliesRef.current.length,
-        hasHeader: headerFoundRef.current,
-        ...statsRef.current,
-      });
-      kind1Debug('reply timeout snapshot', {
-        rootId: rootId.slice(0, 12),
-        items: itemsRef.current.length,
-        ...statsRef.current,
-      });
-    }, 2500);
+    repliesSubscriptionRef.current.start();
 
     return () => {
-      logEffectCycle('reply-cache-subscription', 'cleanup');
-      kind1Trace(traceStartedAtRef.current, 'cache replies cleanup', {
+      logEffectCycle('reply-subscription', 'cleanup');
+      kind1Trace(traceStartedAtRef.current, 'replies cleanup', {
         seq: repliesSeq,
         elapsed: Date.now() - repliesStartedAt,
         rootId: rootId.slice(0, 12),
       });
-      repliesCacheUnsubRef.current?.();
-      repliesCacheUnsubRef.current = null;
-      if (repliesDebugTimeoutRef.current) {
-        clearTimeout(repliesDebugTimeoutRef.current);
-        repliesDebugTimeoutRef.current = null;
-      }
+      repliesSubscriptionRef.current?.close();
+      repliesSubscriptionRef.current = null;
     };
   }, [
-    activeRelays,
+    commitItemsIfNeeded,
+    displayedRelays,
     enableReplySubscriptions,
     handleReplyMessage,
     hasHeader,
     logEffectCycle,
     rootId,
     runLifecycleEffects,
+    setRelayStatus,
+    setSubRelays,
     subscriptionVisible,
   ]);
 
@@ -898,25 +871,6 @@ export function Kind1Sub({
     const authorDiscoveryStartedAt = Date.now();
     let called = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;
-    const startFallbackReplies = (reason: string) => {
-      const repliesSubId = `replies_live_${rootId}_${relayHash(activeRelays)}`;
-      repliesUnsubRef.current?.();
-      setSubRelays(repliesSubId, activeRelays);
-      activeRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
-      kind1Trace(traceStartedAtRef.current, 'fallback replies subscribe', {
-        reason,
-        elapsed: Date.now() - authorDiscoveryStartedAt,
-        subId: repliesSubId,
-        rootId: rootId.slice(0, 12),
-        relays: activeRelays,
-      });
-      repliesUnsubRef.current = subscribeToNostr(
-        repliesSubId,
-        replyRequests(rootId, activeRelays, {noCache: true}),
-        handleReplyMessage,
-        {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-      );
-    };
     timeout = setTimeout(() => {
       if (called) return;
       called = true;
@@ -931,7 +885,6 @@ export function Kind1Sub({
       });
       authorRelayDiscoveryUnsubRef.current?.();
       authorRelayDiscoveryUnsubRef.current = null;
-      startFallbackReplies('author-relays-timeout');
     }, 1000);
 
     const discoverySubId = `kind1_author_relays_${authorPubkey}_${relayHash(activeRelays)}`;
@@ -990,26 +943,6 @@ export function Kind1Sub({
           author: authorPubkey.slice(0, 12),
           relays: incrementalRelays,
         });
-        if (!incrementalRelays.length) {
-          startFallbackReplies('author-relays-empty');
-          return;
-        }
-
-        const repliesSubId = `replies_author_live_${rootId}_${relayHash(incrementalRelays)}`;
-        authorRepliesUnsubRef.current?.();
-        setSubRelays(repliesSubId, incrementalRelays);
-        incrementalRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
-        kind1Trace(traceStartedAtRef.current, 'author replies subscribe', {
-          subId: repliesSubId,
-          rootId: rootId.slice(0, 12),
-          relays: incrementalRelays,
-        });
-        authorRepliesUnsubRef.current = subscribeToNostr(
-          repliesSubId,
-          replyRequests(rootId, incrementalRelays, {noCache: true}),
-          handleReplyMessage,
-          {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-        );
       },
       {bytesPerEvent: REPLY_BYTES_PER_EVENT},
     );
@@ -1019,19 +952,14 @@ export function Kind1Sub({
       if (timeout) clearTimeout(timeout);
       authorRelayDiscoveryUnsubRef.current?.();
       authorRelayDiscoveryUnsubRef.current = null;
-      authorRepliesUnsubRef.current?.();
-      authorRepliesUnsubRef.current = null;
     };
   }, [
     activeRelays,
     enableReplySubscriptions,
-    handleReplyMessage,
     headerAuthorPubkey,
     logEffectCycle,
     rootId,
     runLifecycleEffects,
-    setRelayStatus,
-    setSubRelays,
     visible,
   ]);
 
@@ -1070,30 +998,10 @@ export function Kind1Sub({
     runLifecycleEffects,
   ]);
 
-  useEffect(() => {
-    if (!runLifecycleEffects) return undefined;
-    logEffectCycle('pagination-settle', 'run', {
-      loading,
-      items: items.length,
-      itemsBeforePagination: itemsBeforePaginationRef.current,
-    });
-    if (loading || itemsBeforePaginationRef.current === 0) return;
-    const itemsBefore = itemsBeforePaginationRef.current;
-    const timeout = setTimeout(() => {
-      if (itemsRef.current.length === itemsBefore) setHasMore(false);
-      itemsBeforePaginationRef.current = 0;
-      paginationUnsubRef.current?.();
-      paginationUnsubRef.current = null;
-    }, 500);
-    return () => {
-      logEffectCycle('pagination-settle', 'cleanup');
-      clearTimeout(timeout);
-    };
-  }, [loading, items.length, logEffectCycle, runLifecycleEffects]);
-
   const handleNearBottom = useCallback(() => {
-    // Temporarily disabled: do not paginate replies while testing Kind1Sub load behavior.
-  }, []);
+    if (loading || !itemsRef.current.length) return;
+    repliesSubscriptionRef.current?.loadMore();
+  }, [loading]);
 
   const motionHeader = useCallback(
     () => (

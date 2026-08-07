@@ -1,19 +1,21 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, Text, View} from 'react-native';
 import type {ConnectionStatus, ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import {
+  createPaginatedSubscription,
+  type PaginatedSubscription,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
-  asEoce,
   asKind1,
   asParsedEvent,
-  ConnectionTracker,
 } from '@candypoets/nipworker/utils';
 import {ArrowLeft} from 'lucide-react-native';
 import {Feed, FeedSticky} from '../components/Feed';
 import {Note} from '../components/notes';
 import {RelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {useRelayStore} from '../stores';
 
 type TagsSubProps = {
@@ -59,19 +61,11 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
   );
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const unsubscribePaginationRef = useRef<(() => void) | null>(null);
-  const paginationCounterRef = useRef(0);
-  const untilRef = useRef<number | undefined>(undefined);
-  const prevPaginationSubIdRef = useRef<string | null>(null);
-  const itemsBeforePaginationRef = useRef(0);
-  const connectionTrackerRef = useRef(new ConnectionTracker());
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const commitFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
-  const [itemsVersion, setItemsVersion] = useState(0);
+  const [, setItemsVersion] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<Record<string, ConnectionStatus>>({});
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
@@ -83,10 +77,6 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
   );
 
   const clearTimers = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
     if (commitFrameRef.current) {
       cancelAnimationFrame(commitFrameRef.current);
       commitFrameRef.current = null;
@@ -97,19 +87,11 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
     itemsRef.current = [];
     seenIdsRef.current.clear();
     pendingItemsRef.current = [];
-    paginationCounterRef.current = 0;
-    untilRef.current = undefined;
-    prevPaginationSubIdRef.current = null;
-    itemsBeforePaginationRef.current = 0;
-    connectionTrackerRef.current.reset();
     setConnectionStatus({});
     setLoading(false);
-    setHasMore(true);
     setItemsVersion(version => version + 1);
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    unsubscribePaginationRef.current?.();
-    unsubscribePaginationRef.current = null;
+    feedSubscriptionRef.current?.close();
+    feedSubscriptionRef.current = null;
     clearTimers();
   }, [clearTimers]);
 
@@ -140,12 +122,7 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
     }
   }, [commitPendingItems]);
 
-  const handleEvents = useCallback((message: WorkerMessage) => {
-    if (asEoce(message)) {
-      completeLoading();
-      return;
-    }
-
+  const handleEvents = useCallback((message: WorkerMessage): number | undefined => {
     const status = asConnectionStatus(message);
     if (status) {
       const relayUrl = status.relayUrl();
@@ -155,25 +132,23 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
         setConnectionStatus(current => ({...current, [normalized]: status}));
         if (relayStatus) setRelayStatus(normalized, relayStatus);
       }
-      connectionTrackerRef.current.handleMessage(message);
-      if (connectionTrackerRef.current.resolutionRate > 0.5) {
-        completeLoading();
-      }
-      return;
+      return undefined;
     }
 
     const parsed = asParsedEvent(message);
-    if (!parsed || parsed.kind() !== 1 || !isRootKind1(parsed)) return;
+    if (!parsed || parsed.kind() !== 1 || !isRootKind1(parsed)) return undefined;
+    const id = parsed.id();
+    if (!id || seenIdsRef.current.has(id)) return undefined;
     addItem(parsed);
-  }, [addItem, completeLoading, setRelayStatus]);
+    return parsed.createdAt();
+  }, [addItem, setRelayStatus]);
 
   const requestList = useCallback(
-    (forPagination = false) => [
+    () => [
       {
         kinds: [1],
         tags: {'#t': cleanTags},
         limit: PAGE_LIMIT,
-        until: forPagination ? untilRef.current : undefined,
         noCache: true,
         relays,
       },
@@ -182,40 +157,35 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
   );
 
   const startSubscription = useCallback(() => {
-    if (!visible || cleanTags.length === 0 || unsubscribeRef.current) return;
+    if (!visible || cleanTags.length === 0 || feedSubscriptionRef.current) return;
 
     setLoading(itemsRef.current.length === 0);
     pendingItemsRef.current = [];
-    connectionTrackerRef.current.reset();
     setSubRelays(subId, relays.map(normalizeRelayUrl));
     relays.forEach(relay => setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED'));
-    unsubscribeRef.current = subscribeToNostr(subId, requestList(), handleEvents, {
-      bytesPerEvent: 10 * 1024,
+    feedSubscriptionRef.current = createPaginatedSubscription({
+      subId,
+      requests: requestList(),
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      onMessage: handleEvents,
+      onStateChange: state => {
+        if (state.loading) {
+          setLoading(true);
+        } else {
+          completeLoading();
+        }
+      },
+      options: {bytesPerEvent: 10 * 1024},
     });
-    prevPaginationSubIdRef.current = subId;
-    timeoutRef.current = setTimeout(completeLoading, 10000);
+    feedSubscriptionRef.current.start();
   }, [cleanTags.length, completeLoading, handleEvents, relays, requestList, setRelayStatus, setSubRelays, subId, visible]);
 
   const handleNearBottom = useCallback(() => {
-    if (loading || !hasMore || itemsRef.current.length === 0) return;
-
-    setLoading(true);
-    itemsBeforePaginationRef.current = itemsRef.current.length;
-    paginationCounterRef.current += 1;
+    if (loading || itemsRef.current.length === 0) return;
     pendingItemsRef.current = [];
-    connectionTrackerRef.current.reset();
-    const lastItem = itemsRef.current[itemsRef.current.length - 1];
-    if (lastItem) untilRef.current = lastItem.createdAt() - 1;
-
-    unsubscribePaginationRef.current?.();
-    const pageSubId = `${subId}_page_${paginationCounterRef.current}_${untilRef.current}`;
-    unsubscribePaginationRef.current = subscribeToNostr(pageSubId, requestList(true), handleEvents, {
-      bytesPerEvent: 10 * 1024,
-      pagination: prevPaginationSubIdRef.current ?? undefined,
-    });
-    prevPaginationSubIdRef.current = pageSubId;
-    timeoutRef.current = setTimeout(completeLoading, 10000);
-  }, [completeLoading, handleEvents, hasMore, loading, requestList, subId]);
+    feedSubscriptionRef.current?.loadMore();
+  }, [loading]);
 
   useEffect(() => {
     resetFeed();
@@ -223,30 +193,18 @@ export function TagsSub({tags, visible, onClose}: TagsSubProps) {
 
   useEffect(() => {
     if (!visible) {
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      unsubscribePaginationRef.current?.();
-      unsubscribePaginationRef.current = null;
+      feedSubscriptionRef.current?.close();
+      feedSubscriptionRef.current = null;
       clearTimers();
       return;
     }
     startSubscription();
     return () => {
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      unsubscribePaginationRef.current?.();
-      unsubscribePaginationRef.current = null;
+      feedSubscriptionRef.current?.close();
+      feedSubscriptionRef.current = null;
       clearTimers();
     };
   }, [clearTimers, startSubscription, visible]);
-
-  useEffect(() => {
-    if (loading || itemsBeforePaginationRef.current === 0) return;
-    if (itemsRef.current.length === itemsBeforePaginationRef.current) {
-      setHasMore(false);
-    }
-    itemsBeforePaginationRef.current = 0;
-  }, [loading, itemsVersion]);
 
   const title = cleanTags.map(tag => `#${tag}`).join(' ');
   const renderHeader = useCallback(() => (

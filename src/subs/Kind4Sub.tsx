@@ -25,11 +25,11 @@ import {
   type WorkerMessage,
 } from '@candypoets/nipworker';
 import {
+  createPaginatedSubscription,
+  type PaginatedSubscription,
   usePublish as publishToNostr,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
-  asEoce,
   asKind4,
   asParsedEvent,
   fbArray,
@@ -43,6 +43,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Feed} from '../components/Feed';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {useAuthStore, useNostrStore, useSendStatusStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -111,16 +112,9 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
   const theme = useAppTheme();
   const rawEventsRef = useRef<ParsedEvent[]>([]);
   const sendingMapRef = useRef(new Map<string, number>());
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const paginationUnsubscribeRef = useRef<(() => void) | null>(null);
-  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevPaginationSubIdRef = useRef<string | undefined>(undefined);
-  const paginationCounterRef = useRef(0);
-  const untilRef = useRef<number | undefined>(undefined);
-  const itemsBeforePaginationRef = useRef(0);
+  const threadSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [eventsVersion, setEventsVersion] = useState(0);
   const [scrollToBottomKey, setScrollToBottomKey] = useState(0);
   const keyboardAnimation = useReanimatedKeyboardAnimation();
@@ -138,15 +132,8 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
     [eventsVersion],
   );
 
-  const clearPaginationTimeout = useCallback(() => {
-    if (paginationTimeoutRef.current) {
-      clearTimeout(paginationTimeoutRef.current);
-      paginationTimeoutRef.current = null;
-    }
-  }, []);
-
   const buildRequests = useCallback(
-    (isPagination = false): RequestObject[] => {
+    (): RequestObject[] => {
       if (!pubkey) return [];
       const requests: RequestObject[] = [
         {
@@ -166,61 +153,48 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
           noOptimize: true,
         },
       ];
-      if (isPagination && untilRef.current) {
-        return requests.map(request => ({...request, until: untilRef.current}));
-      }
       return requests;
     },
     [peerPubkey, pubkey, readRelayList, writeRelayList],
   );
 
-  const handleEvents = useCallback((workerMessage: WorkerMessage) => {
-    if (asEoce(workerMessage)) {
-      setLoading(false);
-      return;
-    }
+  const handleEvents = useCallback((workerMessage: WorkerMessage): number | undefined => {
     const parsed = asParsedEvent(workerMessage);
-    if (!parsed || parsed.kind() !== 4) return;
+    if (!parsed || parsed.kind() !== 4) return undefined;
 
     const nonce = getNonce(parsed);
     if (nonce && sendingMapRef.current.has(nonce)) {
       sendingMapRef.current.delete(nonce);
-      return;
+      return undefined;
     }
 
     const id = String(parsed.id() || '');
-    if (!id || rawEventsRef.current.some(event => String(event.id() || '') === id)) return;
+    if (!id || rawEventsRef.current.some(event => String(event.id() || '') === id)) return undefined;
     rawEventsRef.current = [...rawEventsRef.current, parsed];
     setEventsVersion(version => version + 1);
-    setLoading(false);
+    return parsed.createdAt();
   }, []);
 
   const initSubscription = useCallback(
-    (isPagination = false) => {
+    () => {
       if (!visible || !pubkey) return;
-      if (!isPagination && rawEventsRef.current.length > 0) return;
+      if (threadSubscriptionRef.current) return;
 
-      const requests = buildRequests(isPagination);
+      const requests = buildRequests();
       if (!requests.length) return;
 
-      setLoading(true);
-      const subId = isPagination
-        ? `kind4_page_${peerPubkey}_${paginationCounterRef.current}_${untilRef.current}`
-        : `kind4_${peerPubkey}`;
-
-      if (!isPagination) {
-        unsubscribeRef.current?.();
-        unsubscribeRef.current = subscribeToNostr(subId, requests, handleEvents);
-      } else {
-        paginationUnsubscribeRef.current?.();
-        paginationUnsubscribeRef.current = subscribeToNostr(
-          subId,
-          requests,
-          handleEvents,
-          {pagination: prevPaginationSubIdRef.current},
-        );
-      }
-      prevPaginationSubIdRef.current = subId;
+      const subId = `kind4_${peerPubkey}`;
+      threadSubscriptionRef.current = createPaginatedSubscription({
+        subId,
+        requests,
+        windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+        maxEmptyPages: 3,
+        onMessage: handleEvents,
+        onStateChange: state => {
+          setLoading(state.loading);
+        },
+      });
+      threadSubscriptionRef.current.start();
     },
     [buildRequests, handleEvents, peerPubkey, pubkey, visible],
   );
@@ -229,46 +203,18 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
     if (!visible || !pubkey) return;
     rawEventsRef.current = [];
     sendingMapRef.current.clear();
-    untilRef.current = undefined;
-    itemsBeforePaginationRef.current = 0;
-    paginationCounterRef.current = 0;
-    prevPaginationSubIdRef.current = undefined;
-    setHasMore(true);
     setEventsVersion(version => version + 1);
     initSubscription();
     return () => {
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      paginationUnsubscribeRef.current?.();
-      paginationUnsubscribeRef.current = null;
-      clearPaginationTimeout();
+      threadSubscriptionRef.current?.close();
+      threadSubscriptionRef.current = null;
     };
-  }, [clearPaginationTimeout, initSubscription, peerPubkey, pubkey, visible]);
-
-  useEffect(() => {
-    if (loading || itemsBeforePaginationRef.current === 0) return;
-    const itemsAtCheck = itemsBeforePaginationRef.current;
-    clearPaginationTimeout();
-    if (items.length - itemsAtCheck === 0) setHasMore(false);
-    itemsBeforePaginationRef.current = 0;
-  }, [clearPaginationTimeout, items.length, loading]);
+  }, [initSubscription, peerPubkey, pubkey, visible]);
 
   const handleNearBottom = useCallback(() => {
-    if (loading || !hasMore || items.length === 0) return;
-    setLoading(true);
-    itemsBeforePaginationRef.current = items.length;
-    paginationCounterRef.current += 1;
-
-    const overlapIndex = Math.max(0, items.length - 6);
-    const cursor = items[overlapIndex];
-    if (cursor) untilRef.current = cursor.createdAt() - 1;
-    initSubscription(true);
-
-    clearPaginationTimeout();
-    paginationTimeoutRef.current = setTimeout(() => {
-      setLoading(false);
-    }, 10000);
-  }, [clearPaginationTimeout, hasMore, initSubscription, items, loading]);
+    if (loading || items.length === 0) return;
+    threadSubscriptionRef.current?.loadMore();
+  }, [items, loading]);
 
   const handleSubmit = useCallback(async () => {
     const content = message.trim();
@@ -328,9 +274,7 @@ export function Kind4Thread({peerPubkey, visible, onClose}: Kind4ThreadProps) {
       {
         defaultRelays: writeRelayList,
         trackStatus: true,
-        subId: prevPaginationSubIdRef.current
-          ? [prevPaginationSubIdRef.current]
-          : undefined,
+        subId: pubkey ? [`kind4_${peerPubkey}`] : undefined,
       },
     );
   }, [message, peerPubkey, pubkey, updateSendStatus, writeRelayList]);

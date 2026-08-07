@@ -33,6 +33,7 @@ const reservedProofs: ProofBucket = new Map();
 const cashuWallets = new Map<string, CashuWallet>();
 let activeWalletPubkey: string | null = null;
 let verifyingProofs = false;
+let walletInitializationId = 0;
 
 const proofMintIndexKey = (pubkey: string) => `proof_mints_${pubkey}`;
 const proofStorageClearedKey = (pubkey: string) => `proof_storage_cleared_${pubkey}`;
@@ -225,6 +226,9 @@ export const useWalletStore = create<WalletStore>()(
       deletedKind7375Ids: [],
       pendingMintQuotes: [],
       initializeProofWallet: async (pubkey, mintUrls) => {
+        const initializationId = walletInitializationId + 1;
+        walletInitializationId = initializationId;
+        set({proofsLoaded: false});
         activeWalletPubkey = pubkey;
         unspentProofs.clear();
         spentProofs.clear();
@@ -235,6 +239,9 @@ export const useWalletStore = create<WalletStore>()(
         const mints = Array.from(
           new Set([...mintUrls, ...indexedMints].map(normalizeMintUrl)),
         ).filter(Boolean);
+        const loadedUnspentProofs: ProofBucket = new Map();
+        const loadedSpentProofs: ProofBucket = new Map();
+        const loadedReservedProofs: ProofBucket = new Map();
 
         await Promise.all(
           mints.map(async mint => {
@@ -243,11 +250,41 @@ export const useWalletStore = create<WalletStore>()(
               readProofs('spent', pubkey, mint),
               readProofs('reserved', pubkey, mint),
             ]);
-            if (unspent.length) unspentProofs.set(mint, uniqProofs(unspent));
-            if (spent.length) spentProofs.set(mint, uniqProofs(spent));
-            if (reserved.length) reservedProofs.set(mint, uniqProofs(reserved));
+            if (unspent.length) {
+              loadedUnspentProofs.set(mint, uniqProofs(unspent));
+            }
+            if (spent.length) loadedSpentProofs.set(mint, uniqProofs(spent));
+            if (reserved.length) {
+              loadedReservedProofs.set(mint, uniqProofs(reserved));
+            }
           }),
         );
+
+        if (
+          initializationId !== walletInitializationId ||
+          activeWalletPubkey !== pubkey
+        ) {
+          return;
+        }
+
+        for (const [mint, proofs] of loadedUnspentProofs) {
+          unspentProofs.set(
+            mint,
+            uniqProofs([...(unspentProofs.get(mint) || []), ...proofs]),
+          );
+        }
+        for (const [mint, proofs] of loadedSpentProofs) {
+          spentProofs.set(
+            mint,
+            uniqProofs([...(spentProofs.get(mint) || []), ...proofs]),
+          );
+        }
+        for (const [mint, proofs] of loadedReservedProofs) {
+          reservedProofs.set(
+            mint,
+            uniqProofs([...(reservedProofs.get(mint) || []), ...proofs]),
+          );
+        }
 
         const balanceByMint = balanceFor(unspentProofs, reservedProofs);
         set({
@@ -275,6 +312,7 @@ export const useWalletStore = create<WalletStore>()(
       },
       clearProofStorageOnce: async pubkey => {
         if (!pubkey) return;
+        activeWalletPubkey = pubkey;
         const key = proofStorageClearedKey(pubkey);
         const alreadyCleared = await AsyncStorage.getItem(key);
         if (alreadyCleared === '1') return;
@@ -477,6 +515,7 @@ export const useWalletStore = create<WalletStore>()(
       setBalanceByMint: balanceByMint => set({ balanceByMint }),
       setDeletedKind7375Ids: deletedKind7375Ids => set({ deletedKind7375Ids }),
       resetWalletSession: () => {
+        walletInitializationId += 1;
         activeWalletPubkey = null;
         verifyingProofs = false;
         unspentProofs.clear();

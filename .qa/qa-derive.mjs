@@ -15,7 +15,6 @@
 // created_at, tags, ...} objects.
 
 export const BADGE_STATUS_KIND = 37237; // addressable — relay keeps latest per d (context)
-export const LEGACY_BADGE_STATUS_KIND = 27237; // NIP-01-ephemeral, read during transition only
 export const BADGE_AWARD_KIND = 8;
 
 export const BADGE_STATUSES = [
@@ -45,8 +44,17 @@ function positiveInteger(value) {
 // --- catalog accessors (port of catalog.ts) --------------------------------------
 
 export function catalogType(definition) {
-	const value = tagValue(definition.tags, 'type');
-	return ['product', 'membership', 'pass', 'event_access'].includes(value) ? value : undefined;
+	if (
+		definition.kind === 30009 &&
+		definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'membership')
+	) {
+		return 'membership';
+	}
+	if (definition.kind !== 30402) return undefined;
+	if (definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'product')) return 'product';
+	if (definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'pass')) return 'pass';
+	if (definition.tags.some((tag) => tag[0] === 't' && tag[1] === 'ticket')) return 'event_access';
+	return undefined;
 }
 
 // catalog.ts catalogMaxUses: explicit positive max_uses wins; products default
@@ -54,7 +62,7 @@ export function catalogType(definition) {
 export function catalogMaxUses(definition) {
 	const maxUses = positiveInteger(tagValue(definition.tags, 'max_uses') || undefined);
 	if (maxUses) return maxUses;
-	return catalogType(definition) === 'product' ? 1 : undefined;
+	return definition.kind === 30402 ? 1 : undefined;
 }
 
 // orders.ts deriveOrderRecords: products, event tickets and max_uses=1
@@ -67,7 +75,7 @@ export function isSingleUseDefinition(definition) {
 
 // --- status derivation (port of notifications.ts latestStatusEvents) --------------
 
-// The latest valid kind 37237 (legacy 27237) status per fulfillment context
+// The latest valid kind 37237 status per fulfillment context
 // for one award. A status is valid for the award when kind/e/a/p all match
 // and it carries exactly ONE context tag (order=<id> or event=<address>).
 // The context key prefers the `d` tag (addressability on 37237), falling
@@ -84,7 +92,7 @@ export function latestStatusEvents(award, statuses) {
 	const latest = new Map();
 	for (const event of statuses) {
 		if (
-			(event.kind !== BADGE_STATUS_KIND && event.kind !== LEGACY_BADGE_STATUS_KIND) ||
+			event.kind !== BADGE_STATUS_KIND ||
 			tagValue(event.tags, 'e') !== awardId ||
 			tagValue(event.tags, 'a') !== address ||
 			tagValue(event.tags, 'p') !== recipient ||
@@ -95,7 +103,9 @@ export function latestStatusEvents(award, statuses) {
 		const order = tagValue(event.tags, 'order');
 		const eventContext = tagValue(event.tags, 'event');
 		if (Boolean(order) === Boolean(eventContext)) continue; // exactly one context tag
-		const contextKey = tagValue(event.tags, 'd') || (order ? `order:${order}` : `event:${eventContext}`);
+		const expectedContext = order ? `order:${order}` : `event:${eventContext}`;
+		const contextKey = tagValue(event.tags, 'd');
+		if (contextKey !== expectedContext) continue;
 		const current = latest.get(contextKey);
 		if (
 			!current ||
@@ -125,7 +135,7 @@ export function fulfilledUseCount(award, statuses) {
 // Remaining uses; undefined means the definition is unlimited. This is the
 // scanner rule: a check-in (new fulfilled context) is allowed only while
 // remaining > 0. Enforcement is client-side (scanner/board), NOT the relay —
-// the relay accepts any admin-signed 27237 regardless.
+// the relay accepts an authorized 37237 regardless of remaining uses.
 export function remainingAwardUses(award, definition, statuses) {
 	const maxUses = catalogMaxUses(definition);
 	if (!maxUses) return undefined;

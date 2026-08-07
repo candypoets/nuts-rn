@@ -182,6 +182,7 @@ export function CalendarEventModal({
   const router = useRouter();
   const navigation =
     useNavigation<AppNavigationProp>();
+  const router = useRouter();
   const pubkey = useAuthStore(state => state.pubkey);
   const writeRelays = useNostrStore(state => state.writeRelays);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
@@ -543,10 +544,7 @@ export function CalendarEventModal({
                 onPress={() =>
                   pushDistinct(router, {
                     pathname: '/Award',
-                    params: {
-                      relay: selectedRelay,
-                      award: ticketAward.id() || '',
-                    },
+                    params: {relay: selectedRelay, award: ticketAward.id() || ''},
                   })
                 }
               >

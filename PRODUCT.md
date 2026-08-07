@@ -34,8 +34,9 @@ buy → hold → present → get-served loop works entirely from the phone.
 ## Positioning
 
 No central account: identity is a nostr key, money is cashu ecash, and
-entitlements are protocol objects (kind-8 badge awards, kind-27236
-presentation, kind-27237 status) whose truth lives on community relays.
+entitlements are NIP-97 protocol objects (kind-8 awards, kind-27236
+presentations, kind-37237 fulfillment statuses) whose truth lives on
+community relays.
 A neighboring product cannot copy "your gym membership is a nostr badge you
 hold, not a row in the gym's database."
 
@@ -54,10 +55,9 @@ hold, not a row in the gym's database."
   `text-base-content`, …), nipworker for nostr I/O.
 - Stripe checkout is bypassed in QA via a local shim that issues real kind-8
   awards; production checkout redirects to nuts.cash.
-- Known app gaps blocking the venue loop (from `.qa/SPEC-GAPS.md`): no award
-  surface, no 27236 QR, no remaining-uses display, no customer order status.
-- Kind 27237 is NIP-01-ephemeral but stock strfry stores+serves it; treat as
-  live-subscription data in app code.
+- Community trust follows NIP-97: NIP-11 root → kind-31727 anchor →
+  definitions (`30009` roles/memberships, `30402` listings) → kind-8 awards.
+- Kind 37237 fulfillment state is addressable and durable per context.
 - No server-side enforcement of capacity or max uses — client-side derivation
   is the source of truth shown to users.
 

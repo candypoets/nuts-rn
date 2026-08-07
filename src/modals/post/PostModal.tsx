@@ -77,6 +77,7 @@ import { Note } from '../../components/notes/Note';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKind0Value } from '../../hooks/useKind0Value';
 import { shortNpub } from '../../lib/identity';
+import {CLASSIFIED_LISTING_KIND} from '../../lib/nip97';
 import {
   deleteImagePickerAsset,
   deleteImagePickerAssets,
@@ -182,7 +183,6 @@ function mentionScore(
   if (cachedPubkeys.has(event.pubkey() || '')) score += 3;
   return score;
 }
-
 function sortMentionEvents(
   events: ParsedEvent[],
   query: string,
@@ -802,7 +802,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       }
       const priceValue = String(Number(eventPrice) || 0);
       const entranceBadgeD = `event-${d}-entrance`;
-      const entranceBadgeAddress = `30009:${pubkey}:${entranceBadgeD}`;
+      const entranceBadgeAddress = `${CLASSIFIED_LISTING_KIND}:${pubkey}:${entranceBadgeD}`;
       const publishEntranceBadge = admissionApplies && eventPaid;
       if (publishEntranceBadge) {
         tags.push(['entrance_price', priceValue, eventCurrency]);
@@ -838,12 +838,12 @@ export function PostModal({ reply, quote, onClose }: Props) {
       if (publishEntranceBadge) {
         const badgeTags: string[][] = [
           ['d', entranceBadgeD],
-          ['type', 'event_access'],
-          ['name', `${title} entrance`],
-          ['description', `Paid entrance for ${title}`],
+          ['t', 'ticket'],
+          ['title', `${title} entrance`],
+          ['summary', `Paid entrance for ${title}`],
+          ['status', 'active'],
           ['a', `31923:${pubkey}:${d}`],
           ['price', priceValue, eventCurrency],
-          ['billing', 'one_time'],
           ['max_uses', '1'],
         ];
         if (eventEndsAt) {
@@ -857,7 +857,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         }
         if (coverUrl) badgeTags.push(['image', coverUrl]);
         const badgeEvent: EventTemplate = {
-          kind: 30009,
+          kind: CLASSIFIED_LISTING_KIND,
           content: `Paid entrance for ${title}`,
           created_at: now(),
           tags: badgeTags,

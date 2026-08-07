@@ -8,7 +8,7 @@
 //      this when it answers POST /redeem
 //   2. kind 0 profile replica from the redeemer on the community relay — the
 //      app publishes it as the last redeem step and awaits the relay's OK
-//   3. 30009:<issuer>:members definition (the invite service publishes it at
+//   3. 30009:<community-root>:members definition (the invite service publishes it at
 //      startup; it is what makes the award render as membership)
 //
 // Usage: node .qa/qa-verify-redeem.mjs   (after the maestro redeem flow)
@@ -77,8 +77,17 @@ async function main() {
 	);
 
 	// 3. Membership definition the award references.
-	const definitions = await queryUntil({ kinds: [30009], authors: [issuer], '#d': ['members'] });
-	assert(definitions.length > 0, '30009:<issuer>:members definition on the community relay');
+	const [, definitionAuthor, ...definitionDParts] = (relayView.required_badge || '').split(':');
+	const definitionD = definitionDParts.join(':');
+	const definitions = await queryUntil({
+		kinds: [30009],
+		authors: [definitionAuthor],
+		'#d': [definitionD]
+	});
+	assert(
+		definitions.length > 0,
+		'root-authored NIP-97 membership definition is on the community relay'
+	);
 
 	pool.destroy([RELAY]);
 	console.log('VERIFY PASS');

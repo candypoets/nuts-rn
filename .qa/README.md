@@ -107,11 +107,11 @@ node .qa/qa-teardown.mjs            # deletes both relays, proxies, shim, state 
 
 What gets provisioned:
 
-- **QA RN Bar `<runid>`** (community profile `type=hospitality`): catalog
+- **QA RN Bar `<runid>`** (anchor extension `type=hospitality`): catalog
   product "QA Beer" (5.00 EUR, section "Drinks", product_kind drink,
   max_uses 1, sellable, available) + invite (max_redemptions 5). Reached from
   the emulator via `http://10.0.2.2:7820`.
-- **QA RN Gym `<runid>`** (community profile `type=sports`): catalog pass
+- **QA RN Gym `<runid>`** (anchor extension `type=sports`): catalog pass
   "QA 10-Session Pass" (49.00 EUR, max_uses 10), calendar event "QA
   Training" (kind 31923, +2 days, 1h, capacity 2) + invite (max_redemptions
   5). Reached via `http://10.0.2.2:7822`.
@@ -159,15 +159,19 @@ key defaults to the local coordinator value and can be overridden with
 `QA_PAYMENT_SERVICE_PUBKEY`. No payment-service secret is stored in this
 repository.
 
-### Status kind (37237, addressable)
+### NIP-97 catalog and status kinds
+
+The commerce scenario publishes root-signed kind-31727 anchors (the `type`
+tag is a Nuts-only display extension), kind-30009 memberships, and kind-30402
+products, passes, and tickets. Listing tags follow NIP-99 (`title`, `summary`,
+`status=active`, `t=product|pass|ticket`).
 
 Order/check-in statuses are kind **37237** (addressable range), with the
-fulfillment context in BOTH the legacy context tag (`['order', ref]` /
+fulfillment context in both the context tag (`['order', ref]` /
 `['event', address]`) and `['d', 'order:<ref>' | 'event:<address>']`. The `d`
 makes the relay keep exactly the latest status per context — durable history,
-no eviction. Readers subscribe to `[37237, 27237]` during the transition;
-writers publish 37237 only (`badgeStatus` in qa-commerce.mjs;
-`legacyBadgeStatus` remains for back-compat pins).
+no eviction. Readers and writers use 37237 only (`badgeStatus` in
+qa-commerce.mjs).
 
 History (2026-07-30): statuses were kind 27237 (NIP-01 ephemeral range).
 Stock strfry master stores ephemeral events and serves them to fresh REQs,
@@ -224,7 +228,7 @@ node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|entitlement|all]
   2. beer order (users[0]): Award QR carries the purchase order reference →
      Node publishes 37237 fulfilled with the `['order', ref]` context →
      screen flips to "Served".
-  3. event ticket (users[2]): ticket 30009 (`type event_access`, `a` = event
+  3. event ticket (users[2]): NIP-99 ticket 30402 (`t=ticket`, `a` = event
      coordinate) + `entrance_badge` tag added to the QA Training 31923 →
      deep-link `nutsrn:///CalendarEvent?…` (EVENT_URL passed via CLI env;
      `entitlement-ticket.yaml` declares no `env:` block because a subflow's
@@ -234,7 +238,7 @@ node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|entitlement|all]
   section), so a status published before the app's sub opens is served to a
   fresh REQ with no time limit, and only signer-AUTHORIZED statuses count in
   the app (`src/lib/communityTrust.ts` — the QA statuses are signed by the
-  relay's NIP-11 admin key, which passes the trust check).
+  anchor-listed admin key, which passes the NIP-97 trust check).
 
 - `store-beer` (users[0]): redeem bar invite in-app → Menu → Buy "QA Beer" →
   shim checkout → Chrome success page → kind-8 award verified on the bar

@@ -13,12 +13,6 @@ import {
 import { useNavigation } from 'expo-router/react-navigation';
 import { neventEncode } from 'nostr-tools/nip19';
 import {
-  MuteFilterPipeConfigT,
-  ParsePipeConfigT,
-  PipeConfig,
-  PipeT,
-  ProofVerificationPipeConfigT,
-  SaveToDbPipeConfigT,
   type ParsedEvent,
   type RequestObject,
   type WorkerMessage,
@@ -31,11 +25,8 @@ import {
   asParsedEvent,
   asEoce,
   ConnectionTracker,
-  fbIterable,
   fbArray,
-  isValidProofs,
 } from '@candypoets/nipworker/utils';
-import type { Proof } from '@cashu/cashu-ts';
 import {
   ArrowRight,
   CheckCircle2,
@@ -66,9 +57,6 @@ import {
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
 import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
-import {
-  uniqueWalletRelays,
-} from '../hooks/useWalletSubscription';
 
 type HomeFeedProps = {
   enabled: boolean;
@@ -102,17 +90,6 @@ export function HomeFeed({
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const unsubscribeProofsRef = useRef<(() => void) | null>(null);
-  const unsubscribeNutzapsRef = useRef<(() => void) | null>(null);
-  const handleProofsMessageRef = useRef<((message: WorkerMessage) => void) | null>(
-    null,
-  );
-  const proofSubscriptionSeqRef = useRef(0);
-  const proofSinceRef = useRef<number | null>(null);
-  const pendingProofEventsRef = useRef<ParsedEvent[]>([]);
-  const proofEoseReceivedRef = useRef(false);
-  const collectingProofBackupsRef = useRef(false);
-  const resolveProofBackupsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
@@ -124,37 +101,16 @@ export function HomeFeed({
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [viewHidden, setViewHidden] = useState(false);
-  const [, setTick] = useState(0);
-  const [walletRelayFallbackReady, setWalletRelayFallbackReady] = useState(false);
-  const [, setProofDebug] = useState({
-    validProofMessages: 0,
-    proofCount: 0,
-    backupEvents: 0,
-    nutzapEvents: 0,
-  });
+  const [, setItemsVersion] = useState(0);
   const authPubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
   const readRelays = useNostrStore(state => state.readRelays);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
-  const kind10019UpdatedAt = useNostrStore(state => state.kind10019UpdatedAt);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const activeMintUrl = useWalletStore(state => state.activeMintUrl);
   const balanceByMint = useWalletStore(state => state.balanceByMint);
-  const mutedPubkeys = useNostrStore(state => state.mutedPubkeys);
-  const mutedHashtags = useNostrStore(state => state.mutedHashtags);
-  const mutedWords = useNostrStore(state => state.mutedWords);
-  const mutedEventIds = useNostrStore(state => state.mutedEventIds);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
-  const initializeProofWallet = useWalletStore(
-    state => state.initializeProofWallet,
-  );
-  const clearProofStorageOnce = useWalletStore(
-    state => state.clearProofStorageOnce,
-  );
-  const addProofs = useWalletStore(state => state.addProofs);
-  const checkAndFilterProofs = useWalletStore(state => state.checkAndFilterProofs);
-  const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
   const homeRelays = useMemo(() => {
     return [
       ...new Set([
@@ -165,33 +121,7 @@ export function HomeFeed({
       ]),
     ];
   }, [readRelays, walletReadRelays]);
-  const walletProofRelays = useMemo(() => {
-    return uniqueWalletRelays(readRelays, walletReadRelays);
-  }, [readRelays, walletReadRelays]);
-  const walletRelaysResolved =
-    kind10019UpdatedAt > 0 || walletRelayFallbackReady;
   const homeKey = authPubkey || 'anon';
-
-  const proofPipeline = useMemo(
-    () => [
-      new PipeT(
-        PipeConfig.MuteFilterPipeConfig,
-        new MuteFilterPipeConfigT(
-          mutedPubkeys,
-          mutedHashtags,
-          mutedWords,
-          mutedEventIds,
-        ),
-      ),
-      new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
-      new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
-      new PipeT(
-        PipeConfig.ProofVerificationPipeConfig,
-        new ProofVerificationPipeConfigT(500),
-      ),
-    ],
-    [mutedEventIds, mutedHashtags, mutedPubkeys, mutedWords],
-  );
 
   const requestList = useCallback((): RequestObject[] => {
     if (!authPubkey) return [];
@@ -241,7 +171,7 @@ export function HomeFeed({
     itemsRef.current = [...itemsRef.current, ...pending].sort(
       (left, right) => right.createdAt() - left.createdAt(),
     );
-    setTick(tick => tick + 1);
+    setItemsVersion(version => version + 1);
   }, []);
 
   const completeResolvingSubscription = useCallback((reason = 'relay-resolution') => {
@@ -340,219 +270,6 @@ export function HomeFeed({
     visible,
   ]);
 
-  const subscribeToNutzapsSince = useCallback(
-    (since: number) => {
-      if (!authPubkey || !walletProofRelays.length) return;
-      proofSinceRef.current = since;
-      unsubscribeNutzapsRef.current?.();
-      unsubscribeNutzapsRef.current = subscribeToNostr(
-        `nutszap_events_${authPubkey}_${requestCacheRef.current}_${since}`,
-        [
-          {
-            kinds: [9321],
-            tags: { '#p': [authPubkey] },
-            since,
-            noCache: !!requestCacheRef.current,
-            limit: 50,
-            relays: walletProofRelays,
-          },
-        ],
-        message => handleProofsMessageRef.current?.(message),
-        {
-          isSlow: true,
-          pipeline: proofPipeline,
-        },
-      );
-    },
-    [
-      authPubkey,
-      proofPipeline,
-      walletProofRelays,
-    ],
-  );
-
-  const finishProofBackupScan = useCallback(() => {
-    if (resolveProofBackupsTimeoutRef.current) {
-      clearTimeout(resolveProofBackupsTimeoutRef.current);
-      resolveProofBackupsTimeoutRef.current = null;
-    }
-    if (!collectingProofBackupsRef.current) return;
-    collectingProofBackupsRef.current = false;
-    verifyAndCleanProofs()
-      .then(() => subscribeToNutzapsSince(Math.floor(Date.now() / 1000) - 24 * 60 * 60))
-      .catch(() => {});
-  }, [
-    subscribeToNutzapsSince,
-    verifyAndCleanProofs,
-  ]);
-
-  const scheduleResolveProofBackups = useCallback(
-    () => {
-      if (!collectingProofBackupsRef.current) return;
-      if (resolveProofBackupsTimeoutRef.current) {
-        clearTimeout(resolveProofBackupsTimeoutRef.current);
-      }
-      resolveProofBackupsTimeoutRef.current = setTimeout(() => {
-        finishProofBackupScan();
-      }, 1200);
-    },
-    [finishProofBackupScan],
-  );
-
-  const handleProofsMessage = useCallback(
-    async (message: WorkerMessage) => {
-      if (asEoce(message)) {
-        verifyAndCleanProofs().catch(() => {});
-        scheduleResolveProofBackups();
-        return;
-      }
-
-      const status = asConnectionStatus(message);
-      if (status) {
-        if (status.status()?.toString() === 'EOSE' && !proofEoseReceivedRef.current) {
-          proofEoseReceivedRef.current = true;
-          verifyAndCleanProofs().catch(() => {});
-          scheduleResolveProofBackups();
-        }
-        return;
-      }
-
-      const validProofs = isValidProofs(message);
-      if (!validProofs) {
-        const parsed = asParsedEvent(message);
-        if (parsed && (parsed.kind() === 7375 || parsed.kind() === 9321)) {
-          pendingProofEventsRef.current.push(parsed);
-        }
-        return;
-      }
-
-      const sourceEvent = pendingProofEventsRef.current[0];
-      const sourceKind =
-        sourceEvent?.kind() ??
-        (collectingProofBackupsRef.current ? 7375 : undefined);
-      let messageProofCount = 0;
-      for (const mintProofs of fbIterable(validProofs, 'proofs')) {
-        const mint = mintProofs.mint();
-        if (!mint) continue;
-        const proofs = fbArray(mintProofs, 'proofs')
-          .map(toCashuProof)
-          .filter((proof): proof is Proof => !!proof);
-        const checkedProofs =
-          proofEoseReceivedRef.current && !collectingProofBackupsRef.current
-            ? await checkAndFilterProofs(mint, proofs)
-            : proofs;
-        messageProofCount += checkedProofs.length;
-        if (checkedProofs.length) {
-          addProofs(mint, checkedProofs).catch(() => {});
-        }
-      }
-      if (pendingProofEventsRef.current.length) {
-        pendingProofEventsRef.current.shift();
-      }
-      if (sourceKind === 7375) {
-        scheduleResolveProofBackups();
-      }
-      setProofDebug(current => ({
-        validProofMessages: current.validProofMessages + 1,
-        proofCount: current.proofCount + messageProofCount,
-        backupEvents:
-          sourceKind === 7375 ? current.backupEvents + 1 : current.backupEvents,
-        nutzapEvents:
-          sourceKind === 9321 ? current.nutzapEvents + 1 : current.nutzapEvents,
-      }));
-    },
-    [
-      addProofs,
-      checkAndFilterProofs,
-      scheduleResolveProofBackups,
-      verifyAndCleanProofs,
-    ],
-  );
-
-  useEffect(() => {
-    handleProofsMessageRef.current = handleProofsMessage;
-  }, [handleProofsMessage]);
-
-  const initProofs = useCallback(() => {
-    if (!enabled || !visible || !authPubkey) return;
-    if (!walletRelaysResolved) return;
-    if (!walletProofRelays.length) return;
-    const seq = proofSubscriptionSeqRef.current + 1;
-    proofSubscriptionSeqRef.current = seq;
-    proofSinceRef.current = null;
-    pendingProofEventsRef.current = [];
-    proofEoseReceivedRef.current = false;
-    collectingProofBackupsRef.current = true;
-    if (resolveProofBackupsTimeoutRef.current) {
-      clearTimeout(resolveProofBackupsTimeoutRef.current);
-      resolveProofBackupsTimeoutRef.current = null;
-    }
-    setProofDebug({
-      validProofMessages: 0,
-      proofCount: 0,
-      backupEvents: 0,
-      nutzapEvents: 0,
-    });
-    const subId = `nutszap_${authPubkey}_${requestCacheRef.current}`;
-    const requests: RequestObject[] = [
-      {
-        kinds: [7375],
-        authors: [authPubkey],
-        noCache: !!requestCacheRef.current,
-        limit: 20,
-        relays: walletProofRelays,
-      },
-    ];
-    unsubscribeProofsRef.current?.();
-    unsubscribeNutzapsRef.current?.();
-    unsubscribeProofsRef.current = null;
-    unsubscribeNutzapsRef.current = null;
-    clearProofStorageOnce(authPubkey)
-      .then(() => initializeProofWallet(authPubkey, walletMintUrls))
-      .then(() => verifyAndCleanProofs())
-      .then(() => {
-        if (proofSubscriptionSeqRef.current !== seq) return;
-        unsubscribeProofsRef.current = subscribeToNostr(
-          subId,
-          requests,
-          handleProofsMessage,
-          {
-            isSlow: true,
-            pipeline: proofPipeline,
-          },
-        );
-      })
-      .catch(() => {});
-  }, [
-    authPubkey,
-    clearProofStorageOnce,
-    enabled,
-    handleProofsMessage,
-    initializeProofWallet,
-    proofPipeline,
-    verifyAndCleanProofs,
-    visible,
-    walletProofRelays,
-    walletRelaysResolved,
-    walletMintUrls,
-  ]);
-
-  useEffect(() => {
-    setWalletRelayFallbackReady(false);
-    if (!enabled || !visible || !authPubkey || kind10019UpdatedAt > 0) return;
-
-    const timeout = setTimeout(() => {
-      setWalletRelayFallbackReady(true);
-    }, 1000);
-
-    return () => clearTimeout(timeout);
-  }, [
-    authPubkey,
-    enabled,
-    kind10019UpdatedAt,
-    visible,
-  ]);
-
   useEffect(() => {
     if (lastHomeKeyRef.current === homeKey) return;
     lastHomeKeyRef.current = homeKey;
@@ -561,16 +278,8 @@ export function HomeFeed({
     connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = false;
     eoceReceivedRef.current = false;
-    proofSinceRef.current = null;
-    pendingProofEventsRef.current = [];
-    proofEoseReceivedRef.current = false;
-    collectingProofBackupsRef.current = false;
-    if (resolveProofBackupsTimeoutRef.current) {
-      clearTimeout(resolveProofBackupsTimeoutRef.current);
-      resolveProofBackupsTimeoutRef.current = null;
-    }
     seenIdsRef.current.clear();
-    setTick(tick => tick + 1);
+    setItemsVersion(version => version + 1);
   }, [homeKey]);
 
   useEffect(() => {
@@ -579,33 +288,16 @@ export function HomeFeed({
     clearRefreshWatchdog();
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
-    unsubscribeProofsRef.current?.();
-    unsubscribeNutzapsRef.current?.();
-    unsubscribeProofsRef.current = null;
-    unsubscribeNutzapsRef.current = null;
-    proofSinceRef.current = null;
-    pendingProofEventsRef.current = [];
-    proofEoseReceivedRef.current = false;
-    collectingProofBackupsRef.current = false;
-    if (resolveProofBackupsTimeoutRef.current) {
-      clearTimeout(resolveProofBackupsTimeoutRef.current);
-      resolveProofBackupsTimeoutRef.current = null;
-    }
-    proofSubscriptionSeqRef.current += 1;
     setLoading(false);
     setRefreshing(false);
 
     if (enabled && visible && authPubkey) {
-      initProofs();
       initFeed();
     }
 
     return () => {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
-      unsubscribeProofsRef.current?.();
-      unsubscribeProofsRef.current = null;
-      proofSubscriptionSeqRef.current += 1;
       pendingItemsRef.current = [];
       connectionTracker.reset();
       subscriptionResolvingRef.current = false;
@@ -619,7 +311,6 @@ export function HomeFeed({
     clearRefreshWatchdog,
     enabled,
     initFeed,
-    initProofs,
     visible,
   ]);
 
@@ -641,7 +332,6 @@ export function HomeFeed({
       completeResolvingSubscription('refresh-watchdog');
     }, HOME_REFRESH_TIMEOUT_MS);
     try {
-      initProofs();
       if (!initFeed()) {
         console.warn('[home-refresh] feed initialization skipped');
         completeResolvingSubscription('initialization-skipped');
@@ -659,19 +349,13 @@ export function HomeFeed({
     hasSigner,
     homeRelays.length,
     initFeed,
-    initProofs,
     refreshing,
     visible,
   ]);
 
-  const activities = useMemo(
-    () =>
-      itemsRef.current
-        .map(toWalletActivity)
-        .filter((item): item is WalletActivity => !!item),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [itemsRef.current, authPubkey],
-  );
+  const activities = itemsRef.current
+    .map(toWalletActivity)
+    .filter((item): item is WalletActivity => !!item);
 
   const renderHeader = useCallback(
     ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
@@ -1248,48 +932,6 @@ function taggedEventRelays(event: ParsedEvent) {
       ),
     ),
   ];
-}
-
-function toCashuProof(proof: {
-  amount(): bigint;
-  id(): string | Uint8Array | null;
-  secret(): string | Uint8Array | null;
-  c(): string | Uint8Array | null;
-  dleq(): {
-    e(): string | Uint8Array | null;
-    r(): string | Uint8Array | null;
-    s(): string | Uint8Array | null;
-  } | null;
-}): Proof | null {
-  const id = proof.id();
-  const secret = proof.secret();
-  const c = proof.c();
-  if (!id || !secret || !c) return null;
-
-  const dleq = proof.dleq();
-  const e = dleq?.e();
-  const r = dleq?.r();
-  const s = dleq?.s();
-
-  return {
-    amount: Number(proof.amount()),
-    id: toText(id),
-    secret: toText(secret),
-    C: toText(c),
-    dleq:
-      e && s
-        ? { e: toText(e), r: r ? toText(r) : undefined, s: toText(s) }
-        : undefined,
-  };
-}
-
-function toText(value: string | Uint8Array) {
-  if (typeof value === 'string') return value;
-  let text = '';
-  for (let index = 0; index < value.length; index += 1) {
-    text += String.fromCharCode(value[index]);
-  }
-  return text;
 }
 
 function normalizeRelayUrl(url: string) {

@@ -26,15 +26,18 @@ import {
   Expand,
   Package,
   QrCode,
+  Shield,
   Ticket,
   X,
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {
+  catalogD,
   catalogEventAddress,
   catalogMaxUses,
   catalogName,
+  catalogRole,
   catalogType,
   type CatalogDefinitionType,
 } from '../lib/catalog';
@@ -146,8 +149,13 @@ export function AwardModal({awardId, onClose, relay}: AwardModalProps) {
   }, [normalizedRelay]);
 
   const type = definition ? catalogType(definition) : undefined;
-  const {Icon: TypeIcon, label: typeLabel} = typeMeta(type);
-  const itemName = definition ? catalogName(definition) || typeLabel : typeLabel;
+  const isRole = definition ? catalogRole(definition) : false;
+  const {Icon: TypeIcon, label: typeLabel} = isRole
+    ? {Icon: Shield, label: 'Role'}
+    : typeMeta(type);
+  const itemName = definition
+    ? catalogName(definition) || (isRole ? catalogD(definition) : '') || typeLabel
+    : typeLabel;
   const communityName = relayInfo?.name || relayLabel(normalizedRelay);
   const maxUses = definition ? catalogMaxUses(definition) : undefined;
   const remaining =
@@ -217,6 +225,7 @@ export function AwardModal({awardId, onClose, relay}: AwardModalProps) {
       return `${remaining} of ${maxUses} uses left`;
     }
     if (type === 'membership') return 'Active membership';
+    if (isRole) return 'Active role';
     const latest = latestStatuses[0];
     const status = latest ? extractTagValue(latest, 'status') : undefined;
     return badgeStatusLabel(isBadgeStatus(status) ? status : 'none');
@@ -317,20 +326,22 @@ export function AwardModal({awardId, onClose, relay}: AwardModalProps) {
               </Text>
             ) : null}
 
-            <View className="mt-6 w-full overflow-hidden rounded-xl border border-base-200 bg-base-100">
-              <View className="border-b border-base-200 bg-base-200 px-4 py-3">
-                <Text className="text-sm font-black text-base-content">Activity</Text>
+            {!isRole ? (
+              <View className="mt-6 w-full overflow-hidden rounded-xl border border-base-200 bg-base-100">
+                <View className="border-b border-base-200 bg-base-200 px-4 py-3">
+                  <Text className="text-sm font-black text-base-content">Activity</Text>
+                </View>
+                {latestStatuses.length ? (
+                  latestStatuses.map(event => <StatusRow key={event.id()} event={event} />)
+                ) : (
+                  <Text className="px-4 py-5 text-center text-sm font-medium text-primary-content">
+                    {type === 'product'
+                      ? 'No updates yet — staff will see your order once it is placed.'
+                      : 'No check-ins yet — show the QR to staff to redeem.'}
+                  </Text>
+                )}
               </View>
-              {latestStatuses.length ? (
-                latestStatuses.map(event => <StatusRow key={event.id()} event={event} />)
-              ) : (
-                <Text className="px-4 py-5 text-center text-sm font-medium text-primary-content">
-                  {type === 'product'
-                    ? 'No updates yet — staff will see your order once it is placed.'
-                    : 'No check-ins yet — show the QR to staff to redeem.'}
-                </Text>
-              )}
-            </View>
+            ) : null}
           </>
         )}
       </ScrollView>

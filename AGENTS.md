@@ -27,6 +27,24 @@ Notes:
 - The dev launcher auto-discovers Metro only when Metro runs WITHOUT `CI=1` — and that discovery layout (a "New development server" row under Development Build) enters the a11y tree LATE (>20 s after pixels show it). `launch.yaml` handles both layouts: it taps the server row when it appears, then still falls back to typing `exp://localhost:8084` into the URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tapping Connect, then dismisses the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
 - `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
 
+### Explore new-post hold flow (explore-new-posts.yaml, 2026-08-05)
+
+Tests the "N more posts" hold-then-merge behavior: `.qa/qa-feed-relay.mjs` is a throwaway in-memory NIP-01 relay that seeds 8 kind-1 notes, injects one live note ~8 s after the Explore `feedall` subscription arrives, and publishes the QA user's kind 10002 (read+write = itself) to the app's BOOTSTRAP_RELAYS so a fresh nsec login collapses the account relay set to just it. Run it, then pass the printed NSEC:
+
+```sh
+node .qa/qa-feed-relay.mjs --port 7877   # 7777/7799 are taken on this host
+MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test --device emulator-5556 \
+  -e NSEC=nsec1... -e RELAY_PORT=7877 maestro/flows/explore-new-posts.yaml
+```
+
+Why it works without touching the relay picker UI: the guest feed never subscribes in contacts mode (blocked on kind3), so `relaySubs['feedExplore']` is NOT frozen at launch; after login the flow waits for the header relay chip to become `10.0.2.2:${RELAY_PORT}` (proof the 10002 resolved; the relay serves NIP-11 with NO `name`, so UIs fall back to the URL label), and only then taps "Switch to all" — the first Explore subscription goes straight to the QA relay.
+
+Gotchas learned:
+
+- The flow currently REDBOXES at feed mount: RN 0.86.0 `VirtualViewModeChangeEvent.getEventData()` (unstable_VirtualColumn rows) is not idempotent — `WritableNativeMap.putNativeMap` CONSUMES the value map (ReactAndroid `WritableNativeMap.cpp`), so a second `getEventData()` on one event instance throws `ObjectAlreadyConsumedException: Map already consumed`. Reproduced with ExploreFeed changes stashed (pre-existing; `explore-scope.yaml` also crashes — it "passes" only because its final assert is the vacuous `.*`). Upstream `main` is unpatched and react-android is a prebuilt AAR here, so a node_modules Kotlin patch would need a from-source RN build.
+- `pkill -f` self-match bites twice over when the same command line also starts the process being killed (the literal name appears later in the cmdline): run the `pkill -f '[q]a-feed-relay'` in its OWN Bash call, separate from the launch command.
+- Ports on this host: 7777 = nuts-cash vite, 7798 = coordinator, 7799/7820-7822 = QA harness — qa-feed-relay defaults to 7777, pass `--port 7877`.
+
 ### NIP-46 login flows (login-nip46.yaml, login-nip46-qr.yaml)
 
 Both flows test new-user NIP-46 login against a fake remote signer: the nipworker repo's `tests/e2e-browser/mock-signer-relay.mjs`, a combined mock relay + signer (fixed test keypair, pubkey `6a04ab98…83eb3`) that answers `connect`/`get_public_key`/`sign_event` with real signatures. Run it on the host:
@@ -62,6 +80,66 @@ App-side auth_url flow: nipworker dispatches `authUrl` → `src/app/_layout.tsx`
 
 - `login-amber.yaml` (real Amber, intent handoff): install Amber (`amber-x86_64-v6.3.0.apk` from greenart7c3/Amber releases), onboard once with "Use your private key" → `nsec1424242424242424242424242424242424242424242424242424q3dgem8` (= `'aa'*32`, same identity as the mock signer) → "Manually approve each app". The flow taps **Open in signing app** in the QR panel, Amber shows its connection approval, tap `Connect`, back in the app the login completes. Needs internet (nostrconnect relays are the public feed relays).
 
+## Entitlements, Roles and Memberships (NIP-97)
+
+The governing spec is **NIP-97 (draft)** at `~/nips/97.md`. Read it before
+working in this area. Do not reintroduce the pre-NIP model (community metadata
+on `30078`, all sellables on `30009`, text permissions such as `store`, or
+authorization derived from `/community/info`).
+
+| kind | role |
+| --- | --- |
+| `31727` | root-signed community anchor: admins, `badge_issuer`, metadata |
+| `30009` | role and membership definitions |
+| `30402` | NIP-99 products, passes and tickets |
+| `31922`/`31923` | calendar events |
+| `31925` | RSVPs |
+| `8` | award — the uniform entitlement token |
+| `37237` | fulfillment status of one award use |
+
+Trust chain:
+
+1. The community relay's NIP-11 `pubkey` is the root key and the only
+   out-of-band authority.
+2. Its current `31727`, `d=community` anchor lists admins as `p` tags and the
+   optional delegated `badge_issuer`. Anchor replacement/rotation resolves by
+   `created_at`, then lowest event ID.
+3. Awards of definitions carrying a `price` tag may be signed by an anchor
+   admin or `badge_issuer`; unpriced definitions may be awarded only by an
+   anchor admin. Never require the award signer to equal the definition author.
+4. A kind-5 deletion referencing an award revokes it when signed by the award
+   issuer or an anchor admin.
+
+Resolve the anchor, definition, award, deletion and status events only from the
+community relay. `/community/info` is an optional issuance convenience and is
+never an authorization source.
+
+Roles and memberships use `30009` with `t=role` / `t=membership`. A `price`
+tag makes a membership sellable. Capabilities are kind-scoped:
+
+```json
+["permission", "<kind-number>", "<read|write>", "<optional-t-filter>"]
+```
+
+An absent marker grants read and write. Conventional grants are kind `1` write
+for posting, `31923` write for events, `30402` write for store management,
+`37237` write for fulfillment, and `30009` write with topic `membership` for
+membership management. Publishing `t=role` definitions remains an anchor-admin
+privilege boundary.
+
+Products, passes and tickets use NIP-99 kind `30402`: `title`, `summary`,
+`image`, `price`, `status`, and `t`. `t=product` and `t=pass` identify ordinary
+listings; `t=ticket` plus an `a` tag links a ticket to a NIP-52 event.
+`max_uses` is the NIP-97 extension; a `30402` without it defaults to one use.
+Memberships without `max_uses` are unlimited.
+
+Kind `37237` is addressable. Its `d` tag is exactly
+`order:<order-id>` or `event:<event-coordinate>`, with a matching `order` or
+`event` tag. Current state per award/context is latest `created_at`, then lowest
+event ID. Valid signers are anchor admins, `badge_issuer`, or holders of a valid
+role award granting `["permission","37237","write"]`. Only a latest status of
+`fulfilled` consumes a use.
+
 ### Invite-redeem e2e (redeem.yaml + .qa/, 2026-07-29)
 
 `maestro/flows/redeem.yaml` + the `.qa/` Node scripts are a full invite-redeem harness (see `.qa/README.md`): `node .qa/qa-bootstrap.mjs` provisions a real strfry-badge community via the coordinator and mints an invite, the flow logs in as keys.users[0] (nsec), `openLink:`s `nutsrn://redeem?…&token=${TOKEN}` (pass `-e TOKEN=…`), claims, and lands on the community screen; `node .qa/qa-verify-redeem.mjs` proves the kind-8 award + kind-0 replica on the relay; `node .qa/qa-teardown.mjs` cleans up.
@@ -93,9 +171,9 @@ Member-side entitlement surfaces (spec `docs/entitlements.md`): `src/app/Award.t
 - The QR sits on a WHITE card regardless of app theme — deliberate break, scanner contrast beats theme consistency (per `docs/entitlements.md`).
 - QA hook: dev builds log every signed QR payload as `[award-qr] <payload>`; `qa-verify-event.mjs` greps logcat and verifies the 27236 derivation-side (`verifyEntitlementPresentation` in `.qa/qa-derive.mjs`).
 - `node .qa/qa-verify-event.mjs entitlement` (3 phases: pass 10→9 decrement, beer order → "Served", event ticket). Idempotent — each phase seeds a fresh issuer-signed purchase award before driving the UI. **ENTITLEMENT PASS 2026-07-30** (all phases green on 37237).
-- Order/check-in statuses are kind **37237** (addressable) with `d` = `order:<ref>` / `event:<address>` duplicating the context tag — the relay durably keeps the latest status per context (pinned in `qa-verify-commerce.mjs`: stored+served, replace-per-d). Kind 27236 (presentation QR) stays ephemeral by design. Writers publish 37237 only; readers accept legacy 27237 during transition (`LEGACY_BADGE_STATUS_KIND` in `src/lib/orders.ts` / web `notifications.ts`). Member-side, `useAwards.useAwardStatuses` only accepts statuses from authorized signers (`src/lib/communityTrust.ts`: NIP-11 admin ∪ `/community/info` badge_issuer, else role-award permission — 'store' OR 'events', a documented simplification vs web's type-matched single permission); QA statuses signed by the relay NIP-11 admin key pass this check.
+- Order/check-in statuses are NIP-97 kind **37237** only. `useAwards` resolves the root-signed anchor and accepts statuses from anchor admins, `badge_issuer`, or holders of a valid `37237`-write role award. Kind 27236 presentation events remain ephemeral by design.
 - `entitlement-ticket.yaml` takes EVENT_URL via CLI env and (like `redeem.yaml`) declares no `env:` block — a subflow's own env beats CLI `-e` in maestro 2.7.
-- The community header's store entry is labeled **Menu** for hospitality communities and Store otherwise (`CommunitySub.tsx` preset from the kind-30078 profile) — flows tap `^(Store|Menu)$`.
+- The community header's store entry is labeled **Menu** for hospitality communities and Store otherwise (`CommunitySub.tsx` reads the root-signed kind-31727 anchor's optional `type` display extension) — flows tap `^(Store|Menu)$`.
 - Dev builds without Firebase credentials must NOT `console.error` the push-token failure: the RN LogBox banner never dismisses and its invisible container swallows taps on bottom-bar buttons (blocked "Your ticket" in phase 3; `isMissingFirebaseConfig` in `usePushNotifications.ts` downgrades it to `console.log`). Rule of thumb: expected environment gaps → `console.log`, real failures → `console.error`.
 - Phase-3 seeding fetches the 31923 by `#d`+author, NEVER by the state file's id — kind 31923 is addressable and a previous run's `entrance_badge` update replaced it (stale id = fetch timeout). Same class of bug as the RSVP retraction rule.
 

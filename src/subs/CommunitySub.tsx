@@ -55,10 +55,12 @@ import {Note} from '../components/notes';
 import {Avatar} from '../components/notes/Avatar';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
 import {
-  COMMUNITY_PROFILE_D,
-  COMMUNITY_PROFILE_KIND,
-  parseCommunityProfile,
-} from '../lib/communityProfile';
+  COMMUNITY_ANCHOR_D,
+  COMMUNITY_ANCHOR_KIND,
+  isNewerCommunityAnchor,
+  parseCommunityAnchor,
+  type CommunityAnchor,
+} from '../lib/nip97';
 import type {CommunityType} from '../lib/communityTypes';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
 import type {AppNavigationProp} from '../navigation/types';
@@ -461,7 +463,6 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
     </Reanimated.View>
   );
 });
-
 function CommunityTabs({
   selectedId,
   onSelect,
@@ -724,52 +725,80 @@ export function CommunitySub({
   const [communityType, setCommunityType] = useState<CommunityType | undefined>(
     undefined,
   );
-  const profileCreatedAtRef = useRef(0);
+  const [communityAnchor, setCommunityAnchor] = useState<
+    CommunityAnchor | undefined
+  >(undefined);
+  const communityAnchorRef = useRef<CommunityAnchor | undefined>(undefined);
   const requestKinds = useMemo(
     () => COMMUNITY_TABS.find(tab => tab.id === selectedTab)?.kinds ?? [1, 6],
     [selectedTab],
   );
-  const name = nameParam || relayInfo?.name || relayLabel(normalizedRelay);
-  const description = descriptionParam || relayInfo?.description || '';
-  const icon = iconParam || relayInfo?.icon;
+  const name =
+    nameParam ||
+    communityAnchor?.name ||
+    relayInfo?.name ||
+    relayLabel(normalizedRelay);
+  const description =
+    descriptionParam ||
+    communityAnchor?.description ||
+    relayInfo?.description ||
+    '';
+  const icon = iconParam || communityAnchor?.image || relayInfo?.icon;
 
   useEffect(() => {
     fetchRelayInfosForRelays([normalizedRelay]);
   }, [normalizedRelay]);
 
-  // Community profile (kind 30078) selects the store preset for the header's
-  // Store/Menu entry; defaults to 'other' when the relay has none.
+  // NIP-97 anchor metadata is accepted only from the NIP-11 community root.
   useEffect(() => {
-    if (!visible || !normalizedRelay) return undefined;
+    const rootPubkey = relayInfo?.pubkey?.toLowerCase();
+    if (
+      !visible ||
+      !normalizedRelay ||
+      !rootPubkey ||
+      !/^[0-9a-f]{64}$/.test(rootPubkey)
+    ) {
+      return undefined;
+    }
 
-    profileCreatedAtRef.current = 0;
+    communityAnchorRef.current = undefined;
+    setCommunityAnchor(undefined);
     setCommunityType(undefined);
-    const subId = `community_store_profile_${relayHash(normalizedRelay)}`;
+    const subId = `community_anchor_${relayHash(normalizedRelay)}`;
     setSubRelays(subId, [normalizedRelay]);
     const unsubscribe = subscribeToNostr(
       subId,
       [
         {
-          kinds: [COMMUNITY_PROFILE_KIND],
+          kinds: [COMMUNITY_ANCHOR_KIND],
+          authors: [rootPubkey],
           limit: 5,
           noCache: true,
           relays: [normalizedRelay],
-          tags: {'#d': [COMMUNITY_PROFILE_D]},
+          tags: {'#d': [COMMUNITY_ANCHOR_D]},
         },
       ],
       message => {
         const parsed = asParsedEvent(message);
         if (!parsed) return;
-        const profile = parseCommunityProfile(parsed);
-        if (!profile || profile.createdAt <= profileCreatedAtRef.current) return;
-        profileCreatedAtRef.current = profile.createdAt;
-        setCommunityType(profile.type);
+        const anchor = parseCommunityAnchor(parsed);
+        if (
+          !anchor ||
+          anchor.pubkey !== rootPubkey ||
+          (communityAnchorRef.current &&
+            !isNewerCommunityAnchor(anchor, communityAnchorRef.current))
+        ) {
+          return;
+        }
+        communityAnchorRef.current = anchor;
+        setCommunityAnchor(anchor);
+        setCommunityType(anchor.type);
       },
       {bytesPerEvent: 4 * 1024, closeOnEose: true},
     );
 
     return () => unsubscribe();
-  }, [normalizedRelay, setSubRelays, visible]);
+  }, [normalizedRelay, relayInfo?.pubkey, setSubRelays, visible]);
 
   useEffect(() => {
     setUpcomingEvents([]);

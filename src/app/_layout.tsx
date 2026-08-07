@@ -33,7 +33,13 @@ import { useNotificationSubscription } from '../hooks/useNotificationSubscriptio
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useRelayTracking } from '../hooks/useRelayTracking';
 import { useRootNostrSubscriptions } from '../hooks/useRootNostrSubscriptions';
-import { useAuthStore, useNostrStore, useWalletStore } from '../stores';
+import { useWalletProofSubscription } from '../hooks/useWalletProofSubscription';
+import {
+  useAuthStore,
+  useFeedBuilderStore,
+  useNostrStore,
+  useWalletStore,
+} from '../stores';
 import { ImageZoom } from '../components/ImageZoom';
 import { SendStatuses } from '../components/SendStatuses';
 import { publishProofsBackup } from '../nostr/proofBackup';
@@ -419,10 +425,10 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   const setAuth = useAuthStore(state => state.setAuth);
   const authPubkey = useAuthStore(state => state.pubkey);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
+  const proofsLoaded = useWalletStore(state => state.proofsLoaded);
   const pendingMintQuotes = useWalletStore(state => state.pendingMintQuotes);
   const loadPendingMintQuotes = useWalletStore(state => state.loadPendingMintQuotes);
   const deletePendingMintQuote = useWalletStore(state => state.deletePendingMintQuote);
-  const initializeProofWallet = useWalletStore(state => state.initializeProofWallet);
   const addProofs = useWalletStore(state => state.addProofs);
   const getUnspentProofsForMint = useWalletStore(state => state.getUnspentProofsForMint);
   const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
@@ -432,6 +438,10 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   const resetNostrState = useNostrStore(state => state.resetNostrState);
   const activeMintQuoteMonitorsRef = useRef(new Map<string, () => void>());
   const activeNostrPubkeyRef = useRef<string | null | undefined>(undefined);
+  const pendingMintUrls = useMemo(
+    () => pendingMintQuotes.map(quote => quote.mintUrl),
+    [pendingMintQuotes],
+  );
 
   useRootNostrSubscriptions(Boolean(manager));
   useNotificationSubscription(Boolean(manager));
@@ -463,6 +473,10 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
       if (pubkey !== currentPubkey) {
         resetNostrState();
         resetWalletSession();
+      }
+      if (pubkey && pubkey !== currentPubkey) {
+        // Fresh login (any method): land the Explore feed on contacts.
+        useFeedBuilderStore.getState().setExploreAudienceMode('contacts');
       }
       setAuth({
         pubkey,
@@ -512,6 +526,11 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
     }
   }, [authPubkey, manager, resetNostrState, resetWalletSession]);
 
+  useWalletProofSubscription({
+    enabled: Boolean(manager),
+    extraMintUrls: pendingMintUrls,
+  });
+
   useEffect(() => {
     if (!authPubkey) return;
     loadPendingMintQuotes(authPubkey).catch(error => {
@@ -520,14 +539,11 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
   }, [authPubkey, loadPendingMintQuotes]);
 
   useEffect(() => {
-    if (!authPubkey) return;
-    const pendingMintUrls = pendingMintQuotes.map(quote => quote.mintUrl);
-    initializeProofWallet(authPubkey, [...walletMintUrls, ...pendingMintUrls])
-      .then(() => resumePendingTransactions())
-      .catch(error => {
-        console.error('[minting] failed to initialize app-level proof wallet', error);
-      });
-  }, [authPubkey, initializeProofWallet, pendingMintQuotes, walletMintUrls]);
+    if (!authPubkey || !proofsLoaded) return;
+    resumePendingTransactions().catch(error => {
+      console.error('[minting] failed to resume pending transactions', error);
+    });
+  }, [authPubkey, pendingMintQuotes, proofsLoaded, walletMintUrls]);
 
   useEffect(() => {
     const activeMonitors = activeMintQuoteMonitorsRef.current;

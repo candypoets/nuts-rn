@@ -1,0 +1,68 @@
+appId: com.nutsrn
+---
+# Explore new-post hold e2e: a live note arriving after the initial load must
+# NOT be prepended into the feed. Instead the header shows a "1 more post"
+# line; tapping it merges the held note at the top.
+#
+# Requires:
+#   - the QA feed relay running: node .qa/qa-feed-relay.mjs
+#     (seeds "QA feed seed N" notes, injects one "QA feed live" note 8s after
+#     the Explore "all" subscription, and publishes the QA user's kind 10002
+#     pointing at ws://10.0.2.2:${RELAY_PORT} to the app's bootstrap relays)
+#   - Metro on :8084 with adb reverse tcp:8084 (maestro/flows/launch.yaml)
+#   - internet (kind 10002 publish + fetch via public bootstrap relays)
+#
+# Run (NSEC from the qa-feed-relay output):
+#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#     -e NSEC=nsec1... -e RELAY_PORT=7799 maestro/flows/explore-new-posts.yaml
+#
+# No env defaults declared here on purpose: in maestro 2.7 a flow's own env
+# block beats CLI -e, which silently breaks parameterization.
+- runFlow: launch.yaml
+# Log in with the QA identity (same nsec pattern as redeem.yaml).
+- tapOn: "Home"
+- assertVisible: "Sign in to load your wallet feed"
+- tapOn: "Sign in"
+- assertVisible: "Authenticate"
+- tapOn: "nsec, npub, or connection link"
+- inputText: "${NSEC}"
+# Dismiss the keyboard by tapping inert text inside the modal (hideKeyboard
+# can send a Back press that dismisses the whole modal).
+- tapOn: "Connect with your signing app, or paste a key."
+# Anchor to the input field: "Sign in" also exists on the covered Home stub.
+- tapOn:
+    text: "Sign in"
+    below: "nsec, npub, or connection link"
+# Success: the modal closes itself once the auth event lands.
+- extendedWaitUntil:
+    notVisible: "Authenticate"
+    timeout: 60000
+- tapOn: "Feed"
+# The account's kind 10002 lists only the QA relay, so once it resolves from
+# the bootstrap relays the Explore header relay chip switches to it (the chip
+# content-desc is the URL label, since the relay serves no NIP-11 name).
+# Explore has not subscribed yet (contacts mode is blocked without a kind 3),
+# so its relay set is not frozen on the fallbacks at this point.
+- extendedWaitUntil:
+    visible: "10.0.2.2:${RELAY_PORT}"
+    timeout: 120000
+# Leave contacts mode: the first Explore subscription now goes straight to the
+# QA relay alone, and arms the relay's live-note injection (8s).
+- tapOn: "Switch to all"
+# Initial batch loads (seed 8 is the newest seeded note, i.e. the top item).
+- extendedWaitUntil:
+    visible: ".*QA feed seed 8.*"
+    timeout: 90000
+# The live note arrives while the feed is idle: it must be held, not
+# prepended — the header line appears and the note itself stays hidden.
+- extendedWaitUntil:
+    visible: "1 more post"
+    timeout: 90000
+- assertNotVisible: ".*QA feed live.*"
+# Tap the header line: held notes merge and the feed scrolls to the top.
+- tapOn: "1 more post"
+- extendedWaitUntil:
+    visible: ".*QA feed live.*"
+    timeout: 30000
+- assertNotVisible: "1 more post"
+- takeScreenshot: explore-new-posts-merged

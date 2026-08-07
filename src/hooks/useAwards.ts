@@ -1,8 +1,7 @@
 /**
  * Member-side entitlement data: the signed-in user's kind-8 awards on a
- * community relay, their 30009 badge definitions, and live kind-37237
- * statuses (legacy 27237 during the transition, signer-authorized via
- * src/lib/communityTrust.ts). Mirrors StoreSub's subscription conventions
+ * community relay, their NIP-97 definitions, revocations, and live kind-37237
+ * statuses. Mirrors StoreSub's subscription conventions
  * (sub ids include the relay, ParsedEvents stay FlatBuffer views,
  * EOSE-driven loading state).
  */
@@ -11,14 +10,21 @@ import type {ParsedEvent} from '@candypoets/nipworker';
 import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
 import {extractTagValue} from '@candypoets/nipworker';
-import {BADGE_STATUS_KIND, LEGACY_BADGE_STATUS_KIND} from '../lib/orders';
-import {fetchStatusSignerAuthorized} from '../lib/communityTrust';
+import {BADGE_STATUS_KIND} from '../lib/orders';
+import {
+  awardSignerAuthorized,
+  fetchCommunityTrust,
+  fetchStatusSignerAuthorized,
+  type CommunityTrust,
+} from '../lib/communityTrust';
+import {eventTags} from '../components/notes/kindHelpers';
+import {parseDefinitionAddress} from '../lib/nip97';
 import {useRelayStore} from '../stores/relayStore';
 
 function relayKey(relay: string) {
   let hash = 0;
   for (let index = 0; index < relay.length; index += 1) {
-    hash = (hash * 31 + relay.charCodeAt(index)) | 0;
+    hash = (hash * 31 + relay.charCodeAt(index)) % 2_147_483_647;
   }
   return Math.abs(hash).toString(36);
 }
@@ -34,14 +40,33 @@ function upsertById(events: ParsedEvent[], candidate: ParsedEvent) {
   return next;
 }
 
-/** badge definition address (`30009:<author>:<d>`) of an award. */
+/** NIP-97 definition address of an award. */
 export function awardBadgeAddress(award: ParsedEvent) {
   return extractTagValue(award, 'a') || '';
 }
 
+function hasRecipient(event: ParsedEvent, pubkey: string) {
+  return eventTags(event).some(tag => tag[0] === 'p' && tag[1] === pubkey);
+}
+
+function awardRevoked(award: ParsedEvent, deletions: ParsedEvent[], trust: CommunityTrust) {
+  const awardId = award.id();
+  const issuer = award.pubkey()?.toLowerCase();
+  if (!awardId || !issuer) return true;
+  return deletions.some(deletion => {
+    const signer = deletion.pubkey()?.toLowerCase();
+    return (
+      deletion.kind() === 5 &&
+      Boolean(signer) &&
+      (signer === issuer || trust.authorityPubkeys.has(signer as string)) &&
+      eventTags(deletion).some(tag => tag[0] === 'e' && tag[1] === awardId)
+    );
+  });
+}
+
 export type MyAwardsResult = {
   awards: ParsedEvent[];
-  /** badge definition address -> 30009 event (only for awards found). */
+  /** definition address -> NIP-97 definition event (only for awards found). */
   definitions: Map<string, ParsedEvent>;
   loading: boolean;
 };
@@ -52,23 +77,43 @@ export type MyAwardsResult = {
  */
 export function useMyAwards(relay: string, pubkey: string | null | undefined, visible: boolean) {
   const setSubRelays = useRelayStore(state => state.setSubRelays);
-  const [awards, setAwards] = useState<ParsedEvent[]>([]);
+  const [candidateAwards, setCandidateAwards] = useState<ParsedEvent[]>([]);
   const [definitions, setDefinitions] = useState<Map<string, ParsedEvent>>(new Map());
+  const [deletions, setDeletions] = useState<ParsedEvent[]>([]);
+  const [trust, setTrust] = useState<CommunityTrust | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const awardsRef = useRef<ParsedEvent[]>([]);
   const definitionsRef = useRef<Map<string, ParsedEvent>>(new Map());
+  const deletionsRef = useRef<ParsedEvent[]>([]);
 
   // Awards (kind 8, #p = member).
   useEffect(() => {
     if (!visible || !relay || !pubkey) return undefined;
     awardsRef.current = [];
-    setAwards([]);
+    definitionsRef.current = new Map();
+    deletionsRef.current = [];
+    setCandidateAwards([]);
+    setDefinitions(new Map());
+    setDeletions([]);
+    setTrust(undefined);
     setLoading(true);
+    let cancelled = false;
+    fetchCommunityTrust(relay).then(resolved => {
+      if (!cancelled) setTrust(resolved);
+    });
     const subId = `my_awards_${relayKey(relay)}_${pubkey.slice(0, 8)}`;
     setSubRelays(subId, [relay]);
     const unsubscribe = subscribeToNostr(
       subId,
-      [{kinds: [8], limit: 200, noCache: true, relays: [relay], tags: {'#p': [pubkey]}}],
+      [
+        {
+          kinds: [8],
+          limit: 200,
+          noCache: true,
+          relays: [relay],
+          tags: {'#p': [pubkey]},
+        },
+      ],
       message => {
         const status = asConnectionStatus(message);
         if (status) {
@@ -77,43 +122,66 @@ export function useMyAwards(relay: string, pubkey: string | null | undefined, vi
         }
         const event = asParsedEvent(message);
         if (!event || event.kind() !== 8) return;
-        if (extractTagValue(event, 'p') !== pubkey || !awardBadgeAddress(event)) return;
+        if (!hasRecipient(event, pubkey) || !parseDefinitionAddress(awardBadgeAddress(event))) {
+          return;
+        }
         const next = upsertById(awardsRef.current, event);
         if (next !== awardsRef.current) {
           awardsRef.current = next;
-          setAwards(next);
+          setCandidateAwards(next);
         }
       },
       {bytesPerEvent: 12 * 1024},
     );
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [relay, pubkey, setSubRelays, visible]);
 
-  // Badge definitions for the discovered awards (kind 30009 by author + #d).
-  const definitionKey = awards
+  // NIP-97 definitions for the discovered awards (kind + author + #d).
+  const definitionKey = candidateAwards
     .map(award => awardBadgeAddress(award))
     .sort()
     .join(',');
   useEffect(() => {
     if (!visible || !relay || !definitionKey) return undefined;
     const addresses = definitionKey.split(',');
-    const authors = Array.from(new Set(addresses.map(address => address.split(':')[1])));
-    const dTags = Array.from(
-      new Set(addresses.map(address => address.split(':').slice(2).join(':'))),
-    );
+    const parsedAddresses = addresses
+      .map(parseDefinitionAddress)
+      .filter((address): address is NonNullable<typeof address> => Boolean(address));
+    const kinds = Array.from(new Set(parsedAddresses.map(address => address.kind)));
+    const authors = Array.from(new Set(parsedAddresses.map(address => address.pubkey)));
+    const dTags = Array.from(new Set(parsedAddresses.map(address => address.d)));
     const subId = `my_award_defs_${relayKey(relay)}_${dTags.join('_').slice(0, 40)}`;
     setSubRelays(subId, [relay]);
     const unsubscribe = subscribeToNostr(
       subId,
-      [{kinds: [30009], limit: 200, noCache: true, relays: [relay], authors, tags: {'#d': dTags}}],
+      [
+        {
+          kinds,
+          limit: 200,
+          noCache: true,
+          relays: [relay],
+          authors,
+          tags: {'#d': dTags},
+        },
+      ],
       message => {
         const event = asParsedEvent(message);
-        if (!event || event.kind() !== 30009) return;
+        if (!event || !kinds.includes(event.kind())) return;
         const d = extractTagValue(event, 'd');
-        const address = d ? `30009:${event.pubkey()}:${d}` : '';
+        const address = d ? `${event.kind()}:${event.pubkey()}:${d}` : '';
         if (!address || !addresses.includes(address)) return;
         const current = definitionsRef.current.get(address);
-        if (current && (current.createdAt() || 0) >= (event.createdAt() || 0)) return;
+        if (
+          current &&
+          ((current.createdAt() || 0) > (event.createdAt() || 0) ||
+            ((current.createdAt() || 0) === (event.createdAt() || 0) &&
+              (current.id() || '') < (event.id() || '')))
+        ) {
+          return;
+        }
         const next = new Map(definitionsRef.current);
         next.set(address, event);
         definitionsRef.current = next;
@@ -124,11 +192,62 @@ export function useMyAwards(relay: string, pubkey: string | null | undefined, vi
     return () => unsubscribe();
   }, [relay, definitionKey, setSubRelays, visible]);
 
-  return {awards, definitions, loading} as MyAwardsResult;
+  const awardIdsKey = candidateAwards
+    .map(award => award.id())
+    .filter((id): id is string => Boolean(id))
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (!visible || !relay || !awardIdsKey) return undefined;
+    deletionsRef.current = [];
+    setDeletions([]);
+    const awardIds = awardIdsKey.split(',');
+    const subId = `my_award_deletions_${relayKey(relay)}_${relayKey(awardIdsKey)}`;
+    setSubRelays(subId, [relay]);
+    const unsubscribe = subscribeToNostr(
+      subId,
+      [
+        {
+          kinds: [5],
+          limit: 500,
+          noCache: true,
+          relays: [relay],
+          tags: {'#e': awardIds},
+        },
+      ],
+      message => {
+        const event = asParsedEvent(message);
+        if (!event || event.kind() !== 5) return;
+        const next = upsertById(deletionsRef.current, event);
+        if (next !== deletionsRef.current) {
+          deletionsRef.current = next;
+          setDeletions(next);
+        }
+      },
+      {bytesPerEvent: 8 * 1024},
+    );
+    return () => unsubscribe();
+  }, [awardIdsKey, relay, setSubRelays, visible]);
+
+  const awards = useMemo(() => {
+    if (!trust) return [];
+    const now = Math.floor(Date.now() / 1000);
+    return candidateAwards.filter(award => {
+      const definition = definitions.get(awardBadgeAddress(award));
+      if (!definition || !awardSignerAuthorized(award, definition, trust)) return false;
+      const expiration = extractTagValue(award, 'expiration');
+      if (expiration !== undefined && (!/^\d+$/.test(expiration) || Number(expiration) <= now)) {
+        return false;
+      }
+      return !awardRevoked(award, deletions, trust);
+    });
+  }, [candidateAwards, definitions, deletions, trust]);
+
+  return {awards, definitions, loading: loading || !trust} as MyAwardsResult;
 }
 
 /**
- * Live kind-37237 statuses (legacy 27237 during the transition) for a set of
+ * Live NIP-97 kind-37237 statuses for a set of
  * award ids. Only statuses from AUTHORIZED signers are returned — web
  * kind8.svelte verifies each signer against the community's trust/roles
  * (src/lib/communityTrust.ts); without that a member could fake a 'cancelled'
@@ -160,7 +279,7 @@ export function useAwardStatuses(relay: string, awardIds: string[], visible: boo
     const authorizeSigner = (signer: string) => {
       if (authorizedRef.current.has(signer) || inflightRef.current.has(signer)) return;
       inflightRef.current.add(signer);
-      void fetchStatusSignerAuthorized(relay, signer).then(ok => {
+      fetchStatusSignerAuthorized(relay, signer).then(ok => {
         inflightRef.current.delete(signer);
         const next = new Map(authorizedRef.current);
         next.set(signer, ok);
@@ -170,10 +289,18 @@ export function useAwardStatuses(relay: string, awardIds: string[], visible: boo
     };
     const unsubscribe = subscribeToNostr(
       subId,
-      [{kinds: [BADGE_STATUS_KIND, LEGACY_BADGE_STATUS_KIND], limit: 500, noCache: true, relays: [relay], tags: {'#e': ids}}],
+      [
+        {
+          kinds: [BADGE_STATUS_KIND],
+          limit: 500,
+          noCache: true,
+          relays: [relay],
+          tags: {'#e': ids},
+        },
+      ],
       message => {
         const event = asParsedEvent(message);
-        if (!event || (event.kind() !== BADGE_STATUS_KIND && event.kind() !== LEGACY_BADGE_STATUS_KIND)) return;
+        if (!event || event.kind() !== BADGE_STATUS_KIND) return;
         if (__DEV__) {
           console.log(
             '[award-status]',

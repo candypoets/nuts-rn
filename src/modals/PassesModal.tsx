@@ -7,11 +7,11 @@
 import React, {memo, useEffect, useMemo} from 'react';
 import {Pressable, ScrollView, Text, View} from 'react-native';
 import type {ParsedEvent} from '@candypoets/nipworker';
-import {BadgeCheck, ChevronLeft, ChevronRight, Package, Ticket} from 'lucide-react-native';
+import {BadgeCheck, ChevronLeft, ChevronRight, Package, Shield, Ticket} from 'lucide-react-native';
 import {useRouter} from 'expo-router';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
-import {catalogMaxUses, catalogName, catalogType, type CatalogDefinitionType} from '../lib/catalog';
+import {catalogD, catalogMaxUses, catalogName, catalogRole, catalogType, type CatalogDefinitionType} from '../lib/catalog';
 import {badgeStatusLabel, latestStatusValue, remainingAwardUses} from '../lib/orders';
 import {awardBadgeAddress, useAwardStatuses, useMyAwards} from '../hooks/useAwards';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
@@ -54,7 +54,8 @@ const PassRow = memo(function PassRow({
 }) {
   const theme = useAppTheme();
   const type = definition ? catalogType(definition) : undefined;
-  const Icon = typeIcon(type);
+  const isRole = definition ? catalogRole(definition) : false;
+  const Icon = isRole ? Shield : typeIcon(type);
   const maxUses = definition ? catalogMaxUses(definition) : undefined;
   const remaining = definition ? remainingAwardUses(award, definition, statuses) : undefined;
   const detail =
@@ -62,7 +63,12 @@ const PassRow = memo(function PassRow({
       ? `${remaining} of ${maxUses} uses left`
       : type === 'membership'
         ? 'Active membership'
-        : badgeStatusLabel(latestStatusValue(award, statuses) || 'none');
+        : isRole
+          ? 'Active role'
+          : badgeStatusLabel(latestStatusValue(award, statuses) || 'none');
+  const title = definition
+    ? catalogName(definition) || (isRole ? catalogD(definition) : '') || 'Entitlement'
+    : 'Entitlement';
   return (
     <Pressable
       accessibilityRole="button"
@@ -74,7 +80,7 @@ const PassRow = memo(function PassRow({
       </View>
       <View className="min-w-0 flex-1">
         <Text className="text-base font-black text-base-content" numberOfLines={1}>
-          {definition ? catalogName(definition) || 'Entitlement' : 'Entitlement'}
+          {title}
         </Text>
         <Text className="mt-0.5 text-xs font-semibold text-primary-content" numberOfLines={1}>
           {detail}
@@ -118,10 +124,7 @@ const CommunitySection = memo(function CommunitySection({
               definition={definitions.get(awardBadgeAddress(award))}
               statuses={statuses}
               onOpen={awardId =>
-                pushDistinct(router, {
-                  pathname: '/Award',
-                  params: {relay, award: awardId},
-                })
+                pushDistinct(router, {pathname: '/Award', params: {relay, award: awardId}})
               }
             />
           ))

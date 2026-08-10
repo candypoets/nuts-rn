@@ -7,9 +7,14 @@ class OrientationGate: NSObject {
 
   @objc(setImageZoomActive:)
   func setImageZoomActive(_ active: Bool) {
-    DispatchQueue.main.async {
+    let update = {
       OrientationGate.isImageZoomActive = active
       OrientationGate.refreshSupportedOrientations()
+    }
+    if Thread.isMainThread {
+      update()
+    } else {
+      DispatchQueue.main.async(execute: update)
     }
   }
 

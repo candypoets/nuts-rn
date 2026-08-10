@@ -2,12 +2,14 @@ import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 're
 import {Pressable, Text, View} from 'react-native';
 import {useRouter} from 'expo-router';
 import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
-  asConnectionStatus,
+  createPaginatedSubscription,
+  type PaginatedSubscription,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
+import {
   asKind1,
   asParsedEvent,
-  ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
 import {
@@ -25,6 +27,7 @@ import {Feed, FeedSticky} from '../components/Feed';
 import {Avatar, ContentBlocks, Note, User} from '../components/notes';
 import {pushDistinct} from '../navigation/pushDistinct';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {
   type ProcessedNotification,
   processNotifications,
@@ -93,13 +96,7 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const seenIdsRef = useRef(new Set<string>());
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const paginationUnsubscribeRef = useRef<(() => void) | null>(null);
-  const connectionTrackerRef = useRef(new ConnectionTracker());
-  const paginationTrackerRef = useRef(new ConnectionTracker());
-  const paginationSeqRef = useRef(0);
-  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const shortBackfillCountRef = useRef(0);
 
   const relays = useMemo(
@@ -114,7 +111,7 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
   );
 
   const buildRequests = useCallback(
-    (until?: number): RequestObject[] => {
+    (): RequestObject[] => {
       if (!pubkey) return [];
       const request: RequestObject = {
         kinds: [1, 7, 6],
@@ -123,65 +120,29 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
         relays,
         noCache: true,
       };
-      if (until) request.until = until;
       return [request];
     },
     [pubkey, relays],
   );
 
   const addEvent = useCallback(
-    (event: ParsedEvent) => {
-      if (!pubkey) return;
-      if (event.pubkey() === pubkey) return;
-      if (![1, 6, 7].includes(event.kind())) return;
+    (event: ParsedEvent): number | undefined => {
+      if (!pubkey) return undefined;
+      if (event.pubkey() === pubkey) return undefined;
+      if (![1, 6, 7].includes(event.kind())) return undefined;
       const id = event.id();
-      if (!id || seenIdsRef.current.has(id)) return;
+      if (!id || seenIdsRef.current.has(id)) return undefined;
       seenIdsRef.current.add(id);
       setRawEvents(current => [...current, event]);
+      return event.createdAt();
     },
     [pubkey],
   );
 
-  const clearPaginationTimeout = useCallback(() => {
-    if (!paginationTimeoutRef.current) return;
-    clearTimeout(paginationTimeoutRef.current);
-    paginationTimeoutRef.current = null;
-  }, []);
-
-  const clearInitialTimeout = useCallback(() => {
-    if (!initialTimeoutRef.current) return;
-    clearTimeout(initialTimeoutRef.current);
-    initialTimeoutRef.current = null;
-  }, []);
-
   const handleMessage = useCallback(
-    (message: WorkerMessage) => {
-      const status = asConnectionStatus(message);
-      if (status) {
-        connectionTrackerRef.current.handleMessage(message);
-        if (connectionTrackerRef.current.resolutionRate >= 0.5) {
-          clearInitialTimeout();
-          setLoading(false);
-          setRefreshing(false);
-        }
-        return;
-      }
+    (message: WorkerMessage): number | undefined => {
       const event = asParsedEvent(message);
-      if (event) addEvent(event);
-    },
-    [addEvent, clearInitialTimeout],
-  );
-
-  const handlePaginationMessage = useCallback(
-    (message: WorkerMessage) => {
-      const status = asConnectionStatus(message);
-      if (status) {
-        paginationTrackerRef.current.handleMessage(message);
-        if (paginationTrackerRef.current.resolutionRate >= 0.5) setLoading(false);
-        return;
-      }
-      const event = asParsedEvent(message);
-      if (event) addEvent(event);
+      return event ? addEvent(event) : undefined;
     },
     [addEvent],
   );
@@ -195,28 +156,27 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
 
   const initSubscription = useCallback(() => {
     if (!visible || !pubkey) return;
-    unsubscribeRef.current?.();
-    paginationUnsubscribeRef.current?.();
-    clearPaginationTimeout();
-    clearInitialTimeout();
-    connectionTrackerRef.current = new ConnectionTracker();
+    feedSubscriptionRef.current?.close();
     setLoading(true);
 
-    unsubscribeRef.current = subscribeToNostr(
-      `notifications_${pubkey}_${relayHash(relays)}`,
-      buildRequests(),
-      handleMessage,
-      {bytesPerEvent: 10 * 1024},
-    );
-    initialTimeoutRef.current = setTimeout(() => {
-      setLoading(false);
-      setRefreshing(false);
-      initialTimeoutRef.current = null;
-    }, EOSE_FALLBACK_TIMEOUT_MS);
+    feedSubscriptionRef.current = createPaginatedSubscription({
+      subId: `notifications_${pubkey}_${relayHash(relays)}`,
+      requests: buildRequests(),
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      rootTimeoutMs: EOSE_FALLBACK_TIMEOUT_MS,
+      pageTimeoutMs: PAGINATION_TIMEOUT_MS,
+      onMessage: handleMessage,
+      onStateChange: state => {
+        setLoading(state.loading);
+        setHasMore(state.hasMore);
+        if (!state.loading) setRefreshing(false);
+      },
+      options: {bytesPerEvent: 10 * 1024},
+    });
+    feedSubscriptionRef.current.start();
   }, [
     buildRequests,
-    clearInitialTimeout,
-    clearPaginationTimeout,
     handleMessage,
     pubkey,
     relays,
@@ -230,67 +190,30 @@ export function NotificationsSub({visible, onClose}: NotificationsSubProps) {
   useEffect(() => {
     initSubscription();
     return () => {
-      unsubscribeRef.current?.();
-      paginationUnsubscribeRef.current?.();
-      clearPaginationTimeout();
-      clearInitialTimeout();
-      unsubscribeRef.current = null;
-      paginationUnsubscribeRef.current = null;
+      feedSubscriptionRef.current?.close();
+      feedSubscriptionRef.current = null;
     };
-  }, [clearInitialTimeout, clearPaginationTimeout, initSubscription, relaysKey]);
+  }, [initSubscription, relaysKey]);
 
   useEffect(() => {
     if (visible) setLastNotificationView(Date.now());
   }, [setLastNotificationView, visible]);
 
   const handleRefresh = useCallback(() => {
-    setRefreshing(true);
     initSubscription();
+    setRefreshing(true);
   }, [initSubscription]);
 
   const loadNextPage = useCallback((autoBackfill = false) => {
     if (loading || !hasMore || rawEvents.length === 0 || !pubkey) return;
-    const sorted = [...rawEvents].sort((left, right) => right.createdAt() - left.createdAt());
-    const cursorIndex = sorted.length > 6 ? sorted.length - 6 : sorted.length - 1;
-    const cursor = sorted[cursorIndex];
-    if (!cursor) return;
 
     if (autoBackfill) shortBackfillCountRef.current += 1;
-    const before = seenIdsRef.current.size;
-    const until = cursor.createdAt() - 1;
-    paginationSeqRef.current += 1;
-    paginationTrackerRef.current = new ConnectionTracker();
-    setLoading(true);
-    paginationUnsubscribeRef.current?.();
-    clearPaginationTimeout();
-    paginationUnsubscribeRef.current = subscribeToNostr(
-      `notifications_page_${pubkey}_${paginationSeqRef.current}_${until}_${relayHash(relays)}`,
-      buildRequests(until),
-      message => {
-        handlePaginationMessage(message);
-        if (asConnectionStatus(message) && paginationTrackerRef.current.resolutionRate >= 0.5) {
-          const addedEvents = seenIdsRef.current.size > before;
-          setHasMore(addedEvents);
-          clearPaginationTimeout();
-        }
-      },
-      {bytesPerEvent: 10 * 1024},
-    );
-    paginationTimeoutRef.current = setTimeout(() => {
-      const addedEvents = seenIdsRef.current.size > before;
-      setHasMore(addedEvents);
-      setLoading(false);
-      paginationTimeoutRef.current = null;
-    }, PAGINATION_TIMEOUT_MS);
+    feedSubscriptionRef.current?.loadMore();
   }, [
-    buildRequests,
-    clearPaginationTimeout,
-    handlePaginationMessage,
     hasMore,
     loading,
     pubkey,
     rawEvents,
-    relays,
   ]);
 
   const handleNearBottom = useCallback(() => {

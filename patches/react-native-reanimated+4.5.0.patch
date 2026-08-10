@@ -1,0 +1,20 @@
+diff --git a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt
+index 67a85b8..b07e176 100644
+--- a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt
++++ b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt
+@@ -208,7 +208,14 @@ class NodesManager(
+                 // Ensure draw-pass tracking is attached before event handling; the backend reads
+                 // isInDrawPass during receiveEvent.
+                 mDrawPassDetector.initialize()
+-                handleEvent(event)
++                // Skip events no reanimated handler waits for. handleEvent -> dispatchModern ->
++                // getEventData() consumes WritableNativeMap payloads, which is fatal for events
++                // with cached maps (e.g. VirtualViewModeChangeEvent) and pure waste otherwise;
++                // the C++ side discards handler-less events anyway.
++                val eventName = mCustomEventNamesResolver.resolveCustomEventName(event.eventName)
++                if (eventName != null && mNativeProxy!!.isAnyHandlerWaitingForEvent(eventName, event.viewTag)) {
++                    handleEvent(event)
++                }
+                 performOperationsRespectingDrawPass()
+             } else {
+                 val eventName = mCustomEventNamesResolver.resolveCustomEventName(event.eventName) ?: return

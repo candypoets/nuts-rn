@@ -1092,9 +1092,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         {
           defaultRelays: effectivePublishRelays,
           trackStatus: true,
-          subId: noteTarget?.id
-            ? [`f_${noteTarget.id}`, `replies_${noteTarget.id}`]
-            : undefined,
+          subId: replyTarget?.id,
         },
       );
 
@@ -1128,7 +1126,6 @@ export function PostModal({ reply, quote, onClose }: Props) {
     reply,
     replyNote,
     quoteTarget,
-    noteTarget,
     replyTarget,
     effectivePublishRelays,
     text,

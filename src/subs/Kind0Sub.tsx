@@ -26,6 +26,8 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import {
+  createPaginatedSubscription,
+  type PaginatedSubscription,
   usePublish as publishToNostr,
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
@@ -55,6 +57,7 @@ import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
 import { fetchRelayInfosForRelays } from '../nostr/nip11';
+import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {
   ALL_FEED_KINDS,
   BOOTSTRAP_RELAYS,
@@ -974,7 +977,6 @@ export function Kind0Sub({
   const [loading, setLoading] = useState(false);
   const [emptyTimedOut, setEmptyTimedOut] = useState(false);
   const [aboutContent, setAboutContent] = useState<ParsedAboutBlock[]>([]);
-  const [hasMoreProfile, setHasMoreProfile] = useState(true);
   const [followIntent, setFollowIntent] = useState<boolean | null>(null);
   const [muteIntent, setMuteIntent] = useState<boolean | null>(null);
   const [followPublishStatus, setFollowPublishStatus] = useState<
@@ -988,8 +990,7 @@ export function Kind0Sub({
   const profileFlushRef = useRef<ReturnType<
     typeof requestAnimationFrame
   > | null>(null);
-  const profileUnsubRef = useRef<(() => void) | null>(null);
-  const profileLiveUnsubRef = useRef<(() => void) | null>(null);
+  const profileFeedRef = useRef<PaginatedSubscription | null>(null);
   const followPublishUnsubRef = useRef<(() => void) | null>(null);
   const mutePublishUnsubRef = useRef<(() => void) | null>(null);
   const followLookupUnsubRef = useRef<(() => void) | null>(null);
@@ -1000,9 +1001,6 @@ export function Kind0Sub({
   const muteLookupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const profilePaginationUnsubRef = useRef<(() => void) | null>(null);
-  const emptyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const profileCountRef = useRef(0);
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const {
@@ -1032,13 +1030,13 @@ export function Kind0Sub({
     [selectedKind],
   );
 
-  const addProfilePost = useCallback((event: ParsedEvent) => {
-    if (!shouldShowProfilePost(event)) return;
+  const addProfilePost = useCallback((event: ParsedEvent): boolean => {
+    if (!shouldShowProfilePost(event)) return false;
     const id = event.id();
-    if (!id || profileSeenIdsRef.current.has(id)) return;
+    if (!id || profileSeenIdsRef.current.has(id)) return false;
     profileSeenIdsRef.current.add(id);
     profilePostsRef.current.push(event);
-    if (profileFlushRef.current) return;
+    if (profileFlushRef.current) return true;
     profileFlushRef.current = requestAnimationFrame(() => {
       profileFlushRef.current = null;
       profilePostsRef.current.sort(
@@ -1046,28 +1044,22 @@ export function Kind0Sub({
       );
       setProfilePosts([...profilePostsRef.current]);
     });
+    return true;
   }, []);
-
-  useEffect(() => {
-    profileCountRef.current = profilePostsRef.current.length;
-  }, [profilePosts.length]);
 
   useEffect(() => {
     if (!pubkey) return undefined;
     profilePostsRef.current = [];
     profileSeenIdsRef.current.clear();
     setProfilePosts([]);
-    setHasMoreProfile(true);
 
     return () => {
       if (profileFlushRef.current) {
         cancelAnimationFrame(profileFlushRef.current);
         profileFlushRef.current = null;
       }
-      profileUnsubRef.current?.();
-      profileUnsubRef.current = null;
-      profileLiveUnsubRef.current?.();
-      profileLiveUnsubRef.current = null;
+      profileFeedRef.current?.close();
+      profileFeedRef.current = null;
       followPublishUnsubRef.current?.();
       followPublishUnsubRef.current = null;
       mutePublishUnsubRef.current?.();
@@ -1084,12 +1076,6 @@ export function Kind0Sub({
         clearTimeout(muteLookupTimeoutRef.current);
         muteLookupTimeoutRef.current = null;
       }
-      profilePaginationUnsubRef.current?.();
-      profilePaginationUnsubRef.current = null;
-      if (emptyTimeoutRef.current) {
-        clearTimeout(emptyTimeoutRef.current);
-        emptyTimeoutRef.current = null;
-      }
     };
   }, [pubkey]);
 
@@ -1097,14 +1083,9 @@ export function Kind0Sub({
     profilePostsRef.current = [];
     profileSeenIdsRef.current.clear();
     setProfilePosts([]);
-    setHasMoreProfile(true);
     setEmptyTimedOut(false);
-    profilePaginationUnsubRef.current?.();
-    profilePaginationUnsubRef.current = null;
-    if (emptyTimeoutRef.current) {
-      clearTimeout(emptyTimeoutRef.current);
-      emptyTimeoutRef.current = null;
-    }
+    profileFeedRef.current?.close();
+    profileFeedRef.current = null;
   }, [selectedKind]);
 
   useEffect(() => {
@@ -1112,26 +1093,14 @@ export function Kind0Sub({
     const relays = writeRelays.length ? writeRelays : fallbackRelays;
     const kindsKey = requestKinds.join('-');
     const subId = `kind0P_${pubkey}_${relayHash(relays)}_${kindsKey}`;
-    const liveSince = Math.floor(Date.now() / 1000);
-    const liveSubId = `kind0P_live_${pubkey}_${relayHash(relays)}_${kindsKey}_${liveSince}`;
     relays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
     setSubRelays(`kind0P_${pubkey}`, relays);
     setLoading(true);
+    profileFeedRef.current?.close();
     setEmptyTimedOut(false);
-    if (emptyTimeoutRef.current) clearTimeout(emptyTimeoutRef.current);
-    emptyTimeoutRef.current = setTimeout(() => {
-      if (profileCountRef.current === 0) {
-        setLoading(false);
-        setEmptyTimedOut(true);
-      }
-    }, PROFILE_EMPTY_TIMEOUT_MS);
-
-    profileUnsubRef.current?.();
-    profileLiveUnsubRef.current?.();
-
-    profileUnsubRef.current = subscribeToNostr(
+    profileFeedRef.current = createPaginatedSubscription({
       subId,
-      [
+      requests: [
         {
           kinds: requestKinds,
           authors: [pubkey],
@@ -1139,66 +1108,39 @@ export function Kind0Sub({
           relays,
         },
       ],
-      message => {
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      emptyWindowGrowthFactor: 2,
+      rootTimeoutMs: PROFILE_EMPTY_TIMEOUT_MS,
+      initialLoading: profilePostsRef.current.length === 0,
+      onMessage: message => {
         const status = asConnectionStatus(message);
         if (status) {
           const relayUrl = status.relayUrl();
           const relayStatus = status.status()?.toString();
           if (relayUrl && relayStatus)
             setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-          if (relayStatus === 'EOSE') {
-            setLoading(false);
-            if (profileCountRef.current === 0) setEmptyTimedOut(true);
-          }
-          return;
+          return undefined;
         }
 
         const event = asParsedEvent(message);
-        if (!event || event.pubkey() !== pubkey) return;
-        addProfilePost(event);
+        if (!event || event.pubkey() !== pubkey) return undefined;
+        if (!addProfilePost(event)) return undefined;
         setEmptyTimedOut(false);
-        setLoading(false);
+        return event.createdAt();
       },
-      { closeOnEose: false },
-    );
-
-    profileLiveUnsubRef.current = subscribeToNostr(
-      liveSubId,
-      [
-        {
-          kinds: requestKinds,
-          authors: [pubkey],
-          limit: 20,
-          since: liveSince,
-          relays,
-        },
-      ],
-      message => {
-        const status = asConnectionStatus(message);
-        if (status) {
-          const relayUrl = status.relayUrl();
-          const relayStatus = status.status()?.toString();
-          if (relayUrl && relayStatus)
-            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-          return;
+      onStateChange: state => {
+        setLoading(state.loading);
+        if (!state.loading && profilePostsRef.current.length === 0) {
+          setEmptyTimedOut(true);
         }
-
-        const event = asParsedEvent(message);
-        if (!event || event.pubkey() !== pubkey) return;
-        addProfilePost(event);
       },
-      { closeOnEose: false },
-    );
+    });
+    profileFeedRef.current.start();
 
     return () => {
-      profileUnsubRef.current?.();
-      profileUnsubRef.current = null;
-      profileLiveUnsubRef.current?.();
-      profileLiveUnsubRef.current = null;
-      if (emptyTimeoutRef.current) {
-        clearTimeout(emptyTimeoutRef.current);
-        emptyTimeoutRef.current = null;
-      }
+      profileFeedRef.current?.close();
+      profileFeedRef.current = null;
       setLoading(false);
     };
   }, [
@@ -1249,58 +1191,10 @@ export function Kind0Sub({
 
   const handleNearBottom = useCallback(() => {
     if (loading || !items.length) return;
-    const currentRelays = activeRelays;
-    const lastItem = items[items.length - 1];
-    const until = lastItem?.createdAt() ? lastItem.createdAt() - 1 : undefined;
-    if (!until) return;
-
-    if (!hasMoreProfile) return;
-    profilePaginationUnsubRef.current?.();
-    setLoading(true);
-    const itemCountBefore = profileCountRef.current;
-    profilePaginationUnsubRef.current = subscribeToNostr(
-      `kind0P_${pubkey}_${relayHash(currentRelays)}_${requestKinds.join('-')}_page_${until}`,
-      [
-        {
-          kinds: requestKinds,
-          authors: [pubkey],
-          limit: 50,
-          until,
-          relays: currentRelays,
-        },
-      ],
-      message => {
-        const status = asConnectionStatus(message);
-        if (status) {
-          const relayUrl = status.relayUrl();
-          const relayStatus = status.status()?.toString();
-          if (relayUrl && relayStatus)
-            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-          if (relayStatus === 'EOSE') {
-            setLoading(false);
-            setTimeout(
-              () =>
-                setHasMoreProfile(profileCountRef.current > itemCountBefore),
-              500,
-            );
-          }
-          return;
-        }
-
-        const event = asParsedEvent(message);
-        if (event && event.pubkey() === pubkey) addProfilePost(event);
-      },
-      { closeOnEose: false },
-    );
+    profileFeedRef.current?.loadMore();
   }, [
-    activeRelays,
-    addProfilePost,
-    hasMoreProfile,
     items,
     loading,
-    pubkey,
-    requestKinds,
-    setRelayStatus,
   ]);
 
   const handleKindPress = useCallback((kind: ProfileKindFilterId) => {

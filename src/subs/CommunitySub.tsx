@@ -26,7 +26,11 @@ import {
   SerializeEventsPipeConfigT,
   type ParsedEvent,
 } from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import {
+  createPaginatedSubscription,
+  type PaginatedSubscription,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
@@ -63,6 +67,7 @@ import {
 } from '../lib/nip97';
 import type {CommunityType} from '../lib/communityTypes';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
+import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import type {AppNavigationProp} from '../navigation/types';
 import {pushDistinct} from '../navigation/pushDistinct';
 import {useRelayStore, type FeedKind} from '../stores';
@@ -711,8 +716,7 @@ export function CommunitySub({
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const flushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  const emptyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const eventUnsubscribeRef = useRef<(() => void) | null>(null);
   const rsvpUnsubscribeRef = useRef<(() => void)[]>([]);
   const rsvpsRef = useRef<Record<string, Record<string, CommunityRsvp>>>({});
@@ -733,6 +737,7 @@ export function CommunitySub({
     () => COMMUNITY_TABS.find(tab => tab.id === selectedTab)?.kinds ?? [1, 6],
     [selectedTab],
   );
+  const requestKindSet = useMemo(() => new Set<number>(requestKinds), [requestKinds]);
   const name =
     nameParam ||
     communityAnchor?.name ||
@@ -808,18 +813,19 @@ export function CommunitySub({
     rsvpUnsubscribeRef.current = [];
   }, [normalizedRelay]);
 
-  const addItem = useCallback((event: ParsedEvent) => {
-    if (!shouldShowCommunityPost(event)) return;
+  const addItem = useCallback((event: ParsedEvent): boolean => {
+    if (!shouldShowCommunityPost(event)) return false;
     const id = event.id();
-    if (!id || seenIdsRef.current.has(id)) return;
+    if (!id || seenIdsRef.current.has(id)) return false;
     seenIdsRef.current.add(id);
     itemsRef.current.push(event);
-    if (flushRef.current) return;
+    if (flushRef.current) return true;
     flushRef.current = requestAnimationFrame(() => {
       flushRef.current = null;
       itemsRef.current.sort((left, right) => right.createdAt() - left.createdAt());
       setItems([...itemsRef.current]);
     });
+    return true;
   }, []);
 
   useEffect(() => {
@@ -834,21 +840,13 @@ export function CommunitySub({
 
     const subId = `community_nocache_${relayHash(normalizedRelay)}_${requestKinds.join('-')}`;
     setLoading(true);
-    setEmptyTimedOut(false);
     setSubRelays(subId, [normalizedRelay]);
     setRelayStatus(normalizedRelay, 'SUBSCRIBED');
-    if (emptyTimeoutRef.current) clearTimeout(emptyTimeoutRef.current);
-    emptyTimeoutRef.current = setTimeout(() => {
-      if (!itemsRef.current.length) {
-        setLoading(false);
-        setEmptyTimedOut(true);
-      }
-    }, COMMUNITY_EMPTY_TIMEOUT_MS);
-
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = subscribeToNostr(
+    feedSubscriptionRef.current?.close();
+    setEmptyTimedOut(false);
+    feedSubscriptionRef.current = createPaginatedSubscription({
       subId,
-      [
+      requests: [
         {
           kinds: requestKinds,
           limit: 50,
@@ -856,7 +854,11 @@ export function CommunitySub({
           relays: [normalizedRelay],
         },
       ],
-      message => {
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      rootTimeoutMs: COMMUNITY_EMPTY_TIMEOUT_MS,
+      initialLoading: itemsRef.current.length === 0,
+      onMessage: message => {
         const status = asConnectionStatus(message);
         if (status) {
           const relayUrl = status.relayUrl();
@@ -864,40 +866,47 @@ export function CommunitySub({
           if (relayUrl && relayStatus) {
             setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
           }
-          if (relayStatus === 'EOSE') {
-            setLoading(false);
-            if (!itemsRef.current.length) setEmptyTimedOut(true);
-          }
-          return;
+          return undefined;
         }
 
         const event = asParsedEvent(message);
-        if (!event || !requestKinds.includes(event.kind() as FeedKind)) return;
-        addItem(event);
+        if (!event || !requestKindSet.has(event.kind())) return undefined;
+        if (!addItem(event)) return undefined;
+        setEmptyTimedOut(false);
+        return event.createdAt();
       },
-      {bytesPerEvent: 10 * 1024},
-    );
+      onStateChange: state => {
+        setLoading(state.loading);
+        if (!state.loading && !itemsRef.current.length) {
+          setEmptyTimedOut(true);
+        }
+      },
+      options: {bytesPerEvent: 10 * 1024},
+    });
+    feedSubscriptionRef.current.start();
 
     return () => {
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
+      feedSubscriptionRef.current?.close();
+      feedSubscriptionRef.current = null;
       if (flushRef.current) {
         cancelAnimationFrame(flushRef.current);
         flushRef.current = null;
-      }
-      if (emptyTimeoutRef.current) {
-        clearTimeout(emptyTimeoutRef.current);
-        emptyTimeoutRef.current = null;
       }
     };
   }, [
     addItem,
     normalizedRelay,
+    requestKindSet,
     requestKinds,
     setRelayStatus,
     setSubRelays,
     visible,
   ]);
+
+  const handleNearBottom = useCallback(() => {
+    if (loading || !itemsRef.current.length) return;
+    feedSubscriptionRef.current?.loadMore();
+  }, [loading]);
 
   useEffect(() => {
     if (!visible || !normalizedRelay) return undefined;
@@ -1093,6 +1102,7 @@ export function CommunitySub({
       headerOwnsSafeArea
       renderItem={renderItem}
       loading={loading}
+      onNearBottom={handleNearBottom}
       visible={visible}
       removeClippedSubviews={false}
       empty={empty}

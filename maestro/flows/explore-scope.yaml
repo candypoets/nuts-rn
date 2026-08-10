@@ -5,7 +5,12 @@ appId: com.nutsrn
 - tapOn: "Switch to all"
 - waitForAnimationToEnd:
     timeout: 15000
-# After switching, the scope hint or loaded content should be present.
+# The scope chip flips to "All" once the switch lands.
 - assertVisible:
-    text: ".*"
+    text: "All"
+# Guard against the VirtualView "Map already consumed" redbox (reanimated
+# consumed every event's payload; see patches/react-native-reanimated+4.5.0.patch).
+# A vacuous `.*` assert used to let that crash pass silently.
+- assertNotVisible:
+    text: ".*Map already consumed.*"
 - takeScreenshot: after-scope-switch

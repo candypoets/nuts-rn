@@ -21,17 +21,18 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
+import {
+  createPaginatedSubscription,
+  type PaginatedSubscription,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
-  asEoce,
   asKind1,
   asKind20,
   asKind22,
   asKind6,
   asParsedEvent,
   asPreGeneric,
-  ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { ComposerFooter } from '../components/ComposerFooter';
@@ -43,6 +44,7 @@ import {
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { Note } from '../components/notes/Note';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
+import { FEED_PAGE_WINDOW_SECONDS } from '../nostr/pagination';
 import {
   CalendarDays,
   ChevronDown,
@@ -149,37 +151,19 @@ export function ExploreFeed({
 }: ExploreFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
-  const rootSubIdRef = useRef<string | null>(null);
-  const prevPaginationSubIdRef = useRef<string | null>(null);
-  const paginationCounterRef = useRef(0);
   const requestCacheRef = useRef(0);
-  const itemsBeforePaginationRef = useRef(0);
-  const untilRef = useRef<number | undefined>(undefined);
-  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const paginationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const paginationCheckTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
-  const paginationUnsubscribeTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
   const authFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const commitFrameRef = useRef<ReturnType<
     typeof requestAnimationFrame
   > | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const unsubscribePaginationRef = useRef<(() => void) | null>(null);
+  const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
   const heldNewItemsRef = useRef<ParsedEvent[]>([]);
-  const connectionTrackerRef = useRef(new ConnectionTracker());
   const subscriptionResolvingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [newNotes, setNewNotes] = useState<NewNotesState>(EMPTY_NEW_NOTES);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
@@ -188,7 +172,6 @@ export function ExploreFeed({
       ? undefined
       : `${tabScrollToTopKey ?? 0}:${scrollToTopKey ?? 0}`;
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
-  const loadingRef = useRef(true);
   const refreshingRef = useRef(false);
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
@@ -221,6 +204,7 @@ export function ExploreFeed({
         : DEFAULT_EXPLORE_KINDS,
     [selectedKinds],
   );
+  const requestKindSet = useMemo(() => new Set<number>(requestKinds), [requestKinds]);
   const requestAuthors = useMemo(
     () => (exploreAudienceMode === 'contacts' ? follows : []),
     [exploreAudienceMode, follows],
@@ -287,22 +271,6 @@ export function ExploreFeed({
   const defaultStickyFooter = useCallback(() => <ExploreComposerFooter />, []);
 
   const clearTimers = useCallback(() => {
-    if (initTimeoutRef.current) {
-      clearTimeout(initTimeoutRef.current);
-      initTimeoutRef.current = null;
-    }
-    if (paginationTimeoutRef.current) {
-      clearTimeout(paginationTimeoutRef.current);
-      paginationTimeoutRef.current = null;
-    }
-    if (paginationCheckTimeoutRef.current) {
-      clearTimeout(paginationCheckTimeoutRef.current);
-      paginationCheckTimeoutRef.current = null;
-    }
-    if (paginationUnsubscribeTimeoutRef.current) {
-      clearTimeout(paginationUnsubscribeTimeoutRef.current);
-      paginationUnsubscribeTimeoutRef.current = null;
-    }
     if (commitFrameRef.current) {
       cancelAnimationFrame(commitFrameRef.current);
       commitFrameRef.current = null;
@@ -331,7 +299,6 @@ export function ExploreFeed({
             ? undefined
             : options?.since ??
               Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
-          until: forPagination ? untilRef.current : undefined,
           noCache: true,
           relays: feedRelays,
         },
@@ -349,14 +316,10 @@ export function ExploreFeed({
   const shouldIncludeKind = useCallback(
     (kind: number) =>
       requestKinds.length > 0
-        ? requestKinds.includes(kind as (typeof ALL_FEED_KINDS)[number])
+        ? requestKindSet.has(kind)
         : true,
-    [requestKinds],
+    [requestKindSet, requestKinds.length],
   );
-
-  useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
 
   useEffect(() => {
     refreshingRef.current = refreshing;
@@ -380,7 +343,6 @@ export function ExploreFeed({
   ]);
 
   const setLoadingState = useCallback((next: boolean) => {
-    loadingRef.current = next;
     setLoading(next);
   }, []);
 
@@ -392,15 +354,8 @@ export function ExploreFeed({
   const resetItems = useCallback(() => {
     itemsRef.current = [];
     seenIdsRef.current.clear();
-    untilRef.current = undefined;
-    paginationCounterRef.current = 0;
-    setHasMore(true);
-    itemsBeforePaginationRef.current = 0;
-    prevPaginationSubIdRef.current = null;
-    rootSubIdRef.current = null;
     pendingItemsRef.current = [];
     heldNewItemsRef.current = [];
-    connectionTrackerRef.current.reset();
     setNewNotes(EMPTY_NEW_NOTES);
     setItemsVersion(version => version + 1);
   }, []);
@@ -410,17 +365,12 @@ export function ExploreFeed({
       subscriptionResolvingRef.current = false;
       pendingItemsRef.current = [];
       heldNewItemsRef.current = [];
-      connectionTrackerRef.current.reset();
       if (clearLoading) {
         setLoadingState(false);
         setRefreshingState(false);
       }
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      rootSubIdRef.current = null;
-      prevPaginationSubIdRef.current = null;
-      unsubscribePaginationRef.current?.();
-      unsubscribePaginationRef.current = null;
+      feedSubscriptionRef.current?.close();
+      feedSubscriptionRef.current = null;
       clearTimers();
     },
     [clearTimers, setLoadingState, setRefreshingState],
@@ -458,14 +408,6 @@ export function ExploreFeed({
     commitPendingItems();
     setLoadingState(false);
     setRefreshingState(false);
-    if (initTimeoutRef.current) {
-      clearTimeout(initTimeoutRef.current);
-      initTimeoutRef.current = null;
-    }
-    if (paginationTimeoutRef.current) {
-      clearTimeout(paginationTimeoutRef.current);
-      paginationTimeoutRef.current = null;
-    }
   }, [commitPendingItems, setLoadingState, setRefreshingState]);
 
   const addItem = useCallback(
@@ -555,12 +497,7 @@ export function ExploreFeed({
   );
 
   const handleEvents = useCallback(
-    (message: WorkerMessage) => {
-      if (asEoce(message)) {
-        completeResolvingSubscription();
-        return;
-      }
-
+    (message: WorkerMessage): number | undefined => {
       const status = asConnectionStatus(message);
       if (status) {
         const relayUrl = status.relayUrl();
@@ -569,20 +506,16 @@ export function ExploreFeed({
           setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
         }
 
-        connectionTrackerRef.current.handleMessage(message);
-        if (connectionTrackerRef.current.resolutionRate > 0.5) {
-          completeResolvingSubscription();
-        }
-        return;
+        return undefined;
       }
 
       const parsed = asParsedEvent(message);
-      if (!parsed) return;
+      if (!parsed) return undefined;
 
       const kind = parsed.kind();
       const id = parsed.id();
       if (!shouldIncludeKind(kind)) {
-        return;
+        return undefined;
       }
 
       if (kind === 1 || kind === 6) {
@@ -591,10 +524,10 @@ export function ExploreFeed({
           const reply = kind1.reply()?.id();
           const root = kind1.root()?.id();
           if (reply && !root) {
-            return;
+            return undefined;
           }
           if (reply && root && reply !== root) {
-            return;
+            return undefined;
           }
         }
 
@@ -605,7 +538,7 @@ export function ExploreFeed({
             !repostedEvent ||
             !REPOSTABLE_FEED_KINDS.has(repostedEvent.kind())
           ) {
-            return;
+            return undefined;
           }
         }
       } else if (kind === 20) {
@@ -613,21 +546,22 @@ export function ExploreFeed({
         if (kind20) {
           const images = fbArray(kind20, 'images');
           if (images.some(img => !img.dim())) {
-            return;
+            return undefined;
           }
         }
       }
 
       if (!id) {
-        return;
+        return undefined;
       }
       if (seenIdsRef.current.has(id)) {
-        return;
+        return undefined;
       }
 
       addItem(parsed);
+      return parsed.createdAt();
     },
-    [addItem, completeResolvingSubscription, setRelayStatus, shouldIncludeKind],
+    [addItem, setRelayStatus, shouldIncludeKind],
   );
 
   const startRootSubscription = useCallback(() => {
@@ -639,29 +573,35 @@ export function ExploreFeed({
       return;
     }
 
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    rootSubIdRef.current = `${baseSubId}_${relayKey}_${requestCacheRef.current}`;
+    subscriptionResolvingRef.current = false;
+    feedSubscriptionRef.current?.close();
+    const rootSubId = `${baseSubId}_${relayKey}_${requestCacheRef.current}`;
     pendingItemsRef.current = [];
-    connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = true;
     setSubRelays(relaySelectionSubId, feedRelays.map(normalizeRelayUrl));
     feedRelays.forEach(relay => {
       setRelayStatus(normalizeRelayUrl(relay), 'SUBSCRIBED');
     });
-    unsubscribeRef.current = subscribeToNostr(
-      rootSubIdRef.current,
+    feedSubscriptionRef.current = createPaginatedSubscription({
+      subId: rootSubId,
       requests,
-      handleEvents,
-      { bytesPerEvent: 10 * 1024 },
-    );
-    prevPaginationSubIdRef.current = rootSubIdRef.current;
-
-    initTimeoutRef.current = setTimeout(() => {
-      if (loadingRef.current) {
+      pageRequests: requestList({ forPagination: true }),
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      rootTimeoutMs: 1500,
+      initialLoading: itemsRef.current.length === 0,
+      onMessage: handleEvents,
+      onStateChange: state => {
+        if (state.loading) {
+          subscriptionResolvingRef.current = true;
+          setLoadingState(true);
+          return;
+        }
         completeResolvingSubscription();
-      }
-    }, 1500);
+      },
+      options: { bytesPerEvent: 10 * 1024 },
+    });
+    feedSubscriptionRef.current.start();
   }, [
     completeResolvingSubscription,
     baseSubId,
@@ -682,73 +622,35 @@ export function ExploreFeed({
 
     setRefreshingState(true);
     requestCacheRef.current += 1;
-    setHasMore(true);
-    untilRef.current = undefined;
-    prevPaginationSubIdRef.current = null;
     // Held posts are already in seenIds, so the refreshed subscription will
     // not re-deliver them; fold them into the pending batch instead.
     pendingItemsRef.current = heldNewItemsRef.current;
     heldNewItemsRef.current = [];
+    commitPendingItems();
     setNewNotes(EMPTY_NEW_NOTES);
-    connectionTrackerRef.current.reset();
-    subscriptionResolvingRef.current = true;
+    subscriptionResolvingRef.current = false;
     clearTimers();
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    unsubscribePaginationRef.current?.();
-    unsubscribePaginationRef.current = null;
+    feedSubscriptionRef.current?.close();
+    feedSubscriptionRef.current = null;
     startRootSubscription();
   }, [
     canStartExplore,
     clearTimers,
+    commitPendingItems,
     refreshing,
     setRefreshingState,
     startRootSubscription,
   ]);
 
   const handleNearBottom = useCallback(() => {
-    if (loading || !hasMore || itemsRef.current.length === 0) return;
-
-    setLoadingState(true);
-    itemsBeforePaginationRef.current = itemsRef.current.length;
-    paginationCounterRef.current += 1;
+    if (loading || itemsRef.current.length === 0) return;
     pendingItemsRef.current = [];
-    connectionTrackerRef.current.reset();
     subscriptionResolvingRef.current = true;
-    const lastItem = itemsRef.current[itemsRef.current.length - 1];
-    if (lastItem) untilRef.current = lastItem.createdAt() - 1;
-    const requests = requestList({ forPagination: true });
-
-    if (requests.length > 0) {
-      unsubscribePaginationRef.current?.();
-      const pageSubId = `${baseSubId}_${relayKey}_page_${paginationCounterRef.current}_${untilRef.current}`;
-      unsubscribePaginationRef.current = subscribeToNostr(
-        pageSubId,
-        requests,
-        handleEvents,
-        {
-          bytesPerEvent: 10 * 1024,
-          pagination: prevPaginationSubIdRef.current ?? undefined,
-        },
-      );
-      prevPaginationSubIdRef.current = pageSubId;
-      paginationTimeoutRef.current = setTimeout(() => {
-        completeResolvingSubscription();
-      }, 10000);
-    } else {
-      setLoadingState(false);
-      setHasMore(false);
+    const started = feedSubscriptionRef.current?.loadMore() ?? false;
+    if (!started) {
+      subscriptionResolvingRef.current = false;
     }
-  }, [
-    baseSubId,
-    completeResolvingSubscription,
-    handleEvents,
-    hasMore,
-    loading,
-    relayKey,
-    requestList,
-    setLoadingState,
-  ]);
+  }, [loading]);
 
   const resetFeedRef = useRef(resetFeed);
   const startRootSubscriptionRef = useRef(startRootSubscription);
@@ -759,42 +661,6 @@ export function ExploreFeed({
     startRootSubscriptionRef.current = startRootSubscription;
     stopRootSubscriptionRef.current = stopRootSubscription;
   }, [resetFeed, startRootSubscription, stopRootSubscription]);
-
-  useEffect(() => {
-    if (!loading) {
-      const itemsAtCheck = itemsBeforePaginationRef.current;
-      if (itemsAtCheck > 0) {
-        if (paginationTimeoutRef.current) {
-          clearTimeout(paginationTimeoutRef.current);
-          paginationTimeoutRef.current = null;
-        }
-
-        paginationCheckTimeoutRef.current = setTimeout(() => {
-          const newItems = itemsRef.current.length - itemsAtCheck;
-          if (newItems === 0) {
-            setHasMore(false);
-          }
-          itemsBeforePaginationRef.current = 0;
-          paginationUnsubscribeTimeoutRef.current = setTimeout(() => {
-            paginationUnsubscribeTimeoutRef.current = null;
-            unsubscribePaginationRef.current?.();
-            unsubscribePaginationRef.current = null;
-          }, 5000);
-        }, 500);
-      }
-    }
-
-    return () => {
-      if (paginationCheckTimeoutRef.current) {
-        clearTimeout(paginationCheckTimeoutRef.current);
-        paginationCheckTimeoutRef.current = null;
-      }
-      if (paginationUnsubscribeTimeoutRef.current) {
-        clearTimeout(paginationUnsubscribeTimeoutRef.current);
-        paginationUnsubscribeTimeoutRef.current = null;
-      }
-    };
-  }, [loading]);
 
   useEffect(() => {
     if (!enabled || !visible || authReadyForExplore) {

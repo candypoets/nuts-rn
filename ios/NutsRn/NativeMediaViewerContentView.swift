@@ -944,6 +944,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var overlayChromeVisible = true
   private var overlayIsDismissing = false
   private var overlayOrientationObserver: NSObjectProtocol?
+  private var overlayIsGeneratingDeviceOrientation = false
+  private var overlayPresentationDesiredLandscape: Bool?
+  private var overlayPresentationFallback: DispatchWorkItem?
+  private var overlayPresentationWaitingForTransition = false
+  private var overlayLastLayoutSize = CGSize.zero
   private var overlayToggleRecognizers: [UITapGestureRecognizer] = []
   private var overlayZoomRecognizers: [UIGestureRecognizer] = []
   private var overlaySuspendedTapRecognizers: [UIGestureRecognizer] = []
@@ -996,6 +1001,16 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   }
 
   deinit {
+    if let overlayOrientationObserver {
+      NotificationCenter.default.removeObserver(overlayOrientationObserver)
+    }
+    if overlayIsGeneratingDeviceOrientation {
+      UIDevice.current.endGeneratingDeviceOrientationNotifications()
+    }
+    overlayPresentationFallback?.cancel()
+    if overlayView != nil {
+      OrientationGate().setImageZoomActive(false)
+    }
     overlayView?.removeFromSuperview()
     cancelAllImageLoads()
     stopAllVideos()
@@ -1226,9 +1241,10 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     overlayOriginalCornerRadius = mediaView.layer.cornerRadius
     overlayOriginalVideoGravity = videoLayersByKey[item.key]?.videoGravity
 
+    UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+    overlayIsGeneratingDeviceOrientation = true
     let sourceFrame = mediaView.convert(mediaView.bounds, to: window)
-    let targetFrame = overlayTargetFrame(for: item, sourceFrame: sourceFrame, in: window.bounds)
-    OrientationGate().setImageZoomActive(true)
+    let desiredLandscape = pendingPresentationOrientation(in: window)
 
     let overlay = NativeMediaOverlayContainerView(frame: window.bounds)
     overlay.backgroundColor = .clear
@@ -1280,6 +1296,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     overlayView = overlay
     overlayDimmingView = dimmingView
     overlayScrollView = scrollView
+    overlayLastLayoutSize = overlay.bounds.size
     overlayZoomControlsView = zoomControls
     overlayChromeVisible = true
     overlayDismissPan = dismissPan
@@ -1290,6 +1307,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     ) { [weak self] _ in
       self?.scheduleOverlayRelayout()
     }
+    overlayPresentationDesiredLandscape = desiredLandscape
 
     let pageWidth = overlay.bounds.width
     for (index, pageItem) in overlayItems.enumerated() {
@@ -1320,6 +1338,26 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     }
     layoutOverlayChrome(activeIndex: startIndex)
     updateOverlayPlayback(activeIndex: startIndex)
+    OrientationGate().setImageZoomActive(true)
+
+    if desiredLandscape != nil {
+      // The app is portrait-locked outside the viewer. Keep the media hidden while
+      // UIKit changes the window coordinate space, then reveal it at its final size.
+      // Animating toward a frame calculated before the rotation causes a visible
+      // portrait zoom followed by a landscape snap.
+      scrollView.alpha = 0
+      dimmingView.alpha = 1
+      let fallback = DispatchWorkItem { [weak self, weak overlay] in
+        guard let self, let overlay, self.overlayView === overlay else { return }
+        self.finishPendingOverlayPresentation(force: true)
+      }
+      overlayPresentationFallback = fallback
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.25, execute: fallback)
+      scheduleOverlayRelayout()
+      return
+    }
+
+    let targetFrame = overlayTargetFrame(for: item, sourceFrame: sourceFrame, in: overlay.bounds)
 
     UIView.animate(
       withDuration: 0.24,
@@ -1538,8 +1576,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   }
 
   private func scheduleOverlayRelayout() {
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-      self?.relayoutOverlayForCurrentBounds()
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let overlay = self.overlayView else { return }
+      overlay.setNeedsLayout()
+      overlay.layoutIfNeeded()
+      self.relayoutOverlayForCurrentBounds()
     }
   }
 
@@ -1548,8 +1589,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
           let scrollView = overlayScrollView,
           !items.isEmpty,
           !overlayIsDismissing else { return }
-    let activeIndex = min(max(currentOverlayIndex(), 0), items.count - 1)
+    let sizeChanged = overlayLastLayoutSize != .zero && overlayLastLayoutSize != overlay.bounds.size
+    let candidateIndex = sizeChanged ? overlayActiveIndex : currentOverlayIndex()
+    let activeIndex = min(max(candidateIndex, 0), items.count - 1)
     overlayActiveIndex = activeIndex
+    overlayLastLayoutSize = overlay.bounds.size
     resetOverlayZoom(animated: false)
     let pageWidth = max(1, overlay.bounds.width)
     scrollView.frame = overlay.bounds
@@ -1570,6 +1614,59 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       layerForOverlayMedia(item.key)?.frame = pageView.bounds
     }
     layoutOverlayChrome(activeIndex: activeIndex)
+    finishPendingOverlayPresentation(force: false)
+  }
+
+  private func pendingPresentationOrientation(in window: UIWindow) -> Bool? {
+    guard let currentOrientation = window.windowScene?.interfaceOrientation else { return nil }
+    let desiredLandscape: Bool
+    switch UIDevice.current.orientation {
+    case .landscapeLeft, .landscapeRight:
+      desiredLandscape = true
+    case .portrait, .portraitUpsideDown:
+      desiredLandscape = false
+    default:
+      return nil
+    }
+    return currentOrientation.isLandscape == desiredLandscape ? nil : desiredLandscape
+  }
+
+  private func finishPendingOverlayPresentation(force: Bool) {
+    guard let desiredLandscape = overlayPresentationDesiredLandscape,
+          let overlay = overlayView,
+          let scrollView = overlayScrollView,
+          !overlayIsDismissing else { return }
+
+    if !force {
+      let boundsAreLandscape = overlay.bounds.width > overlay.bounds.height
+      let sceneIsLandscape = overlay.window?.windowScene?.interfaceOrientation.isLandscape
+      guard boundsAreLandscape == desiredLandscape,
+            sceneIsLandscape == desiredLandscape else { return }
+
+      if !overlayPresentationWaitingForTransition,
+         let coordinator = overlay.window?.rootViewController?.transitionCoordinator,
+         coordinator.isAnimated {
+        overlayPresentationWaitingForTransition = true
+        let registered = coordinator.animate(alongsideTransition: nil) { [weak self, weak overlay] _ in
+          guard let self, let overlay, self.overlayView === overlay else { return }
+          self.overlayPresentationWaitingForTransition = false
+          self.finishPendingOverlayPresentation(force: true)
+        }
+        if registered { return }
+        overlayPresentationWaitingForTransition = false
+      }
+    }
+
+    overlayPresentationDesiredLandscape = nil
+    overlayPresentationFallback?.cancel()
+    overlayPresentationFallback = nil
+    UIView.animate(
+      withDuration: 0.18,
+      delay: 0,
+      options: [.curveEaseOut, .allowUserInteraction]
+    ) {
+      scrollView.alpha = 1
+    }
   }
 
   @objc private func dismissOverlay() {
@@ -1984,6 +2081,10 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     if let overlayOrientationObserver {
       NotificationCenter.default.removeObserver(overlayOrientationObserver)
     }
+    if overlayIsGeneratingDeviceOrientation {
+      UIDevice.current.endGeneratingDeviceOrientationNotifications()
+    }
+    overlayPresentationFallback?.cancel()
     OrientationGate().setImageZoomActive(false)
     cancelOverlayImageLoads()
     overlayView?.removeFromSuperview()
@@ -1995,6 +2096,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     overlayChromeVisible = true
     overlayIsDismissing = false
     overlayOrientationObserver = nil
+    overlayIsGeneratingDeviceOrientation = false
+    overlayPresentationDesiredLandscape = nil
+    overlayPresentationFallback = nil
+    overlayPresentationWaitingForTransition = false
+    overlayLastLayoutSize = .zero
     overlayToggleRecognizers = []
     overlayZoomRecognizers = []
     overlaySuspendedTapRecognizers = []

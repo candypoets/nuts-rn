@@ -5,11 +5,6 @@ import {generateMnemonic, mnemonicToSeedSync, validateMnemonic} from '@scure/bip
 import {wordlist} from '@scure/bip39/wordlists/english.js';
 import {nip19} from 'nostr-tools';
 
-export const DEFAULT_MINTS = [
-  'https://mint.nuts.cash',
-  'https://mint.minibits.cash/Bitcoin',
-];
-
 export function generateNostrKeypair() {
   const secret = randomBytes(32);
   const privkey = bytesToHex(secret);

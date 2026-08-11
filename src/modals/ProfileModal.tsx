@@ -61,10 +61,14 @@ import {
   type AuthState,
 } from '../stores';
 import {
-  DEFAULT_MINTS,
   deriveSignupKeypair,
   generateSignupMnemonic,
 } from '../nostr/keys';
+import {
+  cashuMintRecommendationEvent,
+  discoverRecommendedCashuMint,
+  type RecommendedCashuMint,
+} from '../nostr/cashu';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import {
   appThemeIds,
@@ -1137,7 +1141,7 @@ export function WalletModal({
     setSaved(false);
   }, []);
 
-  const saveWallet = useCallback(() => {
+  const saveWallet = useCallback(async () => {
     if (!manager) {
       setError('Nipworker native module is not ready.');
       return;
@@ -1146,7 +1150,19 @@ export function WalletModal({
       setError('Enter a valid wallet key source.');
       return;
     }
-    const selectedMints = DEFAULT_MINTS;
+    let selectedMints = walletMintUrls.flatMap(mint => {
+      const normalized = normalizeMintUrl(mint);
+      return normalized ? [normalized] : [];
+    });
+    let recommendedMint: RecommendedCashuMint | null = null;
+    if (!selectedMints.length) {
+      recommendedMint = await discoverRecommendedCashuMint(BOOTSTRAP_RELAYS);
+      if (!recommendedMint) {
+        setError('No reachable Nostr-recommended Cashu mint was found.');
+        return;
+      }
+      selectedMints = [recommendedMint.mint];
+    }
     const publishRelays = [
       ...new Set([...(writeRelays.length ? writeRelays : BOOTSTRAP_RELAYS), ...WALLET_PUBLISH_RELAYS]),
     ];
@@ -1195,6 +1211,14 @@ export function WalletModal({
       publishRelays,
       updateSendStatus,
     );
+    if (recommendedMint) {
+      publishWithStatus(
+        `wallet_mint_recommendation_${Date.now()}`,
+        cashuMintRecommendationEvent(recommendedMint),
+        publishRelays,
+        updateSendStatus,
+      );
+    }
     setSaved(true);
     setError(null);
   }, [
@@ -1210,6 +1234,7 @@ export function WalletModal({
     setTrustedMints,
     setWalletReadRelays,
     updateSendStatus,
+    walletMintUrls,
     writeRelays,
   ]);
 
@@ -1366,13 +1391,14 @@ export function MintsModal({
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const [availableMints, setAvailableMints] = useState<MintCatalogInfo[]>([]);
   const [selectedMints, setSelectedMints] = useState(() =>
-    Array.from(new Set((walletMintUrls.length ? walletMintUrls : DEFAULT_MINTS).map(normalizeMintUrl))),
+    Array.from(new Set(walletMintUrls.map(normalizeMintUrl))),
   );
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchActive, setSearchActive] = useState(false);
+  const [autoRecommendedMint, setAutoRecommendedMint] = useState<RecommendedCashuMint | null>(null);
   const searchBarRef = useRef<SearchBarCommands | null>(null);
   const isDarkHeader = useMemo(
     () => isDarkColor(theme.colors.base300),
@@ -1391,6 +1417,19 @@ export function MintsModal({
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (walletMintUrls.length || selectedMints.length) return undefined;
+    let alive = true;
+    discoverRecommendedCashuMint(BOOTSTRAP_RELAYS).then(mint => {
+      if (!alive || !mint) return;
+      setAutoRecommendedMint(mint);
+      setSelectedMints(current => (current.length ? current : [mint.mint]));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [selectedMints.length, walletMintUrls.length]);
 
   const availableSearchMints = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1423,6 +1462,7 @@ export function MintsModal({
       setSelectedMints(current =>
         Array.from(new Set([normalized, ...current.map(normalizeMintUrl)])),
       );
+      setAutoRecommendedMint(null);
       setSearch('');
       setSearchActive(false);
       searchBarRef.current?.cancelSearch();
@@ -1511,6 +1551,7 @@ export function MintsModal({
 
   const removeMint = useCallback((mint: string) => {
     setSelectedMints(current => current.filter(value => value !== mint));
+    setAutoRecommendedMint(current => (current?.mint === mint ? null : current));
     setSaved(false);
   }, []);
 
@@ -1567,11 +1608,24 @@ export function MintsModal({
       publishRelays,
       updateSendStatus,
     );
+    if (
+      autoRecommendedMint &&
+      normalized.length === 1 &&
+      normalized[0] === autoRecommendedMint.mint
+    ) {
+      publishWithStatus(
+        `wallet_mint_recommendation_${Date.now()}`,
+        cashuMintRecommendationEvent(autoRecommendedMint),
+        publishRelays,
+        updateSendStatus,
+      );
+    }
     setSaved(true);
     setError(null);
   }, [
     loading,
     manager,
+    autoRecommendedMint,
     selectedMints,
     setTrustedMints,
     setWalletMintUrls,

@@ -43,10 +43,14 @@ import type {EventTemplate} from 'nostr-tools';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {
-  DEFAULT_MINTS,
   deriveSignupKeypair,
   generateSignupMnemonic,
 } from '../nostr/keys';
+import {
+  cashuMintRecommendationEvent,
+  discoverRecommendedCashuMint,
+  type RecommendedCashuMint,
+} from '../nostr/cashu';
 import {
   DEFAULT_UPLOAD_SERVER,
   uploadFile,
@@ -61,6 +65,7 @@ import {
   packSelectionFromEvent,
 } from './FeedBuilderModal';
 import {
+  BOOTSTRAP_RELAYS,
   type FeedPackSelection,
   useAuthStore,
   useFeedBuilderStore,
@@ -178,6 +183,8 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   const [bio, setBio] = useState('');
   const [avatar, setAvatar] = useState<SelectedAvatar | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [recommendedMint, setRecommendedMint] = useState<RecommendedCashuMint | null>(null);
+  const [mintDiscoveryReady, setMintDiscoveryReady] = useState(false);
   const avatarRef = useRef(avatar);
   const avatarUploadsRef = useRef(new Set<string>());
   const mountedRef = useRef(true);
@@ -185,6 +192,25 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
     () => (writeRelays.length ? writeRelays : DEFAULT_FEED_RELAYS),
     [writeRelays],
   );
+
+  useEffect(() => {
+    let alive = true;
+    setMintDiscoveryReady(false);
+    setStatus('Finding a Cashu mint recommended on Nostr…');
+    discoverRecommendedCashuMint(BOOTSTRAP_RELAYS).then(mint => {
+      if (!alive) return;
+      setRecommendedMint(mint);
+      setMintDiscoveryReady(true);
+      setStatus(
+        mint
+          ? `Using ${mint.mint} (${mint.recommendationCount} Nostr recommendation${mint.recommendationCount === 1 ? '' : 's'}).`
+          : 'No reachable Nostr-recommended Cashu mint was found.',
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     avatarRef.current = avatar;
@@ -220,16 +246,10 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
     setWalletMnemonic(mnemonic);
     setWalletMnemonicIndex(0);
     setWalletPassphrase('');
-    setWalletMintUrls(DEFAULT_MINTS);
-    setActiveMintUrl(DEFAULT_MINTS[0] ?? null);
-    setTrustedMints(DEFAULT_MINTS);
     return keypair;
   }, [
     manager,
-    setActiveMintUrl,
     setAuth,
-    setTrustedMints,
-    setWalletMintUrls,
     setWalletMnemonic,
     setWalletMnemonicIndex,
     setWalletPassphrase,
@@ -264,10 +284,14 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   const continueFromProfile = useCallback(() => {
     const keypair = prepareFreshAccount();
     const trimmedName = name.trim();
-    if (!manager || !keypair || !trimmedName) return false;
+    if (!manager || !keypair || !trimmedName || !recommendedMint) return false;
     const signupAvatar = avatar;
     const trimmedBio = bio.trim();
     const publishRelays = relays;
+    const selectedMints = [recommendedMint.mint];
+    setWalletMintUrls(selectedMints);
+    setActiveMintUrl(recommendedMint.mint);
+    setTrustedMints(selectedMints);
 
     setProfile({
       pubkey: keypair.pubkey,
@@ -343,7 +367,7 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
             kind: 17375,
             content: JSON.stringify([
               ['privkey', keypair.privkey],
-              ...DEFAULT_MINTS.map(mint => ['mint', mint]),
+              ...selectedMints.map(mint => ['mint', mint]),
             ]),
             created_at: now(),
             tags: [],
@@ -358,11 +382,17 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
             content: '',
             created_at: now(),
             tags: [
-              ...DEFAULT_MINTS.map(mint => ['mint', mint]),
+              ...selectedMints.map(mint => ['mint', mint]),
               ['pubkey', keypair.pubkey],
               ...publishRelays.map(relay => ['relay', relay]),
             ],
           },
+          publishRelays,
+          updateSendStatus,
+        );
+        publishWithStatus(
+          `signup_mint_recommendation_${Date.now()}`,
+          cashuMintRecommendationEvent(recommendedMint),
           publishRelays,
           updateSendStatus,
         );
@@ -377,8 +407,12 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
     manager,
     name,
     prepareFreshAccount,
+    recommendedMint,
     relays,
+    setActiveMintUrl,
     setProfile,
+    setTrustedMints,
+    setWalletMintUrls,
     setWalletReadRelays,
     updateSendStatus,
   ]);
@@ -386,7 +420,7 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   return {
     avatar,
     bio,
-    canContinue: Boolean(name.trim() && manager),
+    canContinue: Boolean(name.trim() && manager && mintDiscoveryReady && recommendedMint),
     continueFromProfile,
     name,
     pickAvatar,

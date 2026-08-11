@@ -74,6 +74,26 @@ test('motion header renders one interactive tree with sticky and dynamic section
   ).toHaveLength(1);
 });
 
+test('motion header can expose a scroll-to-top press surface', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <Feed<Item>
+        items={[]}
+        renderItem={() => null}
+        motionHeader={() => <Text>Explore header</Text>}
+        motionHeaderPressToTop
+        empty={<Text>empty</Text>}
+      />,
+    );
+  });
+
+  const pressSurface = renderer!.root.findByProps({
+    testID: 'motion-header-scroll-to-top',
+  });
+  expect(pressSurface.props.onPress).toEqual(expect.any(Function));
+});
+
 test('motion header keeps Feed scroll callbacks composed', () => {
   const renderer = renderFeed();
   const scrollView = renderer.root.findByType(ScrollView);

@@ -1,5 +1,5 @@
 import React, {memo, useCallback} from 'react';
-import {Pressable, View} from 'react-native';
+import {Pressable, View, type GestureResponderEvent} from 'react-native';
 import {useNavigation} from 'expo-router/react-navigation';
 import {Bell} from 'lucide-react-native';
 
@@ -18,7 +18,8 @@ export const NotificationBellButton = memo(function NotificationBellButton({
   const theme = useAppTheme();
   const missed = useAppStore(state => state.missedNotifications);
 
-  const handlePress = useCallback(() => {
+  const handlePress = useCallback((event: GestureResponderEvent) => {
+    event.stopPropagation();
     navigation.navigate('Notifications');
   }, [navigation]);
 

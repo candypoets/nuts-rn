@@ -69,6 +69,7 @@ export type FeedProps<T> = {
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   header?: (props: FeedChromeProps) => ReactNode;
   motionHeader?: (props: FeedChromeProps) => ReactNode;
+  motionHeaderPressToTop?: boolean;
   motionHeaderOverlaysContent?: boolean;
   motionHeaderSurfaceColor?: string;
   footer?: (props: FeedChromeProps) => ReactNode;
@@ -211,11 +212,13 @@ export function FeedHeaderDynamic({children}: {children: ReactNode}) {
 
 function MotionHeader({
   children,
+  onPress,
   paddingTop,
   scrollY,
   surfaceColor,
 }: {
   children: ReactNode;
+  onPress?: () => void;
   paddingTop: number;
   scrollY: SharedValue<number>;
   surfaceColor: string;
@@ -297,7 +300,17 @@ function MotionHeader({
         },
         headerStyle,
       ]}>
-      {children}
+      {onPress ? (
+        <Pressable
+          accessible={false}
+          testID="motion-header-scroll-to-top"
+          onPress={onPress}
+        >
+          {children}
+        </Pressable>
+      ) : (
+        children
+      )}
     </HeaderMotion.Header>
   );
 }
@@ -311,6 +324,7 @@ export function Feed<T>({
   renderItem,
   header,
   motionHeader,
+  motionHeaderPressToTop = false,
   motionHeaderOverlaysContent = false,
   motionHeaderSurfaceColor,
   footer,
@@ -875,6 +889,7 @@ export function Feed<T>({
       )}
       {motionHeader ? (
         <MotionHeader
+          onPress={motionHeaderPressToTop ? scrollToTop : undefined}
           paddingTop={outerHeaderSafeAreaTop}
           scrollY={scrollY}
           surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base300}>

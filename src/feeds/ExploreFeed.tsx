@@ -756,6 +756,7 @@ export function ExploreFeed({
         scrollToTopKey={combinedScrollToTopKey}
         getItemId={getItemId}
         motionHeader={listHeader}
+        motionHeaderPressToTop
         pullToRefresh
         headerSafeArea
         headerOwnsSafeArea
@@ -1334,7 +1335,10 @@ function FeedKindHeaderButtons({
           accessibilityRole="button"
           accessibilityLabel={`Filter: ${KIND_LABELS[kind]}`}
           className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
-          onPress={openFeedBuilder}
+          onPress={event => {
+            event.stopPropagation();
+            openFeedBuilder();
+          }}
         >
           <FeedKindIcon
             kind={kind}
@@ -1363,7 +1367,10 @@ function HeaderSearchButton({
       accessibilityLabel="Search"
       className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
       hitSlop={12}
-      onPress={() => navigation.navigate('CmdK')}
+      onPress={event => {
+        event.stopPropagation();
+        navigation.navigate('CmdK');
+      }}
     >
       <Search size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
     </Pressable>
@@ -1394,7 +1401,10 @@ function ExploreScopeToggle({
       accessibilityLabel={accessibilityLabel}
       className="min-w-0 flex-row items-center gap-1"
       hitSlop={12}
-      onPress={toggleScope}
+      onPress={event => {
+        event.stopPropagation();
+        toggleScope();
+      }}
     >
       <Text className="text-2xl font-semibold text-base-content">{label}</Text>
       <ChevronDown

@@ -292,6 +292,7 @@ class NativeNoteHeaderView(context: Context) : View(context) {
   private fun normalizeRelay(value:String)=value.trim().trimEnd('/')
   private fun drawMetaLine(canvas: Canvas, startX: Float, top: Float, maxX: Float, baseline: Float) {
     var x = startX
+    val time = formatTimeShort(createdAt)
     if (nip05.isNotEmpty() && x < maxX) {
       val badgeSize = dp(14f)
       verifiedBadge?.let { badge ->
@@ -299,12 +300,24 @@ class NativeNoteHeaderView(context: Context) : View(context) {
         badge.draw(canvas)
       }
       x += dp(20f)
-      val value=ellipsize(nip05,secondaryTextPaint,maxX-x)
-      canvas.drawText(value,x,top+baseline,secondaryTextPaint)
-      x += secondaryTextPaint.measureText(value)+dp(8f)
+      val metadataGap = if (time.isEmpty()) 0f else dp(8f)
+      val timeWidth = secondaryTextPaint.measureText(time)
+      val nip05MaxWidth = (maxX - x - metadataGap - timeWidth).coerceAtLeast(0f)
+      val value = ellipsize(nip05, secondaryTextPaint, nip05MaxWidth)
+      if (value.isNotEmpty()) {
+        canvas.drawText(value, x, top + baseline, secondaryTextPaint)
+        x += secondaryTextPaint.measureText(value)
+        if (time.isNotEmpty()) x += metadataGap
+      }
     }
-    val time=formatTimeShort(createdAt)
-    if(time.isNotEmpty()&&x<maxX) canvas.drawText(ellipsize(time,secondaryTextPaint,maxX-x),x,top+baseline,secondaryTextPaint)
+    if (time.isNotEmpty() && x < maxX) {
+      canvas.drawText(
+          ellipsize(time, secondaryTextPaint, maxX - x),
+          x,
+          top + baseline,
+          secondaryTextPaint,
+      )
+    }
   }
   private fun emitRoute(route: String) { onRoute?.let { it(route); return }; dispatchNativeViewEvent("topNativeRoute", Arguments.createMap().apply { putString("route", route) }) }
 
@@ -348,11 +361,17 @@ class NativeNoteHeaderView(context: Context) : View(context) {
       nativeCssColor(value,fallback)
 
   private fun ellipsize(value: String, paint: Paint, maxWidth: Float): String {
-    if (maxWidth <= 0f || paint.measureText(value) <= maxWidth) {
+    if (maxWidth <= 0f) {
+      return ""
+    }
+    if (paint.measureText(value) <= maxWidth) {
       return value
     }
 
     val ellipsis = "..."
+    if (paint.measureText(ellipsis) > maxWidth) {
+      return ""
+    }
     var end = value.length
     while (end > 0 && paint.measureText(value.substring(0, end) + ellipsis) > maxWidth) {
       end--

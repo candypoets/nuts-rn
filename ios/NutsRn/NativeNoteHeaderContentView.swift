@@ -652,21 +652,27 @@ class NativeNoteHeaderContentView: UIView {
 
   private func drawMetaLine(startX: CGFloat, y: CGFloat, maxX: CGFloat, font: UIFont) {
     var cursorX = startX
+    let time = formatTimeShort(createdAt)
     if !nip05.isEmpty, cursorX < maxX {
       let badgeSlotWidth: CGFloat = 16
       drawBadgeCheck(at: CGPoint(x: cursorX, y: y + 1))
       cursorX += badgeSlotWidth + 4
-      cursorX += drawInlineText(
+      let metadataGap: CGFloat = time.isEmpty ? 0 : 8
+      let timeWidth = ceil((time as NSString).size(withAttributes: [.font: font]).width)
+      let nip05MaxWidth = max(0, maxX - cursorX - metadataGap - timeWidth)
+      let nip05Width = drawInlineText(
         nip05,
         at: CGPoint(x: cursorX, y: y),
-        maxWidth: maxX - cursorX,
+        maxWidth: nip05MaxWidth,
         font: font,
         color: secondaryTextColor
       )
-      cursorX += 8
+      cursorX += nip05Width
+      if nip05Width > 0, !time.isEmpty {
+        cursorX += metadataGap
+      }
     }
 
-    let time = formatTimeShort(createdAt)
     if !time.isEmpty, cursorX < maxX {
       drawText(
         time,

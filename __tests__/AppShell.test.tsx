@@ -8,7 +8,7 @@
  * this mounts the root layout directly under the standard module mocks and
  * asserts the provider tree, the root Stack with its (tabs) screen and the
  * named presentation/animation entries, the RootServices auth wiring, and the
- * / -> /ExploreTab redirect.
+ * direct / -> (tabs)/index startup route.
  */
 
 import React from 'react';
@@ -16,7 +16,7 @@ import ReactTestRenderer, {act} from 'react-test-renderer';
 import {StatusBar} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
-import {Redirect, Stack} from 'expo-router';
+import {Stack} from 'expo-router';
 
 const mockManager = {
   addEventListener: jest.fn(),
@@ -36,7 +36,6 @@ jest.mock('@candypoets/nipworker/hooks', () => ({
 }));
 
 import RootLayout from '../src/app/_layout';
-import Index from '../src/app/index';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -131,10 +130,4 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
     'auth',
     expect.any(Function),
   );
-});
-
-test('index route redirects to the tabs explore feed', () => {
-  const element = Index();
-  expect(element.type).toBe(Redirect);
-  expect(element.props.href).toBe('/ExploreTab');
 });

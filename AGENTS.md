@@ -214,7 +214,7 @@ Gotchas: publish with the same version the npm package requests (0.97.8, via `-P
 
 ## Running the RN App
 
-The app entry is `expo-router/entry` (package.json `"main"`). Routes live in `src/app/`; `src/app/_layout.tsx` hosts the providers and root Stack, and `src/app/index.tsx` redirects to `/ExploreTab`. There is no `App.tsx`/`index.js` entry anymore — the root component is registered as `main`.
+The app entry is `expo-router/entry` (package.json `"main"`). Routes live in `src/app/`; `src/app/_layout.tsx` hosts the providers and root Stack, and `src/app/(tabs)/index.tsx` is the root `/` route that opens the Explore feed directly. There is no `App.tsx`/`index.js` entry anymore — the root component is registered as `main`.
 
 Use the Expo dev-client flow. A plain Android activity launch can stop at the Expo dev launcher and never start the JS bundle, which makes relay debugging misleading.
 
@@ -251,9 +251,9 @@ If that line is missing, the JS app is not running and relay/subscription logs a
 
 - Run Metro with `--clear` after adding or renaming route files in `src/app/`; the route context module is cached and a stale bundle won't pick up new routes.
 - The dev-client launcher's URL placeholder flips between `exp://` and `http://` depending on build/state; maestro `launch.yaml` matches `(exp|http)://` to cover both.
-- Deep-opening the app bare (`nutsrn:///`) lands on `src/app/index.tsx`, which redirects to `/ExploreTab`.
+- Deep-opening the app bare (`nutsrn:///`) lands directly on the Explore tab at `src/app/(tabs)/index.tsx`; do not add a root redirect that navigates to another tab after the native tab router initializes.
 - The wizard flows (SignupModal, MintingModal) embed their own inner stack via `createNativeStackNavigator` deep-imported from `expo-router/build/react-navigation/native-stack`. That is a private path with no semver guarantee — re-check it on every expo-router upgrade.
-- Tabs are JS-rendered (`expo-router` Tabs with a custom tab bar) on both platforms; the native bottom tab bar (NativeTabBarController) was removed.
+- Tabs use `expo-router/unstable-native-tabs` on both native platforms.
 - Route file names in `src/app/` intentionally match the old `RootStackParamList` names, so deep links and existing `router.push('/X')` calls kept working unchanged.
 - Screen `presentation` (modal/formSheet/fullScreenModal) and push `animation` MUST be declared as named `<Stack.Screen>` entries in `src/app/_layout.tsx`. They are read at push time; in-route `<Stack.Screen options={...}/>` applies via `navigation.setOptions` in a layout effect after the push, so it is silently ignored and the screen opens as a default card push. Do not reintroduce in-route screen options.
 - Typed routes are enabled (`experiments.typedRoutes` in app.json). Expo generates route types into `.expo/types/` when Metro runs; the dir is gitignored and included in tsconfig.

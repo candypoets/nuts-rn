@@ -63,13 +63,13 @@ test('renders all three routes through the native tab host', () => {
   });
 
   expect(mockNativeTabsProps).toMatchObject({
-    backBehavior: 'initialRoute',
+    backBehavior: 'history',
     minimizeBehavior: 'onScrollDown',
     sidebarAdaptable: false,
   });
   expect(mockTriggerProps.map(props => props.name)).toEqual([
     'HomeTab',
-    'ExploreTab',
+    'index',
     'ChatTab',
   ]);
   expect(
@@ -88,7 +88,7 @@ test('selecting Explore again requests scroll-to-top', () => {
   ).toBe('unset');
 
   const exploreTrigger = mockTriggerProps.find(
-    props => props.name === 'ExploreTab',
+    props => props.name === 'index',
   );
   const listeners = (
     exploreTrigger!.listeners as (props: {
@@ -114,7 +114,7 @@ test('selecting an inactive tab leaves its scroll position alone', () => {
   });
 
   const exploreTrigger = mockTriggerProps.find(
-    props => props.name === 'ExploreTab',
+    props => props.name === 'index',
   );
   const listeners = (
     exploreTrigger!.listeners as (props: {

@@ -14,7 +14,7 @@ import { getSharedNostrManager } from '../../nostr/manager';
 import { getAppThemeVars, useAppTheme } from '../../theme';
 
 export const unstable_settings = {
-  initialRouteName: 'ExploreTab',
+  initialRouteName: 'index',
 };
 
 export type RouteId = 'home' | 'explore' | 'chat';
@@ -142,7 +142,7 @@ export default function MainTabsLayout() {
   return (
     <MainTabContext.Provider value={tabContext}>
       <NativeTabs
-        backBehavior="initialRoute"
+        backBehavior="history"
         backgroundColor={theme.colors.base100}
         iconColor={{
           default: theme.colors.primaryContent,
@@ -171,7 +171,7 @@ export default function MainTabsLayout() {
         <NativeTabs.Trigger
           disableAutomaticContentInsets
           listeners={tabPressListeners('explore')}
-          name="ExploreTab"
+          name="index"
         >
           <NativeTabs.Trigger.Label>Feed</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon

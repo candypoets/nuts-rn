@@ -32,7 +32,7 @@ import {
   useEffectiveAuthorRelays,
 } from '../../hooks/useAuthorRelays';
 import { pushDistinct } from '../../navigation/pushDistinct';
-import { useAppTheme } from '../../theme';
+import { getBaseContentColor, useAppTheme } from '../../theme';
 import { BOOTSTRAP_RELAYS, useNostrStore } from '../../stores/nostrStore';
 import { useRelayStore } from '../../stores/relayStore';
 import { ContentBlocks } from './ContentBlocks';
@@ -870,10 +870,10 @@ function NoteComponent({
   }, [cardlessMain, isQuote, theme.colors.base100]);
   const threadConnectorStyle = useMemo<ViewStyle>(
     () => ({
-      backgroundColor:
-        theme.id === 'snowwhite' ? '#dddddd' : theme.colors.base200,
+      backgroundColor: getBaseContentColor(theme),
+      opacity: 0.38,
     }),
-    [theme.colors.base200, theme.id],
+    [theme],
   );
   const threadConnectors = (
     <>

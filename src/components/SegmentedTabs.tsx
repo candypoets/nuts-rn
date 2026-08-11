@@ -8,6 +8,7 @@ import React, {
 import {
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
   type LayoutChangeEvent,
@@ -29,7 +30,7 @@ type SegmentedTabsProps<T extends string> = {
   selectedId: T;
   onSelect: (id: T) => void;
   variant?: 'underline' | 'pill';
-  layout?: 'scroll' | 'equal';
+  layout?: 'scroll' | 'equal' | 'adaptive';
   labelWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
   className?: string;
   renderCount?: (count: number) => ReactNode;
@@ -120,6 +121,7 @@ export function SegmentedTabs<T extends string>({
           ? 'overflow-hidden rounded-full border border-base-200 bg-base-300'
           : ''
       } ${className ?? ''}`}
+      style={layout === 'adaptive' ? styles.adaptiveContent : undefined}
     >
       <Animated.View
         className={
@@ -142,14 +144,21 @@ export function SegmentedTabs<T extends string>({
             accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
             accessibilityState={{selected}}
             className={`h-9 items-center justify-center ${
-              layout === 'equal' ? 'flex-1' : 'min-w-20 px-3'
+              layout === 'equal'
+                ? 'flex-1'
+                : layout === 'scroll'
+                  ? 'min-w-20 px-3'
+                  : 'px-2'
             } ${variant === 'pill' ? 'flex-row gap-2 px-3' : 'pb-2 pt-1'}`}
+            style={layout === 'adaptive' ? styles.adaptiveTab : undefined}
             onLayout={event => handleTabLayout(tab.id, event)}
-            onPress={() => {
+            onPress={event => {
+              event.stopPropagation();
               if (!selected) onSelect(tab.id);
             }}
           >
             <Text
+              numberOfLines={1}
               className={`${
                 variant === 'pill'
                   ? `text-xs ${labelWeightClass} uppercase`
@@ -173,13 +182,22 @@ export function SegmentedTabs<T extends string>({
     </View>
   );
 
-  if (layout === 'scroll') {
+  if (layout === 'scroll' || layout === 'adaptive') {
     return (
       <ScrollView
         horizontal
         bounces={false}
+        contentInsetAdjustmentBehavior="never"
+        directionalLockEnabled
+        nestedScrollEnabled
+        onScrollBeginDrag={event => event.stopPropagation()}
+        onTouchStart={event => event.stopPropagation()}
         showsHorizontalScrollIndicator={false}
         contentContainerClassName="flex-row"
+        contentContainerStyle={
+          layout === 'adaptive' ? styles.adaptiveScrollContent : undefined
+        }
+        style={layout === 'adaptive' ? styles.adaptiveScroller : undefined}
       >
         {content}
       </ScrollView>
@@ -188,3 +206,21 @@ export function SegmentedTabs<T extends string>({
 
   return content;
 }
+
+const styles = StyleSheet.create({
+  adaptiveContent: {
+    flexGrow: 1,
+    minWidth: '100%',
+  },
+  adaptiveScrollContent: {
+    minWidth: '100%',
+  },
+  adaptiveScroller: {
+    width: '100%',
+  },
+  adaptiveTab: {
+    flexBasis: 72,
+    flexGrow: 1,
+    flexShrink: 0,
+  },
+});

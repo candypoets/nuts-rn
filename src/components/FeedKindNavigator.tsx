@@ -91,7 +91,7 @@ export function FeedKindNavigator({
             },
           );
         }}
-        layout="scroll"
+        layout="adaptive"
         labelWeight="regular"
       />
     </View>

@@ -28,6 +28,7 @@ import {Note} from '../components/notes';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
+import {kind1RepliesSubIdPrefix} from '../nostr/subscriptionIds';
 import {useNostrStore, useRelayStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -795,7 +796,7 @@ export function Kind1Sub({
     repliesSubSeqRef.current += 1;
     const repliesSeq = repliesSubSeqRef.current;
     const repliesStartedAt = Date.now();
-    const subId = `replies_${rootId}_${relayHash(displayedRelays)}`;
+    const subId = `${kind1RepliesSubIdPrefix(rootId)}${relayHash(displayedRelays)}`;
     setSubRelays(subId, displayedRelays);
     displayedRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
     kind1Trace(traceStartedAtRef.current, 'replies subscribe', {

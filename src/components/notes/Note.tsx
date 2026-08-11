@@ -26,6 +26,7 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import { noteSubIdPrefix } from '../../nostr/subscriptionIds';
 import {
   useEffectiveAuthorRelayState,
   useEffectiveAuthorRelays,
@@ -771,7 +772,7 @@ function NoteComponent({
         ancestorRelays.join('|'),
       ].join('|'),
     );
-    return `note_${noteSubscriptionId}_${retryNonce}_${requestsKey}`;
+    return `${noteSubIdPrefix(noteSubscriptionId)}${retryNonce}_${requestsKey}`;
   }, [
     ancestorRelays,
     displayNote,

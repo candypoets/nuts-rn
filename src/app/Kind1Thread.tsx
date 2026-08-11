@@ -9,6 +9,7 @@ export default function Kind1ThreadScreen() {
 
   return (
     <Kind1Sub
+      keepSubscriptionsOnBlur
       nevent={nevent}
       visible={isFocused}
       onClose={() => router.back()}

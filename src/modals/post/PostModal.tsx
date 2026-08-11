@@ -60,11 +60,15 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import type { EventTemplate } from 'nostr-tools';
+import { nip10, type EventTemplate } from 'nostr-tools';
 import { neventEncode } from 'nostr-tools/nip19';
 
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
 import { prepareEvent } from '../../nostr/prepareEvent';
+import {
+  quoteOptimisticSubIds,
+  replyOptimisticSubIds,
+} from '../../nostr/subscriptionIds';
 import { DEFAULT_UPLOAD_SERVER, uploadFile } from '../../nostr/upload';
 import {
   selectPreferredUploadServer,
@@ -1078,6 +1082,14 @@ export function PostModal({ reply, quote, onClose }: Props) {
         pollEnabled ? 'poll' : reply ? 'reply' : quote ? 'quote' : 'post'
       }_${Date.now()}`;
       const sendStatus: Record<string, ConnectionStatus> = {};
+      const replyRootId = replyTarget?.id
+        ? nip10.parse(event).root?.id || replyTarget.id
+        : '';
+      const optimisticSubIds = replyTarget?.id
+        ? replyOptimisticSubIds(replyTarget.id, replyRootId)
+        : quoteTarget?.id
+        ? quoteOptimisticSubIds(quoteTarget.id)
+        : undefined;
 
       publishToNostr(
         sendId,
@@ -1092,7 +1104,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
         {
           defaultRelays: effectivePublishRelays,
           trackStatus: true,
-          subId: replyTarget?.id,
+          subId: optimisticSubIds,
         },
       );
 

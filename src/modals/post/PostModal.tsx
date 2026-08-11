@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import {
   MenuView,
@@ -477,6 +478,21 @@ export function PostModal({ reply, quote, onClose }: Props) {
       editorRef.current?.focus();
     });
   }, []);
+
+  const handleEditorLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { y, height, width } = event.nativeEvent.layout;
+      const editorMoved = Math.abs(editorYRef.current - y) > 1;
+      editorYRef.current = y;
+      editorHeightRef.current = height;
+      editorWidthRef.current = width;
+
+      if (editorMoved && keyboardOpen && noteTarget?.id) {
+        scrollToComposer();
+      }
+    },
+    [keyboardOpen, noteTarget?.id, scrollToComposer],
+  );
 
   const openComposerPanel = useCallback(
     (panel: ComposerPanel) => {
@@ -1547,11 +1563,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
           <ShortNoteComposer
             characterCount={text.length}
             editorRef={editorRef}
-            onLayout={event => {
-              editorYRef.current = event.nativeEvent.layout.y;
-              editorHeightRef.current = event.nativeEvent.layout.height;
-              editorWidthRef.current = event.nativeEvent.layout.width;
-            }}
+            onLayout={handleEditorLayout}
             onMentionQuery={setMentionQuery}
             onTextChange={setText}
             placeholder={editorPlaceholder}
@@ -1585,11 +1597,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
             editorRef={editorRef}
             isPoll={composeMode === 'poll'}
             isReply={Boolean(noteTarget)}
-            onLayout={event => {
-              editorYRef.current = event.nativeEvent.layout.y;
-              editorHeightRef.current = event.nativeEvent.layout.height;
-              editorWidthRef.current = event.nativeEvent.layout.width;
-            }}
+            onLayout={handleEditorLayout}
             onMentionQuery={setMentionQuery}
             onTextChange={setText}
             placeholder={editorPlaceholder}

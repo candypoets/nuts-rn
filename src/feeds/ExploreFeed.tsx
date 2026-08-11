@@ -117,7 +117,6 @@ const AUTH_FALLBACK_DELAY_MS = 1200;
 const MEDIA_GRID_COLUMNS = 2;
 const MEDIA_TILE_HEIGHT = 286;
 const MAX_NEW_NOTE_AVATARS = 3;
-const NEW_NOTES_WIDGET_HEIGHT = 40;
 const EMPTY_NEW_NOTES: NewNotesState = { count: 0, pubkeys: [] };
 const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6, 1068];
 const REPOSTABLE_FEED_KINDS = new Set<number>([
@@ -1169,6 +1168,38 @@ function ExploreComposerFooter() {
   return <ComposerFooter bottomOffset={8} floating={false} />;
 }
 
+function NewNotesButton({
+  count,
+  onPress,
+}: {
+  count: number;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${count} more ${count === 1 ? 'post' : 'posts'}`}
+      accessibilityHint="Show the latest posts"
+      className="mt-1 flex-row items-center justify-center gap-1 px-3 pb-2 pt-1"
+      onPress={event => {
+        event.stopPropagation();
+        onPress();
+      }}
+    >
+      <ChevronUp
+        size={14}
+        color={theme.colors.primary}
+        strokeWidth={2.4}
+      />
+      <Text className="text-sm font-semibold text-primary">
+        {count} more {count === 1 ? 'post' : 'posts'}
+      </Text>
+    </Pressable>
+  );
+}
+
 function ExploreHeader({
   safeAreaTop = 0,
   pubkey,
@@ -1239,8 +1270,7 @@ function ExploreHeader({
       </FeedSticky>
       <FeedHeaderDynamic>
         <View
-          className={`px-3 pt-2 ${showKindSelector ? 'pb-0' : 'pb-3'}`}
-        >
+          className={`px-3 pt-2 ${showKindSelector ? 'pb-0' : 'pb-3'}`}>
           <HeaderRelaysList
             subId={relaySelectionSubId}
             relays={relays}
@@ -1249,62 +1279,52 @@ function ExploreHeader({
         </View>
       </FeedHeaderDynamic>
       {showKindSelector ? (
-        <View className="px-3 pt-4">
+        <View className="relative px-3 pt-4">
           <FeedKindNavigator
             selectedKinds={selectedKinds}
             onSelectKinds={setSelectedKinds}
             tabs={EXPLORE_KIND_TABS}
           />
-        </View>
-      ) : null}
-      {newNotes.count > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${newNotes.count} more ${
-            newNotes.count === 1 ? 'post' : 'posts'
-          }`}
-          accessibilityHint="Show the latest posts"
-          className="mt-2 flex-row items-center justify-center gap-1 border-t border-base-200 py-2"
-          onPress={onNewNotesPress}
-        >
-          <ChevronUp
-            size={14}
-            color={theme.colors.primary}
-            strokeWidth={2.4}
-          />
-          <Text className="text-sm font-semibold text-primary">
-            {newNotes.count} more {newNotes.count === 1 ? 'post' : 'posts'}
-          </Text>
-        </Pressable>
-      ) : null}
-      {showNewNotesPill && newNotes.count > 0 && newNotes.pubkeys.length > 0 ? (
-        <View
-          className="absolute bottom-0 left-0 right-0 z-40 items-center"
-          pointerEvents="box-none"
-          style={{
-            transform: [
-              {translateY: NEW_NOTES_WIDGET_HEIGHT + 8 + safeAreaTop},
-            ],
-          }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${newNotes.count} more ${
-              newNotes.count === 1 ? 'note' : 'notes'
-            }`}
-            accessibilityHint="Show the latest notes"
-            onPress={onNewNotesPress}>
-            <View className="flex-row items-center rounded-full shadow-lg">
-              {newNotes.pubkeys.map((newNotePubkey, index) => (
-                <View
-                  key={newNotePubkey}
-                  className={index === 0 ? '' : '-ml-3'}
-                  style={{zIndex: newNotes.pubkeys.length - index}}>
-                  <Avatar pubkey={newNotePubkey} size="md" />
+          {showNewNotesPill &&
+          newNotes.count > 0 &&
+          newNotes.pubkeys.length > 0 ? (
+            <View
+              className="absolute bottom-0 left-0 right-0 z-40 items-center"
+              pointerEvents="box-none"
+              style={{transform: [{translateY: 8}]}}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${newNotes.count} more ${
+                  newNotes.count === 1 ? 'note' : 'notes'
+                }`}
+                accessibilityHint="Show the latest notes"
+                onPress={event => {
+                  event.stopPropagation();
+                  onNewNotesPress();
+                }}
+                className="h-12 flex-row items-center justify-center gap-2 rounded-full border border-base-200 bg-base-100 px-3 shadow-lg">
+                <ChevronUp
+                  size={14}
+                  color={theme.colors.primary}
+                  strokeWidth={2.4}
+                />
+                <View className="flex-row items-center">
+                  {newNotes.pubkeys.map((newNotePubkey, index) => (
+                    <View
+                      key={newNotePubkey}
+                      className={index === 0 ? '' : '-ml-3'}
+                      style={{zIndex: newNotes.pubkeys.length - index}}>
+                      <Avatar pubkey={newNotePubkey} size="md" />
+                    </View>
+                  ))}
                 </View>
-              ))}
+              </Pressable>
             </View>
-          </Pressable>
+          ) : null}
         </View>
+      ) : null}
+      {!showNewNotesPill && newNotes.count > 0 ? (
+        <NewNotesButton count={newNotes.count} onPress={onNewNotesPress} />
       ) : null}
     </View>
   );

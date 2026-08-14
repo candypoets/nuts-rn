@@ -12,9 +12,14 @@ import { useUIStore } from '../../stores/uiStore';
 type Kind20ContentProps = {
   note: ParsedEvent;
   relays?: string[];
+  visible?: boolean;
 };
 
-function Kind20ContentComponent({ note, relays }: Kind20ContentProps) {
+function Kind20ContentComponent({
+  note,
+  relays,
+  visible = true,
+}: Kind20ContentProps) {
   const viewportWidth = useUIStore(state => state.dimensions.width);
   const kind20 = useMemo(() => asKind20(note), [note]);
   const kind22 = useMemo(() => asKind22(note), [note]);
@@ -54,6 +59,7 @@ function Kind20ContentComponent({ note, relays }: Kind20ContentProps) {
         <NativeMediaViewer
           note={note}
           relays={relays}
+          visible={visible}
           links={media}
           containerWidth={mediaWidth}
         />

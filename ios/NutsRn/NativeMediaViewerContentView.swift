@@ -935,6 +935,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var videoPlayersByKey: [String: AVPlayer] = [:]
   private var videoLayersByKey: [String: AVPlayerLayer] = [:]
   private var gridControlsByKey: [String: NativeVideoGridControlsView] = [:]
+  private var playbackActive = true
   private let remainingItemsLabel = UILabel()
   private var overlayItem: MediaInfo?
   private var overlayView: UIView?
@@ -1098,6 +1099,22 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     noteOverlayView.updateOptimisticReactionNonce(value)
   }
 
+  @objc(updatePlaybackActive:)
+  func updatePlaybackActive(_ value: Bool) {
+    if playbackActive == value { return }
+    playbackActive = value
+    if value {
+      if overlayView != nil {
+        updateOverlayPlayback(activeIndex: currentOverlayIndex())
+      } else {
+        setNeedsLayout()
+      }
+    } else {
+      pauseAllVideos()
+      overlayZoomControlsView?.configure(player: nil)
+    }
+  }
+
   @objc(updatePrimaryTextColor:)
   func updatePrimaryTextColor(_ value: String?) {
     noteOverlayView.updatePrimaryTextColor(value)
@@ -1179,8 +1196,15 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageView.accessibilityIdentifier = "\(index)"
       imageView.contentMode = .scaleAspectFill
       imageView.frame = tileFrame
+      if imageView.image == nil, imageOperationsByKey[item.key] == nil {
+        loadImage(for: item, into: imageView)
+      }
       if item.type == "video" {
-        configureVideo(for: item, in: imageView, autoplay: displayItems.count == 1 || index == 0)
+        if playbackActive {
+          configureVideo(for: item, in: imageView, autoplay: displayItems.count == 1 || index == 0)
+        } else if let player = videoPlayersByKey[item.key] {
+          NativeMediaPlaybackCoordinator.shared.pause(player)
+        }
       } else {
         removeVideo(forKey: item.key)
       }
@@ -1848,6 +1872,12 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
 
   private func updateOverlayPlayback(activeIndex: Int) {
     let overlayItems = items
+    guard playbackActive else {
+      pauseAllVideos()
+      overlayZoomControlsView?.configure(player: nil)
+      layoutOverlayChrome(activeIndex: activeIndex)
+      return
+    }
     var activePlayer: AVPlayer?
     for (index, item) in overlayItems.enumerated() where item.type == "video" {
       guard let player = videoPlayersByKey[item.key] else { continue }
@@ -1942,7 +1972,8 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       guard let player = videoPlayersByKey[item.key] else { continue }
       player.isMuted = true
       player.volume = 0
-      if item.key == activeItem.key,
+      if playbackActive,
+         item.key == activeItem.key,
          let index = items.firstIndex(where: { $0.key == item.key }),
          (items.count <= 1 || index == 0) {
         NativeMediaPlaybackCoordinator.shared.play(player)
@@ -2283,6 +2314,14 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     for key in Array(imageOperationsByKey.keys) where key.hasPrefix("overlay:") {
       imageOperationsByKey[key]?.cancel()
       imageOperationsByKey[key] = nil
+    }
+  }
+
+  private func pauseAllVideos() {
+    for player in videoPlayersByKey.values {
+      player.isMuted = true
+      player.volume = 0
+      NativeMediaPlaybackCoordinator.shared.pause(player)
     }
   }
 

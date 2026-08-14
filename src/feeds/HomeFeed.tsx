@@ -62,6 +62,7 @@ type HomeFeedProps = {
   enabled: boolean;
   scrollToTopKey?: number;
   visible: boolean;
+  screenActive?: boolean;
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
@@ -85,6 +86,7 @@ export function HomeFeed({
   enabled,
   scrollToTopKey,
   visible,
+  screenActive = visible,
   onChromeVisibilityChange,
 }: HomeFeedProps) {
   const itemsRef = useRef<ParsedEvent[]>([]);
@@ -391,6 +393,8 @@ export function HomeFeed({
         headerSafeArea
         headerOwnsSafeArea
         renderItem={() => null}
+        visible={visible}
+        screenActive={screenActive}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<LoggedOutHome />}
         contentContainerClassName="pb-44"
@@ -407,6 +411,8 @@ export function HomeFeed({
         headerSafeArea
         headerOwnsSafeArea
         renderItem={() => null}
+        visible={visible}
+        screenActive={screenActive}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={<ReadOnlyWalletStub />}
         contentContainerClassName="pb-44"
@@ -437,6 +443,8 @@ export function HomeFeed({
           }
         />
       )}
+      visible={visible}
+      screenActive={screenActive}
       loading={loading && activities.length === 0}
       refreshing={refreshing}
       onRefresh={handleRefresh}

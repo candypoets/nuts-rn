@@ -137,31 +137,31 @@ export function NativeMediaViewer({
       }}
       style={[styles.root, style, { width, height }]}
     >
-      {visible ? (
-        <NativeMediaViewerComponent
-          urls={urls}
-          types={types}
-          thumbnails={thumbnails}
-          dims={dims}
-          itemKeys={itemKeys}
-          sessionId={sessionId}
-          noteBytes={noteBytes}
-          noteId={note?.id() || undefined}
-          relays={relays}
-          currentUserPubkey={footerActions.currentUserPubkey}
-          optimisticReactionNonce={footerActions.optimisticReactionNonce}
-          primaryTextColor="#ffffff"
-          secondaryTextColor="rgba(255, 255, 255, 0.76)"
-          avatarBackgroundColor={theme.colors.base200}
-          tintColor={footerColors.tint}
-          primaryColor={footerColors.primary}
-          accentColor={footerColors.accent}
-          zoomBackgroundColor="rgba(15, 23, 42, 0.46)"
-          onNativeRoute={handleNativeRoute}
-          onNativeAction={handleNativeAction}
-          style={StyleSheet.absoluteFill}
-        />
-      ) : null}
+      {/* Keep the native surface (and its decoded UIImage) across route blur. */}
+      <NativeMediaViewerComponent
+        urls={urls}
+        types={types}
+        thumbnails={thumbnails}
+        dims={dims}
+        itemKeys={itemKeys}
+        sessionId={sessionId}
+        noteBytes={noteBytes}
+        noteId={note?.id() || undefined}
+        relays={relays}
+        currentUserPubkey={footerActions.currentUserPubkey}
+        optimisticReactionNonce={footerActions.optimisticReactionNonce}
+        playbackActive={visible}
+        primaryTextColor="#ffffff"
+        secondaryTextColor="rgba(255, 255, 255, 0.76)"
+        avatarBackgroundColor={theme.colors.base200}
+        tintColor={footerColors.tint}
+        primaryColor={footerColors.primary}
+        accentColor={footerColors.accent}
+        zoomBackgroundColor="rgba(15, 23, 42, 0.46)"
+        onNativeRoute={handleNativeRoute}
+        onNativeAction={handleNativeAction}
+        style={StyleSheet.absoluteFill}
+      />
     </Pressable>
   );
 }

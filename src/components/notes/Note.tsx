@@ -322,7 +322,7 @@ const NoteContentOverride = memo(function NoteContentOverride({
   renderQuote,
 }: NoteContentOverrideProps) {
   if (isMediaEventKind(note.kind())) {
-    return <Kind20Content note={note} relays={relays} />;
+    return <Kind20Content note={note} relays={relays} visible={visible} />;
   }
   if (note.kind() === 1068) {
     return (

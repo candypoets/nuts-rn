@@ -1,0 +1,61 @@
+diff --git a/node_modules/react-native/src/private/components/virtualcollection/VirtualCollectionView.js b/node_modules/react-native/src/private/components/virtualcollection/VirtualCollectionView.js
+index b1f0dda..1832f93 100644
+--- a/node_modules/react-native/src/private/components/virtualcollection/VirtualCollectionView.js
++++ b/node_modules/react-native/src/private/components/virtualcollection/VirtualCollectionView.js
+@@ -44,6 +44,7 @@ export type VirtualCollectionViewComponent<TLayoutProps extends {...}> =
+     children: (item: TItem, key: string) => React.Node,
+     items: VirtualCollection<TItem>,
+     itemToKey?: (TItem) => string,
++    onItemModeChange?: (TItem, string, ModeChangeEvent) => void,
+     removeClippedSubviews?: boolean,
+     testID?: ?string,
+     ...TLayoutProps
+@@ -91,6 +92,7 @@ export function createVirtualCollectionView<TLayoutProps extends {...}>(
+     children: (item: TItem, key: string) => React.Node,
+     items: VirtualCollection<TItem>,
+     itemToKey: TItem => string = defaultItemToKey,
++    onItemModeChange?: (TItem, string, ModeChangeEvent) => void,
+     removeClippedSubviews: boolean = false,
+     testID?: ?string,
+     ...layoutProps: TLayoutProps
+@@ -107,6 +109,11 @@ export function createVirtualCollectionView<TLayoutProps extends {...}>(
+             <VirtualView
+               key={key}
+               nativeID={key}
++              onModeChange={
++                onItemModeChange == null
++                  ? undefined
++                  : event => onItemModeChange(item, key, event)
++              }
+               removeClippedSubviews={removeClippedSubviews}>
+               {FlingItemOverlay == null ? null : (
+                 <FlingItemOverlay nativeID={key} />
+@@ -115,7 +122,7 @@ export function createVirtualCollectionView<TLayoutProps extends {...}>(
+             </VirtualView>
+           );
+         },
+-        [children, itemToKey, removeClippedSubviews],
++        [children, itemToKey, onItemModeChange, removeClippedSubviews],
+       ),
+     );
+ 
+diff --git a/node_modules/react-native/src/private/components/virtualcollection/column/VirtualColumn.js b/node_modules/react-native/src/private/components/virtualcollection/column/VirtualColumn.js
+index e1674d5..8f61750 100644
+--- a/node_modules/react-native/src/private/components/virtualcollection/column/VirtualColumn.js
++++ b/node_modules/react-native/src/private/components/virtualcollection/column/VirtualColumn.js
+@@ -9,6 +9,7 @@
+  */
+ 
+ import type {Item, VirtualCollection} from '../Virtual';
++import type {ModeChangeEvent} from '../../virtualview/VirtualView';
+ 
+ import {createVirtualCollectionView} from '../VirtualCollectionView';
+ import VirtualColumnGenerator from './VirtualColumnGenerator';
+@@ -38,6 +39,7 @@ export default VirtualColumn as component<+TItem extends Item>(
+   children: (item: TItem, key: string) => React.Node,
+   items: VirtualCollection<TItem>,
+   itemToKey?: (TItem) => string,
++  onItemModeChange?: (TItem, string, ModeChangeEvent) => void,
+   removeClippedSubviews?: boolean,
+   testID?: ?string,
+ );

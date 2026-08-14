@@ -107,6 +107,9 @@ static NSString *RCTNSStringFromString(const std::string &value);
   if (oldViewerProps.optimisticReactionNonce != newViewerProps.optimisticReactionNonce) {
     [_contentView updateOptimisticReactionNonce:newViewerProps.optimisticReactionNonce];
   }
+  if (oldViewerProps.playbackActive != newViewerProps.playbackActive) {
+    [_contentView updatePlaybackActive:newViewerProps.playbackActive];
+  }
   if (oldViewerProps.primaryTextColor != newViewerProps.primaryTextColor) {
     [_contentView updatePrimaryTextColor:RCTNSStringFromString(newViewerProps.primaryTextColor)];
   }

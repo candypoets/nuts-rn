@@ -40,6 +40,7 @@ type ChatFeedProps = {
   enabled: boolean;
   scrollToTopKey?: number;
   visible: boolean;
+  screenActive?: boolean;
   onChromeVisibilityChange?: (visible: boolean) => void;
 };
 
@@ -143,6 +144,7 @@ export function ChatFeed({
   enabled,
   scrollToTopKey,
   visible,
+  screenActive = visible,
   onChromeVisibilityChange,
 }: ChatFeedProps) {
   const navigation =
@@ -425,6 +427,8 @@ export function ChatFeed({
           pubkey={pubkey}
         />
       )}
+      visible={visible}
+      screenActive={screenActive}
       loading={loading || refreshing}
       refreshing={refreshing}
       onRefresh={handleRefresh}

@@ -4,7 +4,7 @@ import {ExploreFeed} from '../../feeds/ExploreFeed';
 import {useMainTabContext} from './_layout';
 
 export default function ExploreTabScreen() {
-  const {nostrEnabled, scrollToTopKey, visible} =
+  const {isFocused, nostrEnabled, scrollToTopKey, visible} =
     useMainTabContext('explore');
 
   return (
@@ -12,6 +12,7 @@ export default function ExploreTabScreen() {
       enabled={nostrEnabled}
       scrollToTopKey={scrollToTopKey}
       visible={visible}
+      screenActive={isFocused}
     />
   );
 }

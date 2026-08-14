@@ -26,6 +26,7 @@ export interface NativeProps extends ViewProps {
   relays?: ReadonlyArray<string>;
   currentUserPubkey?: string;
   optimisticReactionNonce?: WithDefault<Int32, 0>;
+  playbackActive?: WithDefault<boolean, true>;
   primaryTextColor?: string;
   secondaryTextColor?: string;
   avatarBackgroundColor?: string;

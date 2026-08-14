@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import * as ReactNative from 'react-native';
 import {
@@ -57,6 +58,7 @@ export type FeedRenderItemInfo<T> = {
   index: number;
   item: T;
   type?: string | number;
+  /** True only while this item intersects the feed viewport on an active screen. */
   visible: boolean;
 };
 
@@ -81,7 +83,10 @@ export type FeedProps<T> = {
   empty?: ReactNode;
   loading?: boolean;
   refreshing?: boolean;
+  /** Controls the feed's data/subscription lifecycle. */
   visible?: boolean;
+  /** Pauses viewport media without unmounting the retained feed surface. */
+  screenActive?: boolean;
   pullToRefresh?: boolean;
   bottom?: boolean;
   bottomAutoScroll?: boolean | 'initial';
@@ -102,6 +107,7 @@ const NEAR_BOTTOM_THRESHOLD = 10;
 const REFRESH_INDICATOR_HEIGHT = 48;
 const STICKY_HEADER_HIDE_OFFSET = 72;
 const MOTION_HEADER_DIRECTION_TOLERANCE = 0.5;
+const VIRTUAL_VIEW_VISIBLE_MODE = 0;
 
 type FeedVirtualItem<T> = {
   key: string;
@@ -112,7 +118,18 @@ type FeedVirtualItem<T> = {
 type FeedVirtualRow<T> = {
   key: string;
   items: FeedVirtualItem<T>[];
+  viewport: FeedViewportStore;
 };
+
+type FeedViewportStore = {
+  getSnapshot: () => boolean;
+  setMode: (mode: number) => void;
+  subscribe: (listener: () => void) => () => void;
+};
+
+type FeedModeChangeEvent = Readonly<{
+  mode: number;
+}>;
 
 type VirtualCollection<T> = {
   readonly size: number;
@@ -123,6 +140,11 @@ type VirtualColumnProps<TItem> = {
   children: (item: TItem, key: string) => ReactNode;
   items: VirtualCollection<TItem>;
   itemToKey?: (item: TItem) => string;
+  onItemModeChange?: (
+    item: TItem,
+    key: string,
+    event: FeedModeChangeEvent,
+  ) => void;
   removeClippedSubviews?: boolean;
   testID?: null | string;
 };
@@ -134,6 +156,65 @@ const VirtualColumn = (
     ) => ReactNode;
   }
 ).unstable_VirtualColumn;
+
+function createFeedViewportStore(): FeedViewportStore {
+  let visible = false;
+  const listeners = new Set<() => void>();
+
+  return {
+    getSnapshot: () => visible,
+    setMode: mode => {
+      const nextVisible = mode === VIRTUAL_VIEW_VISIBLE_MODE;
+      if (visible === nextVisible) return;
+      visible = nextVisible;
+      listeners.forEach(listener => listener());
+    },
+    subscribe: listener => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+type FeedVirtualRowContentProps<T> = {
+  columnWrapperStyle?: ColumnWrapperStyle;
+  data: readonly T[];
+  numColumns: number;
+  renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
+  row: FeedVirtualRow<T>;
+  screenActive: boolean;
+};
+
+function FeedVirtualRowContent<T>({
+  columnWrapperStyle,
+  data,
+  numColumns,
+  renderItem,
+  row,
+  screenActive,
+}: FeedVirtualRowContentProps<T>) {
+  const viewportVisible = useSyncExternalStore(
+    row.viewport.subscribe,
+    row.viewport.getSnapshot,
+    row.viewport.getSnapshot,
+  );
+  const itemVisible = screenActive && viewportVisible;
+  const rowContent = row.items.map(({key, item, index}) => (
+    <View key={key} className={numColumns > 1 ? 'flex-1' : undefined}>
+      {renderItem({
+        item,
+        index,
+        data,
+        visible: itemVisible,
+      })}
+    </View>
+  ));
+
+  if (numColumns <= 1) {
+    return rowContent[0] ?? null;
+  }
+  return <View style={columnWrapperStyle}>{rowContent}</View>;
+}
 
 function isDarkHex(hex: string) {
   const normalized = hex.replace('#', '').slice(0, 6);
@@ -337,6 +418,7 @@ export function Feed<T>({
   loading = false,
   refreshing = false,
   visible = true,
+  screenActive = visible,
   pullToRefresh = false,
   bottom = false,
   bottomAutoScroll = true,
@@ -365,7 +447,11 @@ export function Feed<T>({
   const scrollContentHeightRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
   const lastItemsLengthRef = useRef(items.length);
+  const rowViewportStoresRef = useRef(new Map<string, FeedViewportStore>());
   const didInitialBottomScrollRef = useRef(false);
+  const [bottomVisibleIndexes, setBottomVisibleIndexes] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
   const stickyReveal = useSharedValue(0);
   const stickyHeight = useSharedValue(88);
   const footerVisible = useSharedValue(1);
@@ -383,6 +469,7 @@ export function Feed<T>({
   const virtualRows = useMemo<FeedVirtualRow<T>[]>(() => {
     const columns = Math.max(1, numColumns);
     const rows: FeedVirtualRow<T>[] = [];
+    const activeRowKeys = new Set<string>();
     for (let index = 0; index < listItems.length; index += columns) {
       const rowItems = listItems
         .slice(index, index + columns)
@@ -394,10 +481,21 @@ export function Feed<T>({
             index: itemIndex,
           };
         });
+      const key = rowItems.map(item => item.key).join(':');
+      activeRowKeys.add(key);
+      const viewport =
+        rowViewportStoresRef.current.get(key) ?? createFeedViewportStore();
+      rowViewportStoresRef.current.set(key, viewport);
       rows.push({
-        key: rowItems.map(item => item.key).join(':'),
+        key,
         items: rowItems,
+        viewport,
       });
+    }
+    for (const key of rowViewportStoresRef.current.keys()) {
+      if (!activeRowKeys.has(key)) {
+        rowViewportStoresRef.current.delete(key);
+      }
     }
     return rows;
   }, [getItemId, listItems, numColumns]);
@@ -435,14 +533,14 @@ export function Feed<T>({
 
   const chromeProps = useMemo(
     () => ({
-      visible: true,
+      visible: screenActive,
       scrolled: start >= 1,
       scrollY,
       safeAreaTop: innerHeaderSafeAreaTop,
       start,
       scrollToTop,
     }),
-    [innerHeaderSafeAreaTop, scrollToTop, scrollY, start],
+    [innerHeaderSafeAreaTop, screenActive, scrollToTop, scrollY, start],
   );
 
   useEffect(() => {
@@ -540,7 +638,21 @@ export function Feed<T>({
         .map(item => item.index)
         .filter((index): index is number => typeof index === 'number')
         .sort((a, b) => a - b);
-      if (!indexes.length) return;
+      if (!indexes.length) {
+        setBottomVisibleIndexes(previous =>
+          previous.size ? new Set() : previous,
+        );
+        return;
+      }
+      setBottomVisibleIndexes(previous => {
+        if (
+          previous.size === indexes.length &&
+          indexes.every(index => previous.has(index))
+        ) {
+          return previous;
+        }
+        return new Set(indexes);
+      });
       const nextStart = indexes[0] ?? 0;
       const nextEnd = (indexes[indexes.length - 1] ?? nextStart) + 1;
       setStart(nextStart);
@@ -548,7 +660,6 @@ export function Feed<T>({
       if (nextStart === 0 || distance > nearBottomThreshold) {
         nearBottomTriggeredRef.current = false;
       }
-
     },
     [items.length, nearBottomThreshold],
   );
@@ -634,10 +745,10 @@ export function Feed<T>({
         index: info.index,
         extraData: info.extraData,
         data: items,
-        visible,
+        visible: screenActive && bottomVisibleIndexes.has(info.index),
       })
     ),
-    [items, renderItem, visible],
+    [bottomVisibleIndexes, items, renderItem, screenActive],
   );
   const handleEndReached = useCallback((event?: {distanceFromEnd?: number}) => {
     if (
@@ -653,30 +764,23 @@ export function Feed<T>({
   }, [items.length, onNearBottom, start]);
 
   const renderVirtualRowContent = useCallback(
-    (row: FeedVirtualRow<T>) => {
-      const rowContent = row.items.map(({key, item, index}) => (
-        <View
-          key={key}
-          className={numColumns > 1 ? 'flex-1' : undefined}
-        >
-          {renderItem({
-            item,
-            index,
-            data: items,
-            visible,
-          })}
-        </View>
-      ));
-      if (numColumns <= 1) {
-        return rowContent[0] ?? null;
-      }
-      return (
-        <View style={columnWrapperStyle}>
-          {rowContent}
-        </View>
-      );
+    (row: FeedVirtualRow<T>) => (
+      <FeedVirtualRowContent
+        columnWrapperStyle={columnWrapperStyle}
+        data={items}
+        numColumns={numColumns}
+        renderItem={renderItem}
+        row={row}
+        screenActive={screenActive}
+      />
+    ),
+    [columnWrapperStyle, items, numColumns, renderItem, screenActive],
+  );
+  const handleVirtualRowModeChange = useCallback(
+    (row: FeedVirtualRow<T>, _key: string, event: FeedModeChangeEvent) => {
+      row.viewport.setMode(event.mode);
     },
-    [columnWrapperStyle, items, numColumns, renderItem, visible],
+    [],
   );
 
   const showCustomRefreshIndicator =
@@ -835,6 +939,7 @@ export function Feed<T>({
             <VirtualColumn
               items={virtualRowsCollection}
               itemToKey={row => row.key}
+              onItemModeChange={handleVirtualRowModeChange}
               removeClippedSubviews={removeClippedSubviews}
               testID={`feed-virtual-column:${numColumns}`}
             >
@@ -878,6 +983,7 @@ export function Feed<T>({
             <VirtualColumn
               items={virtualRowsCollection}
               itemToKey={row => row.key}
+              onItemModeChange={handleVirtualRowModeChange}
               removeClippedSubviews={removeClippedSubviews}
               testID={`feed-virtual-column:${numColumns}`}
             >

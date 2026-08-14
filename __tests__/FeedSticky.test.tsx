@@ -226,6 +226,53 @@ test('motion chrome can overlay hero content without adding a top offset', () =>
   expect(scrollView.props.contentContainerStyle).toBeUndefined();
 });
 
+test('row viewport state survives a temporarily inactive screen', () => {
+  const render = (screenActive: boolean) => (
+    <Feed<Item>
+      items={[{id: 'one'}]}
+      screenActive={screenActive}
+      renderItem={({item, visible}) => (
+        <Text testID={`row-${item.id}`}>{visible ? 'active' : 'paused'}</Text>
+      )}
+    />
+  );
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(render(true));
+  });
+
+  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+    'paused',
+  );
+  const virtualRow = renderer!.root.findByProps({nativeID: 'one'});
+  act(() => {
+    virtualRow.props.onModeChange({
+      mode: 0,
+      target: virtualRow,
+      renderState: 1,
+      targetRect: {x: 0, y: 0, width: 320, height: 240},
+      thresholdRect: {x: 0, y: 0, width: 320, height: 800},
+    });
+  });
+  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+    'active',
+  );
+
+  act(() => {
+    renderer!.update(render(false));
+  });
+  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+    'paused',
+  );
+
+  act(() => {
+    renderer!.update(render(true));
+  });
+  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+    'active',
+  );
+});
+
 test('overlay motion chrome can own the safe area above hero content', () => {
   __setSafeAreaInsets({top: 32, bottom: 0, left: 0, right: 0});
   let renderer: ReactTestRenderer.ReactTestRenderer;

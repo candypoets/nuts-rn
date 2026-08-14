@@ -85,6 +85,7 @@ type ExploreFeedProps = {
   enabled: boolean;
   scrollToTopKey?: number;
   visible: boolean;
+  screenActive?: boolean;
   header?: () => React.ReactNode;
   stickyFooter?: () => React.ReactNode;
   onChromeVisibilityChange?: (visible: boolean) => void;
@@ -144,6 +145,7 @@ export function ExploreFeed({
   enabled,
   scrollToTopKey: tabScrollToTopKey,
   visible,
+  screenActive = visible,
   header,
   stickyFooter,
   onChromeVisibilityChange,
@@ -761,6 +763,8 @@ export function ExploreFeed({
         headerOwnsSafeArea
         stickyFooter={stickyFooter ?? defaultStickyFooter}
         renderItem={renderItem}
+        visible={visible}
+        screenActive={screenActive}
         loading={loading || refreshing}
         refreshing={refreshing}
         onRefresh={handleRefresh}
@@ -1037,16 +1041,15 @@ function MediaGridNoteComponent({
         className="relative overflow-hidden bg-base-200"
         style={styles.mediaTile}
       >
-        {visible ? (
-          <NativeMediaViewer
-            note={note}
-            relays={relays}
-            links={links}
-            containerWidth={tileWidth}
-            height={MEDIA_TILE_HEIGHT}
-            style={styles.mediaTileNativeViewer}
-          />
-        ) : null}
+        <NativeMediaViewer
+          note={note}
+          relays={relays}
+          visible={visible}
+          links={links}
+          containerWidth={tileWidth}
+          height={MEDIA_TILE_HEIGHT}
+          style={styles.mediaTileNativeViewer}
+        />
         <View className="absolute bottom-0 left-0 right-0 px-1.5 py-1.5">
           <View className="min-w-0 flex-row items-center gap-2">
             <Avatar pubkey={pubkey} size="xxs" />

@@ -27,6 +27,7 @@
 		3A3B6C302D7F4115A8B9C001 /* OrientationGateBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3A3B6C2F2D7F4115A8B9C001 /* OrientationGateBridge.m */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		81AB9BBA2411601600AC10FF /* LaunchScreenDev.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB92411601600AC10FF /* LaunchScreenDev.storyboard */; };
 		AA2A2CEFDEE8F0004EC0D87D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		DEC793C5A9C2CF7C409337FA /* NativeNoteHeaderComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = FA91351551C9B9DDDD514CE5 /* NativeNoteHeaderComponentView.mm */; };
 /* End PBXBuildFile section */
@@ -60,6 +61,7 @@
 		5DCACB8F33CDC322A6C60F78 /* libPods-NutsRn.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-NutsRn.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = NutsRn/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = NutsRn/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		81AB9BB92411601600AC10FF /* LaunchScreenDev.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreenDev.storyboard; path = NutsRn/LaunchScreenDev.storyboard; sourceTree = "<group>"; };
 		835C5C10AA9DDC405DF55EFF /* NativeNoteFooterComponentView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = NativeNoteFooterComponentView.h; path = NutsRn/NativeNoteFooterComponentView.h; sourceTree = "<group>"; };
 		DA42CA430619B3EE60E90CF8 /* NativeNoteFooterComponentView.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeNoteFooterComponentView.mm; path = NutsRn/NativeNoteFooterComponentView.mm; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -90,6 +92,7 @@
 				0AA050020000000000000001 /* NativeProfileHook.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
+				81AB9BB92411601600AC10FF /* LaunchScreenDev.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				0AB010020000000000000001 /* NativeMediaViewerContentView.swift */,
 				0AB020020000000000000001 /* NativeLinkPreviewContentView.swift */,
@@ -239,6 +242,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
+				81AB9BBA2411601600AC10FF /* LaunchScreenDev.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				AA2A2CEFDEE8F0004EC0D87D /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -399,6 +403,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.0.1;
+				LAUNCH_STORYBOARD_NAME = LaunchScreenDev;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -440,6 +445,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.0.1;
+				LAUNCH_STORYBOARD_NAME = LaunchScreen;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

@@ -13,8 +13,14 @@ import {
   FeedHeaderDynamic,
   FeedSticky,
 } from '../src/components/Feed';
+import {useMediaActivity} from '../src/media/MediaActivity';
 
 type Item = {id: string};
+
+function MediaActivityStatus({id}: {id: string}) {
+  const active = useMediaActivity();
+  return <Text testID={`media-${id}`}>{active ? 'active' : 'paused'}</Text>;
+}
 
 const {__setSafeAreaInsets} = SafeAreaContext as typeof SafeAreaContext & {
   __setSafeAreaInsets: (insets: {
@@ -226,13 +232,18 @@ test('motion chrome can overlay hero content without adding a top offset', () =>
   expect(scrollView.props.contentContainerStyle).toBeUndefined();
 });
 
-test('row viewport state survives a temporarily inactive screen', () => {
+test('row viewport activity is independent from data visibility', () => {
   const render = (screenActive: boolean) => (
     <Feed<Item>
       items={[{id: 'one'}]}
       screenActive={screenActive}
       renderItem={({item, visible}) => (
-        <Text testID={`row-${item.id}`}>{visible ? 'active' : 'paused'}</Text>
+        <>
+          <Text testID={`row-${item.id}`}>
+            {visible ? 'subscribed' : 'stopped'}
+          </Text>
+          <MediaActivityStatus id={item.id} />
+        </>
       )}
     />
   );
@@ -242,9 +253,28 @@ test('row viewport state survives a temporarily inactive screen', () => {
   });
 
   expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
-    'paused',
+    'subscribed',
+  );
+  expect(renderer!.root.findByProps({testID: 'media-one'}).props.children).toBe(
+    'active',
   );
   const virtualRow = renderer!.root.findByProps({nativeID: 'one'});
+  act(() => {
+    virtualRow.props.onModeChange({
+      mode: 2,
+      target: virtualRow,
+      renderState: 1,
+      targetRect: {x: 0, y: 0, width: 320, height: 240},
+      thresholdRect: {x: 0, y: 0, width: 320, height: 800},
+    });
+  });
+  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+    'subscribed',
+  );
+  expect(renderer!.root.findByProps({testID: 'media-one'}).props.children).toBe(
+    'paused',
+  );
+
   act(() => {
     virtualRow.props.onModeChange({
       mode: 0,
@@ -254,7 +284,7 @@ test('row viewport state survives a temporarily inactive screen', () => {
       thresholdRect: {x: 0, y: 0, width: 320, height: 800},
     });
   });
-  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+  expect(renderer!.root.findByProps({testID: 'media-one'}).props.children).toBe(
     'active',
   );
 
@@ -262,13 +292,16 @@ test('row viewport state survives a temporarily inactive screen', () => {
     renderer!.update(render(false));
   });
   expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+    'subscribed',
+  );
+  expect(renderer!.root.findByProps({testID: 'media-one'}).props.children).toBe(
     'paused',
   );
 
   act(() => {
     renderer!.update(render(true));
   });
-  expect(renderer!.root.findByProps({testID: 'row-one'}).props.children).toBe(
+  expect(renderer!.root.findByProps({testID: 'media-one'}).props.children).toBe(
     'active',
   );
 });

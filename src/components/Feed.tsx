@@ -42,6 +42,7 @@ import {scheduleOnRN} from 'react-native-worklets';
 import HeaderMotion, {useMotionProgress} from 'react-native-header-motion';
 import {getFeedTopInset} from './feedLayout';
 import {useAppTheme} from '../theme';
+import {MediaActivityProvider} from '../media/MediaActivity';
 
 type FeedChromeProps = {
   scrollY: SharedValue<number>;
@@ -58,7 +59,7 @@ export type FeedRenderItemInfo<T> = {
   index: number;
   item: T;
   type?: string | number;
-  /** True only while this item intersects the feed viewport on an active screen. */
+  /** Controls this item's data and subscription lifecycle. */
   visible: boolean;
 };
 
@@ -158,7 +159,9 @@ const VirtualColumn = (
 ).unstable_VirtualColumn;
 
 function createFeedViewportStore(): FeedViewportStore {
-  let visible = false;
+  // VirtualView's native initial mode is Visible. It does not emit a no-op
+  // Visible -> Visible transition for rows already onscreen at first layout.
+  let visible = true;
   const listeners = new Set<() => void>();
 
   return {
@@ -182,6 +185,7 @@ type FeedVirtualRowContentProps<T> = {
   numColumns: number;
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
   row: FeedVirtualRow<T>;
+  visible: boolean;
   screenActive: boolean;
 };
 
@@ -191,6 +195,7 @@ function FeedVirtualRowContent<T>({
   numColumns,
   renderItem,
   row,
+  visible,
   screenActive,
 }: FeedVirtualRowContentProps<T>) {
   const viewportVisible = useSyncExternalStore(
@@ -198,16 +203,18 @@ function FeedVirtualRowContent<T>({
     row.viewport.getSnapshot,
     row.viewport.getSnapshot,
   );
-  const itemVisible = screenActive && viewportVisible;
+  const mediaActive = screenActive && viewportVisible;
   const rowContent = row.items.map(({key, item, index}) => (
-    <View key={key} className={numColumns > 1 ? 'flex-1' : undefined}>
-      {renderItem({
-        item,
-        index,
-        data,
-        visible: itemVisible,
-      })}
-    </View>
+    <MediaActivityProvider key={key} active={mediaActive}>
+      <View className={numColumns > 1 ? 'flex-1' : undefined}>
+        {renderItem({
+          item,
+          index,
+          data,
+          visible,
+        })}
+      </View>
+    </MediaActivityProvider>
   ));
 
   if (numColumns <= 1) {
@@ -740,15 +747,19 @@ export function Feed<T>({
   );
   const renderBottomItem = useCallback(
     (info: FlashListRenderItemInfo<T>) => (
-      renderItem({
-        item: info.item,
-        index: info.index,
-        extraData: info.extraData,
-        data: items,
-        visible: screenActive && bottomVisibleIndexes.has(info.index),
-      })
+      <MediaActivityProvider
+        active={screenActive && bottomVisibleIndexes.has(info.index)}
+      >
+        {renderItem({
+          item: info.item,
+          index: info.index,
+          extraData: info.extraData,
+          data: items,
+          visible,
+        })}
+      </MediaActivityProvider>
     ),
-    [bottomVisibleIndexes, items, renderItem, screenActive],
+    [bottomVisibleIndexes, items, renderItem, screenActive, visible],
   );
   const handleEndReached = useCallback((event?: {distanceFromEnd?: number}) => {
     if (
@@ -771,10 +782,11 @@ export function Feed<T>({
         numColumns={numColumns}
         renderItem={renderItem}
         row={row}
+        visible={visible}
         screenActive={screenActive}
       />
     ),
-    [columnWrapperStyle, items, numColumns, renderItem, screenActive],
+    [columnWrapperStyle, items, numColumns, renderItem, screenActive, visible],
   );
   const handleVirtualRowModeChange = useCallback(
     (row: FeedVirtualRow<T>, _key: string, event: FeedModeChangeEvent) => {

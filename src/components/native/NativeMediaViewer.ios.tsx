@@ -13,6 +13,7 @@ import { handleProfileRoute } from '../../navigation/nativeRouteEvents';
 import { useAppTheme } from '../../theme';
 import { footerColors, useNoteFooterActions } from '../notes/footerActions';
 import type { ImageGridLink } from '../notes/ImageGrid';
+import { useMediaActivity } from '../../media/MediaActivity';
 
 export const isNativeMediaViewerAvailable = true;
 
@@ -66,6 +67,7 @@ export function NativeMediaViewer({
 }: Props) {
   const theme = useAppTheme();
   const router = useRouter();
+  const mediaActive = useMediaActivity();
   const footerActions = useNoteFooterActions(note, relays);
   const { width: viewportWidth } = useWindowDimensions();
   const noteBytes = useMemo(() => flatBufferBytes(note), [note]);
@@ -150,7 +152,7 @@ export function NativeMediaViewer({
         relays={relays}
         currentUserPubkey={footerActions.currentUserPubkey}
         optimisticReactionNonce={footerActions.optimisticReactionNonce}
-        playbackActive={visible}
+        playbackActive={visible && mediaActive}
         primaryTextColor="#ffffff"
         secondaryTextColor="rgba(255, 255, 255, 0.76)"
         avatarBackgroundColor={theme.colors.base200}

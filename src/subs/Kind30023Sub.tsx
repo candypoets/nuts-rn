@@ -2,7 +2,6 @@ import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 're
 import {Pressable, Text, View} from 'react-native';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import {MessageType} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
 import {ChevronLeft} from 'lucide-react-native';
 import {decode, type AddressPointer} from 'nostr-tools/nip19';
@@ -12,6 +11,7 @@ import {Kind30023Article} from '../components/notes/Kind30023Article';
 import {eventTags, tagValue} from '../components/notes/kindHelpers';
 import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {useNostrStore, useRelayStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -137,7 +137,7 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
       timeoutRef.current = null;
     }, 1800);
 
-    unsubscribeRef.current = subscribeToNostr(
+    unsubscribeRef.current = subscribeUntilEose(
       subId,
       [
         {

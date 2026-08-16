@@ -56,14 +56,14 @@ final class NativeAuthorReadRelaysHook {
     subscription = useSubscriptionHandle(
       subscriptionId: "native_author_relays_\(cleanPubkey)_\(relayKey)",
       requests: [
-        RequestObject(authors: [cleanPubkey], kinds: [10002], limit: 1, relays: relays, closeOnEOSE: true, cacheFirst: true)
+        RequestObject(authors: [cleanPubkey], kinds: [10002], limit: 1, relays: relays, cacheFirst: true)
       ],
       callback: { [weak self] messages in
         DispatchQueue.main.async {
           self?.handle(messages: messages, requestedPubkey: cleanPubkey)
         }
       },
-      options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+      options: SubscriptionConfig(closeOnEose: true)
     )
   }
 

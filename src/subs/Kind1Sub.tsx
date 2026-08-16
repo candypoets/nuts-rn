@@ -9,7 +9,6 @@ import {MessageType} from '@candypoets/nipworker';
 import {
   createPaginatedSubscription,
   type PaginatedSubscription,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
@@ -27,6 +26,7 @@ import {Feed} from '../components/Feed';
 import {Note} from '../components/notes';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {kind1RepliesSubIdPrefix} from '../nostr/subscriptionIds';
 import {useNostrStore, useRelayStore} from '../stores';
@@ -700,7 +700,7 @@ export function Kind1Sub({
       });
       setLoading(false);
     }, 1500);
-    mainUnsubRef.current = subscribeToNostr(
+    mainUnsubRef.current = subscribeUntilEose(
       headerSubId,
       [{ids: [rootId], limit: 1, relays: activeRelays, cacheFirst: true}],
       message => {
@@ -896,7 +896,7 @@ export function Kind1Sub({
       author: authorPubkey.slice(0, 12),
       relays: activeRelays,
     });
-    authorRelayDiscoveryUnsubRef.current = subscribeToNostr(
+    authorRelayDiscoveryUnsubRef.current = subscribeUntilEose(
       discoverySubId,
       [
         {
@@ -904,7 +904,6 @@ export function Kind1Sub({
           authors: [authorPubkey],
           limit: 1,
           cacheFirst: true,
-          closeOnEOSE: true,
           relays: activeRelays,
         },
       ],

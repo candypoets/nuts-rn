@@ -13,7 +13,6 @@ import type {
   WorkerMessage,
 } from '@candypoets/nipworker';
 import {
-  useSubscription as subscribeToNostr,
   useSignEvent,
 } from '@candypoets/nipworker/hooks';
 import {
@@ -32,6 +31,7 @@ import {Avatar} from '../components/notes/Avatar';
 import {shortNpub} from '../lib/identity';
 import {MintCardPicker} from '../components/MintCardPicker';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {publishProofsBackup} from '../nostr/proofBackup';
 import {uniqueWalletRelays} from '../hooks/useWalletSubscription';
 import {useNostrStore, useWalletStore} from '../stores';
@@ -287,7 +287,7 @@ export function SendEcashModal({
     setState('loading');
     setMessage('');
 
-    unsubscribeRef.current = subscribeToNostr(
+    unsubscribeRef.current = subscribeUntilEose(
       `send_ecash_${pubkey}_${relayHash(relays)}`,
       [
         {kinds: [0], authors: [pubkey], limit: 1, cacheFirst: true, relays},
@@ -328,7 +328,6 @@ export function SendEcashModal({
           setMessage('');
         }
       },
-      {closeOnEose: false},
     );
 
     const fallback = setTimeout(() => {

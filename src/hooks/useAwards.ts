@@ -19,6 +19,7 @@ import {
 } from '../lib/communityTrust';
 import {eventTags} from '../components/notes/kindHelpers';
 import {parseDefinitionAddress} from '../lib/nip97';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {useRelayStore} from '../stores/relayStore';
 
 function relayKey(relay: string) {
@@ -155,7 +156,7 @@ export function useMyAwards(relay: string, pubkey: string | null | undefined, vi
     const dTags = Array.from(new Set(parsedAddresses.map(address => address.d)));
     const subId = `my_award_defs_${relayKey(relay)}_${dTags.join('_').slice(0, 40)}`;
     setSubRelays(subId, [relay]);
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       subId,
       [
         {
@@ -187,7 +188,7 @@ export function useMyAwards(relay: string, pubkey: string | null | undefined, vi
         definitionsRef.current = next;
         setDefinitions(next);
       },
-      {bytesPerEvent: 12 * 1024, closeOnEose: true},
+      {bytesPerEvent: 12 * 1024},
     );
     return () => unsubscribe();
   }, [relay, definitionKey, setSubRelays, visible]);

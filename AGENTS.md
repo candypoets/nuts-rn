@@ -78,6 +78,14 @@ The app depends on `@candypoets/nipworker` 0.97.8. That release includes the NIP
 
 App-side auth_url flow: nipworker dispatches `authUrl` → `src/app/_layout.tsx` stores `authStore.nip46AuthUrl` → the login modal shows "Open approval page" (`Linking.openURL`); the modal closes when the deferred response completes login. Approval window: 300 s (was a flat 20 s timeout before challenge support).
 
+### nipworker 0.99.3 finite subscriptions (2026-08-15)
+
+The app requires nipworker 0.99.3 or newer for working `SubscriptionConfig.closeOnEose`: 0.99.1 added worker-side closure, and 0.99.2 made it relay-scoped so one fast relay cannot close a multi-relay query before slower relays finish. Use `src/nostr/subscribeUntilEose.ts` for finite JS snapshots; keep raw `useSubscription` for feeds, pagination, chats/live streams, wallet state, zaps/polls/comments/counters, primary notifications, storefront/catalog streams, and event-modal RSVPs.
+
+Important: nipworker currently emits each `RequestObject` as a separate NIP-01 `REQ` while reusing the supplied subscription ID. Overlapping requests therefore replace each other at the relay, and the first EOSE can close a later filter. `subscribeUntilEose` avoids that by assigning each finite request a stable child ID. Do not bypass it by putting `closeOnEose: true` directly on a multi-request `useSubscription`. Consolidating semantically equivalent filters (for example, one kind-0 filter with many contact authors) is also safe.
+
+`closeOnEose` is subscription-level only. Cache policy remains request-level. Native profile/author lookups therefore use `RequestObject(..., cacheFirst: true)` plus `SubscriptionConfig(closeOnEose: true)` / `NipworkerSubscriptionOptions(closeOnEose = true)`; do not restore request-level close flags or config-level `cacheFirst`.
+
 - `login-amber.yaml` (real Amber, intent handoff): install Amber (`amber-x86_64-v6.3.0.apk` from greenart7c3/Amber releases), onboard once with "Use your private key" → `nsec1424242424242424242424242424242424242424242424242424q3dgem8` (= `'aa'*32`, same identity as the mock signer) → "Manually approve each app". The flow taps **Open in signing app** in the QR panel, Amber shows its connection approval, tap `Connect`, back in the app the login completes. Needs internet (nostrconnect relays are the public feed relays).
 
 ## Entitlements, Roles and Memberships (NIP-97)

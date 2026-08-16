@@ -5,7 +5,6 @@ import type {ParsedEvent, RequestObject, WorkerMessage} from '@candypoets/nipwor
 import {
   createPaginatedSubscription,
   type PaginatedSubscription,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asKind1,
@@ -27,6 +26,7 @@ import {Feed, FeedSticky} from '../components/Feed';
 import {Avatar, ContentBlocks, Note, User} from '../components/notes';
 import {pushDistinct} from '../navigation/pushDistinct';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {
   type ProcessedNotification,
@@ -542,7 +542,7 @@ const ReferencedPostContent = memo(function ReferencedPostContent({
       seenRef.current = noteId;
       setNote(null);
     }
-    return subscribeToNostr(
+    return subscribeUntilEose(
       `notification_post_${noteId}`,
       [{ids: [noteId], limit: 1, relays, cacheFirst: true}],
       message => {

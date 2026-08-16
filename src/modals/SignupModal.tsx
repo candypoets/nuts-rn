@@ -33,7 +33,6 @@ import type {
 } from '@candypoets/nipworker';
 import {
   usePublish as publishToNostr,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import * as ImagePicker from 'expo-image-picker';
 import {asNip51, asParsedEvent} from '@candypoets/nipworker/utils';
@@ -42,6 +41,7 @@ import {Camera, Check, ChevronLeft, Search, UserPlus, X} from 'lucide-react-nati
 import type {EventTemplate} from 'nostr-tools';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {
   deriveSignupKeypair,
   generateSignupMnemonic,
@@ -460,7 +460,7 @@ export function useSignupPacksController({
     seenPublicPacks.clear();
     setRevision(current => current + 1);
 
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       'signup_followpacks',
       buildFollowListRequests(null),
       message => {
@@ -491,7 +491,6 @@ export function useSignupPacksController({
         });
         setRevision(current => current + 1);
       },
-      {closeOnEose: false},
     );
 
     return () => unsubscribe();

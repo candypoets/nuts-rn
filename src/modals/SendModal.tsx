@@ -2,13 +2,13 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
 import {useNavigation} from 'expo-router/react-navigation';
 import type {Kind0Parsed, ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asKind0, asParsedEvent} from '@candypoets/nipworker/utils';
 import {ChevronDown, ChevronRight, CreditCard, ScanLine, Search, X, Zap} from 'lucide-react-native';
 
 import {Feed} from '../components/Feed';
 import {shortNpub, shortPubkey} from '../lib/identity';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import type {AppNavigationProp} from '../navigation/types';
 import {useNostrStore} from '../stores';
 import {useAppTheme} from '../theme';
@@ -95,19 +95,19 @@ export function SendModal({onClose}: SendModalProps) {
 
     if (!contacts.length) return undefined;
 
-    const requests = contacts.map(pubkey => ({
-      kinds: [0],
-      authors: [pubkey],
-      cacheFirst: true,
-      noContext: true,
-      relays,
-    }));
-
-    unsubscribeRef.current = subscribeToNostr(
+    unsubscribeRef.current = subscribeUntilEose(
       `send_contacts_${contacts.length}_${relayHash(relays)}`,
-      requests,
+      [
+        {
+          kinds: [0],
+          authors: contacts,
+          limit: contacts.length,
+          cacheFirst: true,
+          noContext: true,
+          relays,
+        },
+      ],
       handleContactMessage,
-      {closeOnEose: false},
     );
 
     return () => {

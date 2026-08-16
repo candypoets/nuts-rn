@@ -1,8 +1,8 @@
 import {Mint} from '@cashu/cashu-ts';
 import type {ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
 import type {EventTemplate} from 'nostr-tools';
+import {subscribeUntilEose} from './subscribeUntilEose';
 
 const CASHU_MINT_ANNOUNCEMENT_KIND = 38172;
 const CASHU_MINT_RECOMMENDATION_KIND = 38000;
@@ -238,7 +238,7 @@ export function discoverRecommendedCashuMint(
     };
 
     const timeout = setTimeout(finish, DISCOVERY_TIMEOUT_MS);
-    unsubscribe = subscribeToNostr(
+    unsubscribe = subscribeUntilEose(
       `cashu_mint_discovery_${resolvedRelays.join('|')}_${authors.join('|')}`,
       [
         {
@@ -269,7 +269,6 @@ export function discoverRecommendedCashuMint(
           recommendationEvents.push(event);
         }
       },
-      {closeOnEose: false},
     );
   });
 }

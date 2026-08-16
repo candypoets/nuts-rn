@@ -29,7 +29,6 @@ import {
   createPaginatedSubscription,
   type PaginatedSubscription,
   usePublish as publishToNostr,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
@@ -57,6 +56,7 @@ import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
 import { fetchRelayInfosForRelays } from '../nostr/nip11';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {
   ALL_FEED_KINDS,
@@ -524,14 +524,13 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
     const unsubscribes = communities.map(community => {
       const seen = new Set<string>();
       const profiles: CommunityPreviewProfile[] = [];
-      return subscribeToNostr(
+      return subscribeUntilEose(
         `community_kind0_${relayHash([community.key])}`,
         [
           {
             kinds: [0],
             limit: 10,
             relays: [community.url],
-            closeOnEOSE: true,
           },
         ],
         message => {
@@ -557,7 +556,6 @@ const Kind0CommunitySection = memo(function Kind0CommunitySection({
             [community.key]: [...profiles],
           }));
         },
-        {closeOnEose: true},
       );
     });
 
@@ -1279,7 +1277,7 @@ export function Kind0Sub({
       );
     };
 
-    followLookupUnsubRef.current = subscribeToNostr(
+    followLookupUnsubRef.current = subscribeUntilEose(
       `follow_lookup_${authPubkey}_${Date.now()}`,
       [{ kinds: [3], authors: [authPubkey], limit: 1, relays }],
       message => {
@@ -1291,7 +1289,6 @@ export function Kind0Sub({
       },
       {
         bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
-        closeOnEose: false,
       },
     );
     followLookupTimeoutRef.current = setTimeout(() => {
@@ -1378,7 +1375,7 @@ export function Kind0Sub({
       );
     };
 
-    muteLookupUnsubRef.current = subscribeToNostr(
+    muteLookupUnsubRef.current = subscribeUntilEose(
       `mute_lookup_${authPubkey}_${Date.now()}`,
       [{ kinds: [10000], authors: [authPubkey], limit: 1, relays }],
       message => {
@@ -1395,7 +1392,6 @@ export function Kind0Sub({
       },
       {
         bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
-        closeOnEose: false,
       },
     );
     muteLookupTimeoutRef.current = setTimeout(() => {

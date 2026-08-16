@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import type {Kind0Parsed} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {isKind0} from '@candypoets/nipworker/utils';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 
 type UseKind0ValueOptions<T> = {
   enabled?: boolean;
@@ -26,7 +26,7 @@ export function useKind0Value<T>(
 
     if (!enabled || !pubkey) return;
 
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       `u_${pubkey}`,
       [
         {
@@ -34,7 +34,6 @@ export function useKind0Value<T>(
           authors: [pubkey],
           limit: 1,
           cacheFirst: true,
-          closeOnEOSE: true,
           relays: [],
         },
       ],
@@ -44,7 +43,6 @@ export function useKind0Value<T>(
         const nextValue = selector(profile);
         setValue(current => (isEqual(current, nextValue) ? current : nextValue));
       },
-      {cacheFirst: true, closeOnEose: true},
     );
 
     return () => unsubscribe();

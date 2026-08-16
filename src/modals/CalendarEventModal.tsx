@@ -39,6 +39,7 @@ import {Avatar, User} from '../components/notes';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
 import {awardBadgeAddress, useMyAwards} from '../hooks/useAwards';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {pushDistinct} from '../navigation/pushDistinct';
 import type {AppNavigationProp} from '../navigation/types';
 import {useAuthStore, useNostrStore, useRelayStore} from '../stores';
@@ -271,7 +272,7 @@ export function CalendarEventModal({
       },
     ];
     setSubRelays(eventSubId, relays);
-    eventUnsubRef.current = subscribeToNostr(
+    eventUnsubRef.current = subscribeUntilEose(
       eventSubId,
       eventRequests,
       message => {
@@ -282,7 +283,7 @@ export function CalendarEventModal({
         setEvent(parseCalendarEvent(parsed, relays));
         setLoading(false);
       },
-      {bytesPerEvent: 12 * 1024, closeOnEose: true},
+      {bytesPerEvent: 12 * 1024},
     );
 
     const rsvpSubId = `event_rsvps_${address}_${selectedRelay}`;
@@ -319,7 +320,7 @@ export function CalendarEventModal({
         }
         setAttendeeEvents(current => ({...current, [rsvpPubkey]: parsed}));
       },
-      {bytesPerEvent: 4 * 1024, closeOnEose: true},
+      {bytesPerEvent: 4 * 1024, closeOnEose: false},
     );
 
     const timeout = setTimeout(() => setLoading(false), 1800);

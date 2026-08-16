@@ -56,11 +56,11 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import { asParsedEvent, fbArray } from '@candypoets/nipworker/utils';
 import { MessageType, type WorkerMessage } from '@candypoets/nipworker';
 
 import { type AppTheme, useAppTheme } from '../../theme';
+import { subscribeUntilEose } from '../../nostr/subscribeUntilEose';
 import {
   type EventCategory,
   type SelectedImage,
@@ -285,7 +285,7 @@ function useCommunityBadges(relays: string[], enabled: boolean) {
         ),
       );
 
-    return subscribeToNostr(
+    return subscribeUntilEose(
       `event_badges_${relayKey}`,
       [
         {

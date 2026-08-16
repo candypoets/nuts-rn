@@ -5,7 +5,6 @@ import type {
 } from '@candypoets/nipworker';
 import {
   usePublish as publishToNostr,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import { asKind0, asParsedEvent, isConnectionStatus } from '@candypoets/nipworker/utils';
 import { sha256 } from '@noble/hashes/sha256';
@@ -14,6 +13,7 @@ import type { EventTemplate } from 'nostr-tools';
 import { normalizeURL } from 'nostr-tools/utils';
 
 import { INDEXER_RELAYS, useNostrStore, type RelayMarker } from '../stores';
+import {subscribeUntilEose} from './subscribeUntilEose';
 import { base64UrlEncode, canonicalAuthEvent, signEvent } from './upload';
 
 /**
@@ -130,7 +130,7 @@ function fetchExistingEvent<T>(
     };
 
     const timeout = setTimeout(finish, timeoutMs);
-    unsubscribe = subscribeToNostr(subId, requests, (message: WorkerMessage) => {
+    unsubscribe = subscribeUntilEose(subId, requests, (message: WorkerMessage) => {
       if (statusText(message) === 'eose') {
         finish();
         return;

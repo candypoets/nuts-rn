@@ -1,9 +1,9 @@
 import {useEffect, useMemo, useState} from 'react';
 import type {WorkerMessage} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asParsedEvent, isKind10002} from '@candypoets/nipworker/utils';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {useRelayStore} from '../stores';
 
 export type RelayMarkerType = 'read' | 'write';
@@ -80,7 +80,7 @@ function resolveAuthorRelays(pubkey: string, discoveryRelays: string[]) {
     notify(current);
   }, 1000);
 
-  entry.unsubscribe = subscribeToNostr(
+  entry.unsubscribe = subscribeUntilEose(
     `author_relays_${key}`,
     [
       {
@@ -88,7 +88,6 @@ function resolveAuthorRelays(pubkey: string, discoveryRelays: string[]) {
         authors: [pubkey],
         limit: 1,
         cacheFirst: true,
-        closeOnEOSE: true,
         relays: discoveryRelays,
       },
     ],

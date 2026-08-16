@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import type {ConnectionStatus, Kind0Parsed, ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
-import {usePublish as publishToNostr, useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import {usePublish as publishToNostr} from '@candypoets/nipworker/hooks';
 import {asKind0, asParsedEvent, isConnectionStatus} from '@candypoets/nipworker/utils';
 import {Copy, FileText, Link, Search, Send, X} from 'lucide-react-native';
 import type {EventTemplate} from 'nostr-tools';
@@ -21,6 +21,7 @@ import {decode} from 'nostr-tools/nip19';
 import {Avatar} from '../components/notes/Avatar';
 import {shortNpub} from '../lib/identity';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {useNostrStore, useSendStatusStore} from '../stores';
 import {useAppTheme} from '../theme';
 
@@ -126,15 +127,18 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
 
     if (!contacts.length) return undefined;
 
-    unsubscribeRef.current = subscribeToNostr(
+    unsubscribeRef.current = subscribeUntilEose(
       `share_contacts_${contacts.length}_${relayHash(relays)}`,
-      contacts.map(pubkey => ({
-        kinds: [0],
-        authors: [pubkey],
-        cacheFirst: true,
-        noContext: true,
-        relays,
-      })),
+      [
+        {
+          kinds: [0],
+          authors: contacts,
+          limit: contacts.length,
+          cacheFirst: true,
+          noContext: true,
+          relays,
+        },
+      ],
       (workerMessage: WorkerMessage) => {
         const parsed = asParsedEvent(workerMessage);
         if (!parsed || parsed.kind() !== 0) return;
@@ -150,7 +154,6 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
           },
         }));
       },
-      {closeOnEose: false},
     );
 
     return () => {

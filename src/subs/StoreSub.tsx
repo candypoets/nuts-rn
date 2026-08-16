@@ -69,6 +69,7 @@ import {
 import {storePresetFor, type CommunityType} from '../lib/communityTypes';
 import {requestCheckoutUrl} from '../lib/storeCheckout';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {pushDistinct} from '../navigation/pushDistinct';
 import {useAuthStore} from '../stores/authStore';
 import {useRelayStore} from '../stores/relayStore';
@@ -609,7 +610,7 @@ export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubPro
     setCommunityType(undefined);
     const subId = `community_store_anchor_${relayHash(normalizedRelay)}`;
     setSubRelays(subId, [normalizedRelay]);
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       subId,
       [
         {
@@ -636,7 +637,7 @@ export function StoreSub({name: nameParam, onClose, relay, visible}: StoreSubPro
         communityAnchorRef.current = anchor;
         setCommunityType(anchor.type);
       },
-      {bytesPerEvent: 4 * 1024, closeOnEose: true},
+      {bytesPerEvent: 4 * 1024},
     );
 
     return () => unsubscribe();

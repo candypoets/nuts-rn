@@ -45,7 +45,6 @@ import { type EnrichedTextInputInstance } from 'react-native-enriched';
 import * as ImagePicker from 'expo-image-picker';
 import {
   usePublish as publishToNostr,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asParsedEvent,
@@ -65,6 +64,7 @@ import { nip10, type EventTemplate } from 'nostr-tools';
 import { neventEncode } from 'nostr-tools/nip19';
 
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import { subscribeUntilEose } from '../../nostr/subscribeUntilEose';
 import { prepareEvent } from '../../nostr/prepareEvent';
 import {
   quoteOptimisticSubIds,
@@ -526,7 +526,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       },
     ];
 
-    return subscribeToNostr(
+    return subscribeUntilEose(
       `post_${noteTarget.id}_${lookupRelays.join('|')}`,
       request,
       (message: WorkerMessage) => {
@@ -565,7 +565,7 @@ export function PostModal({ reply, quote, onClose }: Props) {
       );
     };
 
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       `mentionlist_${query}`,
       [
         {

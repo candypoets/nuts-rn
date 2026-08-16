@@ -29,7 +29,6 @@ import {
 import {
   createPaginatedSubscription,
   type PaginatedSubscription,
-  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
@@ -67,6 +66,7 @@ import {
 } from '../lib/nip97';
 import type {CommunityType} from '../lib/communityTypes';
 import {fetchRelayInfosForRelays, normalizeRelayUrl} from '../nostr/nip11';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import type {AppNavigationProp} from '../navigation/types';
 import {pushDistinct} from '../navigation/pushDistinct';
@@ -771,7 +771,7 @@ export function CommunitySub({
     setCommunityType(undefined);
     const subId = `community_anchor_${relayHash(normalizedRelay)}`;
     setSubRelays(subId, [normalizedRelay]);
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       subId,
       [
         {
@@ -799,7 +799,7 @@ export function CommunitySub({
         setCommunityAnchor(anchor);
         setCommunityType(anchor.type);
       },
-      {bytesPerEvent: 4 * 1024, closeOnEose: true},
+      {bytesPerEvent: 4 * 1024},
     );
 
     return () => unsubscribe();
@@ -915,7 +915,7 @@ export function CommunitySub({
     const subId = `community_events_nocache_${relayHash(normalizedRelay)}`;
     setSubRelays(subId, [normalizedRelay]);
     eventUnsubscribeRef.current?.();
-    eventUnsubscribeRef.current = subscribeToNostr(
+    eventUnsubscribeRef.current = subscribeUntilEose(
       subId,
       [
         {
@@ -945,7 +945,7 @@ export function CommunitySub({
           Array.from(events.values()).sort((left, right) => left.start - right.start),
         );
       },
-      {bytesPerEvent: 8 * 1024, closeOnEose: true},
+      {bytesPerEvent: 8 * 1024},
     );
 
     return () => {
@@ -969,7 +969,7 @@ export function CommunitySub({
       const subId = `community_rsvps_nocache_${relayHash(normalizedRelay)}_${relayHash(address)}`;
       setSubRelays(subId, [normalizedRelay]);
 
-      return subscribeToNostr(
+      return subscribeUntilEose(
         subId,
         [
           {
@@ -1009,7 +1009,6 @@ export function CommunitySub({
         },
         {
           bytesPerEvent: 4 * 1024,
-          closeOnEose: true,
           pipeline: rsvpPipeline(subId),
         },
       );

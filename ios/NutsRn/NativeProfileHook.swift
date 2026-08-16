@@ -54,14 +54,14 @@ final class NativeProfileHook {
     subscription = useSubscriptionHandle(
       subscriptionId: "\(subscriptionNamespace)_\(requestedPubkey)_\(relayKey)",
       requests: [
-        RequestObject(authors: [requestedPubkey], kinds: [0], limit: 1, relays: lookupRelays, closeOnEOSE: true, cacheFirst: true)
+        RequestObject(authors: [requestedPubkey], kinds: [0], limit: 1, relays: lookupRelays, cacheFirst: true)
       ],
       callback: { [weak self] messages in
         DispatchQueue.main.async {
           self?.handle(messages: messages, requestedPubkey: requestedPubkey)
         }
       },
-      options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+      options: SubscriptionConfig(closeOnEose: true)
     )
   }
 

@@ -16,7 +16,6 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import { useSubscription as subscribeToNostr } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
@@ -26,6 +25,7 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { DEFAULT_FEED_RELAYS } from '../../nostr/relays';
+import { subscribeUntilEose } from '../../nostr/subscribeUntilEose';
 import { noteSubIdPrefix } from '../../nostr/subscriptionIds';
 import {
   useEffectiveAuthorRelayState,
@@ -91,7 +91,6 @@ function toRequestObject(request: Request): RequestObject {
     until: request.until() || undefined,
     search: request.search() || undefined,
     relays: fbArray(request, 'relays').map(relay => String(relay)),
-    closeOnEOSE: request.closeOnEose(),
     cacheFirst: request.cacheFirst(),
     noCache: request.noCache(),
     maxRelays: request.maxRelays() || undefined,
@@ -909,7 +908,7 @@ function NoteComponent({
     const requests = noteRequestsRef.current;
     if (!visible || !workerSubscriptionId || !requests.length) return;
 
-    const unsubscribe = subscribeToNostr(
+    const unsubscribe = subscribeUntilEose(
       workerSubscriptionId,
       requests,
       message => {

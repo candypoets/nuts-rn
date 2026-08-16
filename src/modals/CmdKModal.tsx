@@ -17,10 +17,10 @@ import {
   type ParsedEvent,
   type WorkerMessage,
 } from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asKind0, asParsedEvent, isKind0} from '@candypoets/nipworker/utils';
 import {Hash, Search, User, X} from 'lucide-react-native';
 import {SEARCH_RELAYS} from '../stores';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {type AppTheme, useAppTheme} from '../theme';
 
 const HASHTAG_HISTORY_KEY = 'cmdk_hashtag_history';
@@ -156,7 +156,7 @@ export function CmdKModal({
         );
       };
 
-      unsubscribeRef.current = subscribeToNostr(
+      unsubscribeRef.current = subscribeUntilEose(
         `cmdk_${cleanQuery}`,
         [
           {

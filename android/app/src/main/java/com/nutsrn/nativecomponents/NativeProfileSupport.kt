@@ -48,8 +48,8 @@ class NativeProfileHook(
     subscriptionKey = nextKey
     handle = NipworkerRuntime.useSubscription(
         subscriptionId = "${subscriptionNamespace}_${cleanPubkey}_$relayKey",
-        requests = listOf(NipworkerRequest(authors = listOf(cleanPubkey), kinds = listOf(0), limit = 1, relays = lookupRelays, closeOnEose = true, cacheFirst = true)),
-        options = NipworkerSubscriptionOptions(closeOnEose = true, cacheFirst = true),
+        requests = listOf(NipworkerRequest(authors = listOf(cleanPubkey), kinds = listOf(0), limit = 1, relays = lookupRelays, cacheFirst = true)),
+        options = NipworkerSubscriptionOptions(closeOnEose = true),
     ) { messages ->
       for (message in messages) {
         if (message.contentType != Message.ParsedEvent) continue
@@ -86,8 +86,8 @@ class NativeAuthorReadRelaysHook(private val onRelays:(List<String>)->Unit) {
     cancel();subscriptionKey=key;handler.postDelayed(timeout,1_000)
     handle=NipworkerRuntime.useSubscription(
       "native_author_relays_${clean}_${relayKey(lookup)}",
-      listOf(NipworkerRequest(authors=listOf(clean),kinds=listOf(10002),limit=1,relays=lookup,closeOnEose=true,cacheFirst=true)),
-      NipworkerSubscriptionOptions(closeOnEose=true,cacheFirst=true),
+      listOf(NipworkerRequest(authors=listOf(clean),kinds=listOf(10002),limit=1,relays=lookup,cacheFirst=true)),
+      NipworkerSubscriptionOptions(closeOnEose=true),
     ){messages->
       for(message in messages){
         if(message.contentType!=Message.ParsedEvent)continue

@@ -7,8 +7,8 @@
  */
 import type {ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
 import {extractTagValue} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {asConnectionStatus, asParsedEvent} from '@candypoets/nipworker/utils';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 
 import {
   COMMUNITY_ANCHOR_D,
@@ -85,7 +85,7 @@ function materialize(event: ParsedEvent): AccessEvent | null {
 
 function collectEvents(
   subId: string,
-  requests: Parameters<typeof subscribeToNostr>[1],
+  requests: Parameters<typeof subscribeUntilEose>[1],
   timeoutMs = 2500,
 ): Promise<AccessEvent[]> {
   return new Promise(resolve => {
@@ -100,7 +100,7 @@ function collectEvents(
       resolve(collected);
     };
     const timeout = setTimeout(finish, timeoutMs);
-    unsubscribe = subscribeToNostr(subId, requests, (message: WorkerMessage) => {
+    unsubscribe = subscribeUntilEose(subId, requests, (message: WorkerMessage) => {
       const status = asConnectionStatus(message);
       if (status) {
         if (status.status()?.toString().toLowerCase() === 'eose') finish();

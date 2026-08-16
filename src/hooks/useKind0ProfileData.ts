@@ -1,6 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import type {Kind0Parsed} from '@candypoets/nipworker';
-import {useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind3,
@@ -11,6 +10,7 @@ import {
 } from '@candypoets/nipworker/utils';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {INDEXER_RELAYS} from '../stores';
 import {useRelayStore} from '../stores';
 
@@ -107,7 +107,7 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
   useEffect(() => {
     if (!pubkey) return undefined;
 
-    const unsubscribeProfile = subscribeToNostr(
+    const unsubscribeProfile = subscribeUntilEose(
       `u_${pubkey}`,
       [
         {
@@ -115,7 +115,6 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
           authors: [pubkey],
           limit: 1,
           cacheFirst: true,
-          closeOnEOSE: true,
           relays: fallbackRelays,
         },
       ],
@@ -132,7 +131,6 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
           setProfile(current => (current === kind0 ? current : kind0));
         }
       },
-      {closeOnEose: true},
     );
 
     return () => {
@@ -150,7 +148,7 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
 
     let unsubscribeRelaySets: (() => void) | null = null;
     fallbackRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
-    const unsubscribeDiscovery = subscribeToNostr(
+    const unsubscribeDiscovery = subscribeUntilEose(
       `kind0_meta_${pubkey}_${relayHash([
         ...fallbackRelays,
         ...RELAY_DIRECTORY_RELAYS,
@@ -177,7 +175,7 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
           const setSubId = `kind0_relay_sets_${pubkey}_${relayHash(addresses)}`;
           const roleSets = new Map<string, {createdAt: number; d: string; relays: string[]}>();
           unsubscribeRelaySets?.();
-          unsubscribeRelaySets = subscribeToNostr(
+          unsubscribeRelaySets = subscribeUntilEose(
             setSubId,
             addresses.map(address => {
               const [, author, d] = address.split(':');
@@ -218,7 +216,6 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
             },
             {
               bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
-              closeOnEose: false,
             },
           );
           return;
@@ -257,7 +254,6 @@ export function useKind0ProfileData(pubkey: string, visible: boolean) {
       },
       {
         bytesPerEvent: REPLACEABLE_LIST_BYTES_PER_EVENT,
-        closeOnEose: false,
       },
     );
 

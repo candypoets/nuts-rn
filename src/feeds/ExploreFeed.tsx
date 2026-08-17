@@ -205,7 +205,10 @@ export function ExploreFeed({
         : DEFAULT_EXPLORE_KINDS,
     [selectedKinds],
   );
-  const requestKindSet = useMemo(() => new Set<number>(requestKinds), [requestKinds]);
+  const requestKindSet = useMemo(
+    () => new Set<number>(requestKinds),
+    [requestKinds],
+  );
   const requestAuthors = useMemo(
     () => (exploreAudienceMode === 'contacts' ? follows : []),
     [exploreAudienceMode, follows],
@@ -316,9 +319,7 @@ export function ExploreFeed({
 
   const shouldIncludeKind = useCallback(
     (kind: number) =>
-      requestKinds.length > 0
-        ? requestKindSet.has(kind)
-        : true,
+      requestKinds.length > 0 ? requestKindSet.has(kind) : true,
     [requestKindSet, requestKinds.length],
   );
 
@@ -863,8 +864,7 @@ function ExploreEventCard({
   relays: string[];
 }) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
   const event = useMemo(
     () => parseExploreCalendarEvent(note, relays),
     [note, relays],
@@ -1191,14 +1191,50 @@ function NewNotesButton({
         onPress();
       }}
     >
-      <ChevronUp
-        size={14}
-        color={theme.colors.primary}
-        strokeWidth={2.4}
-      />
+      <ChevronUp size={14} color={theme.colors.primary} strokeWidth={2.4} />
       <Text className="text-sm font-semibold text-primary">
         {count} more {count === 1 ? 'post' : 'posts'}
       </Text>
+    </Pressable>
+  );
+}
+
+function NewNotesAvatarButton({
+  newNotes,
+  onPress,
+}: {
+  newNotes: NewNotesState;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+
+  if (!newNotes.count || !newNotes.pubkeys.length) return null;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${newNotes.count} more ${
+        newNotes.count === 1 ? 'note' : 'notes'
+      }`}
+      accessibilityHint="Show the latest notes"
+      onPress={event => {
+        event.stopPropagation();
+        onPress();
+      }}
+      className="h-12 flex-row items-center justify-center gap-2 rounded-full border border-base-200 bg-base-100 px-3 shadow-lg"
+    >
+      <ChevronUp size={14} color={theme.colors.primary} strokeWidth={2.4} />
+      <View className="flex-row items-center">
+        {newNotes.pubkeys.map((newNotePubkey, index) => (
+          <View
+            key={newNotePubkey}
+            className={index === 0 ? '' : '-ml-3'}
+            style={{ zIndex: newNotes.pubkeys.length - index }}
+          >
+            <Avatar pubkey={newNotePubkey} size="md" />
+          </View>
+        ))}
+      </View>
     </Pressable>
   );
 }
@@ -1234,46 +1270,65 @@ function ExploreHeader({
   showNewNotesPill: boolean;
   onNewNotesPress: () => void;
 }) {
-  const theme = useAppTheme();
   const visibleKinds =
     selectedKinds.length > 0 && selectedKinds.length < ALL_FEED_KINDS.length
       ? selectedKinds
       : [];
+  const showStickyNewNotes =
+    showKindSelector &&
+    showNewNotesPill &&
+    newNotes.count > 0 &&
+    newNotes.pubkeys.length > 0;
 
   return (
     <View className="border-b border-base-200 bg-base-300/95">
       <FeedSticky>
-        <View
-          className="px-3 pb-2"
-          style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
-        >
-          <View className="h-14 flex-row items-center justify-between">
-            <View className="min-w-0 flex-1 flex-row items-center gap-1">
-              <ExploreScopeToggle
-                audienceMode={audienceMode}
-                setAudienceMode={setAudienceMode}
-              />
-              <FeedKindHeaderButtons
-                kinds={showKindSelector ? [] : visibleKinds}
-                surfaceClassName={surfaceClassName}
-              />
-            </View>
-            <View className="flex-row items-center gap-2">
-              <HeaderSearchButton surfaceClassName={surfaceClassName} />
-              <NotificationBellButton
-                className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
-              />
-              <HeaderProfileButton
-                pubkey={pubkey}
-                className={`h-9 w-9 border-base-200 ${surfaceClassName}`}
-              />
+        <View className="relative" pointerEvents="box-none">
+          <View
+            className="px-3 pb-2"
+            style={
+              safeAreaTop > 0 ? { paddingTop: safeAreaTop + 8 } : undefined
+            }
+          >
+            <View className="h-14 flex-row items-center justify-between">
+              <View className="min-w-0 flex-1 flex-row items-center gap-1">
+                <ExploreScopeToggle
+                  audienceMode={audienceMode}
+                  setAudienceMode={setAudienceMode}
+                />
+                <FeedKindHeaderButtons
+                  kinds={showKindSelector ? [] : visibleKinds}
+                  surfaceClassName={surfaceClassName}
+                />
+              </View>
+              <View className="flex-row items-center gap-2">
+                <HeaderSearchButton surfaceClassName={surfaceClassName} />
+                <NotificationBellButton
+                  className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
+                />
+                <HeaderProfileButton
+                  pubkey={pubkey}
+                  className={`h-9 w-9 border-base-200 ${surfaceClassName}`}
+                />
+              </View>
             </View>
           </View>
+          {showStickyNewNotes ? (
+            <View
+              className="absolute left-0 right-0 z-40 items-center"
+              pointerEvents="box-none"
+              style={{ top: safeAreaTop + 64 + 48 }}
+            >
+              <NewNotesAvatarButton
+                newNotes={newNotes}
+                onPress={onNewNotesPress}
+              />
+            </View>
+          ) : null}
         </View>
       </FeedSticky>
       <FeedHeaderDynamic>
-        <View
-          className={`px-3 pt-2 ${showKindSelector ? 'pb-0' : 'pb-3'}`}>
+        <View className={`px-3 pt-2 ${showKindSelector ? 'pb-0' : 'pb-3'}`}>
           <HeaderRelaysList
             subId={relaySelectionSubId}
             relays={relays}
@@ -1288,42 +1343,6 @@ function ExploreHeader({
             onSelectKinds={setSelectedKinds}
             tabs={EXPLORE_KIND_TABS}
           />
-          {showNewNotesPill &&
-          newNotes.count > 0 &&
-          newNotes.pubkeys.length > 0 ? (
-            <View
-              className="absolute bottom-0 left-0 right-0 z-40 items-center"
-              pointerEvents="box-none"
-              style={{transform: [{translateY: 8}]}}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${newNotes.count} more ${
-                  newNotes.count === 1 ? 'note' : 'notes'
-                }`}
-                accessibilityHint="Show the latest notes"
-                onPress={event => {
-                  event.stopPropagation();
-                  onNewNotesPress();
-                }}
-                className="h-12 flex-row items-center justify-center gap-2 rounded-full border border-base-200 bg-base-100 px-3 shadow-lg">
-                <ChevronUp
-                  size={14}
-                  color={theme.colors.primary}
-                  strokeWidth={2.4}
-                />
-                <View className="flex-row items-center">
-                  {newNotes.pubkeys.map((newNotePubkey, index) => (
-                    <View
-                      key={newNotePubkey}
-                      className={index === 0 ? '' : '-ml-3'}
-                      style={{zIndex: newNotes.pubkeys.length - index}}>
-                      <Avatar pubkey={newNotePubkey} size="md" />
-                    </View>
-                  ))}
-                </View>
-              </Pressable>
-            </View>
-          ) : null}
         </View>
       ) : null}
       {!showNewNotesPill && newNotes.count > 0 ? (
@@ -1341,8 +1360,7 @@ function FeedKindHeaderButtons({
   surfaceClassName: string;
 }) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
 
   const openFeedBuilder = useCallback(() => {
     navigation.navigate('FeedBuilder');
@@ -1381,8 +1399,7 @@ function HeaderSearchButton({
   surfaceClassName: string;
 }) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
 
   return (
     <Pressable

@@ -47,6 +47,7 @@ import { nip19, type EventTemplate } from 'nostr-tools';
 import type {SearchBarCommands} from 'react-native-screens';
 
 import { HeaderProfileButton } from '../components/HeaderProfileButton';
+import { AppButton } from '../components/AppButton';
 import { Avatar } from '../components/notes';
 import { getCurrentPushToken } from '../hooks/usePushNotifications';
 import { shortNpub } from '../lib/identity';
@@ -140,6 +141,22 @@ function decodePublicKey(input: string) {
     throw new Error('Enter a valid public key.');
   }
   return value.toLowerCase();
+}
+
+function friendlyLoginError(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('native module is not ready')) {
+    return 'Sign in is still getting ready. Try again in a moment.';
+  }
+  if (
+    normalized.includes('nip-46') ||
+    normalized.includes('nip46') ||
+    normalized.includes('connect failed') ||
+    normalized.includes('timeout')
+  ) {
+    return 'We couldn’t connect to your signing app. Try again or use another sign-in method.';
+  }
+  return message;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -446,7 +463,7 @@ export function PrivateKeyLogin({
   useEffect(() => {
     if (!authError) return;
     setLoginPending(false);
-    setError(authError);
+    setError(friendlyLoginError(authError));
   }, [authError]);
 
   // Clear any pending NIP-46 auth challenge / auth error when leaving the
@@ -470,7 +487,7 @@ export function PrivateKeyLogin({
 
   const submit = useCallback(() => {
     if (!manager) {
-      setError('Nipworker native module is not ready.');
+      setError(friendlyLoginError('Nipworker native module is not ready.'));
       return;
     }
 
@@ -506,15 +523,15 @@ export function PrivateKeyLogin({
       setError(null);
     } catch (nextError) {
       setLoginPending(false);
-      setError(
+      setError(friendlyLoginError(
         nextError instanceof Error ? nextError.message : String(nextError),
-      );
+      ));
     }
   }, [manager, privateKey]);
 
   const startQrConnect = useCallback(async () => {
     if (!manager) {
-      setError('Nipworker native module is not ready.');
+      setError(friendlyLoginError('Nipworker native module is not ready.'));
       return;
     }
 
@@ -533,9 +550,9 @@ export function PrivateKeyLogin({
       setQrLinkCopied(false);
     } catch (nextError) {
       setLoginPending(false);
-      setError(
+      setError(friendlyLoginError(
         nextError instanceof Error ? nextError.message : String(nextError),
-      );
+      ));
     }
   }, [manager]);
 
@@ -564,18 +581,21 @@ export function PrivateKeyLogin({
     <View style={styles.modalBody}>
       <View style={styles.fullModalSheet}>
         <View style={styles.modalHandle} />
-        <View style={styles.modalHeader}>
-          <Text style={styles.stackTitle}>Authenticate</Text>
-        </View>
         <ScrollView
           contentContainerStyle={styles.loginContent}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View>
-            <Text style={styles.stackBody}>
-              Connect with your signing app, or paste a key.
-            </Text>
+            <View style={styles.loginIntro}>
+              <Text style={styles.loginTitle}>Welcome back</Text>
+              <Text style={styles.loginSubtitle}>
+                Choose how you want to sign in.
+              </Text>
+            </View>
             <Pressable
+              accessibilityRole="button"
+              disabled={!manager}
               style={[
                 styles.nip46Button,
                 manager ? null : styles.disabledNip46Button,
@@ -586,9 +606,14 @@ export function PrivateKeyLogin({
                 <Radio size={22} color={theme.colors.primary} strokeWidth={2.2} />
               </View>
               <View style={styles.nip46Text}>
-                <Text style={styles.nip46Title}>Connect with another app</Text>
+                <View style={styles.nip46TitleRow}>
+                  <Text style={styles.nip46Title}>Use a signing app</Text>
+                  <View style={styles.recommendedBadge}>
+                    <Text style={styles.recommendedText}>Recommended</Text>
+                  </View>
+                </View>
                 <Text style={styles.nip46Detail}>
-                  Scan the code to approve access
+                  Approve from another app without pasting a key.
                 </Text>
               </View>
               <ChevronRight size={20} color={mutedIconColor} strokeWidth={2.1} />
@@ -624,10 +649,16 @@ export function PrivateKeyLogin({
                 ) : null}
               </View>
             ) : null}
+            <View style={styles.loginDivider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+            <Text style={styles.loginFieldLabel}>Key or connection link</Text>
             <TextInput
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder="nsec, npub, or connection link"
+              placeholder="Paste key or connection link"
               placeholderTextColor={theme.colors.primaryContent}
               secureTextEntry
               style={styles.input}
@@ -638,6 +669,9 @@ export function PrivateKeyLogin({
                 setError(null);
               }}
             />
+            <Text style={styles.loginFieldHelp}>
+              Public keys open in read-only mode.
+            </Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             {auth.pubkey ? (
               <Text style={styles.successText}>
@@ -661,21 +695,18 @@ export function PrivateKeyLogin({
             ) : null}
           </View>
           <View style={styles.loginActions}>
-            <Pressable
-              style={[
-                styles.action,
-                manager && privateKey.trim()
-                  ? styles.loginAction
-                  : styles.disabledAction,
-              ]}
+            <AppButton
+              disabled={!manager || !privateKey.trim() || loginPending}
+              title={loginPending ? 'Signing in…' : 'Sign in'}
               onPress={submit}
-            >
-              <Text style={styles.actionText}>Sign in</Text>
-            </Pressable>
+            />
             {onSignup ? (
-              <Pressable style={styles.secondaryAction} onPress={onSignup}>
-                <Text style={styles.secondaryActionText}>Create account</Text>
-              </Pressable>
+              <View style={styles.accountSwitch}>
+                <Text style={styles.accountSwitchText}>New to Nuts?</Text>
+                <Pressable hitSlop={8} onPress={onSignup}>
+                  <Text style={styles.accountSwitchLink}>Create account</Text>
+                </Pressable>
+              </View>
             ) : null}
           </View>
         </ScrollView>
@@ -2024,22 +2055,38 @@ function createProfileModalStyles(colors: AppThemeColors) {
     marginBottom: 16,
   },
   loginContent: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'space-between',
+  },
+  loginIntro: {
+    marginBottom: 24,
+  },
+  loginTitle: {
+    color: contentColor,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  loginSubtitle: {
+    color: colors.primaryContent,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 6,
   },
   loginActions: {
     paddingBottom: 8,
+    paddingTop: 24,
   },
   nip46Button: {
     alignItems: 'center',
-    backgroundColor: colors.base300,
+    backgroundColor: colors.base100,
     borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
-    marginBottom: 14,
-    minHeight: 64,
+    minHeight: 76,
     paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   disabledNip46Button: {
     opacity: 0.55,
@@ -2056,15 +2103,79 @@ function createProfileModalStyles(colors: AppThemeColors) {
   nip46Text: {
     flex: 1,
   },
+  nip46TitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   nip46Title: {
     color: contentColor,
     fontSize: 16,
     fontWeight: '800',
   },
+  recommendedBadge: {
+    backgroundColor: colors.base100,
+    borderColor: colors.primary,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  recommendedText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '800',
+  },
   nip46Detail: {
     color: colors.primaryContent,
     fontSize: 13,
+    lineHeight: 18,
     marginTop: 2,
+  },
+  loginDivider: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    marginVertical: 20,
+  },
+  dividerLine: {
+    backgroundColor: colors.base200,
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  dividerText: {
+    color: colors.primaryContent,
+    fontSize: 13,
+  },
+  loginFieldLabel: {
+    color: contentColor,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  loginFieldHelp: {
+    color: colors.primaryContent,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 7,
+  },
+  accountSwitch: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+    justifyContent: 'center',
+    marginTop: 18,
+    minHeight: 32,
+  },
+  accountSwitchText: {
+    color: colors.primaryContent,
+    fontSize: 14,
+  },
+  accountSwitchLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
   },
   qrPanel: {
     alignItems: 'center',

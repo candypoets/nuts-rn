@@ -17,10 +17,10 @@ appId: com.nutsrn
 #   AVD lacks that settings screen). `adb shell pm clear` + re-onboard resets.
 - runFlow: launch.yaml
 - tapOn: "Home"
-- assertVisible: "Sign in to load your wallet feed"
+- assertVisible: "Your wallet, passes, and tickets"
 - tapOn: "Sign in"
-- assertVisible: "Authenticate"
-- tapOn: "Connect with another app"
+- assertVisible: "Welcome back"
+- tapOn: "Use a signing app"
 # Button only appears when a signer app is installed (NIP-55-style detection).
 - assertVisible: "Open in signing app"
 - tapOn: "Open in signing app"
@@ -34,7 +34,7 @@ appId: com.nutsrn
     appId: com.nutsrn
     stopApp: false
 - extendedWaitUntil:
-    notVisible: "Authenticate"
+    notVisible: "Welcome back"
     timeout: 60000
-- assertNotVisible: "Sign in to load your wallet feed"
+- assertNotVisible: "Your wallet, passes, and tickets"
 - takeScreenshot: amber-logged-in

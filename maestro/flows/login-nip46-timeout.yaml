@@ -7,26 +7,26 @@ appId: com.nutsrn
 #   node /root/code/nipworker/tests/e2e-browser/mock-signer-relay.mjs --port 7746
 - runFlow: launch.yaml
 - tapOn: "Home"
-- assertVisible: "Sign in to load your wallet feed"
+- assertVisible: "Your wallet, passes, and tickets"
 - tapOn: "Sign in"
-- assertVisible: "Authenticate"
-- tapOn: "nsec, npub, or connection link"
+- assertVisible: "Welcome back"
+- tapOn: "Paste key or connection link"
 # Valid but unanswered pubkey (fresh keypair, no signer behind it).
 # NOTE: do NOT use an invalid x-only pubkey (e.g. 'bb'*32) — the encryption
 # path appears to die silently on it (no error, no timeout).
 - inputText: "bunker://2d19bd1cdf4c4e81f99ddd15ab29b2805436a0d484efc9288390e60f9eeb8be3?relay=ws%3A%2F%2F10.0.2.2%3A7746"
 # Dismiss keyboard via inert text (hideKeyboard can dismiss the whole modal).
-- tapOn: "Connect with your signing app, or paste a key."
+- tapOn: "Choose how you want to sign in."
 - tapOn:
     text: "Sign in"
-    below: "nsec, npub, or connection link"
+    below: "Paste key or connection link"
 # nipworker reports "NIP-46 bunker connect failed: nip46 timeout waiting for
 # response" after ~20s; the app must show it instead of hanging silently.
 # Maestro text selectors match the WHOLE element text — use .* around the
 # substring or the assert fails even when the error is on screen.
 - extendedWaitUntil:
-    visible: ".*connect failed.*"
+    visible: ".*connect to your signing app.*"
     timeout: 120000
 # Modal stays open so the user can fix the input and retry.
-- assertVisible: "Authenticate"
+- assertVisible: "Welcome back"
 - takeScreenshot: nip46-connect-timeout

@@ -11,27 +11,27 @@ appId: com.nutsrn
 - runFlow: launch.yaml
 # Home tab shows a sign-in stub when logged out.
 - tapOn: "Home"
-- assertVisible: "Sign in to load your wallet feed"
+- assertVisible: "Your wallet, passes, and tickets"
 - tapOn: "Sign in"
 # Login modal.
-- assertVisible: "Authenticate"
-- assertVisible: "Connect with another app"
+- assertVisible: "Welcome back"
+- assertVisible: "Use a signing app"
 # Paste the bunker:// URI of the fake signer and submit.
-- tapOn: "nsec, npub, or connection link"
+- tapOn: "Paste key or connection link"
 - inputText: "bunker://6a04ab98d9e4774ad806e302dddeb63bea16b5cb5f223ee77478e861bb583eb3?relay=ws%3A%2F%2F10.0.2.2%3A7746"
 # Dismiss the keyboard by tapping inside the modal's ScrollView.
 # (hideKeyboard can send a Back press when the IME never opened, which
 # dismisses the whole login modal.)
-- tapOn: "Connect with your signing app, or paste a key."
+- tapOn: "Choose how you want to sign in."
 # "Sign in" also exists on the covered Home stub underneath the modal;
 # anchor to the input field so the modal's submit button is tapped.
 - tapOn:
     text: "Sign in"
-    below: "nsec, npub, or connection link"
+    below: "Paste key or connection link"
 # Success: the modal closes itself once the auth event lands.
 - extendedWaitUntil:
-    notVisible: "Authenticate"
+    notVisible: "Welcome back"
     timeout: 60000
 # Back on Home; logged-in feed replaces the sign-in stub.
-- assertNotVisible: "Sign in to load your wallet feed"
+- assertNotVisible: "Your wallet, passes, and tickets"
 - takeScreenshot: nip46-logged-in

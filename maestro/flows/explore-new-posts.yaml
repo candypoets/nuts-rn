@@ -21,21 +21,21 @@ appId: com.nutsrn
 - runFlow: launch.yaml
 # Log in with the QA identity (same nsec pattern as redeem.yaml).
 - tapOn: "Home"
-- assertVisible: "Sign in to load your wallet feed"
+- assertVisible: "Your wallet, passes, and tickets"
 - tapOn: "Sign in"
-- assertVisible: "Authenticate"
-- tapOn: "nsec, npub, or connection link"
+- assertVisible: "Welcome back"
+- tapOn: "Paste key or connection link"
 - inputText: "${NSEC}"
 # Dismiss the keyboard by tapping inert text inside the modal (hideKeyboard
 # can send a Back press that dismisses the whole modal).
-- tapOn: "Connect with your signing app, or paste a key."
+- tapOn: "Choose how you want to sign in."
 # Anchor to the input field: "Sign in" also exists on the covered Home stub.
 - tapOn:
     text: "Sign in"
-    below: "nsec, npub, or connection link"
+    below: "Paste key or connection link"
 # Success: the modal closes itself once the auth event lands.
 - extendedWaitUntil:
-    notVisible: "Authenticate"
+    notVisible: "Welcome back"
     timeout: 60000
 - tapOn: "Feed"
 # The account's kind 10002 lists only the QA relay, so once it resolves from

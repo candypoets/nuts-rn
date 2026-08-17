@@ -11,16 +11,16 @@ appId: com.nutsrn
 # and sends the real ack (same request id) once the approve file appears.
 - runFlow: launch.yaml
 - tapOn: "Home"
-- assertVisible: "Sign in to load your wallet feed"
+- assertVisible: "Your wallet, passes, and tickets"
 - tapOn: "Sign in"
-- assertVisible: "Authenticate"
-- tapOn: "nsec, npub, or connection link"
+- assertVisible: "Welcome back"
+- tapOn: "Paste key or connection link"
 - inputText: "bunker://6a04ab98d9e4774ad806e302dddeb63bea16b5cb5f223ee77478e861bb583eb3?relay=ws%3A%2F%2F10.0.2.2%3A7746"
 # Dismiss keyboard via inert text (hideKeyboard can dismiss the whole modal).
-- tapOn: "Connect with your signing app, or paste a key."
+- tapOn: "Choose how you want to sign in."
 - tapOn:
     text: "Sign in"
-    below: "nsec, npub, or connection link"
+    below: "Paste key or connection link"
 # The auth challenge surfaces as an approve prompt in the login modal.
 - assertVisible: "Your signing app asks you to approve this request."
 - assertVisible: "Open approval page"
@@ -31,10 +31,10 @@ appId: com.nutsrn
 - launchApp:
     appId: com.nutsrn
     stopApp: false
-- assertVisible: "Authenticate"
+- assertVisible: "Welcome back"
 # Host-side approver fires; the deferred ack completes the login.
 - extendedWaitUntil:
-    notVisible: "Authenticate"
+    notVisible: "Welcome back"
     timeout: 60000
-- assertNotVisible: "Sign in to load your wallet feed"
+- assertNotVisible: "Your wallet, passes, and tickets"
 - takeScreenshot: nip46-authurl-logged-in

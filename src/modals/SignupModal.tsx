@@ -9,6 +9,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   InteractionManager,
@@ -37,7 +38,16 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import {asNip51, asParsedEvent} from '@candypoets/nipworker/utils';
 import {isConnectionStatus} from '@candypoets/nipworker/utils';
-import {Camera, Check, ChevronLeft, Search, UserPlus, X} from 'lucide-react-native';
+import {
+  Camera,
+  Check,
+  ChevronLeft,
+  CircleAlert,
+  Search,
+  UserPlus,
+  UserRound,
+  X,
+} from 'lucide-react-native';
 import type {EventTemplate} from 'nostr-tools';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -196,15 +206,15 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   useEffect(() => {
     let alive = true;
     setMintDiscoveryReady(false);
-    setStatus('Finding a Cashu mint recommended on Nostr…');
+    setStatus('Preparing your wallet…');
     discoverRecommendedCashuMint(BOOTSTRAP_RELAYS).then(mint => {
       if (!alive) return;
       setRecommendedMint(mint);
       setMintDiscoveryReady(true);
       setStatus(
         mint
-          ? `Using ${mint.mint} (${mint.recommendationCount} Nostr recommendation${mint.recommendationCount === 1 ? '' : 's'}).`
-          : 'No reachable Nostr-recommended Cashu mint was found.',
+          ? 'Your wallet is ready.'
+          : 'We couldn’t prepare your wallet right now.',
       );
     });
     return () => {
@@ -685,40 +695,63 @@ export function SignupProfileStep({
   onPickAvatar: () => void;
 }) {
   const theme = useAppTheme();
+  const preparingWallet = status === 'Preparing your wallet…';
+  const walletReady = status === 'Your wallet is ready.';
 
   return (
     <View className="h-full bg-base-100">
       <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
         <View className="h-full px-4 pt-4">
-          <SignupHeader title="Create account" onBack={onBack} />
-          <View className="mt-6 items-center">
+          <SignupHeader progress="1 of 2" onBack={onBack} />
+          <View className="w-full" style={styles.profileForm}>
+            <Text className="mt-3 text-3xl font-extrabold tracking-tight text-base-content">
+              Create your profile
+            </Text>
+            <Text className="mt-2 text-sm leading-5 text-primary-content">
+              This is how people will recognize you. You can change it anytime.
+            </Text>
+          </View>
+          <View className="mt-5 items-center">
             <Pressable
-              className="h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-base-300 shadow-sm"
+              accessibilityLabel="Add profile photo"
+              className="items-center justify-center"
               onPress={onPickAvatar}
             >
-              {avatar ? (
-                <Image source={{uri: avatar.previewUri}} className="h-full w-full" resizeMode="cover" />
-              ) : (
-                <Camera size={30} color={theme.colors.primaryContent} strokeWidth={2.1} />
-              )}
+              <View className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-base-200 bg-base-300">
+                {avatar ? (
+                  <Image source={{uri: avatar.previewUri}} className="h-full w-full" resizeMode="cover" />
+                ) : (
+                  <UserRound size={34} color={theme.colors.primaryContent} strokeWidth={1.8} />
+                )}
+              </View>
+              <View
+                className="absolute bottom-0 right-0 h-8 w-8 items-center justify-center rounded-full border-2 border-base-100"
+                style={{backgroundColor: theme.colors.primary}}
+              >
+                <Camera size={15} color={theme.button.primary.text} strokeWidth={2.4} />
+              </View>
             </Pressable>
+            <Text className="mt-2 text-sm font-bold text-primary">Add photo</Text>
           </View>
           <View className="w-full" style={styles.profileForm}>
-            <Text className="mb-2 mt-8 text-sm font-semibold text-primary-content">Name</Text>
+            <Text className="mb-2 mt-5 text-sm font-semibold text-base-content">Display name</Text>
             <TextInput
               className="rounded-lg border border-base-200 bg-base-300 px-3 py-3 text-base text-base-content"
-              placeholder="Your name"
+              placeholder="What should people call you?"
               placeholderTextColor={theme.colors.primaryContent}
               returnKeyType="done"
               value={name}
               onChangeText={onNameChange}
               onSubmitEditing={Keyboard.dismiss}
             />
-            <Text className="mb-2 mt-4 text-sm font-semibold text-primary-content">Bio</Text>
+            <View className="mb-2 mt-4 flex-row items-center justify-between">
+              <Text className="text-sm font-semibold text-base-content">About you</Text>
+              <Text className="text-xs text-primary-content">Optional</Text>
+            </View>
             <TextInput
-              className="min-h-28 rounded-lg border border-base-200 bg-base-300 px-3 py-3 text-base text-base-content"
+              className="min-h-24 rounded-lg border border-base-200 bg-base-300 px-3 py-3 text-base text-base-content"
               multiline
-              placeholder="A short bio"
+              placeholder="A few words about you"
               placeholderTextColor={theme.colors.primaryContent}
               blurOnSubmit
               textAlignVertical="top"
@@ -727,7 +760,23 @@ export function SignupProfileStep({
               onChangeText={onBioChange}
               onSubmitEditing={Keyboard.dismiss}
             />
-            {status ? <Text className="mt-3 text-sm text-primary-content">{status}</Text> : null}
+            {status ? (
+              <View className="mt-3 flex-row items-center gap-2">
+                {preparingWallet ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : walletReady ? (
+                  <Check size={16} color={theme.colors.primary} strokeWidth={2.5} />
+                ) : (
+                  <CircleAlert size={16} color={theme.colors.error} strokeWidth={2.2} />
+                )}
+                <Text
+                  className="flex-1 text-sm"
+                  style={{color: walletReady || preparingWallet ? theme.colors.primaryContent : theme.colors.error}}
+                >
+                  {status}
+                </Text>
+              </View>
+            ) : null}
           </View>
           <View
             className="mt-auto w-full"
@@ -738,6 +787,12 @@ export function SignupProfileStep({
               title="Continue"
               onPress={onContinue}
             />
+            <View className="mt-3 min-h-10 flex-row items-center justify-center gap-1">
+              <Text className="text-sm text-primary-content">Already have an account?</Text>
+              <Pressable hitSlop={8} onPress={onBack}>
+                <Text className="text-sm font-extrabold text-primary">Sign in</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </TouchableWithoutFeedback>
@@ -769,7 +824,10 @@ export function SignupPacksStep({
   return (
     <View className="h-full bg-base-100">
       <View className="px-4 pt-4">
-        <SignupHeader title="Choose what to see" onBack={onBack} />
+        <SignupHeader progress="2 of 2" onBack={onBack} />
+        <Text className="mt-3 text-3xl font-extrabold tracking-tight text-base-content">
+          Choose what to see
+        </Text>
         <Text className="mt-2 text-sm leading-5 text-primary-content">
           Select follow packs. We will create your follow list from the people inside them.
         </Text>
@@ -808,14 +866,19 @@ export function SignupPacksStep({
   );
 }
 
-function SignupHeader({title, onBack}: {title: string; onBack: () => void}) {
+function SignupHeader({progress, onBack}: {progress: string; onBack: () => void}) {
   const theme = useAppTheme();
   return (
     <View className="h-12 flex-row items-center justify-between">
-      <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-base-300" hitSlop={12} onPress={onBack}>
+      <Pressable
+        accessibilityLabel="Back"
+        className="h-10 w-10 items-center justify-center rounded-full bg-base-300"
+        hitSlop={12}
+        onPress={onBack}
+      >
         <ChevronLeft size={22} color={theme.colors.primaryContent} strokeWidth={2.2} />
       </Pressable>
-      <Text className="text-lg font-bold text-base-content">{title}</Text>
+      <Text className="text-sm font-semibold text-primary-content">{progress}</Text>
       <View className="h-10 w-10" />
     </View>
   );

@@ -14,15 +14,15 @@ appId: com.nutsrn
 # to the public relays in the URL (damus/nos.lol/nuts.cash).
 - runFlow: launch.yaml
 - tapOn: "Home"
-- assertVisible: "Sign in to load your wallet feed"
+- assertVisible: "Your wallet, passes, and tickets"
 - tapOn: "Sign in"
-- assertVisible: "Authenticate"
+- assertVisible: "Welcome back"
 # App shows the nostrconnect QR; the fake signer "scans" it via the URL file.
-- tapOn: "Connect with another app"
+- tapOn: "Use a signing app"
 - assertVisible: "Scan this code with your signing app."
 # Success: the modal closes itself once the auth event lands.
 - extendedWaitUntil:
-    notVisible: "Authenticate"
+    notVisible: "Welcome back"
     timeout: 90000
-- assertNotVisible: "Sign in to load your wallet feed"
+- assertNotVisible: "Your wallet, passes, and tickets"
 - takeScreenshot: nip46-qr-logged-in

@@ -1303,9 +1303,11 @@ function ExploreHeader({
               </View>
               <View className="flex-row items-center gap-2">
                 <HeaderSearchButton surfaceClassName={surfaceClassName} />
-                <NotificationBellButton
-                  className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
-                />
+                {pubkey ? (
+                  <NotificationBellButton
+                    className={`h-9 w-9 items-center justify-center rounded-full border border-base-200 ${surfaceClassName}`}
+                  />
+                ) : null}
                 <HeaderProfileButton
                   pubkey={pubkey}
                   className={`h-9 w-9 border-base-200 ${surfaceClassName}`}

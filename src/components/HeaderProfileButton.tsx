@@ -1,10 +1,8 @@
 import React from 'react';
-import {Image, Pressable, View} from 'react-native';
+import {Image, Pressable, Text} from 'react-native';
 import {useNavigation} from 'expo-router/react-navigation';
-import {User} from 'lucide-react-native';
 import type {AppNavigationProp} from '../navigation/types';
 import {useNostrStore} from '../stores';
-import {useAppTheme} from '../theme';
 
 const fallbackProfileImage = require('../../assets/miss-profile.png');
 
@@ -19,29 +17,41 @@ export function HeaderProfileButton({
 }: HeaderProfileButtonProps) {
   const navigation =
     useNavigation<AppNavigationProp>();
-  const theme = useAppTheme();
   const profile = useNostrStore(state => state.profile);
   const picture =
     pubkey && profile?.pubkey === pubkey && profile.picture
       ? {uri: profile.picture}
       : fallbackProfileImage;
 
+  if (!pubkey) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Sign in"
+        className="h-9 items-center justify-center rounded-full border border-primary bg-transparent px-4"
+        hitSlop={12}
+        onPress={event => {
+          event.stopPropagation();
+          navigation.navigate('Login');
+        }}
+      >
+        <Text className="text-sm font-semibold text-primary">Sign in</Text>
+      </Pressable>
+    );
+  }
+
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Open profile"
       className={`items-center justify-center overflow-hidden rounded-full border ${className}`}
       hitSlop={12}
       onPress={event => {
         event.stopPropagation();
-        navigation.navigate(pubkey ? 'Profile' : 'Login');
+        navigation.navigate('Profile');
       }}
     >
-      {pubkey ? (
-        <Image source={picture} className="h-full w-full" resizeMode="cover" />
-      ) : (
-        <View className="h-full w-full items-center justify-center">
-          <User size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
-        </View>
-      )}
+      <Image source={picture} className="h-full w-full" resizeMode="cover" />
     </Pressable>
   );
 }

@@ -94,7 +94,12 @@ struct MediaInfo {
 final class NativeMediaSessionRegistry {
   static let shared = NativeMediaSessionRegistry()
 
-  private var playersByKey: [String: AVPlayer] = [:]
+  private struct PlayerEntry {
+    let player: AVPlayer
+    var references: Int
+  }
+
+  private var playersByKey: [String: PlayerEntry] = [:]
 
   private init() {}
 
@@ -138,16 +143,32 @@ final class NativeMediaSessionRegistry {
 
   func player(sessionId: String, itemKey: String, url: URL) -> AVPlayer {
     let key = cacheKey(sessionId: sessionId, itemKey: itemKey)
-    if let player = playersByKey[key] {
-      return player
+    if var entry = playersByKey[key] {
+      entry.references += 1
+      playersByKey[key] = entry
+      return entry.player
     }
 
     let player = AVPlayer(url: url)
     player.actionAtItemEnd = .none
     player.automaticallyWaitsToMinimizeStalling = false
     player.currentItem?.preferredForwardBufferDuration = 1
-    playersByKey[key] = player
+    playersByKey[key] = PlayerEntry(player: player, references: 1)
     return player
+  }
+
+  func releasePlayer(_ player: AVPlayer) {
+    guard let key = playersByKey.first(where: { $0.value.player === player })?.key,
+          var entry = playersByKey[key] else { return }
+    entry.references -= 1
+    if entry.references > 0 {
+      playersByKey[key] = entry
+      return
+    }
+
+    playersByKey[key] = nil
+    player.pause()
+    player.replaceCurrentItem(with: nil)
   }
 }
 
@@ -931,10 +952,13 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var noteBytes: [UInt8]?
   private var imageViewsByKey: [String: UIImageView] = [:]
   private var loadingImageKeys = Set<String>()
+  private var completedImageKeys = Set<String>()
   private var imageOperationsByKey: [String: SDWebImageOperation] = [:]
   private var videoPlayersByKey: [String: AVPlayer] = [:]
   private var videoLayersByKey: [String: AVPlayerLayer] = [:]
   private var gridControlsByKey: [String: NativeVideoGridControlsView] = [:]
+  // Viewport activity gates both playback and unfinished grid image work.
+  // Decoded images stay attached so returning to a row remains instant.
   private var playbackActive = true
   private let remainingItemsLabel = UILabel()
   private var overlayItem: MediaInfo?
@@ -1110,6 +1134,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
         setNeedsLayout()
       }
     } else {
+      cancelGridImageLoads()
       pauseAllVideos()
       overlayZoomControlsView?.configure(player: nil)
     }
@@ -1156,6 +1181,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageView.removeFromSuperview()
       imageViewsByKey[key] = nil
       loadingImageKeys.remove(key)
+      completedImageKeys.remove(key)
       imageOperationsByKey[key]?.cancel()
       imageOperationsByKey[key] = nil
       removeVideo(forKey: key)
@@ -1187,7 +1213,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
         view.addGestureRecognizer(tap)
         addSubview(view)
         imageViewsByKey[item.key] = view
-        loadImage(for: item, into: view)
+        if playbackActive {
+          loadImage(for: item, into: view)
+        }
         return view
       }()
       if imageView.superview !== self {
@@ -1196,12 +1224,15 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageView.accessibilityIdentifier = "\(index)"
       imageView.contentMode = .scaleAspectFill
       imageView.frame = tileFrame
-      if imageView.image == nil, imageOperationsByKey[item.key] == nil {
+      if playbackActive,
+         !completedImageKeys.contains(item.key),
+         imageOperationsByKey[item.key] == nil {
         loadImage(for: item, into: imageView)
       }
       if item.type == "video" {
-        if playbackActive {
-          configureVideo(for: item, in: imageView, autoplay: displayItems.count == 1 || index == 0)
+        let autoplay = displayItems.count == 1 || index == 0
+        if playbackActive && autoplay {
+          configureVideo(for: item, in: imageView, autoplay: true)
         } else if let player = videoPlayersByKey[item.key] {
           NativeMediaPlaybackCoordinator.shared.pause(player)
         }
@@ -1254,6 +1285,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
           let mediaView = sourceView as? UIImageView,
           let originalSuperview = mediaView.superview,
           let window = sourceView.window else { return }
+    if item.type == "video", videoPlayersByKey[item.key] == nil {
+      configureVideo(for: item, in: mediaView, autoplay: false)
+    }
     overlayItem = item
     overlayMovedMediaView = mediaView
     overlayMovedItemKey = item.key
@@ -2206,6 +2240,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
         imageView?.image = image
       }
       if finished {
+        if image != nil {
+          self.completedImageKeys.insert(item.key)
+        }
         self.loadingImageKeys.remove(item.key)
         self.imageOperationsByKey[item.key] = nil
       }
@@ -2295,6 +2332,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: player.currentItem)
       NativeMediaPlaybackCoordinator.shared.pause(player)
       videoPlayersByKey[key] = nil
+      NativeMediaSessionRegistry.shared.releasePlayer(player)
     }
     gridControlsByKey[key]?.removeFromSuperview()
     gridControlsByKey[key] = nil
@@ -2308,6 +2346,14 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     }
     imageOperationsByKey.removeAll()
     loadingImageKeys.removeAll()
+  }
+
+  private func cancelGridImageLoads() {
+    for key in Array(imageOperationsByKey.keys) where !key.hasPrefix("overlay:") {
+      imageOperationsByKey[key]?.cancel()
+      imageOperationsByKey[key] = nil
+      loadingImageKeys.remove(key)
+    }
   }
 
   private func cancelOverlayImageLoads() {

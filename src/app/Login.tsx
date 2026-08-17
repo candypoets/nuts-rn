@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from 'expo-router/react-navigation';
 
 import { PrivateKeyLogin, SignupModal } from '../modals';
@@ -10,11 +10,14 @@ type LoginMode = 'login' | 'signup';
 
 export default function LoginRoute() {
   const router = useRouter();
+  const params = useLocalSearchParams<{mode?: LoginMode}>();
   const manager = getSharedNostrManager();
   const pubkey = useAuthStore(state => state.pubkey);
   const auth = useMemo(() => ({ pubkey }), [pubkey]);
   const focused = useIsFocused();
-  const [mode, setMode] = useState<LoginMode>('login');
+  const [mode, setMode] = useState<LoginMode>(
+    params.mode === 'signup' ? 'signup' : 'login',
+  );
   const onClose = useCallback(() => router.back(), [router]);
   const onSignup = useCallback(() => setMode('signup'), []);
   const onBackToLogin = useCallback(() => setMode('login'), []);

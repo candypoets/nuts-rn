@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   Main: undefined;
   Profile: undefined;
-  Login: undefined;
+  Login: {mode?: 'login' | 'signup'} | undefined;
   Logout: undefined;
   CmdK: undefined;
   FeedBuilder: undefined;

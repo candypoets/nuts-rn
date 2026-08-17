@@ -24,9 +24,10 @@ import {
   ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
-import {MessageCirclePlus} from 'lucide-react-native';
+import {MessageCirclePlus, MessagesSquare} from 'lucide-react-native';
 import {AppButton} from '../components/AppButton';
 import {Feed, FeedHeaderDynamic} from '../components/Feed';
+import {HeaderProfileButton} from '../components/HeaderProfileButton';
 import {Avatar, ContentBlocks, User} from '../components/notes';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {pushDistinct} from '../navigation/pushDistinct';
@@ -364,8 +365,8 @@ export function ChatFeed({
     resetEvents();
     startSubscription(true);
   }, [resetEvents, startSubscription]);
-  const openLogin = useCallback(() => {
-    navigation.navigate('Login');
+  const openSignup = useCallback(() => {
+    navigation.navigate('Login', {mode: 'signup'});
   }, [navigation]);
   const openNewChat = useCallback(() => {
     navigation.navigate('NewChat');
@@ -374,6 +375,7 @@ export function ChatFeed({
     ({ safeAreaTop = 0 } = { safeAreaTop: 0 }) => (
       <ChatHeader
         safeAreaTop={safeAreaTop}
+        pubkey={pubkey}
         activeTab={activeTab}
         messagesCount={conversations.messages.length}
         requestsCount={conversations.requests.length}
@@ -386,6 +388,7 @@ export function ChatFeed({
       conversations.messages.length,
       conversations.requests.length,
       openNewChat,
+      pubkey,
     ],
   );
 
@@ -394,7 +397,7 @@ export function ChatFeed({
       {pubkey && hasSigner === false ? (
         <ReadOnlyChatStub />
       ) : !pubkey ? (
-        <LoggedOutChatStub onSignIn={openLogin} />
+        <LoggedOutChatStub onCreateAccount={openSignup} />
       ) : (
         <View className="items-center">
           <Text className="text-center text-base font-semibold text-primary-content">
@@ -440,6 +443,7 @@ export function ChatFeed({
 }
 
 function ChatHeader({
+  pubkey,
   activeTab,
   safeAreaTop = 0,
   messagesCount,
@@ -447,6 +451,7 @@ function ChatHeader({
   onSelectTab,
   onNewChat,
 }: {
+  pubkey: string | null;
   activeTab: ChatListTab;
   safeAreaTop?: number;
   messagesCount: number;
@@ -463,64 +468,70 @@ function ChatHeader({
           style={safeAreaTop > 0 ? {paddingTop: safeAreaTop + 8} : undefined}
         >
           <View className="h-14 flex-row items-center justify-between">
-            <Text className="text-2xl font-bold text-base-content">Messages</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="New chat"
-              className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
-              hitSlop={12}
-              onPress={onNewChat}
-            >
-              <MessageCirclePlus
-                size={19}
-                color={theme.colors.primaryContent}
-                strokeWidth={2.2}
-              />
-            </Pressable>
+            <Text className="text-2xl font-bold text-base-content">Chats</Text>
+            {pubkey ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="New chat"
+                className="h-9 w-9 items-center justify-center rounded-full border border-base-200 bg-base-100"
+                hitSlop={12}
+                onPress={onNewChat}
+              >
+                <MessageCirclePlus
+                  size={19}
+                  color={theme.colors.primaryContent}
+                  strokeWidth={2.2}
+                />
+              </Pressable>
+            ) : (
+              <HeaderProfileButton pubkey={null} />
+            )}
           </View>
         </View>
       </FeedHeaderDynamic>
-      <View className="px-3 pb-2 pt-2">
-        <View className="flex-row rounded-lg bg-base-200 p-1">
-          <ChatTab
-            active={activeTab === 'messages'}
-            label="messages"
-            count={messagesCount}
-            onPress={() => onSelectTab('messages')}
-          />
-          <ChatTab
-            active={activeTab === 'requests'}
-            label="requests"
-            count={requestsCount}
-            onPress={() => onSelectTab('requests')}
-          />
+      {pubkey ? (
+        <View className="px-3 pb-2 pt-2">
+          <View className="flex-row rounded-lg bg-base-200 p-1">
+            <ChatTab
+              active={activeTab === 'messages'}
+              label="messages"
+              count={messagesCount}
+              onPress={() => onSelectTab('messages')}
+            />
+            <ChatTab
+              active={activeTab === 'requests'}
+              label="requests"
+              count={requestsCount}
+              onPress={() => onSelectTab('requests')}
+            />
+          </View>
         </View>
-      </View>
+      ) : null}
     </View>
   );
 }
 
-function LoggedOutChatStub({onSignIn}: {onSignIn: () => void}) {
+function LoggedOutChatStub({onCreateAccount}: {onCreateAccount: () => void}) {
   const theme = useAppTheme();
 
   return (
-    <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
-      <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
-          <MessageCirclePlus size={30} color={theme.colors.primary} strokeWidth={2.2} />
-        </View>
-        <Text className="text-center text-xl font-semibold text-base-content">
-          Chats require an account
-        </Text>
-        <Text className="mt-2 text-center text-sm leading-5 text-primary-content">
-          Sign in to load your direct-message conversations.
-        </Text>
-        <AppButton
-          title="Sign in"
-          className="mx-auto mt-5 min-w-36 px-6"
-          onPress={onSignIn}
-        />
-      </View>
+    <View className="items-center">
+      <MessagesSquare
+        size={76}
+        color={theme.colors.primary}
+        strokeWidth={1.7}
+      />
+      <Text className="mt-8 text-center text-2xl font-bold text-base-content">
+        Talk to people you meet on Nuts
+      </Text>
+      <Text className="mt-3 max-w-72 text-center text-base leading-6 text-primary-content">
+        Create an account to start a conversation.
+      </Text>
+      <AppButton
+        title="Create account"
+        className="mt-8 w-full max-w-sm px-6"
+        onPress={onCreateAccount}
+      />
     </View>
   );
 }

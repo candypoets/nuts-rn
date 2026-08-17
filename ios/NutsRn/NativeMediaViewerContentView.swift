@@ -954,6 +954,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var loadingImageKeys = Set<String>()
   private var completedImageKeys = Set<String>()
   private var imageOperationsByKey: [String: SDWebImageOperation] = [:]
+  private var imageLoadAttemptsByKey: [String: Int] = [:]
+  private var imageRetryWorkItemsByKey: [String: DispatchWorkItem] = [:]
+  private static let imageRetryDelays: [TimeInterval] = [1, 3, 6]
   private var videoPlayersByKey: [String: AVPlayer] = [:]
   private var videoLayersByKey: [String: AVPlayerLayer] = [:]
   private var gridControlsByKey: [String: NativeVideoGridControlsView] = [:]
@@ -1182,6 +1185,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageViewsByKey[key] = nil
       loadingImageKeys.remove(key)
       completedImageKeys.remove(key)
+      imageLoadAttemptsByKey[key] = nil
+      imageRetryWorkItemsByKey[key]?.cancel()
+      imageRetryWorkItemsByKey[key] = nil
       imageOperationsByKey[key]?.cancel()
       imageOperationsByKey[key] = nil
       removeVideo(forKey: key)
@@ -1204,7 +1210,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       )
       let imageView = imageViewsByKey[item.key] ?? {
         let view = UIImageView(frame: tileFrame)
-        view.backgroundColor = item.type == "video" ? UIColor.black : UIColor.clear
+        // Pending image tiles read as black boxes over dark note cards; use a
+        // neutral placeholder until the decoded image arrives.
+        view.backgroundColor = item.type == "video" ? UIColor.black : UIColor.systemGray5
         view.clipsToBounds = true
         view.contentMode = .scaleAspectFill
         view.isUserInteractionEnabled = true
@@ -1231,8 +1239,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       }
       if item.type == "video" {
         let autoplay = displayItems.count == 1 || index == 0
-        if playbackActive && autoplay {
-          configureVideo(for: item, in: imageView, autoplay: true)
+        if playbackActive {
+          // Attach the player layer for every viewport-visible video tile so
+          // thumbnail-less videos render their first frame instead of staying
+          // a black box; only the autoplay tile actually plays.
+          configureVideo(for: item, in: imageView, autoplay: autoplay)
         } else if let player = videoPlayersByKey[item.key] {
           NativeMediaPlaybackCoordinator.shared.pause(player)
         }
@@ -2222,31 +2233,75 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private func loadImage(for item: MediaInfo, into imageView: UIImageView) {
     let source = item.type == "video" ? (item.thumbnail ?? item.url) : item.url
     guard item.type != "video" || item.thumbnail != nil else { return }
+    guard URL(string: source) != nil else { return }
     guard !loadingImageKeys.contains(item.key) else { return }
     loadingImageKeys.insert(item.key)
+    imageRetryWorkItemsByKey[item.key]?.cancel()
+    imageRetryWorkItemsByKey[item.key] = nil
     let scale = window?.screen.scale ?? UIScreen.main.scale
     let targetSize = CGSize(
       width: max(imageView.bounds.width, 1) * scale,
       height: max(imageView.bounds.height, 1) * scale
     )
-    imageOperationsByKey[item.key] = NativeMediaSessionRegistry.shared.loadImage(
+    var operationRef: SDWebImageOperation?
+    let operation = NativeMediaSessionRegistry.shared.loadImage(
       for: source,
       targetSize: targetSize,
       highPriority: imageViewsByKey.count <= 1
     ) { [weak self, weak imageView] image, finished in
       guard let self else { return }
+      // Ignore completions from cancelled or superseded operations: they must
+      // not clear the bookkeeping (or overwrite the image) of a replacement
+      // load started for the same key after a viewport cancel.
+      guard let operation = operationRef,
+            let current = self.imageOperationsByKey[item.key],
+            current === operation else { return }
       if let image {
         imageView?.backgroundColor = .clear
         imageView?.image = image
       }
       if finished {
-        if image != nil {
-          self.completedImageKeys.insert(item.key)
-        }
         self.loadingImageKeys.remove(item.key)
         self.imageOperationsByKey[item.key] = nil
+        if image != nil {
+          self.completedImageKeys.insert(item.key)
+          self.imageLoadAttemptsByKey[item.key] = nil
+        } else {
+          self.scheduleImageLoadRetry(for: item.key)
+        }
       }
     }
+    operationRef = operation
+    if let operation {
+      imageOperationsByKey[item.key] = operation
+    } else {
+      loadingImageKeys.remove(item.key)
+    }
+  }
+
+  private func scheduleImageLoadRetry(for key: String) {
+    let attempt = (imageLoadAttemptsByKey[key] ?? 0) + 1
+    imageLoadAttemptsByKey[key] = attempt
+    guard attempt <= Self.imageRetryDelays.count else { return }
+    // While viewport-inactive, reactivation reloads unfinished tiles via
+    // layoutSubviews; no timer needed.
+    guard playbackActive else { return }
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.imageRetryWorkItemsByKey[key] = nil
+      guard self.playbackActive,
+            !self.completedImageKeys.contains(key),
+            self.imageOperationsByKey[key] == nil,
+            let item = self.items.first(where: { $0.key == key }),
+            let view = self.imageViewsByKey[key],
+            view.superview === self else { return }
+      self.loadImage(for: item, into: view)
+    }
+    imageRetryWorkItemsByKey[key] = workItem
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + Self.imageRetryDelays[attempt - 1],
+      execute: workItem
+    )
   }
 
   private func configureVideo(for item: MediaInfo, in imageView: UIImageView, autoplay: Bool) {
@@ -2346,6 +2401,10 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     }
     imageOperationsByKey.removeAll()
     loadingImageKeys.removeAll()
+    for workItem in imageRetryWorkItemsByKey.values {
+      workItem.cancel()
+    }
+    imageRetryWorkItemsByKey.removeAll()
   }
 
   private func cancelGridImageLoads() {
@@ -2354,6 +2413,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageOperationsByKey[key] = nil
       loadingImageKeys.remove(key)
     }
+    // Retry work items are only ever scheduled for grid keys.
+    for workItem in imageRetryWorkItemsByKey.values {
+      workItem.cancel()
+    }
+    imageRetryWorkItemsByKey.removeAll()
   }
 
   private func cancelOverlayImageLoads() {

@@ -114,7 +114,7 @@ final class NativeMediaSessionRegistry {
     highPriority: Bool = false,
     completion: @escaping (UIImage?, Bool) -> Void
   ) -> SDWebImageOperation? {
-    guard let url = URL(string: source), targetSize.width > 0, targetSize.height > 0 else {
+    guard let url = nativeMediaURLLenient(source), targetSize.width > 0, targetSize.height > 0 else {
       completion(nil, true)
       return nil
     }
@@ -212,6 +212,20 @@ private func nativeMediaFormatDuration(_ seconds: Double) -> String {
 
 private func nativeMediaIcon(_ name: String) -> UIImage? {
   UIImage(systemName: name)?.withRenderingMode(.alwaysTemplate)
+}
+
+// Tolerate publisher-supplied media URLs with unescaped spaces or unicode;
+// the JS zoom/detail paths (expo-image) accept these, so the grid should too.
+private func nativeMediaURLLenient(_ source: String) -> URL? {
+  if let url = URL(string: source) { return url }
+  let allowed = CharacterSet.urlPathAllowed
+    .union(.urlQueryAllowed)
+    .union(.urlFragmentAllowed)
+    .union(CharacterSet(charactersIn: "%"))
+  guard let encoded = source.addingPercentEncoding(withAllowedCharacters: allowed) else {
+    return nil
+  }
+  return URL(string: encoded)
 }
 
 private final class NativeVideoGridControlsView: UIView {
@@ -960,7 +974,10 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private var videoPlayersByKey: [String: AVPlayer] = [:]
   private var videoLayersByKey: [String: AVPlayerLayer] = [:]
   private var gridControlsByKey: [String: NativeVideoGridControlsView] = [:]
-  // Viewport activity gates both playback and unfinished grid image work.
+  // Viewport activity gates video playback only. Image loads deliberately
+  // ignore it: SDWebImage thumbnails and caches them anyway, and a missed
+  // VirtualView mode event (background tab, recycle) must never leave a
+  // tile permanently blank.
   // Decoded images stay attached so returning to a row remains instant.
   private var playbackActive = true
   private let remainingItemsLabel = UILabel()
@@ -1137,7 +1154,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
         setNeedsLayout()
       }
     } else {
-      cancelGridImageLoads()
+      // In-flight image loads keep running: a cancelled download wastes
+      // bandwidth, while a completed one lands in the cache for the tile's
+      // return. Only video playback is viewport-gated.
       pauseAllVideos()
       overlayZoomControlsView?.configure(player: nil)
     }
@@ -1221,9 +1240,9 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
         view.addGestureRecognizer(tap)
         addSubview(view)
         imageViewsByKey[item.key] = view
-        if playbackActive {
-          loadImage(for: item, into: view)
-        }
+        // Images load regardless of viewport activity; only video playback is
+        // gated. A missed VirtualView mode event must not strand a blank tile.
+        loadImage(for: item, into: view)
         return view
       }()
       if imageView.superview !== self {
@@ -1232,8 +1251,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageView.accessibilityIdentifier = "\(index)"
       imageView.contentMode = .scaleAspectFill
       imageView.frame = tileFrame
-      if playbackActive,
-         !completedImageKeys.contains(item.key),
+      if !completedImageKeys.contains(item.key),
          imageOperationsByKey[item.key] == nil {
         loadImage(for: item, into: imageView)
       }
@@ -2233,7 +2251,6 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private func loadImage(for item: MediaInfo, into imageView: UIImageView) {
     let source = item.type == "video" ? (item.thumbnail ?? item.url) : item.url
     guard item.type != "video" || item.thumbnail != nil else { return }
-    guard URL(string: source) != nil else { return }
     guard !loadingImageKeys.contains(item.key) else { return }
     loadingImageKeys.insert(item.key)
     imageRetryWorkItemsByKey[item.key]?.cancel()
@@ -2283,14 +2300,10 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     let attempt = (imageLoadAttemptsByKey[key] ?? 0) + 1
     imageLoadAttemptsByKey[key] = attempt
     guard attempt <= Self.imageRetryDelays.count else { return }
-    // While viewport-inactive, reactivation reloads unfinished tiles via
-    // layoutSubviews; no timer needed.
-    guard playbackActive else { return }
     let workItem = DispatchWorkItem { [weak self] in
       guard let self else { return }
       self.imageRetryWorkItemsByKey[key] = nil
-      guard self.playbackActive,
-            !self.completedImageKeys.contains(key),
+      guard !self.completedImageKeys.contains(key),
             self.imageOperationsByKey[key] == nil,
             let item = self.items.first(where: { $0.key == key }),
             let view = self.imageViewsByKey[key],
@@ -2401,19 +2414,6 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     }
     imageOperationsByKey.removeAll()
     loadingImageKeys.removeAll()
-    for workItem in imageRetryWorkItemsByKey.values {
-      workItem.cancel()
-    }
-    imageRetryWorkItemsByKey.removeAll()
-  }
-
-  private func cancelGridImageLoads() {
-    for key in Array(imageOperationsByKey.keys) where !key.hasPrefix("overlay:") {
-      imageOperationsByKey[key]?.cancel()
-      imageOperationsByKey[key] = nil
-      loadingImageKeys.remove(key)
-    }
-    // Retry work items are only ever scheduled for grid keys.
     for workItem in imageRetryWorkItemsByKey.values {
       workItem.cancel()
     }

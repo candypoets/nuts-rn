@@ -261,7 +261,13 @@ export default function RootLayout() {
                         sheetGrabberVisible: false,
                       }}
                     />
-                    <Stack.Screen name="Logout" options={{ presentation: 'formSheet' }} />
+                    <Stack.Screen
+                      name="Logout"
+                      options={{
+                        presentation: 'formSheet',
+                        sheetAllowedDetents: 'fitToContents',
+                      }}
+                    />
                     <Stack.Screen
                       name="Redeem"
                       options={{

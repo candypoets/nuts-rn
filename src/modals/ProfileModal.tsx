@@ -854,24 +854,22 @@ export function LogoutModal({
   };
 
   return (
-    <View style={styles.modalBody}>
-      <View style={styles.logoutSheet}>
-        <View style={styles.modalHandle} />
-        <View style={styles.modalHeader}>
-          <Text style={styles.stackTitle}>Log out</Text>
-          <Pressable hitSlop={12} onPress={onDone}>
-            <X size={22} color={mutedIconColor} strokeWidth={2.2} />
-          </Pressable>
-        </View>
-        <View style={styles.warningBox}>
-          <Text style={styles.warningText}>
-            Make sure you saved your private key before logging out.
-          </Text>
-        </View>
-        <Pressable style={[styles.action, styles.loginAction]} onPress={logout}>
-          <Text style={styles.actionText}>Log out</Text>
+    <View style={styles.logoutSheet}>
+      <View style={styles.modalHandle} />
+      <View style={styles.modalHeader}>
+        <Text style={styles.stackTitle}>Log out</Text>
+        <Pressable hitSlop={12} onPress={onDone}>
+          <X size={22} color={mutedIconColor} strokeWidth={2.2} />
         </Pressable>
       </View>
+      <View style={styles.warningBox}>
+        <Text style={styles.warningText}>
+          Make sure you saved your private key before logging out.
+        </Text>
+      </View>
+      <Pressable style={[styles.action, styles.loginAction]} onPress={logout}>
+        <Text style={styles.actionText}>Log out</Text>
+      </Pressable>
     </View>
   );
 }

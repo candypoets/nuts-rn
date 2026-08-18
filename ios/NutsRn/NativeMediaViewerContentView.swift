@@ -228,6 +228,47 @@ private func nativeMediaURLLenient(_ source: String) -> URL? {
   return URL(string: encoded)
 }
 
+// Deterministic first-frame posters for thumbnail-less grid videos: a paused
+// AVPlayerLayer is not reliable about rendering frame zero, so grab the frame
+// directly and cache it. Completions are coalesced per source and fire on main.
+private enum NativeVideoPoster {
+  private static let cache = NSCache<NSString, UIImage>()
+  private static var pending: [String: [(UIImage?) -> Void]] = [:]
+
+  static func load(_ source: String, completion: @escaping (UIImage?) -> Void) {
+    let cacheKey = source as NSString
+    if let cached = cache.object(forKey: cacheKey) {
+      completion(cached)
+      return
+    }
+    guard let url = nativeMediaURLLenient(source) else {
+      completion(nil)
+      return
+    }
+    if pending[source] != nil {
+      pending[source]?.append(completion)
+      return
+    }
+    pending[source] = [completion]
+    DispatchQueue.global(qos: .userInitiated).async {
+      let generator = AVAssetImageGenerator(asset: AVAsset(url: url))
+      generator.appliesPreferredTrackTransform = true
+      generator.maximumSize = CGSize(width: 1024, height: 1024)
+      generator.requestedTimeToleranceBefore = .positiveInfinity
+      generator.requestedTimeToleranceAfter = .positiveInfinity
+      let image = (try? generator.copyCGImage(at: .zero, actualTime: nil))
+        .map { UIImage(cgImage: $0) }
+      if let image {
+        cache.setObject(image, forKey: cacheKey)
+      }
+      DispatchQueue.main.async {
+        let callbacks = pending.removeValue(forKey: source) ?? []
+        callbacks.forEach { $0(image) }
+      }
+    }
+  }
+}
+
 private final class NativeVideoGridControlsView: UIView {
   var onCenterPlay: (() -> Void)?
   private weak var player: AVPlayer?
@@ -965,9 +1006,11 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   private let noteOverlayView = NativeMediaNoteOverlayView()
   private var noteBytes: [UInt8]?
   private var imageViewsByKey: [String: UIImageView] = [:]
-  private var loadingImageKeys = Set<String>()
-  private var completedImageKeys = Set<String>()
-  private var imageOperationsByKey: [String: SDWebImageOperation] = [:]
+  // Grid image loading is owned by SDWebImage's per-view API: the image view
+  // itself tracks and cancels its load. The only bookkeeping left here is the
+  // source each tile was last asked to show (so layout passes don't re-issue
+  // loads) plus bounded retries on failure.
+  private var loadedSourceByKey: [String: String] = [:]
   private var imageLoadAttemptsByKey: [String: Int] = [:]
   private var imageRetryWorkItemsByKey: [String: DispatchWorkItem] = [:]
   private static let imageRetryDelays: [TimeInterval] = [1, 3, 6]
@@ -1064,6 +1107,15 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   @objc func prepareForRecycle() {
     cancelAllImageLoads()
     stopAllVideos()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil {
+      // Re-attached (tab switch, recycled row returning onscreen): layout
+      // re-issues any loads that were cancelled while detached.
+      setNeedsLayout()
+    }
   }
 
   private func configureRemainingItemsLabel() {
@@ -1200,15 +1252,13 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   func update(items: [MediaInfo]) {
     let nextKeys = Set(items.map(\.key))
     for (key, imageView) in imageViewsByKey where !nextKeys.contains(key) {
+      imageView.sd_cancelCurrentImageLoad()
       imageView.removeFromSuperview()
       imageViewsByKey[key] = nil
-      loadingImageKeys.remove(key)
-      completedImageKeys.remove(key)
+      loadedSourceByKey[key] = nil
       imageLoadAttemptsByKey[key] = nil
       imageRetryWorkItemsByKey[key]?.cancel()
       imageRetryWorkItemsByKey[key] = nil
-      imageOperationsByKey[key]?.cancel()
-      imageOperationsByKey[key] = nil
       removeVideo(forKey: key)
     }
 
@@ -1251,17 +1301,14 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       imageView.accessibilityIdentifier = "\(index)"
       imageView.contentMode = .scaleAspectFill
       imageView.frame = tileFrame
-      if !completedImageKeys.contains(item.key),
-         imageOperationsByKey[item.key] == nil {
-        loadImage(for: item, into: imageView)
-      }
+      // No-ops when the tile already shows this source.
+      loadImage(for: item, into: imageView)
       if item.type == "video" {
         let autoplay = displayItems.count == 1 || index == 0
-        if playbackActive {
-          // Attach the player layer for every viewport-visible video tile so
-          // thumbnail-less videos render their first frame instead of staying
-          // a black box; only the autoplay tile actually plays.
-          configureVideo(for: item, in: imageView, autoplay: autoplay)
+        // Only the autoplay tile gets a live player; other video tiles show a
+        // generated poster frame (see loadImage) until tapped.
+        if playbackActive && autoplay {
+          configureVideo(for: item, in: imageView, autoplay: true)
         } else if let player = videoPlayersByKey[item.key] {
           NativeMediaPlaybackCoordinator.shared.pause(player)
         }
@@ -1822,23 +1869,21 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
 
     let source = item.type == "video" ? (item.thumbnail ?? item.url) : item.url
     if item.type != "video" || item.thumbnail != nil {
-      let operationKey = "overlay:\(item.key)"
-      imageOperationsByKey[operationKey]?.cancel()
       let scale = window?.screen.scale ?? UIScreen.main.scale
       let targetSize = CGSize(width: frame.width * scale, height: frame.height * scale)
-      imageOperationsByKey[operationKey] = NativeMediaSessionRegistry.shared.loadImage(
-        for: source,
-        targetSize: targetSize,
-        highPriority: true
-      ) { [weak self, weak imageView] image, finished in
-        guard let self, self.overlayView != nil else { return }
-        if let image {
-          imageView?.image = image
-        }
-        if finished {
-          self.imageOperationsByKey[operationKey] = nil
-        }
-      }
+      let context: [SDWebImageContextOption: Any] = [
+        .imageThumbnailPixelSize: targetSize,
+        .imagePreserveAspectRatio: true,
+      ]
+      // Per-view load: SDWebImage cancels it if the overlay page is torn down.
+      imageView.sd_setImage(
+        with: nativeMediaURLLenient(source),
+        placeholderImage: nil,
+        options: [.retryFailed, .scaleDownLargeImages, .continueInBackground, .highPriority],
+        context: context,
+        progress: nil,
+        completed: nil
+      )
     }
 
     if item.type == "video", let url = URL(string: item.url) {
@@ -2249,10 +2294,16 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   }
 
   private func loadImage(for item: MediaInfo, into imageView: UIImageView) {
-    let source = item.type == "video" ? (item.thumbnail ?? item.url) : item.url
-    guard item.type != "video" || item.thumbnail != nil else { return }
-    guard !loadingImageKeys.contains(item.key) else { return }
-    loadingImageKeys.insert(item.key)
+    if item.type == "video", item.thumbnail == nil {
+      loadVideoPoster(for: item, into: imageView)
+      return
+    }
+    let source = item.type == "video" ? item.thumbnail ?? item.url : item.url
+    // SDWebImage's per-view API owns cancellation and reuse; re-issuing the
+    // same source on every layout pass would restart the load, so dedupe here.
+    guard loadedSourceByKey[item.key] != source else { return }
+    guard let url = nativeMediaURLLenient(source) else { return }
+    loadedSourceByKey[item.key] = source
     imageRetryWorkItemsByKey[item.key]?.cancel()
     imageRetryWorkItemsByKey[item.key] = nil
     let scale = window?.screen.scale ?? UIScreen.main.scale
@@ -2260,39 +2311,49 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
       width: max(imageView.bounds.width, 1) * scale,
       height: max(imageView.bounds.height, 1) * scale
     )
-    var operationRef: SDWebImageOperation?
-    let operation = NativeMediaSessionRegistry.shared.loadImage(
-      for: source,
-      targetSize: targetSize,
-      highPriority: imageViewsByKey.count <= 1
-    ) { [weak self, weak imageView] image, finished in
+    let context: [SDWebImageContextOption: Any] = [
+      .imageThumbnailPixelSize: targetSize,
+      .imagePreserveAspectRatio: true,
+    ]
+    var options: SDWebImageOptions = [
+      .retryFailed,
+      .scaleDownLargeImages,
+      .continueInBackground,
+      .progressiveLoad,
+    ]
+    if imageViewsByKey.count <= 1 {
+      options.insert(.highPriority)
+    }
+    let itemKey = item.key
+    imageView.sd_setImage(
+      with: url,
+      placeholderImage: nil,
+      options: options,
+      context: context,
+      progress: nil
+    ) { [weak self, weak imageView] image, _, _, _ in
       guard let self else { return }
-      // Ignore completions from cancelled or superseded operations: they must
-      // not clear the bookkeeping (or overwrite the image) of a replacement
-      // load started for the same key after a viewport cancel.
-      guard let operation = operationRef,
-            let current = self.imageOperationsByKey[item.key],
-            current === operation else { return }
-      if let image {
+      // Stale (tile reused for another source) or cancelled (recycle) loads no
+      // longer own this key; the next layout pass re-issues if still relevant.
+      guard self.loadedSourceByKey[itemKey] == source else { return }
+      if image != nil {
         imageView?.backgroundColor = .clear
-        imageView?.image = image
-      }
-      if finished {
-        self.loadingImageKeys.remove(item.key)
-        self.imageOperationsByKey[item.key] = nil
-        if image != nil {
-          self.completedImageKeys.insert(item.key)
-          self.imageLoadAttemptsByKey[item.key] = nil
-        } else {
-          self.scheduleImageLoadRetry(for: item.key)
-        }
+        self.imageLoadAttemptsByKey[itemKey] = nil
+      } else {
+        self.loadedSourceByKey[itemKey] = nil
+        self.scheduleImageLoadRetry(for: itemKey)
       }
     }
-    operationRef = operation
-    if let operation {
-      imageOperationsByKey[item.key] = operation
-    } else {
-      loadingImageKeys.remove(item.key)
+  }
+
+  private func loadVideoPoster(for item: MediaInfo, into imageView: UIImageView) {
+    guard loadedSourceByKey[item.key] != item.url else { return }
+    loadedSourceByKey[item.key] = item.url
+    let itemKey = item.key
+    NativeVideoPoster.load(item.url) { [weak self, weak imageView] image in
+      guard let self, let image else { return }
+      guard self.imageViewsByKey[itemKey] === imageView else { return }
+      imageView?.image = image
     }
   }
 
@@ -2303,9 +2364,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
     let workItem = DispatchWorkItem { [weak self] in
       guard let self else { return }
       self.imageRetryWorkItemsByKey[key] = nil
-      guard !self.completedImageKeys.contains(key),
-            self.imageOperationsByKey[key] == nil,
-            let item = self.items.first(where: { $0.key == key }),
+      guard let item = self.items.first(where: { $0.key == key }),
             let view = self.imageViewsByKey[key],
             view.superview === self else { return }
       self.loadImage(for: item, into: view)
@@ -2409,11 +2468,13 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   }
 
   private func cancelAllImageLoads() {
-    for operation in imageOperationsByKey.values {
-      operation.cancel()
+    for imageView in imageViewsByKey.values {
+      imageView.sd_cancelCurrentImageLoad()
     }
-    imageOperationsByKey.removeAll()
-    loadingImageKeys.removeAll()
+    for imageView in overlayPageViewsByKey.values {
+      imageView.sd_cancelCurrentImageLoad()
+    }
+    loadedSourceByKey.removeAll()
     for workItem in imageRetryWorkItemsByKey.values {
       workItem.cancel()
     }
@@ -2421,9 +2482,8 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   }
 
   private func cancelOverlayImageLoads() {
-    for key in Array(imageOperationsByKey.keys) where key.hasPrefix("overlay:") {
-      imageOperationsByKey[key]?.cancel()
-      imageOperationsByKey[key] = nil
+    for imageView in overlayPageViewsByKey.values {
+      imageView.sd_cancelCurrentImageLoad()
     }
   }
 

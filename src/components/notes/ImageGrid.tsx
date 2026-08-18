@@ -17,7 +17,12 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import {useSharedVideoPlayer} from '../../media/videoPlayers';
+import {
+  pauseExclusive,
+  playExclusive,
+  useSharedVideoPlayer,
+} from '../../media/videoPlayers';
+import {useMediaActivity} from '../../media/MediaActivity';
 import {useUIStore} from '../../stores/uiStore';
 
 export type ImageGridLink = {
@@ -191,6 +196,7 @@ function VideoTile({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const player = useSharedVideoPlayer(src);
+  const mediaActive = useMediaActivity();
 
   useEffect(() => {
     if (zoomOwnsPlayer) return;
@@ -204,13 +210,25 @@ function VideoTile({
     setMuted(true);
     setDuration(player.duration || 0);
     setCurrentTime(player.currentTime || 0);
-    if (autoplay) {
-      player.play();
-    } else {
-      player.pause();
-      player.currentTime = 0;
-    }
   }, [autoplay, player, zoomOwnsPlayer]);
+
+  // Viewport gate: mediaActive comes from the per-row MediaActivityProvider in
+  // Feed (VirtualView visibility AND screen focus; default true elsewhere).
+  // Only autoplay tiles play, only while their row is in the viewport, and
+  // playExclusive keeps a single player running across the whole feed.
+  useEffect(() => {
+    if (zoomOwnsPlayer) return;
+    if (autoplay && mediaActive) {
+      setPlayRequested(true);
+      playExclusive(player);
+    } else {
+      pauseExclusive(player);
+      if (!autoplay) {
+        setPlayRequested(false);
+        player.currentTime = 0;
+      }
+    }
+  }, [autoplay, mediaActive, player, zoomOwnsPlayer]);
 
   useEffect(() => {
     setPosterLoading(Boolean(poster));
@@ -244,7 +262,7 @@ function VideoTile({
     player.volume = 1;
     setMuted(false);
     setPlayRequested(true);
-    player.play();
+    playExclusive(player);
     onOpenZoom();
   };
 
@@ -310,7 +328,7 @@ function VideoTile({
               player.volume = nextMuted ? 0 : 1;
               setMuted(nextMuted);
               setPlayRequested(true);
-              player.play();
+              playExclusive(player);
             }}
             style={styles.controlButton}
           >

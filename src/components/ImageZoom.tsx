@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentData } from '@candypoets/nipworker';
 import { asKind1, asKind20, asKind22, fbArray } from '@candypoets/nipworker/utils';
 
-import { useSharedVideoPlayer } from '../media/videoPlayers';
+import { playExclusive, useSharedVideoPlayer } from '../media/videoPlayers';
 import { useUIStore, type UIStore } from '../stores/uiStore';
 import { Avatar } from './notes/Avatar';
 import { Footer } from './notes/Footer';
@@ -616,7 +616,7 @@ function ExpoZoomVideo({
     player.timeUpdateEventInterval = 0.25;
     player.showNowPlayingNotification = false;
     player.staysActiveInBackground = false;
-    player.play();
+    playExclusive(player);
   }, [player]);
 
   const dismissPan = createDismissPan({

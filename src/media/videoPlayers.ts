@@ -8,6 +8,26 @@ type RegistryEntry = {
 
 const players = new Map<string, RegistryEntry>();
 
+// One-at-a-time playback across feed tiles, mirroring the native iOS
+// coordinator (NativeMediaPlaybackCoordinator). Tiles sharing a player by src
+// (feed tile + zoom overlay) intentionally share its playback state.
+let activePlayer: VideoPlayer | null = null;
+
+export function playExclusive(player: VideoPlayer) {
+  if (activePlayer && activePlayer !== player) {
+    activePlayer.pause();
+  }
+  activePlayer = player;
+  player.play();
+}
+
+export function pauseExclusive(player: VideoPlayer) {
+  player.pause();
+  if (activePlayer === player) {
+    activePlayer = null;
+  }
+}
+
 function configureBasePlayer(player: VideoPlayer) {
   player.audioMixingMode = 'doNotMix';
   player.showNowPlayingNotification = false;
@@ -34,6 +54,9 @@ export function releaseVideoPlayer(src: string) {
   if (entry.refs > 0) return;
 
   players.delete(src);
+  if (activePlayer === entry.player) {
+    activePlayer = null;
+  }
   entry.player.pause();
   entry.player.release();
 }

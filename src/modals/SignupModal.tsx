@@ -14,6 +14,7 @@ import {
   Image,
   InteractionManager,
   Keyboard,
+  Platform,
   Pressable,
   Text,
   TextInput,
@@ -573,6 +574,7 @@ export function SignupModal({
   onDone,
 }: SignupModalProps) {
   const insets = useSafeAreaInsets();
+  const topPadding = Platform.OS === 'android' ? insets.top : 0;
   const footerPaddingBottom = Math.max(24, insets.bottom + 12);
   const contextValue = useMemo(
     () => ({focused, footerPaddingBottom, manager, onBackToLogin, onDone}),
@@ -581,12 +583,12 @@ export function SignupModal({
 
   return (
     <SignupWizardContext.Provider value={contextValue}>
-      {/* Top inset: without it the wizard header renders under the status bar
-          (edge-to-edge), which both looks broken and drops the header from the
-          accessibility tree. */}
+      {/* Android's edge-to-edge modal needs an explicit status-bar inset.
+          The native iOS modal sheet already starts inside its safe area, so
+          applying the window inset there creates a second, oversized gap. */}
       <View
         className="h-full bg-base-100"
-        style={{paddingTop: insets.top}}
+        style={{paddingTop: topPadding}}
       >
         <SignupStack.Navigator
           screenOptions={{

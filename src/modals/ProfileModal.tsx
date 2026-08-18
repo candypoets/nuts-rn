@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  AppState,
   Easing,
   Linking,
   Pressable,
@@ -438,14 +439,25 @@ export function PrivateKeyLogin({
   const [qrText, setQrText] = useState('');
   const [qrLinkCopied, setQrLinkCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loginPending, setLoginPending] = useState(false);
-  const initialPubkeyRef = useRef(auth.pubkey);
+  const [loginPending, setLoginPendingState] = useState(false);
+  const loginPendingRef = useRef(false);
   const nip46AuthUrl = useAuthStore(state => state.nip46AuthUrl);
   const authError = useAuthStore(state => state.authError);
   // Detect a local signer that can complete the NIP-46 nostrconnect://
   // handoff. Android exposes this through package visibility; iOS requires
   // the scheme in LSApplicationQueriesSchemes.
   const [signerInstalled, setSignerInstalled] = useState(false);
+
+  const setLoginPending = useCallback((pending: boolean) => {
+    loginPendingRef.current = pending;
+    setLoginPendingState(pending);
+  }, []);
+
+  const finishLogin = useEffectEvent(() => {
+    if (!loginPendingRef.current) return;
+    setLoginPending(false);
+    onDone();
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -464,7 +476,7 @@ export function PrivateKeyLogin({
     if (!authError) return;
     setLoginPending(false);
     setError(friendlyLoginError(authError));
-  }, [authError]);
+  }, [authError, setLoginPending]);
 
   // Clear any pending NIP-46 auth challenge / auth error when leaving the
   // login screen.
@@ -478,12 +490,34 @@ export function PrivateKeyLogin({
     [],
   );
 
+  // The native NIP-46 session can complete while iOS has suspended React
+  // Native. Listen to the manager directly so a successful auth response is
+  // not dependent on a store render, and ask the native signer to replay its
+  // cached pubkey when the app returns to the foreground.
   useEffect(() => {
-    if (!loginPending || !auth.pubkey) return;
-    if (auth.pubkey === initialPubkeyRef.current) return;
-    setLoginPending(false);
-    onDone();
-  }, [auth.pubkey, loginPending, onDone]);
+    if (!manager) return;
+
+    const handleAuth = (event: Event) => {
+      const detail = (event as Event & {detail?: {pubkey?: string | null}}).detail;
+      if (detail?.pubkey) finishLogin();
+    };
+    let previousAppState = AppState.currentState;
+    const appStateSubscription = AppState.addEventListener('change', nextState => {
+      const resumed =
+        (previousAppState === 'background' || previousAppState === 'inactive') &&
+        nextState === 'active';
+      previousAppState = nextState;
+      if (resumed && loginPendingRef.current) {
+        manager.getPublicKey();
+      }
+    });
+
+    manager.addEventListener('auth', handleAuth);
+    return () => {
+      appStateSubscription.remove();
+      manager.removeEventListener('auth', handleAuth);
+    };
+  }, [manager]);
 
   const submit = useCallback(() => {
     if (!manager) {
@@ -527,7 +561,7 @@ export function PrivateKeyLogin({
         nextError instanceof Error ? nextError.message : String(nextError),
       ));
     }
-  }, [manager, privateKey]);
+  }, [manager, privateKey, setLoginPending]);
 
   const startQrConnect = useCallback(async () => {
     if (!manager) {
@@ -554,7 +588,7 @@ export function PrivateKeyLogin({
         nextError instanceof Error ? nextError.message : String(nextError),
       ));
     }
-  }, [manager]);
+  }, [manager, setLoginPending]);
 
   const copyQrText = useCallback(async () => {
     if (!qrText) return;

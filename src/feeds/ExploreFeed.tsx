@@ -595,11 +595,20 @@ export function ExploreFeed({
       onMessage: handleEvents,
       onStateChange: state => {
         if (state.loading) {
-          subscriptionResolvingRef.current = true;
+          // Batch commits behind relay resolution only for the initial load
+          // and pull-to-refresh; pagination pages render progressively as
+          // events arrive instead of appearing in one batch on settle.
+          if (itemsRef.current.length === 0 || refreshingRef.current) {
+            subscriptionResolvingRef.current = true;
+          }
           setLoadingState(true);
           return;
         }
-        completeResolvingSubscription();
+        if (subscriptionResolvingRef.current) {
+          completeResolvingSubscription();
+          return;
+        }
+        setLoadingState(false);
       },
       options: { bytesPerEvent: 10 * 1024 },
     });
@@ -647,11 +656,7 @@ export function ExploreFeed({
   const handleNearBottom = useCallback(() => {
     if (loading || itemsRef.current.length === 0) return;
     pendingItemsRef.current = [];
-    subscriptionResolvingRef.current = true;
-    const started = feedSubscriptionRef.current?.loadMore() ?? false;
-    if (!started) {
-      subscriptionResolvingRef.current = false;
-    }
+    feedSubscriptionRef.current?.loadMore();
   }, [loading]);
 
   const resetFeedRef = useRef(resetFeed);
@@ -770,6 +775,7 @@ export function ExploreFeed({
         refreshing={refreshing}
         onRefresh={handleRefresh}
         onNearBottom={handleNearBottom}
+        nearBottomThreshold={1600}
         onViewportStateChange={handleViewportStateChange}
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}

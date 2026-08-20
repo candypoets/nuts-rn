@@ -1287,7 +1287,7 @@ function ExploreHeader({
     newNotes.pubkeys.length > 0;
 
   return (
-    <View className="border-b border-base-200 bg-base-300/95">
+    <View className="border-b border-base-200 bg-transparent">
       <FeedSticky>
         <View className="relative" pointerEvents="box-none">
           <View

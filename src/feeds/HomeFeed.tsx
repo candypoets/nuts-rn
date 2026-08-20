@@ -483,7 +483,7 @@ function HomeHeader({
   const iconColor = theme.colors.primaryContent;
 
   return (
-    <View className="border-b border-base-200 bg-base-300/95">
+    <View className="border-b border-base-200 bg-transparent">
       <FeedSticky>
         <View
           className="px-3 pb-2"

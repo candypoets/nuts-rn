@@ -263,7 +263,7 @@ function TagsHeader({
   );
 
   return (
-    <View className="min-h-16 flex-row items-center gap-3 border-b border-base-200 bg-base-300/95 px-4 py-3">
+    <View className="min-h-16 flex-row items-center gap-3 border-b border-base-200 bg-transparent px-4 py-3">
       <Pressable
         hitSlop={10}
         className="h-9 w-9 items-center justify-center rounded-full bg-base-300"

@@ -9,14 +9,17 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import * as ReactNative from 'react-native';
+import {BlurView} from 'expo-blur';
 import {
   ActivityIndicator,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from 'react-native';
@@ -109,6 +112,12 @@ const REFRESH_INDICATOR_HEIGHT = 48;
 const STICKY_HEADER_HIDE_OFFSET = 72;
 const MOTION_HEADER_DIRECTION_TOLERANCE = 0.5;
 const VIRTUAL_VIEW_VISIBLE_MODE = 0;
+
+const styles = StyleSheet.create({
+  motionHeaderSurface: {
+    backgroundColor: 'transparent',
+  },
+});
 
 type FeedVirtualItem<T> = {
   key: string;
@@ -233,6 +242,14 @@ function isDarkHex(hex: string) {
   return (red * 299 + green * 587 + blue * 114) / 1000 < 140;
 }
 
+function withAlpha(hex: string, opacity: number) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const alpha = Math.round(Math.max(0, Math.min(1, opacity)) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${hex}${alpha}`;
+}
+
 function getRefreshControlColor(theme: ReturnType<typeof useAppTheme>) {
   return isDarkHex(theme.colors.base100) ? '#ffffff' : theme.colors.primary;
 }
@@ -314,6 +331,8 @@ function MotionHeader({
   const {progress, progressThreshold} = useMotionProgress();
   const headerHeight = useSharedValue(0);
   const revealProgress = useSharedValue(1);
+  const hasMaterialSurface = surfaceColor !== 'transparent';
+  const blurTint = isDarkHex(surfaceColor) ? 'dark' : 'light';
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -382,12 +401,26 @@ function MotionHeader({
     <HeaderMotion.Header
       onLayout={handleLayout}
       style={[
-        {
-          backgroundColor: surfaceColor,
-          paddingTop,
-        },
+        styles.motionHeaderSurface,
+        {paddingTop},
         headerStyle,
       ]}>
+      {hasMaterialSurface ? (
+        <BlurView
+          blurMethod={
+            Platform.OS === 'android'
+              ? 'dimezisBlurViewSdk31Plus'
+              : undefined
+          }
+          intensity={Platform.OS === 'ios' ? 24 : 18}
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            {backgroundColor: withAlpha(surfaceColor, 0.76)},
+          ]}
+          tint={blurTint}
+        />
+      ) : null}
       {onPress ? (
         <Pressable
           accessible={false}

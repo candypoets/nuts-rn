@@ -285,7 +285,7 @@ const NotificationsHeader = memo(function NotificationsHeader({
 }) {
   const theme = useAppTheme();
     return (
-    <View className="border-b border-base-200 bg-base-300/95">
+    <View className="border-b border-base-200 bg-transparent">
       <View className="h-16 flex-row items-center justify-between px-4">
         <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
           <ChevronLeft size={22} color={theme.colors.primaryContent} />

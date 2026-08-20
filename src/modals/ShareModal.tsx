@@ -620,7 +620,7 @@ export function ShareModal({ nevent, naddr, onClose }: ShareModalProps) {
       className="bg-base-100"
       style={styles.container}
     >
-      <View className="bg-base-100 px-4" style={styles.content}>
+      <View className="bg-base-100" style={styles.content}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -676,11 +676,13 @@ const styles = StyleSheet.create({
     width: 12,
   },
   contactsList: {
+    alignSelf: 'stretch',
     flexGrow: 0,
     minHeight: 82,
   },
   content: {
     flex: 1,
+    paddingHorizontal: 16,
   },
   emptyContacts: {
     minHeight: 82,
@@ -690,7 +692,9 @@ const styles = StyleSheet.create({
     zIndex: 4,
   },
   scrollContent: {
+    alignItems: 'stretch',
     paddingBottom: 16,
     paddingTop: 8,
+    width: '100%',
   },
 });

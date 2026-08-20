@@ -53,7 +53,7 @@ import {
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
-import {Feed} from '../components/Feed';
+import {Feed, FeedHeaderBlurSurface} from '../components/Feed';
 import {Note} from '../components/notes';
 import {Avatar} from '../components/notes/Avatar';
 import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
@@ -439,12 +439,13 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
         pointerEvents="none"
         style={[
           {
-            backgroundColor: theme.colors.base300,
             borderBottomColor: theme.colors.base200,
           },
           surfaceStyle,
         ]}
-      />
+      >
+        <FeedHeaderBlurSurface surfaceColor={theme.colors.base300} />
+      </Reanimated.View>
       <Pressable
         accessibilityLabel="Close community"
         className="h-10 w-10 items-center justify-center rounded-full bg-base-300/80"

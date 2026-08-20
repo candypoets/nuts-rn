@@ -254,6 +254,29 @@ function getRefreshControlColor(theme: ReturnType<typeof useAppTheme>) {
   return isDarkHex(theme.colors.base100) ? '#ffffff' : theme.colors.primary;
 }
 
+export function FeedHeaderBlurSurface({
+  surfaceColor,
+}: {
+  surfaceColor: string;
+}) {
+  if (surfaceColor === 'transparent') return null;
+
+  return (
+    <BlurView
+      blurMethod={
+        Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined
+      }
+      intensity={Platform.OS === 'ios' ? 24 : 18}
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        {backgroundColor: withAlpha(surfaceColor, 0.76)},
+      ]}
+      tint={isDarkHex(surfaceColor) ? 'dark' : 'light'}
+    />
+  );
+}
+
 function defaultGetItemId<T>(item: T, index: number) {
   const maybeItem = item as T & {id?: unknown};
   if (typeof maybeItem?.id === 'function') {
@@ -331,8 +354,6 @@ function MotionHeader({
   const {progress, progressThreshold} = useMotionProgress();
   const headerHeight = useSharedValue(0);
   const revealProgress = useSharedValue(1);
-  const hasMaterialSurface = surfaceColor !== 'transparent';
-  const blurTint = isDarkHex(surfaceColor) ? 'dark' : 'light';
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -405,22 +426,7 @@ function MotionHeader({
         {paddingTop},
         headerStyle,
       ]}>
-      {hasMaterialSurface ? (
-        <BlurView
-          blurMethod={
-            Platform.OS === 'android'
-              ? 'dimezisBlurViewSdk31Plus'
-              : undefined
-          }
-          intensity={Platform.OS === 'ios' ? 24 : 18}
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            {backgroundColor: withAlpha(surfaceColor, 0.76)},
-          ]}
-          tint={blurTint}
-        />
-      ) : null}
+      <FeedHeaderBlurSurface surfaceColor={surfaceColor} />
       {onPress ? (
         <Pressable
           accessible={false}

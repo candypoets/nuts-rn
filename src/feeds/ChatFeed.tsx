@@ -24,8 +24,9 @@ import {
   ConnectionTracker,
   fbArray,
 } from '@candypoets/nipworker/utils';
-import {MessageCirclePlus, MessagesSquare} from 'lucide-react-native';
+import {MessageCirclePlus} from 'lucide-react-native';
 import {AppButton} from '../components/AppButton';
+import {ChatEmptyIllustration} from '../components/EmptyStateIllustrations';
 import {Feed, FeedHeaderDynamic} from '../components/Feed';
 import {HeaderProfileButton} from '../components/HeaderProfileButton';
 import {Avatar, ContentBlocks, User} from '../components/notes';
@@ -400,7 +401,8 @@ export function ChatFeed({
         <LoggedOutChatStub onCreateAccount={openSignup} />
       ) : (
         <View className="items-center">
-          <Text className="text-center text-base font-semibold text-primary-content">
+          <ChatEmptyIllustration height={120} width={160} />
+          <Text className="mt-4 text-center text-base font-semibold text-primary-content">
             No chats yet
           </Text>
           <Text className="mt-2 text-center text-sm text-primary-content">
@@ -512,16 +514,10 @@ function ChatHeader({
 }
 
 function LoggedOutChatStub({onCreateAccount}: {onCreateAccount: () => void}) {
-  const theme = useAppTheme();
-
   return (
     <View className="items-center">
-      <MessagesSquare
-        size={76}
-        color={theme.colors.primary}
-        strokeWidth={1.7}
-      />
-      <Text className="mt-8 text-center text-2xl font-bold text-base-content">
+      <ChatEmptyIllustration />
+      <Text className="mt-6 text-center text-2xl font-bold text-base-content">
         Talk to people you meet on Nuts
       </Text>
       <Text className="mt-3 max-w-72 text-center text-base leading-6 text-primary-content">

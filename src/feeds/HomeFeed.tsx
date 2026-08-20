@@ -36,10 +36,10 @@ import {
   QrCode,
   ScanLine,
   Wallet,
-  WalletCards,
   Zap,
 } from 'lucide-react-native';
 import { AppButton } from '../components/AppButton';
+import {WalletEmptyIllustration} from '../components/EmptyStateIllustrations';
 import {
   Feed,
   FeedHeaderDynamic,
@@ -807,18 +807,13 @@ function WalletActivityRow({
 }
 
 function LoggedOutHome() {
-  const theme = useAppTheme();
   const navigation =
     useNavigation<AppNavigationProp>();
 
   return (
     <View className="items-center px-6 py-20">
-      <WalletCards
-        size={76}
-        color={theme.colors.primary}
-        strokeWidth={1.7}
-      />
-      <Text className="mt-8 text-center text-2xl font-bold text-base-content">
+      <WalletEmptyIllustration />
+      <Text className="mt-6 text-center text-2xl font-bold text-base-content">
         Your wallet, passes, and tickets
       </Text>
       <Text className="mt-3 max-w-72 text-center text-base leading-6 text-primary-content">
@@ -834,14 +829,10 @@ function LoggedOutHome() {
 }
 
 function EmptyWalletStub() {
-  const theme = useAppTheme();
-
   return (
     <View className="rounded-lg border border-base-200 bg-base-300/95 px-5 py-6 shadow-sm">
       <View className="items-center">
-        <View className="mb-3 h-16 w-16 items-center justify-center rounded-2xl bg-base-200">
-          <Wallet size={30} color={theme.colors.primary} strokeWidth={2.2} />
-        </View>
+        <WalletEmptyIllustration height={111} width={148} />
         <Text className="text-center text-xl font-semibold text-base-content">
           No wallet activity yet
         </Text>

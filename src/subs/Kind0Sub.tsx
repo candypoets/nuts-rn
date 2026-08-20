@@ -51,7 +51,11 @@ import {
 } from 'lucide-react-native';
 import type { EventTemplate } from 'nostr-tools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feed, type FeedRenderItemInfo } from '../components/Feed';
+import {
+  Feed,
+  FeedHeaderBlurSurface,
+  type FeedRenderItemInfo,
+} from '../components/Feed';
 import {FeedKindNavigator} from '../components/FeedKindNavigator';
 import {SegmentedTabs} from '../components/SegmentedTabs';
 import { Avatar, Note, User } from '../components/notes';
@@ -291,12 +295,13 @@ const Kind0StickyHeader = memo(function Kind0StickyHeader({
         pointerEvents="none"
         style={[
           {
-            backgroundColor: theme.colors.base300,
             borderBottomColor: theme.colors.base200,
           },
           surfaceStyle,
         ]}
-      />
+      >
+        <FeedHeaderBlurSurface surfaceColor={theme.colors.base300} />
+      </Animated.View>
       <Pressable
         accessibilityLabel="Close profile"
         className="h-9 w-9 items-center justify-center rounded-full bg-base-300/85"

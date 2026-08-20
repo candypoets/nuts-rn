@@ -1,29 +1,57 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import * as Clipboard from 'expo-clipboard';
 import {
   FlatList,
   KeyboardAvoidingView,
+  type ListRenderItemInfo,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
-import type {ConnectionStatus, Kind0Parsed, ParsedEvent, WorkerMessage} from '@candypoets/nipworker';
-import {usePublish as publishToNostr} from '@candypoets/nipworker/hooks';
-import {asKind0, asParsedEvent, isConnectionStatus} from '@candypoets/nipworker/utils';
-import {Copy, FileText, Link, Search, Send, X} from 'lucide-react-native';
-import type {EventTemplate} from 'nostr-tools';
-import {decode} from 'nostr-tools/nip19';
+import type {
+  ConnectionStatus,
+  Kind0Parsed,
+  ParsedEvent,
+  WorkerMessage,
+} from '@candypoets/nipworker';
+import { usePublish as publishToNostr } from '@candypoets/nipworker/hooks';
+import {
+  asKind0,
+  asParsedEvent,
+  isConnectionStatus,
+} from '@candypoets/nipworker/utils';
+import {
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  FileText,
+  Hash,
+  Link,
+  Search,
+  Send,
+  X,
+} from 'lucide-react-native';
+import type { EventTemplate } from 'nostr-tools';
+import { decode } from 'nostr-tools/nip19';
 
-import {Avatar} from '../components/notes/Avatar';
-import {shortNpub} from '../lib/identity';
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
-import {useNostrStore, useSendStatusStore} from '../stores';
-import {useAppTheme} from '../theme';
+import { Avatar } from '../components/notes/Avatar';
+import { shortNpub } from '../lib/identity';
+import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
+import { subscribeUntilEose } from '../nostr/subscribeUntilEose';
+import { useNostrStore } from '../stores/nostrStore';
+import { useSendStatusStore } from '../stores/sendStatusStore';
+import { useAppTheme } from '../theme';
 
 type ShareModalProps = {
   nevent: string;
@@ -50,7 +78,10 @@ function contactKey(pubkey: string) {
 }
 
 function relayHash(relays: string[]) {
-  return relays.map(relay => relay.replace(/[^a-zA-Z0-9]/g, '')).join('').slice(0, 24);
+  return relays
+    .map(relay => relay.replace(/[^a-zA-Z0-9]/g, ''))
+    .join('')
+    .slice(0, 24);
 }
 
 function decodeNevent(value: string) {
@@ -63,9 +94,329 @@ function decodeNevent(value: string) {
   return null;
 }
 
-export function ShareModal({nevent, naddr}: ShareModalProps) {
+function ContactSeparator() {
+  return <View style={styles.contactGap} />;
+}
+
+function ContactItem({
+  compact,
+  contact,
+  selected,
+  checkColor,
+  onToggle,
+}: {
+  compact: boolean;
+  contact: ContactProfile;
+  selected: boolean;
+  checkColor: string;
+  onToggle: (pubkey: string | null) => void;
+}) {
+  const toggle = useCallback(
+    () => onToggle(selected ? null : contact.pubkey),
+    [contact.pubkey, onToggle, selected],
+  );
+
+  return (
+    <Pressable
+      accessibilityLabel={`${selected ? 'Deselect' : 'Select'} ${contact.name}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      className="items-center"
+      style={styles.contactButton}
+      onPress={toggle}
+    >
+      <View className="relative">
+        <View
+          className={[
+            'rounded-full border-2 p-0.5',
+            selected ? 'border-primary' : 'border-base-200',
+          ].join(' ')}
+        >
+          <Avatar pubkey={contact.pubkey} size={compact ? 'lg' : 'xl'} />
+        </View>
+        {selected ? (
+          <View className="absolute -bottom-0.5 -right-0.5 h-6 w-6 items-center justify-center rounded-full border-2 border-base-100 bg-primary">
+            <Check size={13} color={checkColor} strokeWidth={3} />
+          </View>
+        ) : null}
+      </View>
+      <Text
+        className={[
+          'mt-1 max-w-[68px] text-center text-xs text-base-content',
+          selected ? 'font-bold' : '',
+        ].join(' ')}
+        numberOfLines={1}
+      >
+        {contact.name}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ShareHeader({
+  mutedColor,
+  search,
+  searchInputRef,
+  onClose,
+  onSearchChange,
+}: {
+  mutedColor: string;
+  search: string;
+  searchInputRef: React.RefObject<TextInput | null>;
+  onClose?: () => void;
+  onSearchChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <View className="mx-auto mb-2 h-1 w-12 rounded-full bg-base-200" />
+      <View className="mb-1 flex-row items-center justify-between">
+        <Text className="text-xl font-black text-base-content">Share note</Text>
+        {onClose ? (
+          <Pressable
+            accessibilityLabel="Close share sheet"
+            accessibilityRole="button"
+            className="h-12 w-12 items-center justify-center rounded-full bg-base-200"
+            onPress={onClose}
+          >
+            <X size={21} color={mutedColor} strokeWidth={2.3} />
+          </Pressable>
+        ) : null}
+      </View>
+      <Text className="mb-2 text-sm font-semibold text-base-content">
+        Send to someone
+      </Text>
+      <View className="h-12 flex-row items-center rounded-xl border border-base-200 bg-base-300 pl-3">
+        <Search size={19} color={mutedColor} strokeWidth={2.1} />
+        <TextInput
+          ref={searchInputRef}
+          accessibilityLabel="Search contacts"
+          autoCapitalize="none"
+          autoCorrect={false}
+          className="h-12 flex-1 px-3 text-[15px] text-base-content"
+          placeholder="Search contacts"
+          placeholderTextColor={mutedColor}
+          returnKeyType="search"
+          value={search}
+          onChangeText={onSearchChange}
+        />
+        {search ? (
+          <Pressable
+            accessibilityLabel="Clear contact search"
+            accessibilityRole="button"
+            className="h-12 w-12 items-center justify-center"
+            onPress={() => onSearchChange('')}
+          >
+            <X size={18} color={mutedColor} strokeWidth={2.2} />
+          </Pressable>
+        ) : null}
+      </View>
+    </>
+  );
+}
+
+function RecipientPicker({
+  checkColor,
+  compact,
+  contacts,
+  hasSearch,
+  selectedPubkey,
+  onToggle,
+}: {
+  checkColor: string;
+  compact: boolean;
+  contacts: ContactProfile[];
+  hasSearch: boolean;
+  selectedPubkey: string | null;
+  onToggle: (pubkey: string | null) => void;
+}) {
+  const renderContact = useCallback(
+    ({ item }: ListRenderItemInfo<ContactProfile>) => (
+      <ContactItem
+        checkColor={checkColor}
+        compact={compact}
+        contact={item}
+        selected={item.pubkey === selectedPubkey}
+        onToggle={onToggle}
+      />
+    ),
+    [checkColor, compact, onToggle, selectedPubkey],
+  );
+
+  if (!contacts.length) {
+    return (
+      <View
+        style={styles.emptyContacts}
+        className="items-center justify-center px-6"
+      >
+        <Text className="text-center text-sm text-primary-content">
+          {hasSearch ? 'No matching contacts.' : 'No contacts to show yet.'}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <FlatList
+      horizontal
+      className="mt-3"
+      style={styles.contactsList}
+      data={contacts}
+      ItemSeparatorComponent={ContactSeparator}
+      keyboardShouldPersistTaps="handled"
+      keyExtractor={contact => contact.pubkey}
+      renderItem={renderContact}
+      showsHorizontalScrollIndicator={false}
+    />
+  );
+}
+
+function MessageComposer({
+  contact,
+  message,
+  mutedColor,
+  sendIconColor,
+  onMessageChange,
+  onSend,
+}: {
+  contact: ContactProfile;
+  message: string;
+  mutedColor: string;
+  sendIconColor: string;
+  onMessageChange: (value: string) => void;
+  onSend: () => void;
+}) {
+  return (
+    <View className="mb-3 h-14 flex-row items-center rounded-2xl border border-base-200 bg-base-300 pl-2 pr-1.5">
+      <Avatar pubkey={contact.pubkey} size="md" />
+      <TextInput
+        accessibilityLabel={`Message for ${contact.name}`}
+        className="h-12 flex-1 px-3 text-[15px] text-base-content"
+        placeholder="Add a message…"
+        placeholderTextColor={mutedColor}
+        returnKeyType="send"
+        value={message}
+        onChangeText={onMessageChange}
+        onSubmitEditing={onSend}
+      />
+      <Pressable
+        accessibilityLabel={`Send note to ${contact.name}`}
+        accessibilityRole="button"
+        className="h-12 w-12 items-center justify-center rounded-full bg-primary"
+        onPress={onSend}
+      >
+        <Send size={20} color={sendIconColor} strokeWidth={2.5} />
+      </Pressable>
+    </View>
+  );
+}
+
+function ShareActionRow({
+  bordered = false,
+  icon,
+  label,
+  mutedColor,
+  onPress,
+}: {
+  bordered?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  mutedColor: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      className={[
+        'min-h-12 flex-row items-center px-3',
+        bordered ? 'border-t border-base-200' : '',
+      ].join(' ')}
+      onPress={onPress}
+    >
+      <View className="w-10 items-center">{icon}</View>
+      <Text className="flex-1 text-[15px] font-semibold text-base-content">
+        {label}
+      </Text>
+      <ChevronRight size={19} color={mutedColor} strokeWidth={2.1} />
+    </Pressable>
+  );
+}
+
+function OtherWays({
+  addressLabel,
+  mutedColor,
+  onCopyAddress,
+  onCopyDetails,
+  onCopyLink,
+}: {
+  addressLabel: string;
+  mutedColor: string;
+  onCopyAddress: () => void;
+  onCopyDetails: () => void;
+  onCopyLink: () => void;
+}) {
+  return (
+    <>
+      <View className="mb-2 h-px bg-base-200" />
+      <Text className="mb-2 text-sm font-semibold text-base-content">
+        Other ways
+      </Text>
+      <View className="overflow-hidden rounded-xl border border-base-200 bg-base-300">
+        <ShareActionRow
+          icon={<Link size={20} color={mutedColor} strokeWidth={2.1} />}
+          label="Copy link"
+          mutedColor={mutedColor}
+          onPress={onCopyLink}
+        />
+        <ShareActionRow
+          bordered
+          icon={<Hash size={20} color={mutedColor} strokeWidth={2.1} />}
+          label={addressLabel}
+          mutedColor={mutedColor}
+          onPress={onCopyAddress}
+        />
+        <ShareActionRow
+          bordered
+          icon={<FileText size={20} color={mutedColor} strokeWidth={2.1} />}
+          label="Copy details"
+          mutedColor={mutedColor}
+          onPress={onCopyDetails}
+        />
+      </View>
+    </>
+  );
+}
+
+function ShareNotice({
+  notice,
+  primaryColor,
+}: {
+  notice: string;
+  primaryColor: string;
+}) {
+  if (!notice) return null;
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      className="absolute bottom-3 self-center"
+      pointerEvents="none"
+      style={styles.notice}
+    >
+      <View className="flex-row items-center gap-2 rounded-xl border border-base-200 bg-base-300 px-4 py-3">
+        <CheckCircle2 size={18} color={primaryColor} strokeWidth={2.4} />
+        <Text
+          accessibilityRole="alert"
+          className="text-sm font-semibold text-base-content"
+        >
+          {notice}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+export function ShareModal({ nevent, naddr, onClose }: ShareModalProps) {
   const theme = useAppTheme();
-  const {height} = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const follows = useNostrStore(state => state.follows);
   const readRelays = useNostrStore(state => state.readRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
@@ -77,6 +428,7 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
   const [profiles, setProfiles] = useState<Record<string, ContactProfile>>({});
   const [notice, setNotice] = useState('');
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const pointer = useMemo(() => decodeNevent(nevent), [nevent]);
   const relaysText = pointer?.relays?.length
@@ -86,7 +438,9 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
   const noteUrl = `https://nuts.cash/explore/nevent:${nevent}`;
 
   const relays = useMemo(() => {
-    const resolved = [...new Set([...walletReadRelays, ...readRelays, ...writeRelays])];
+    const resolved = [
+      ...new Set([...walletReadRelays, ...readRelays, ...writeRelays]),
+    ];
     return resolved.length ? resolved : DEFAULT_FEED_RELAYS;
   }, [readRelays, walletReadRelays, writeRelays]);
 
@@ -102,22 +456,25 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
 
   const contactRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return contacts
-      .map(pubkey => profiles[contactKey(pubkey)] ?? {
+    const matches = contacts.reduce<ContactProfile[]>((rows, pubkey) => {
+      const contact = profiles[contactKey(pubkey)] ?? {
         pubkey,
         name: shortNpub(pubkey),
         event: null,
-      })
-      .filter(contact => {
-        if (!query) return true;
-        return (
-          contact.name.toLowerCase().includes(query) ||
-          contact.pubkey.toLowerCase().includes(query)
-        );
-      })
-      .sort((left, right) =>
-        left.name.localeCompare(right.name, undefined, {sensitivity: 'base'}),
-      );
+      };
+      if (
+        !query ||
+        contact.name.toLowerCase().includes(query) ||
+        contact.pubkey.toLowerCase().includes(query)
+      ) {
+        rows.push(contact);
+      }
+      return rows;
+    }, []);
+    matches.sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }),
+    );
+    return matches;
   }, [contacts, profiles, search]);
 
   useEffect(() => {
@@ -162,11 +519,23 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
     };
   }, [contacts, relays]);
 
+  useEffect(
+    () => () => {
+      if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
+    },
+    [],
+  );
+
+  const showNotice = useCallback((nextNotice: string) => {
+    if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
+    setNotice(nextNotice);
+    noticeTimeoutRef.current = setTimeout(() => setNotice(''), 2400);
+  }, []);
+
   const copyAddress = useCallback(async () => {
     await Clipboard.setStringAsync(`nostr:${address}`);
-    setNotice(naddr ? 'Copied address' : 'Copied event address');
-    setTimeout(() => setNotice(''), 2400);
-  }, [address, naddr]);
+    showNotice(naddr ? 'Note address copied' : 'Note ID copied');
+  }, [address, naddr, showNotice]);
 
   const copyDetails = useCallback(async () => {
     await Clipboard.setStringAsync(
@@ -180,19 +549,27 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
         relaysText,
       ].join('\n'),
     );
-    setNotice('Copied details');
-    setTimeout(() => setNotice(''), 2400);
-  }, [address, noteUrl, pointer, relaysText]);
+    showNotice('Details copied');
+  }, [address, noteUrl, pointer, relaysText, showNotice]);
 
   const copyNoteUrl = useCallback(async () => {
     await Clipboard.setStringAsync(noteUrl);
-    setNotice('Copied note URL');
-    setTimeout(() => setNotice(''), 2400);
-  }, [noteUrl]);
+    showNotice('Link copied');
+  }, [noteUrl, showNotice]);
+
+  const selectedContact = selectedPubkey
+    ? profiles[contactKey(selectedPubkey)] ?? {
+        pubkey: selectedPubkey,
+        name: shortNpub(selectedPubkey),
+        event: null,
+      }
+    : null;
 
   const sendMessage = useCallback(() => {
     if (!selectedPubkey) return;
-    const content = `${message.trim() ? `${message.trim()}\n\n` : ''}nostr:${nevent}`;
+    const content = `${
+      message.trim() ? `${message.trim()}\n\n` : ''
+    }nostr:${nevent}`;
     const event: EventTemplate = {
       kind: 4,
       created_at: Math.floor(Date.now() / 1000),
@@ -212,175 +589,108 @@ export function ShareModal({nevent, naddr}: ShareModalProps) {
         sendStatus[relayUrl] = status;
         updateSendStatus(sendId, sendStatus);
         if (status.status()?.toString() === 'true') {
-          setNotice('Sent');
+          showNotice(`Sent to ${selectedContact?.name ?? 'contact'}`);
           setMessage('');
         }
       },
-      {defaultRelays: relays, trackStatus: true},
+      { defaultRelays: relays, trackStatus: true },
     );
-  }, [message, nevent, pointer, relays, selectedPubkey, updateSendStatus]);
+  }, [
+    message,
+    nevent,
+    pointer,
+    relays,
+    selectedContact?.name,
+    selectedPubkey,
+    showNotice,
+    updateSendStatus,
+  ]);
 
-  const selectedContact = selectedPubkey
-    ? profiles[contactKey(selectedPubkey)] ?? {
-        pubkey: selectedPubkey,
-        name: shortNpub(selectedPubkey),
-        event: null,
-      }
-    : null;
+  const compact = width < 360;
 
+  const handleContactToggle = useCallback((pubkey: string | null) => {
+    setSelectedPubkey(pubkey);
+  }, []);
+
+  // Direction A contract: compact native sheet, recipient-first sharing,
+  // grouped copy fallbacks, and transient feedback without a fixed footer.
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       className="bg-base-100"
-      style={{height: Math.round(height * 0.56)}}
+      style={styles.container}
     >
-      <View className="bg-base-100 px-4 pt-2" style={styles.content}>
-        <View className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-base-300" />
-        <Pressable
-          className="flex-row items-center rounded-lg border border-base-200 bg-base-300 px-3"
-          style={styles.searchBar}
-          onPress={() => searchInputRef.current?.focus()}
+      <View className="bg-base-100 px-4" style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Search size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
-          <TextInput
-            ref={searchInputRef}
-            autoCapitalize="none"
-            autoCorrect={false}
-            className="min-h-12 flex-1 px-3 text-base text-base-content"
-            placeholder="Search"
-            placeholderTextColor={theme.colors.primaryContent}
-            value={search}
-            onChangeText={setSearch}
+          <ShareHeader
+            mutedColor={theme.colors.primaryContent}
+            search={search}
+            searchInputRef={searchInputRef}
+            onClose={onClose}
+            onSearchChange={setSearch}
           />
-          {search ? (
-            <Pressable hitSlop={8} onPress={() => setSearch('')}>
-              <X size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
-            </Pressable>
-          ) : null}
-        </Pressable>
-
-        {contactRows.length ? (
-          <FlatList
-            className="mt-4 flex-1"
-            data={contactRows}
-            keyExtractor={item => item.pubkey}
-            numColumns={3}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.listContent}
-            renderItem={({item}) => {
-              const selected = item.pubkey === selectedPubkey;
-              return (
-                <Pressable
-                  className="mb-4 w-1/3 items-center px-1"
-                  onPress={() => setSelectedPubkey(selected ? null : item.pubkey)}
-                >
-                  <View
-                    className={[
-                      'rounded-full border-2 p-0.5',
-                      selected ? 'border-primary' : 'border-transparent',
-                    ].join(' ')}
-                  >
-                    <Avatar pubkey={item.pubkey} size="lg" />
-                  </View>
-                  <Text
-                    className={[
-                      'mt-1 max-w-[96px] text-center text-xs text-base-content',
-                      selected ? 'font-bold' : '',
-                    ].join(' ')}
-                    numberOfLines={1}
-                  >
-                    {item.name}
-                  </Text>
-                </Pressable>
-              );
-            }}
+          <RecipientPicker
+            checkColor={theme.button.primary.text}
+            compact={compact}
+            contacts={contactRows}
+            hasSearch={Boolean(search)}
+            selectedPubkey={selectedPubkey}
+            onToggle={handleContactToggle}
           />
-        ) : (
-          <View className="mt-4 flex-1 items-center px-6 pt-12">
-            <Text className="text-center text-sm text-primary-content">
-              No contacts to show yet.
-            </Text>
-          </View>
-        )}
-
-        <View
-          className="border-t border-base-200 bg-green-500 px-4 py-4"
-          style={styles.footer}
-        >
           {selectedContact ? (
-            <View className="mb-4 flex-row items-center gap-2">
-              <TextInput
-                className="min-h-11 flex-1 rounded-lg border border-base-200 bg-base-300 px-3 text-base text-base-content"
-                placeholder={`Send as BM to ${selectedContact.name}`}
-                placeholderTextColor={theme.colors.primaryContent}
-                value={message}
-                onChangeText={setMessage}
-              />
-              <Pressable
-                className="h-11 w-11 items-center justify-center rounded-full bg-primary"
-                onPress={sendMessage}
-              >
-                <Send size={19} color="#ffffff" strokeWidth={2.4} />
-              </Pressable>
-            </View>
+            <MessageComposer
+              contact={selectedContact}
+              message={message}
+              mutedColor={theme.colors.primaryContent}
+              sendIconColor={theme.button.primary.text}
+              onMessageChange={setMessage}
+              onSend={sendMessage}
+            />
           ) : null}
-          <View className="flex-row justify-center gap-7">
-            <View className="items-center">
-              <Pressable
-                className="h-11 w-11 items-center justify-center rounded-full border border-base-200 bg-base-300"
-                onPress={copyAddress}
-              >
-                <Copy size={19} color={theme.colors.primaryContent} strokeWidth={2.2} />
-              </Pressable>
-              <Text className="mt-1 text-xs text-primary-content">
-                {naddr ? 'Copy naddr' : 'Copy nevent'}
-              </Text>
-            </View>
-            <View className="items-center">
-              <Pressable
-                className="h-11 w-11 items-center justify-center rounded-full border border-base-200 bg-base-300"
-                onPress={copyNoteUrl}
-              >
-                <Link size={19} color={theme.colors.primaryContent} strokeWidth={2.2} />
-              </Pressable>
-              <Text className="mt-1 text-xs text-primary-content">Copy URL</Text>
-            </View>
-            <View className="items-center">
-              <Pressable
-                className="h-11 w-11 items-center justify-center rounded-full border border-base-200 bg-base-300"
-                onPress={copyDetails}
-              >
-                <FileText size={19} color={theme.colors.primaryContent} strokeWidth={2.2} />
-              </Pressable>
-              <Text className="mt-1 text-xs text-primary-content">Copy details</Text>
-            </View>
-          </View>
-          {notice ? (
-            <Text className="mt-2 text-center text-sm font-semibold text-primary">
-              {notice}
-            </Text>
-          ) : null}
-        </View>
+          <OtherWays
+            addressLabel={naddr ? 'Copy note address' : 'Copy note ID'}
+            mutedColor={theme.colors.primaryContent}
+            onCopyAddress={copyAddress}
+            onCopyDetails={copyDetails}
+            onCopyLink={copyNoteUrl}
+          />
+        </ScrollView>
+        <ShareNotice notice={notice} primaryColor={theme.colors.primary} />
       </View>
     </KeyboardAvoidingView>
   );
 }
-
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  contactButton: {
+    minHeight: 78,
+    width: 68,
+  },
+  contactGap: {
+    width: 12,
+  },
+  contactsList: {
+    flexGrow: 0,
+    minHeight: 82,
+  },
   content: {
     flex: 1,
   },
-  footer: {
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
+  emptyContacts: {
+    minHeight: 82,
   },
-  listContent: {
-    paddingBottom: 132,
+  notice: {
+    maxWidth: '92%',
+    zIndex: 4,
   },
-  searchBar: {
-    elevation: 3,
-    zIndex: 3,
+  scrollContent: {
+    paddingBottom: 16,
+    paddingTop: 8,
   },
 });

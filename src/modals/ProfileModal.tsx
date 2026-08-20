@@ -29,6 +29,7 @@ import { usePublish as publishToNostr } from '@candypoets/nipworker/hooks';
 import { connectWithQRCode, isConnectionStatus } from '@candypoets/nipworker/utils';
 import {
   Check,
+  CircleAlert,
   ClipboardCopy,
   ChevronRight,
   Binoculars,
@@ -147,7 +148,7 @@ function decodePublicKey(input: string) {
 function friendlyLoginError(message: string) {
   const normalized = message.toLowerCase();
   if (normalized.includes('native module is not ready')) {
-    return 'Sign in is still getting ready. Try again in a moment.';
+    return 'Sign in is still getting ready.';
   }
   if (
     normalized.includes('nip-46') ||
@@ -155,7 +156,7 @@ function friendlyLoginError(message: string) {
     normalized.includes('connect failed') ||
     normalized.includes('timeout')
   ) {
-    return 'We couldn’t connect to your signing app. Try again or use another sign-in method.';
+    return 'We couldn’t connect to your signing app.';
   }
   return message;
 }
@@ -441,6 +442,13 @@ export function PrivateKeyLogin({
   const [error, setError] = useState<string | null>(null);
   const [loginPending, setLoginPendingState] = useState(false);
   const loginPendingRef = useRef(false);
+  const loginInputRef = useRef<TextInput>(null);
+  const lastLoginAttemptRef = useRef<
+    | { type: 'qr' }
+    | { type: 'openSigner' }
+    | { type: 'bunker'; value: string }
+    | null
+  >(null);
   const nip46AuthUrl = useAuthStore(state => state.nip46AuthUrl);
   const authError = useAuthStore(state => state.authError);
   // Detect a local signer that can complete the NIP-46 nostrconnect://
@@ -525,12 +533,15 @@ export function PrivateKeyLogin({
       return;
     }
 
-    // New attempt: drop any previous global auth failure.
+    // New attempt: drop any previous global auth failure. Private keys are
+    // deliberately never retained for automatic retries.
+    lastLoginAttemptRef.current = null;
     useAuthStore.getState().setAuth({ authError: null });
 
     try {
       const value = privateKey.trim();
       if (value.startsWith('bunker://')) {
+        lastLoginAttemptRef.current = { type: 'bunker', value };
         setLoginPending(true);
         manager.setNip46Bunker(value);
         setPrivateKey('');
@@ -570,6 +581,7 @@ export function PrivateKeyLogin({
     }
 
     try {
+      lastLoginAttemptRef.current = { type: 'qr' };
       setError(null);
       useAuthStore.getState().setAuth({ authError: null });
       setLoginPending(true);
@@ -601,6 +613,7 @@ export function PrivateKeyLogin({
     if (!qrText) return;
 
     try {
+      lastLoginAttemptRef.current = { type: 'openSigner' };
       setError(null);
       await Linking.openURL(qrText);
     } catch {
@@ -611,6 +624,37 @@ export function PrivateKeyLogin({
     }
   }, [qrText]);
 
+  const retryLogin = useCallback(() => {
+    const attempt = lastLoginAttemptRef.current;
+    setError(null);
+    useAuthStore.getState().setAuth({ authError: null });
+
+    if (attempt?.type === 'qr') {
+      startQrConnect();
+      return;
+    }
+    if (attempt?.type === 'openSigner') {
+      openSignerApp();
+      return;
+    }
+    if (attempt?.type === 'bunker' && manager) {
+      try {
+        setLoginPending(true);
+        manager.setNip46Bunker(attempt.value);
+      } catch (nextError) {
+        setLoginPending(false);
+        setError(friendlyLoginError(
+          nextError instanceof Error ? nextError.message : String(nextError),
+        ));
+      }
+      return;
+    }
+
+    loginInputRef.current?.focus();
+  }, [manager, openSignerApp, setLoginPending, startQrConnect]);
+
+  // Direction A contract: signer-first hierarchy, compact key fallback,
+  // actionable inline recovery, and one stable primary submit action.
   return (
     <View style={styles.modalBody}>
       <View style={styles.fullModalSheet}>
@@ -629,6 +673,7 @@ export function PrivateKeyLogin({
             </View>
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: !manager }}
               disabled={!manager}
               style={[
                 styles.nip46Button,
@@ -647,7 +692,7 @@ export function PrivateKeyLogin({
                   </View>
                 </View>
                 <Text style={styles.nip46Detail}>
-                  Approve from another app without pasting a key.
+                  Approve securely in another app.
                 </Text>
               </View>
               <ChevronRight size={20} color={mutedIconColor} strokeWidth={2.1} />
@@ -685,19 +730,22 @@ export function PrivateKeyLogin({
             ) : null}
             <View style={styles.loginDivider}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerText}>or continue with a key</Text>
               <View style={styles.dividerLine} />
             </View>
             <Text style={styles.loginFieldLabel}>Key or connection link</Text>
             <TextInput
+              ref={loginInputRef}
+              accessibilityLabel="Paste key or connection link"
               autoCapitalize="none"
               autoCorrect={false}
               placeholder="Paste key or connection link"
               placeholderTextColor={theme.colors.primaryContent}
               secureTextEntry
-              style={styles.input}
+              style={[styles.input, styles.loginInput]}
               value={privateKey}
               onChangeText={text => {
+                lastLoginAttemptRef.current = null;
                 setPrivateKey(text);
                 setQrText('');
                 setError(null);
@@ -706,7 +754,24 @@ export function PrivateKeyLogin({
             <Text style={styles.loginFieldHelp}>
               Public keys open in read-only mode.
             </Text>
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error ? (
+              <View
+                accessibilityLiveRegion="assertive"
+                style={styles.loginErrorBanner}
+              >
+                <CircleAlert size={20} color={theme.colors.error} strokeWidth={2.2} />
+                <Text accessibilityRole="alert" style={styles.loginErrorText}>
+                  {error}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.loginRetryButton}
+                  onPress={retryLogin}
+                >
+                  <Text style={styles.loginRetryText}>Try again</Text>
+                </Pressable>
+              </View>
+            ) : null}
             {auth.pubkey ? (
               <Text style={styles.successText}>
                 Signed in as {shortNpub(auth.pubkey)}
@@ -737,7 +802,12 @@ export function PrivateKeyLogin({
             {onSignup ? (
               <View style={styles.accountSwitch}>
                 <Text style={styles.accountSwitchText}>New to Nuts?</Text>
-                <Pressable hitSlop={8} onPress={onSignup}>
+                <Pressable
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  style={styles.accountSwitchButton}
+                  onPress={onSignup}
+                >
                   <Text style={styles.accountSwitchLink}>Create account</Text>
                 </Pressable>
               </View>
@@ -2089,15 +2159,16 @@ function createProfileModalStyles(colors: AppThemeColors) {
   loginContent: {
     flexGrow: 1,
     justifyContent: 'space-between',
+    paddingHorizontal: 4,
   },
   loginIntro: {
-    marginBottom: 24,
+    marginBottom: 26,
   },
   loginTitle: {
     color: contentColor,
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -0.7,
   },
   loginSubtitle: {
     color: colors.primaryContent,
@@ -2107,7 +2178,7 @@ function createProfileModalStyles(colors: AppThemeColors) {
   },
   loginActions: {
     paddingBottom: 8,
-    paddingTop: 24,
+    paddingTop: 20,
   },
   nip46Button: {
     alignItems: 'center',
@@ -2169,7 +2240,7 @@ function createProfileModalStyles(colors: AppThemeColors) {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
-    marginVertical: 20,
+    marginVertical: 22,
   },
   dividerLine: {
     backgroundColor: colors.base200,
@@ -2192,13 +2263,53 @@ function createProfileModalStyles(colors: AppThemeColors) {
     lineHeight: 18,
     marginTop: 7,
   },
+  loginInput: {
+    minHeight: 54,
+    paddingHorizontal: 14,
+  },
+  loginErrorBanner: {
+    alignItems: 'center',
+    backgroundColor: colors.base100,
+    borderColor: colors.error,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    minHeight: 64,
+    paddingLeft: 14,
+    paddingRight: 6,
+  },
+  loginErrorText: {
+    color: contentColor,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  loginRetryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 76,
+    paddingHorizontal: 8,
+  },
+  loginRetryText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
   accountSwitch: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 5,
     justifyContent: 'center',
-    marginTop: 18,
-    minHeight: 32,
+    marginTop: 12,
+    minHeight: 48,
+  },
+  accountSwitchButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
   },
   accountSwitchText: {
     color: colors.primaryContent,

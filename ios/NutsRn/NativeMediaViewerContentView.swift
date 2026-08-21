@@ -737,7 +737,7 @@ enum NativeContentBlockParser {
           }
         }
 
-      case .codedata, .cashudata, .emojidata:
+      case .codedata, .cashudata, .emojidata, .lightningdata:
         if !blockText.isEmpty {
           appendTextRun(ContentRun(text: blockText, color: baseContentColor))
         }

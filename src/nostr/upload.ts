@@ -57,6 +57,10 @@ export function base64UrlEncode(value: string) {
 
 let signQueue = Promise.resolve();
 
+export function resetSignEventQueue() {
+  signQueue = Promise.resolve();
+}
+
 function signEventUnqueued(template: EventTemplate) {
   return new Promise<Event>((resolve, reject) => {
     try {

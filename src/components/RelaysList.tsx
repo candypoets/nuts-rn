@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useNavigation } from 'expo-router/react-navigation';
 import { Plus } from 'lucide-react-native';
 import { fetchRelayInfosForRelays, normalizeRelayUrl } from '../nostr/nip11';
@@ -214,6 +214,8 @@ export function RelaysList({
                     <Image
                       source={{ uri: info.icon }}
                       style={styles.iconImage}
+                      cachePolicy="memory-disk"
+                      transition={150}
                     />
                   ) : (
                     <Text className="text-[10px] font-bold text-base-100">

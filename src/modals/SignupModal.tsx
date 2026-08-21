@@ -176,7 +176,10 @@ function publishWithStatus(
 // Profile step state/logic. Nothing here is read by the packs step: the profile
 // fields are consumed by continueFromProfile, which fires when leaving the
 // profile step, so no shared store is needed.
-export function useSignupProfileController(manager: NostrManagerLike | null) {
+export function useSignupProfileController(
+  manager: NostrManagerLike | null,
+  {requireRecommendedMint = true}: {requireRecommendedMint?: boolean} = {},
+) {
   const setAuth = useAuthStore(state => state.setAuth);
   const setProfile = useNostrStore(state => state.setProfile);
   const setTrustedMints = useNostrStore(state => state.setTrustedMints);
@@ -295,14 +298,28 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   const continueFromProfile = useCallback(() => {
     const keypair = prepareFreshAccount();
     const trimmedName = name.trim();
-    if (!manager || !keypair || !trimmedName || !recommendedMint) return false;
+    if (
+      !manager ||
+      !keypair ||
+      !trimmedName ||
+      (requireRecommendedMint && !recommendedMint)
+    ) {
+      return null;
+    }
     const signupAvatar = avatar;
     const trimmedBio = bio.trim();
     const publishRelays = relays;
-    const selectedMints = [recommendedMint.mint];
-    setWalletMintUrls(selectedMints);
-    setActiveMintUrl(recommendedMint.mint);
-    setTrustedMints(selectedMints);
+    const selectedMints = recommendedMint ? [recommendedMint.mint] : [];
+    const profileContent = JSON.stringify({
+      name: trimmedName,
+      display_name: trimmedName,
+      about: trimmedBio,
+    });
+    if (recommendedMint) {
+      setWalletMintUrls(selectedMints);
+      setActiveMintUrl(recommendedMint.mint);
+      setTrustedMints(selectedMints);
+    }
 
     setProfile({
       pubkey: keypair.pubkey,
@@ -372,46 +389,48 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
           publishRelays,
           updateSendStatus,
         );
-        publishWithStatus(
-          `signup_wallet_${Date.now()}`,
-          {
-            kind: 17375,
-            content: JSON.stringify([
-              ['privkey', keypair.privkey],
-              ...selectedMints.map(mint => ['mint', mint]),
-            ]),
-            created_at: now(),
-            tags: [],
-          },
-          publishRelays,
-          updateSendStatus,
-        );
-        publishWithStatus(
-          `signup_trusted_mints_${Date.now()}`,
-          {
-            kind: 10019,
-            content: '',
-            created_at: now(),
-            tags: [
-              ...selectedMints.map(mint => ['mint', mint]),
-              ['pubkey', keypair.pubkey],
-              ...publishRelays.map(relay => ['relay', relay]),
-            ],
-          },
-          publishRelays,
-          updateSendStatus,
-        );
-        publishWithStatus(
-          `signup_mint_recommendation_${Date.now()}`,
-          cashuMintRecommendationEvent(recommendedMint),
-          publishRelays,
-          updateSendStatus,
-        );
+        if (recommendedMint) {
+          publishWithStatus(
+            `signup_wallet_${Date.now()}`,
+            {
+              kind: 17375,
+              content: JSON.stringify([
+                ['privkey', keypair.privkey],
+                ...selectedMints.map(mint => ['mint', mint]),
+              ]),
+              created_at: now(),
+              tags: [],
+            },
+            publishRelays,
+            updateSendStatus,
+          );
+          publishWithStatus(
+            `signup_trusted_mints_${Date.now()}`,
+            {
+              kind: 10019,
+              content: '',
+              created_at: now(),
+              tags: [
+                ...selectedMints.map(mint => ['mint', mint]),
+                ['pubkey', keypair.pubkey],
+                ...publishRelays.map(relay => ['relay', relay]),
+              ],
+            },
+            publishRelays,
+            updateSendStatus,
+          );
+          publishWithStatus(
+            `signup_mint_recommendation_${Date.now()}`,
+            cashuMintRecommendationEvent(recommendedMint),
+            publishRelays,
+            updateSendStatus,
+          );
+        }
       } catch (error) {
         console.warn('[signup] profile publish failed', error);
       }
     })();
-    return true;
+    return {profileContent};
   }, [
     avatar,
     bio,
@@ -419,6 +438,7 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
     name,
     prepareFreshAccount,
     recommendedMint,
+    requireRecommendedMint,
     relays,
     setActiveMintUrl,
     setProfile,
@@ -431,7 +451,11 @@ export function useSignupProfileController(manager: NostrManagerLike | null) {
   return {
     avatar,
     bio,
-    canContinue: Boolean(name.trim() && manager && mintDiscoveryReady && recommendedMint),
+    canContinue: Boolean(
+      name.trim() &&
+      manager &&
+      (!requireRecommendedMint || (mintDiscoveryReady && recommendedMint)),
+    ),
     continueFromProfile,
     name,
     pickAvatar,
@@ -675,9 +699,14 @@ export function SignupProfileStep({
   avatar,
   bio,
   canContinue,
+  continueTitle = 'Continue',
   footerPaddingBottom,
   name,
+  progress = '1 of 2',
+  showAccountSwitch = true,
+  showWalletStatus = true,
   status,
+  subtitle = 'This is how people will recognize you. You can change it anytime.',
   onBack,
   onBioChange,
   onContinue,
@@ -687,9 +716,14 @@ export function SignupProfileStep({
   avatar: SelectedAvatar | null;
   bio: string;
   canContinue: boolean;
+  continueTitle?: string;
   footerPaddingBottom: number;
   name: string;
+  progress?: string;
+  showAccountSwitch?: boolean;
+  showWalletStatus?: boolean;
   status: string | null;
+  subtitle?: string;
   onBack: () => void;
   onBioChange: (value: string) => void;
   onContinue: () => void;
@@ -704,13 +738,13 @@ export function SignupProfileStep({
     <View className="h-full bg-base-100">
       <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
         <View className="h-full px-4 pt-4">
-          <SignupHeader progress="1 of 2" onBack={onBack} />
+          <SignupHeader progress={progress} onBack={onBack} />
           <View className="w-full" style={styles.profileForm}>
             <Text className="mt-3 text-3xl font-extrabold tracking-tight text-base-content">
               Create your profile
             </Text>
             <Text className="mt-2 text-sm leading-5 text-primary-content">
-              This is how people will recognize you. You can change it anytime.
+              {subtitle}
             </Text>
           </View>
           <View className="mt-5 items-center">
@@ -762,7 +796,7 @@ export function SignupProfileStep({
               onChangeText={onBioChange}
               onSubmitEditing={Keyboard.dismiss}
             />
-            {status ? (
+            {showWalletStatus && status ? (
               <View className="mt-3 flex-row items-center gap-2">
                 {preparingWallet ? (
                   <ActivityIndicator size="small" color={theme.colors.primary} />
@@ -786,15 +820,17 @@ export function SignupProfileStep({
           >
             <AppButton
               disabled={!canContinue}
-              title="Continue"
+              title={continueTitle}
               onPress={onContinue}
             />
-            <View className="mt-3 min-h-10 flex-row items-center justify-center gap-1">
-              <Text className="text-sm text-primary-content">Already have an account?</Text>
-              <Pressable hitSlop={8} onPress={onBack}>
-                <Text className="text-sm font-extrabold text-primary">Sign in</Text>
-              </Pressable>
-            </View>
+            {showAccountSwitch ? (
+              <View className="mt-3 min-h-10 flex-row items-center justify-center gap-1">
+                <Text className="text-sm text-primary-content">Already have an account?</Text>
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={onBack}>
+                  <Text className="text-sm font-extrabold text-primary">Sign in</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
         </View>
       </TouchableWithoutFeedback>

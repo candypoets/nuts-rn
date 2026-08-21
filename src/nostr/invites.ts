@@ -396,11 +396,14 @@ export async function redeemInvite({
   token,
   relayBaseUrl,
   pubkey,
+  profileContent,
   onStage,
 }: {
   token: string;
   relayBaseUrl: string;
   pubkey: string;
+  /** Fresh signup metadata to use until the new kind-0 reaches an indexer. */
+  profileContent?: string;
   onStage?: (stage: RedeemStage) => void;
 }): Promise<{ communityRelayUrl: string }> {
   const communityRelayUrl = relayUrlFromBaseUrl(relayBaseUrl);
@@ -526,10 +529,15 @@ export async function redeemInvite({
   );
 
   onStage?.('profile');
-  const profileContent = existingProfile?.value || '{}';
+  const communityProfileContent = existingProfile?.value || profileContent || '{}';
   await publishProfileToCommunity(
     pubkey,
-    { kind: 0, tags: [], content: profileContent, created_at: timestamp },
+    {
+      kind: 0,
+      tags: [],
+      content: communityProfileContent,
+      created_at: timestamp,
+    },
     communityRelayUrl,
   );
 

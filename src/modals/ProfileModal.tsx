@@ -54,7 +54,7 @@ import { Avatar } from '../components/notes';
 import { getCurrentPushToken } from '../hooks/usePushNotifications';
 import { shortNpub } from '../lib/identity';
 import type { AppNavigationProp } from '../navigation/types';
-import { unregisterPushDevice } from '../notifications/pushRegistration';
+import { unregisterPushDeviceForLogout } from '../notifications/pushRegistration';
 import {
   BOOTSTRAP_RELAYS,
   useAuthStore,
@@ -73,6 +73,7 @@ import {
   type RecommendedCashuMint,
 } from '../nostr/cashu';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
+import { resetSignEventQueue } from '../nostr/upload';
 import {
   appThemeIds,
   appThemes,
@@ -907,19 +908,30 @@ export function LogoutModal({
   );
 
   const logout = async () => {
-    const pushToken = getCurrentPushToken();
-    if (pushToken) {
-      try {
-        await unregisterPushDevice(pushToken);
-      } catch (error) {
-        console.error('[push] failed to unregister during logout', error);
+    try {
+      const pushToken = getCurrentPushToken();
+      if (pushToken) {
+        await unregisterPushDeviceForLogout(pushToken);
       }
+    } catch (error) {
+      console.log('[push] failed to unregister during logout', error);
     }
+    // A remote signer may never answer the abandoned unregister signature.
+    // Detach it from the shared queue before clearing the signer/session.
+    resetSignEventQueue();
     clearAuth();
     setWalletMnemonic('');
     setWalletPassphrase('');
-    manager?.removeAccount();
-    manager?.logout();
+    try {
+      manager?.removeAccount();
+    } catch (error) {
+      console.log('[auth] failed to remove account during logout', error);
+    }
+    try {
+      manager?.logout();
+    } catch (error) {
+      console.log('[auth] failed to clear native signer during logout', error);
+    }
     onDone();
   };
 

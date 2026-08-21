@@ -17,6 +17,7 @@ import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useNavigation } from 'expo-router/react-navigation';
 import type {
+  NostrEvent as RawNostrEvent,
   ParsedEvent,
   RequestObject,
   WorkerMessage,
@@ -24,6 +25,7 @@ import type {
 import {
   createPaginatedSubscription,
   type PaginatedSubscription,
+  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
@@ -31,6 +33,7 @@ import {
   asKind20,
   asKind22,
   asKind6,
+  asNostrEvent,
   asParsedEvent,
   asPreGeneric,
   fbArray,
@@ -46,6 +49,12 @@ import {ExploreKindSwipe} from '../components/ExploreKindSwipe';
 import { Note } from '../components/notes/Note';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { FEED_PAGE_WINDOW_SECONDS } from '../nostr/pagination';
+import {
+  HIGHLIGHT_KIND,
+  highlightEventPipeline,
+  noteFeedIncludesHighlights,
+  parsedHighlightFromRaw,
+} from '../nostr/highlights';
 import {
   CalendarDays,
   ChevronDown,
@@ -122,7 +131,7 @@ const MAX_NEW_NOTE_AVATARS = 3;
 const EMPTY_NEW_NOTES: NewNotesState = { count: 0, pubkeys: [] };
 const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6, 1068];
 const REPOSTABLE_FEED_KINDS = new Set<number>([
-  1, 20, 22, 1068, 30023, 30311, 31922, 31923,
+  1, 20, 22, 1068, 9802, 30023, 30311, 31922, 31923,
 ]);
 const EXPLORE_KIND_TABS: Array<{
   id: FeedKindTabId;
@@ -161,11 +170,13 @@ export function ExploreFeed({
     typeof requestAnimationFrame
   > | null>(null);
   const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
+  const highlightSubscriptionRef = useRef<(() => void) | null>(null);
   const pendingItemsRef = useRef<ParsedEvent[]>([]);
   const heldNewItemsRef = useRef<ParsedEvent[]>([]);
   const subscriptionResolvingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [highlightRefreshNonce, setHighlightRefreshNonce] = useState(0);
   const [newNotes, setNewNotes] = useState<NewNotesState>(EMPTY_NEW_NOTES);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [scrollToTopKey, setScrollToTopKey] = useState<number | undefined>();
@@ -206,6 +217,7 @@ export function ExploreFeed({
         : DEFAULT_EXPLORE_KINDS,
     [selectedKinds],
   );
+  const includeHighlights = noteFeedIncludesHighlights(requestKinds);
   const requestKindSet = useMemo(
     () => new Set<number>(requestKinds),
     [requestKinds],
@@ -567,6 +579,77 @@ export function ExploreFeed({
     [addItem, setRelayStatus, shouldIncludeKind],
   );
 
+  useEffect(() => {
+    highlightSubscriptionRef.current?.();
+    highlightSubscriptionRef.current = null;
+    if (
+      !enabled ||
+      !visible ||
+      !canStartExplore ||
+      !includeHighlights ||
+      !feedRelays.length ||
+      (exploreAudienceMode === 'contacts' && requestAuthors.length === 0)
+    ) {
+      return undefined;
+    }
+
+    const subId = `${baseSubId}_highlights_${relayKey}_${highlightRefreshNonce}`;
+    setSubRelays(subId, feedRelays.map(normalizeRelayUrl));
+    highlightSubscriptionRef.current = subscribeToNostr(
+      subId,
+      [
+        {
+          kinds: [HIGHLIGHT_KIND],
+          authors: requestAuthors.length ? requestAuthors : undefined,
+          limit: 50,
+          since: Math.floor(Date.now() / 1000 - 31 * 24 * 60 * 60),
+          noCache: true,
+          relays: feedRelays,
+        },
+      ],
+      (message: WorkerMessage) => {
+        const status = asConnectionStatus(message);
+        if (status) {
+          const relayUrl = status.relayUrl();
+          const relayStatus = status.status()?.toString();
+          if (relayUrl && relayStatus) {
+            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+          }
+          return;
+        }
+
+        const raw = asNostrEvent(message) as RawNostrEvent | null;
+        if (!raw) return;
+        const parsed = parsedHighlightFromRaw(raw, feedRelays);
+        if (parsed) addItem(parsed);
+      },
+      {
+        bytesPerEvent: 32 * 1024,
+        closeOnEose: true,
+        pipeline: highlightEventPipeline(subId),
+      },
+    );
+
+    return () => {
+      highlightSubscriptionRef.current?.();
+      highlightSubscriptionRef.current = null;
+    };
+  }, [
+    addItem,
+    baseSubId,
+    canStartExplore,
+    enabled,
+    exploreAudienceMode,
+    feedRelays,
+    highlightRefreshNonce,
+    includeHighlights,
+    relayKey,
+    requestAuthors,
+    setRelayStatus,
+    setSubRelays,
+    visible,
+  ]);
+
   const startRootSubscription = useCallback(() => {
     setLoadingState(itemsRef.current.length === 0);
     const requests = requestList();
@@ -644,6 +727,7 @@ export function ExploreFeed({
     clearTimers();
     feedSubscriptionRef.current?.close();
     feedSubscriptionRef.current = null;
+    setHighlightRefreshNonce(nonce => nonce + 1);
     startRootSubscription();
   }, [
     canStartExplore,

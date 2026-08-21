@@ -51,6 +51,10 @@ import { NativeParityHarness } from '../debug/NativeParityHarness';
 import { getSharedNostrManager } from '../nostr/manager';
 import {resolveInviteDeepLink, resolveNostrDeepLink} from '../navigation/linking';
 import {
+  singularByParams,
+  singularNostrRoute,
+} from '../navigation/singularRoutes';
+import {
   configureImageCache,
   runMediaCacheMaintenance,
 } from '../media/cache';
@@ -70,6 +74,13 @@ configureReanimatedLogger({
 
 const MINT_QUOTE_MONITOR_INTERVAL_MS = 2500;
 const MINT_QUOTE_RETRY_DELAY_MS = 1200;
+
+const singularProfile = singularByParams('pubkey');
+const singularCommunity = singularByParams('relay');
+const singularStore = singularByParams('relay');
+const singularCalendarEvent = singularByParams('relay', 'address');
+const singularChat = singularByParams('peerPubkey');
+const singularTags = singularByParams('tags');
 
 function scheduleNostrCleanup(manager: NostrManagerLike | null, delay = 1000) {
   if (!manager) return () => {};
@@ -211,15 +222,51 @@ export default function RootLayout() {
                         must be declared here — in-route <Stack.Screen options>
                         lands post-push via setOptions and is ignored. */}
                     {/* Push screens */}
-                    <Stack.Screen name="PublicProfile" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="Community" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="Store" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="CalendarEvent" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="ChatThread" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="Kind1Thread" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="Kind30023Thread" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="Tags" options={{ animation: 'simple_push' }} />
-                    <Stack.Screen name="Notifications" options={{ animation: 'simple_push' }} />
+                    <Stack.Screen
+                      name="PublicProfile"
+                      dangerouslySingular={singularProfile}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="Community"
+                      dangerouslySingular={singularCommunity}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="Store"
+                      dangerouslySingular={singularStore}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="CalendarEvent"
+                      dangerouslySingular={singularCalendarEvent}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="ChatThread"
+                      dangerouslySingular={singularChat}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="Kind1Thread"
+                      dangerouslySingular={singularNostrRoute}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="Kind30023Thread"
+                      dangerouslySingular={singularNostrRoute}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="Tags"
+                      dangerouslySingular={singularTags}
+                      options={{ animation: 'simple_push' }}
+                    />
+                    <Stack.Screen
+                      name="Notifications"
+                      dangerouslySingular
+                      options={{ animation: 'simple_push' }}
+                    />
                     {/* Modal screens */}
                     <Stack.Screen name="LiveStream" options={{ presentation: 'modal', gestureEnabled: true }} />
                     <Stack.Screen name="Mints" options={{ presentation: 'modal', headerShown: true, title: 'Mints' }} />
@@ -272,9 +319,9 @@ export default function RootLayout() {
                       name="Redeem"
                       options={{
                         presentation: 'formSheet',
-                        sheetAllowedDetents: [0.6],
+                        sheetAllowedDetents: [0.92],
                         sheetCornerRadius: 18,
-                        sheetGrabberVisible: true,
+                        sheetGrabberVisible: false,
                       }}
                     />
                     <Stack.Screen

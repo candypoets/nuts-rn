@@ -85,3 +85,23 @@ export async function unregisterPushDevice(token: string) {
   if (!token) return;
   await postPushRequest('/push/unregister', { token });
 }
+
+export async function unregisterPushDeviceForLogout(
+  token: string,
+  timeoutMs = 2_000,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      unregisterPushDevice(token),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Push unregister timed out')),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}

@@ -48,6 +48,15 @@ describe('resolveNostrDeepLink', () => {
     });
   });
 
+  it('routes a kind 9802 highlight through the normal note thread', () => {
+    const highlight = nip19.neventEncode({id: HEX_EVENT_ID, kind: 9802});
+
+    expect(resolveNostrDeepLink(highlight)).toEqual({
+      name: 'Kind1Thread',
+      params: {nevent: highlight},
+    });
+  });
+
   it('converts note1 identifiers to nevent for Kind1Thread', () => {
     const route = resolveNostrDeepLink(note);
     expect(route?.name).toBe('Kind1Thread');

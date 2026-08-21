@@ -9,11 +9,13 @@ import {MessageType} from '@candypoets/nipworker';
 import {
   createPaginatedSubscription,
   type PaginatedSubscription,
+  useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1,
   asKind1111,
+  asNostrEvent,
   asParsedEvent,
   fbArray,
   isKind10002,
@@ -23,17 +25,24 @@ import {ChevronLeft} from 'lucide-react-native';
 import {decode, type EventPointer} from 'nostr-tools/nip19';
 
 import {Feed} from '../components/Feed';
-import {Note} from '../components/notes';
+import {Note} from '../components/notes/Note';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
 import {kind1RepliesSubIdPrefix} from '../nostr/subscriptionIds';
-import {useNostrStore, useRelayStore} from '../stores';
+import {
+  HIGHLIGHT_KIND,
+  highlightEventPipeline,
+  parsedHighlightFromRaw,
+} from '../nostr/highlights';
+import {useNostrStore} from '../stores/nostrStore';
+import {useRelayStore} from '../stores/relayStore';
 import {useAppTheme} from '../theme';
 
 const PAGE_LIMIT = 50;
 const REPLY_BYTES_PER_EVENT = 96 * 1024;
+const THREAD_REFRESH_TIMEOUT_MS = 4_000;
 const EMPTY_EVENTS: ParsedEvent[] = [];
 const EMPTY_RELAY_LIST: string[] = [];
 const KIND1_DEBUG = false;
@@ -295,23 +304,28 @@ export function Kind1Sub({
   visible,
   onClose,
 }: Kind1SubProps) {
-  const instanceIdRef = useRef(
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+  const instanceId = useMemo(
+    () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    [],
   );
-  const renderCountRef = useRef(0);
-  const effectCountsRef = useRef<Record<string, number>>({});
-  const traceStartedAtRef = useRef(Date.now());
+  const effectCountsRef = useRef<Record<string, number> | null>(null);
+  const initialTraceStartedAt = useMemo(() => Date.now(), []);
+  const traceStartedAtRef = useRef(initialTraceStartedAt);
   const data = useMemo(() => decodeEventPointer(nevent), [nevent]);
   const rootId = data.id ?? '';
+  const rootKind = data.kind;
   const subscriptionVisible = visible || keepSubscriptionsOnBlur;
   const diagnosticContextRef = useRef({rootId, visible});
-  diagnosticContextRef.current = {rootId, visible};
   const initialRelays = useMemo(() => pointerRelays(data), [data]);
   const [headerItem, setHeaderItem] = useState<ParsedEvent | null>(null);
   const [authorReadRelays, setAuthorReadRelays] = useState<string[]>([]);
   const [items, setItems] = useState<ParsedEvent[]>([]);
   const [allReplies, setAllReplies] = useState<ParsedEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [{nonce: refreshNonce, refreshing}, setRefreshState] = useState(() => ({
+    nonce: 0,
+    refreshing: false,
+  }));
   const itemsRef = useRef<ParsedEvent[]>([]);
   const allRepliesRef = useRef<ParsedEvent[]>([]);
   const renderedItemsLengthRef = useRef(0);
@@ -330,6 +344,8 @@ export function Kind1Sub({
   const authorRelayDiscoveryUnsubRef = useRef<(() => void) | null>(null);
   const repliesSubscriptionRef = useRef<PaginatedSubscription | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshNonceRef = useRef(0);
   const headerSubSeqRef = useRef(0);
   const repliesSubSeqRef = useRef(0);
   const firstReplyAtRef = useRef<number | null>(null);
@@ -358,28 +374,6 @@ export function Kind1Sub({
   const hasHeader = headerItem !== null;
   const headerAuthorPubkey = headerItem?.pubkey() ?? undefined;
 
-  renderCountRef.current += 1;
-  if (
-    __DEV__ &&
-    KIND1_REACTIVITY_DEBUG &&
-    shouldLogReactivityCount(renderCountRef.current)
-  ) {
-    console.log('[kind1-reactivity] render', {
-      instance: instanceIdRef.current,
-      count: renderCountRef.current,
-      rootId: rootId.slice(0, 12),
-      visible,
-      header: headerItem?.id()?.slice(0, 12) ?? null,
-      items: items.length,
-      allReplies: allReplies.length,
-      loading,
-      rootReadRelays: rootReadRelays.length,
-      activeRelays: activeRelays.length,
-      authorReadRelays: authorReadRelays.length,
-      displayedRelays: displayedRelays.length,
-    });
-  }
-
   const logEffectCycle = useCallback(
     (
       effect: string,
@@ -387,12 +381,14 @@ export function Kind1Sub({
       details?: Record<string, unknown>,
     ) => {
       if (!__DEV__ || !KIND1_REACTIVITY_DEBUG) return;
+      const effectCounts =
+        effectCountsRef.current ?? (effectCountsRef.current = {});
       const key = `${effect}:${phase}`;
-      const count = (effectCountsRef.current[key] ?? 0) + 1;
-      effectCountsRef.current[key] = count;
+      const count = (effectCounts[key] ?? 0) + 1;
+      effectCounts[key] = count;
       if (!shouldLogReactivityCount(count)) return;
       console.log(`[kind1-reactivity] effect ${phase}`, {
-        instance: instanceIdRef.current,
+        instance: instanceId,
         effect,
         count,
         rootId: diagnosticContextRef.current.rootId.slice(0, 12),
@@ -400,8 +396,12 @@ export function Kind1Sub({
         ...details,
       });
     },
-    [],
+    [instanceId],
   );
+
+  useEffect(() => {
+    diagnosticContextRef.current = {rootId, visible};
+  }, [rootId, visible]);
 
   useEffect(() => {
     if (!runLifecycleEffects) return;
@@ -439,6 +439,23 @@ export function Kind1Sub({
       commitFrameRef.current = null;
     }
   }, []);
+
+  const clearRefreshTimeout = useCallback(() => {
+    if (!refreshTimeoutRef.current) return;
+    clearTimeout(refreshTimeoutRef.current);
+    refreshTimeoutRef.current = null;
+  }, []);
+
+  const completeRefresh = useCallback(
+    (nonce: number) => {
+      if (refreshNonceRef.current !== nonce) return;
+      clearRefreshTimeout();
+      setRefreshState(current =>
+        current.refreshing ? {...current, refreshing: false} : current,
+      );
+    },
+    [clearRefreshTimeout],
+  );
 
   const commitItems = useCallback(() => {
     if (commitFrameRef.current) {
@@ -608,7 +625,8 @@ export function Kind1Sub({
     authorRelayDiscoveryUnsubRef.current = null;
     repliesSubscriptionRef.current = null;
     clearTimers();
-  }, [clearTimers]);
+    clearRefreshTimeout();
+  }, [clearRefreshTimeout, clearTimers]);
 
   const reset = useCallback(() => {
     kind1Trace(traceStartedAtRef.current, 'reset', {
@@ -639,6 +657,9 @@ export function Kind1Sub({
     setItems(current => (current.length ? EMPTY_EVENTS : current));
     setAllReplies(current => (current.length ? EMPTY_EVENTS : current));
     setLoading(false);
+    setRefreshState(current =>
+      current.refreshing ? {...current, refreshing: false} : current,
+    );
     cleanupSubscriptions();
   }, [cleanupSubscriptions, rootId]);
 
@@ -673,7 +694,8 @@ export function Kind1Sub({
 
     headerSubSeqRef.current += 1;
     const headerSeq = headerSubSeqRef.current;
-    const headerSubId = `kind1_${rootId}_${relayHash(activeRelays)}`;
+    const refreshSuffix = refreshNonce ? `_refresh_${refreshNonce}` : '';
+    const headerSubId = `kind1_${rootId}_${relayHash(activeRelays)}${refreshSuffix}`;
     const headerStartedAt = Date.now();
     setLoading(true);
     setSubRelays(headerSubId, activeRelays);
@@ -700,10 +722,15 @@ export function Kind1Sub({
       });
       setLoading(false);
     }, 1500);
-    mainUnsubRef.current = subscribeUntilEose(
-      headerSubId,
-      [{ids: [rootId], limit: 1, relays: activeRelays, cacheFirst: true}],
-      message => {
+    const headerRequests: RequestObject[] = [
+      {
+        ids: [rootId],
+        limit: 1,
+        relays: activeRelays,
+        ...(refreshNonce ? {noCache: true} : {cacheFirst: true}),
+      },
+    ];
+    const handleHeaderMessage = (message: WorkerMessage) => {
         const status = asConnectionStatus(message);
         if (status) {
           kind1Trace(traceStartedAtRef.current, 'header status', {
@@ -713,7 +740,15 @@ export function Kind1Sub({
             status: status.status()?.toString(),
           });
         }
-        const parsedEvent = isParsedEvent(message);
+        const parsedEvent =
+          rootKind === HIGHLIGHT_KIND
+            ? (() => {
+                const raw = asNostrEvent(message);
+                return raw
+                  ? parsedHighlightFromRaw(raw, activeRelays)
+                  : undefined;
+              })()
+            : isParsedEvent(message);
         if (!parsedEvent || parsedEvent.id() !== rootId) return;
         kind1Trace(traceStartedAtRef.current, 'header found', {
           seq: headerSeq,
@@ -743,9 +778,28 @@ export function Kind1Sub({
           clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
-      },
-      {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-    );
+        if (!enableReplySubscriptions || !subscriptionVisible) {
+          completeRefresh(refreshNonce);
+        }
+    };
+    mainUnsubRef.current =
+      rootKind === HIGHLIGHT_KIND
+        ? subscribeToNostr(
+            headerSubId,
+            headerRequests,
+            handleHeaderMessage,
+            {
+              bytesPerEvent: REPLY_BYTES_PER_EVENT,
+              closeOnEose: true,
+              pipeline: highlightEventPipeline(headerSubId),
+            },
+          )
+        : subscribeUntilEose(
+            headerSubId,
+            headerRequests,
+            handleHeaderMessage,
+            {bytesPerEvent: REPLY_BYTES_PER_EVENT},
+          );
 
     return () => {
       logEffectCycle('header-subscription', 'cleanup');
@@ -761,14 +815,19 @@ export function Kind1Sub({
   }, [
     activeRelays,
     clearTimers,
+    completeRefresh,
     enableHeaderSubscription,
+    enableReplySubscriptions,
     initialRelays,
     logEffectCycle,
     rootId,
+    rootKind,
     rootReadRelays,
     runLifecycleEffects,
+    refreshNonce,
     setRelayStatus,
     setSubRelays,
+    subscriptionVisible,
   ]);
 
   useEffect(() => {
@@ -796,7 +855,8 @@ export function Kind1Sub({
     repliesSubSeqRef.current += 1;
     const repliesSeq = repliesSubSeqRef.current;
     const repliesStartedAt = Date.now();
-    const subId = `${kind1RepliesSubIdPrefix(rootId)}${relayHash(displayedRelays)}`;
+    const refreshSuffix = refreshNonce ? `_refresh_${refreshNonce}` : '';
+    const subId = `${kind1RepliesSubIdPrefix(rootId)}${relayHash(displayedRelays)}${refreshSuffix}`;
     setSubRelays(subId, displayedRelays);
     displayedRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
     kind1Trace(traceStartedAtRef.current, 'replies subscribe', {
@@ -809,14 +869,21 @@ export function Kind1Sub({
     repliesSubscriptionRef.current?.close();
     repliesSubscriptionRef.current = createPaginatedSubscription({
       subId,
-      requests: replyRequests(rootId, displayedRelays, {cacheFirst: true}),
+      requests: replyRequests(
+        rootId,
+        displayedRelays,
+        refreshNonce ? {noCache: true} : {cacheFirst: true},
+      ),
       pageRequests: replyRequests(rootId, displayedRelays, {noCache: true}),
       windowSeconds: FEED_PAGE_WINDOW_SECONDS,
       maxEmptyPages: 3,
-      initialLoading: false,
+      initialLoading: refreshNonce > 0,
       onMessage: handleReplyMessage,
       onStateChange: state => {
-        if (!state.loading) commitItemsIfNeeded('reply subscription settled');
+        if (!state.loading) {
+          commitItemsIfNeeded('reply subscription settled');
+          completeRefresh(refreshNonce);
+        }
         setLoading(state.loading);
       },
       options: {bytesPerEvent: REPLY_BYTES_PER_EVENT},
@@ -835,11 +902,13 @@ export function Kind1Sub({
     };
   }, [
     commitItemsIfNeeded,
+    completeRefresh,
     displayedRelays,
     enableReplySubscriptions,
     handleReplyMessage,
     hasHeader,
     logEffectCycle,
+    refreshNonce,
     rootId,
     runLifecycleEffects,
     setRelayStatus,
@@ -918,14 +987,19 @@ export function Kind1Sub({
           timeout = null;
         }
 
-        const relays = fbArray(kind10002, 'relays')
-          .filter(relay => relay.read())
-          .map(relay => relay.url() ?? '')
-          .filter(Boolean)
-          .map(normalizeRelayUrl);
-        const incrementalRelays = [
-          ...new Set(relays.filter(relay => !activeRelays.includes(relay))),
-        ];
+        const relays: string[] = [];
+        const incrementalRelaySet = new Set<string>();
+        const activeRelaySet = new Set(activeRelays);
+        for (const relay of fbArray(kind10002, 'relays')) {
+          const url = relay.read() ? relay.url() : null;
+          if (!url) continue;
+          const normalized = normalizeRelayUrl(url);
+          relays.push(normalized);
+          if (!activeRelaySet.has(normalized)) {
+            incrementalRelaySet.add(normalized);
+          }
+        }
+        const incrementalRelays = [...incrementalRelaySet];
         // Bail when discovery resolves to the same relays: a new array here
         // would rerender and churn displayedRelays/motionHeader for nothing.
         setAuthorReadRelays(current =>
@@ -1003,6 +1077,26 @@ export function Kind1Sub({
     repliesSubscriptionRef.current?.loadMore();
   }, [loading]);
 
+  const handleRefresh = useCallback(() => {
+    if (!rootId || refreshing) return;
+
+    const nextRefreshNonce = refreshNonceRef.current + 1;
+    refreshNonceRef.current = nextRefreshNonce;
+    setRefreshState({nonce: nextRefreshNonce, refreshing: true});
+    clearRefreshTimeout();
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      completeRefresh(nextRefreshNonce);
+    }, THREAD_REFRESH_TIMEOUT_MS);
+
+    // Closing both queries before changing the identity ensures the worker
+    // cannot reuse a stale finite/root request or reply subscription.
+    mainUnsubRef.current?.();
+    mainUnsubRef.current = null;
+    repliesSubscriptionRef.current?.close();
+    repliesSubscriptionRef.current = null;
+  }, [clearRefreshTimeout, completeRefresh, refreshing, rootId]);
+
   const motionHeader = useCallback(
     () => (
       <Kind1MotionHeader
@@ -1063,7 +1157,10 @@ export function Kind1Sub({
       header={header}
       headerSafeArea
       visible={visible}
-      loading={loading}
+      loading={loading && !refreshing}
+      pullToRefresh
+      refreshing={refreshing}
+      onRefresh={handleRefresh}
       onNearBottom={handleNearBottom}
       removeClippedSubviews={false}
       empty={headerItem ? (

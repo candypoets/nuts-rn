@@ -41,6 +41,7 @@ import { Header } from './Header';
 import { Kind20Content } from './Kind20Content';
 import { Kind1068Content } from './Kind1068Content';
 import { Kind30023Content } from './Kind30023Content';
+import {Kind9802Content} from './Kind9802Content';
 import { KindPreGenericContent } from './KindPreGenericContent';
 import { ZapSummary } from './ZapSummary';
 import { eventTags, tagValue } from './kindHelpers';
@@ -115,6 +116,7 @@ function isSpecialNoteKind(kind?: number) {
   return (
     isMediaEventKind(kind) ||
     kind === 1068 ||
+    kind === 9802 ||
     kind === 30023 ||
     kind === 30311 ||
     kind === 31922 ||
@@ -339,6 +341,9 @@ const NoteContentOverride = memo(function NoteContentOverride({
   }
   if (note.kind() === 30023) {
     return <Kind30023Content note={note} />;
+  }
+  if (note.kind() === 9802) {
+    return <Kind9802Content note={note} />;
   }
   return <KindPreGenericContent note={note} />;
 });

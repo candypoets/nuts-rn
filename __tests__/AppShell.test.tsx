@@ -57,6 +57,9 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
     headerShown: false,
   });
   const screens = renderer.root.findAllByType(Stack.Screen);
+  const screensByName = Object.fromEntries(
+    screens.map(screen => [screen.props.name, screen]),
+  );
   const optionsByName = Object.fromEntries(
     screens.map(screen => [screen.props.name, screen.props.options]),
   );
@@ -65,6 +68,13 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
   // presentation/animation are read at push time, so they must be declared
   // on the root Stack — in-route <Stack.Screen options> lands too late.
   expect(optionsByName.PublicProfile).toEqual({animation: 'simple_push'});
+  expect(
+    screensByName.Kind1Thread.props.dangerouslySingular,
+  ).toEqual(expect.any(Function));
+  expect(
+    screensByName.Kind30023Thread.props.dangerouslySingular,
+  ).toEqual(expect.any(Function));
+  expect(screensByName.Notifications.props.dangerouslySingular).toBe(true);
   expect(optionsByName.Wallet).toEqual({presentation: 'modal'});
   expect(optionsByName.Kind1111Comments).toEqual({
     presentation: 'formSheet',

@@ -21,7 +21,7 @@ appId: com.nutsrn
 # parameterization. Every variable must come from the caller.
 #
 # Re-runnable against the same community: the modal's "already a member"
-# short-circuit is handled (Open community directly).
+# short-circuit replaces the invite directly with the community screen.
 #
 # Also used as a subflow by the commerce flows (store-beer, store-gym-pass,
 # event-capacity-full): they pass TOKEN / RELAY_PORT / NSEC / COMMUNITY_NAME
@@ -55,24 +55,26 @@ appId: com.nutsrn
 # relay= is the redeem proxy (10.0.2.2 = emulator host loopback); the app
 # derives both the redeem endpoint and the community ws relay from it.
 - openLink: "nutsrn://redeem?relay=http%3A%2F%2F10.0.2.2%3A${RELAY_PORT}&token=${TOKEN}"
-# RedeemModal renders (selectors match whole element text — regex wrap).
-- assertVisible: ".*You're invited to.*"
-# Membership check ("Checking your membership…") must settle first. Two
-# outcomes: fresh invite → "Claim invite"; re-run against the same community →
-# "You're already a member" (checkExistingMembership short-circuit).
+# A fresh invite renders the modal. A rerun for an existing member may replace
+# it with Community before the invitation copy reaches the accessibility tree.
 - extendedWaitUntil:
-    visible: ".*(Claim invite|already a member).*"
+    visible: ".*(You're invited to|${COMMUNITY_NAME}).*"
     timeout: 60000
 - runFlow:
     when:
-      visible: "Claim invite"
+      visible: ".*You're invited to.*"
     commands:
+      # Membership checking must settle before the claim action appears.
+      - extendedWaitUntil:
+          visible: "Claim invite"
+          timeout: 60000
       - tapOn: "Claim invite"
       # Redeem POST + membership index publishes (~2s timeouts each) + kind-0
       # replica awaiting the community relay's OK (up to 12s): be generous.
-      # The terminal state is either success or the error "Try again" button.
+      # Success replaces the invite route directly with Community; there is no
+      # intermediary success screen or Open community button.
       - extendedWaitUntil:
-          visible: ".*(Invite redeemed|Try again).*"
+          visible: ".*(${COMMUNITY_NAME}|Try again).*"
           timeout: 120000
 # Transient failure ("The community relay did not confirm your profile."):
 # the badge-gate membership cache can lag behind the just-granted award, so
@@ -84,7 +86,7 @@ appId: com.nutsrn
     commands:
       - tapOn: "Try again"
       - extendedWaitUntil:
-          visible: ".*(Invite redeemed|Try again).*"
+          visible: ".*(${COMMUNITY_NAME}|Try again).*"
           timeout: 120000
 - runFlow:
     when:
@@ -92,11 +94,9 @@ appId: com.nutsrn
     commands:
       - tapOn: "Try again"
       - extendedWaitUntil:
-          visible: ".*Invite redeemed.*"
+          visible: ".*${COMMUNITY_NAME}.*"
           timeout: 120000
-# Both paths converge on the Open community button.
-- tapOn: "Open community"
-# Community screen renders (name passed through from the redeem sheet).
+# Both fresh and already-member paths converge directly on Community.
 - extendedWaitUntil:
     visible: ".*${COMMUNITY_NAME}.*"
     timeout: 60000

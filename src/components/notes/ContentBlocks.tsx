@@ -9,12 +9,14 @@ import { ContentData } from '@candypoets/nipworker';
 import {
   asHashtagData,
   asImageData,
+  asLightningData,
   asLinkPreview,
   asMediaGroupData,
   asNostrData,
   asVideoData,
   fbArray,
 } from '@candypoets/nipworker/utils';
+import {LightningInvoiceCard} from '../LightningInvoiceCard';
 import { ImageGrid } from './ImageGrid';
 import { movedTooFar } from './press';
 import { User } from './User';
@@ -485,6 +487,21 @@ function ContentBlocksComponent({
           <LinkPreviewCard key={blockKey} text={block.text() || url} url={url} />
         ),
       );
+      index += 1;
+      continue;
+    }
+
+    if (block.dataType() === ContentData.LightningData) {
+      const lightning = asLightningData(block);
+      const invoice = lightning?.invoice() || '';
+      if (invoice) {
+        renderedBlocks.push(
+          <LightningInvoiceCard
+            key={`lightning-${invoice}`}
+            invoice={invoice}
+          />,
+        );
+      }
       index += 1;
       continue;
     }

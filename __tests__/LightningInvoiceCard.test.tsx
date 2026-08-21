@@ -39,7 +39,9 @@ test('opens the invoice in an installed Lightning wallet', async () => {
   const openWallet = renderer!.root.find(
     node => node.props.accessibilityLabel === 'Open Lightning wallet',
   );
-  await act(async () => openWallet.props.onPress());
+  await act(async () =>
+    openWallet.props.onPress({stopPropagation: jest.fn()}),
+  );
 
   expect(openUrl).toHaveBeenCalledWith(`lightning:${INVOICE}`);
   expect(mockSetStringAsync).not.toHaveBeenCalled();
@@ -59,7 +61,9 @@ test('copies the invoice when no Lightning wallet can open it', async () => {
   const openWallet = renderer!.root.find(
     node => node.props.accessibilityLabel === 'Open Lightning wallet',
   );
-  await act(async () => openWallet.props.onPress());
+  await act(async () =>
+    openWallet.props.onPress({stopPropagation: jest.fn()}),
+  );
 
   expect(mockSetStringAsync).toHaveBeenCalledWith(INVOICE);
   expect(renderer!.root.findByProps({accessibilityLiveRegion: 'polite'})).toBeTruthy();

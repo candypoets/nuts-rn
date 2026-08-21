@@ -1,5 +1,5 @@
 const LIGHTNING_INVOICE_SOURCE =
-  '(?:lightning:)?ln(?:bc|tb|bcrt|sb)[0-9a-z]{20,}';
+  '(?:lightning:)?ln(?:bcrt|tbs|tb|bc)[0-9a-z]{20,}';
 
 const EXACT_LIGHTNING_INVOICE = new RegExp(
   `^${LIGHTNING_INVOICE_SOURCE}$`,

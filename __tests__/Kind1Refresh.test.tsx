@@ -51,9 +51,8 @@ jest.mock('../src/components/notes/RelaysList', () => ({
 }));
 
 jest.mock('../src/stores/nostrStore', () => ({
-  useNostrStore: (
-    selector: (state: {readRelays: string[]; writeRelays: string[]}) => unknown,
-  ) => selector({readRelays: [], writeRelays: []}),
+  useNostrStore: (selector: (state: {readRelays: string[]}) => unknown) =>
+    selector({readRelays: []}),
 }));
 
 jest.mock('../src/stores/relayStore', () => ({

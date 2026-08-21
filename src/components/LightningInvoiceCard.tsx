@@ -94,7 +94,8 @@ export function LightningInvoiceCard({invoice}: LightningInvoiceCardProps) {
           accessibilityLabel="Open Lightning wallet"
           accessibilityRole="button"
           className="min-h-11 flex-1 flex-row items-center justify-center gap-2 rounded-lg bg-primary px-4"
-          onPress={() => {
+          onPress={event => {
+            event.stopPropagation();
             openWallet();
           }}
         >
@@ -105,7 +106,8 @@ export function LightningInvoiceCard({invoice}: LightningInvoiceCardProps) {
           accessibilityLabel="Copy Lightning invoice"
           accessibilityRole="button"
           className="min-h-11 flex-row items-center justify-center gap-2 rounded-lg bg-base-200 px-4"
-          onPress={() => {
+          onPress={event => {
+            event.stopPropagation();
             copyInvoice();
           }}
         >

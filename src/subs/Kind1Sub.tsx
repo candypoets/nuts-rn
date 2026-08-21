@@ -25,7 +25,6 @@ import {ChevronLeft} from 'lucide-react-native';
 import {decode, type EventPointer} from 'nostr-tools/nip19';
 
 import {Feed} from '../components/Feed';
-import {Kind1QuickReply} from '../components/notes/Kind1QuickReply';
 import {Note} from '../components/notes/Note';
 import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
@@ -1150,38 +1149,28 @@ export function Kind1Sub({
   }
 
   return (
-    <View className="flex-1 bg-base-100">
-      <Feed
-        items={items}
-        getItemId={getItemId}
-        renderItem={renderItem}
-        motionHeader={motionHeader}
-        header={header}
-        headerSafeArea
-        visible={visible}
-        loading={loading && !refreshing}
-        pullToRefresh
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        onNearBottom={handleNearBottom}
-        removeClippedSubviews={false}
-        empty={headerItem ? (
-          <View className="px-6 py-12">
-            <Text className="text-center text-sm text-primary-content">
-              No replies found.
-            </Text>
-          </View>
-        ) : null}
-        contentContainerClassName="pb-28"
-      />
-      {headerItem?.kind() === 1 ? (
-        <Kind1QuickReply
-          key={headerItem.id() || rootId}
-          note={headerItem}
-          relays={displayedRelays}
-          visible={visible}
-        />
+    <Feed
+      items={items}
+      getItemId={getItemId}
+      renderItem={renderItem}
+      motionHeader={motionHeader}
+      header={header}
+      headerSafeArea
+      visible={visible}
+      loading={loading && !refreshing}
+      pullToRefresh
+      refreshing={refreshing}
+      onRefresh={handleRefresh}
+      onNearBottom={handleNearBottom}
+      removeClippedSubviews={false}
+      empty={headerItem ? (
+        <View className="px-6 py-12">
+          <Text className="text-center text-sm text-primary-content">
+            No replies found.
+          </Text>
+        </View>
       ) : null}
-    </View>
+      contentContainerClassName="pb-28"
+    />
   );
 }

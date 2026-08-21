@@ -20,10 +20,15 @@ import {
   Kind30023Parsed,
 } from '@candypoets/nipworker';
 
+import {LightningInvoiceCard} from '../LightningInvoiceCard';
 import {Avatar} from './Avatar';
 import {Footer} from './Footer';
 import {User} from './User';
 import {eventTags, formatTimestamp, stringValue, tagValue, tagValues} from './kindHelpers';
+import {
+  normalizeLightningInvoice,
+  splitLightningInvoices,
+} from '../../lib/lightningInvoice';
 import {pushDistinct} from '../../navigation/pushDistinct';
 import type {AppNavigationProp} from '../../navigation/types';
 
@@ -295,7 +300,9 @@ function InlineContent({
 }) {
   const segments: Array<
     | {type: 'text'; key: string; inlines: ArticleInline[]}
+    | {type: 'plainText'; key: string; text: string}
     | {type: 'image'; key: string; inline: ArticleInline}
+    | {type: 'invoice'; key: string; invoice: string}
   > = [];
   const keyCounts = new Map<string, number>();
   let textInlines: ArticleInline[] = [];
@@ -318,17 +325,59 @@ function InlineContent({
   };
 
   inlines.forEach(inline => {
-    if (inline.type() !== ArticleInlineType.Image) {
-      textInlines.push(inline);
+    if (inline.type() === ArticleInlineType.Image) {
+      flushText();
+      segments.push({
+        type: 'image',
+        key: uniqueKey(`image:${inlineIdentity(inline)}`),
+        inline,
+      });
       return;
     }
 
-    flushText();
-    segments.push({
-      type: 'image',
-      key: uniqueKey(`image:${inlineIdentity(inline)}`),
-      inline,
-    });
+    if (inline.type() === ArticleInlineType.Link) {
+      const invoice =
+        normalizeLightningInvoice(stringValue(inline.url())) ||
+        normalizeLightningInvoice(stringValue(inline.text()));
+      if (invoice) {
+        flushText();
+        segments.push({
+          type: 'invoice',
+          key: uniqueKey(`invoice:${invoice.slice(0, 32)}`),
+          invoice,
+        });
+        return;
+      }
+    }
+
+    if (inline.type() === ArticleInlineType.Text) {
+      const parts = splitLightningInvoices(stringValue(inline.text()));
+      if (parts.some(part => part.type === 'invoice')) {
+        flushText();
+        parts.forEach(part => {
+          if (part.type === 'invoice') {
+            segments.push({
+              type: 'invoice',
+              key: uniqueKey(`invoice:${part.invoice.slice(0, 32)}`),
+              invoice: part.invoice,
+            });
+            return;
+          }
+
+          const text = part.text.trim();
+          if (text) {
+            segments.push({
+              type: 'plainText',
+              key: uniqueKey(`plain:${text.slice(0, 32)}`),
+              text,
+            });
+          }
+        });
+        return;
+      }
+    }
+
+    textInlines.push(inline);
   });
 
   flushText();
@@ -341,6 +390,12 @@ function InlineContent({
             key={segment.key}
             inline={segment.inline}
           />
+        ) : segment.type === 'invoice' ? (
+          <LightningInvoiceCard key={segment.key} invoice={segment.invoice} />
+        ) : segment.type === 'plainText' ? (
+          <Text key={segment.key} className={textClassName}>
+            {segment.text}
+          </Text>
         ) : (
           <Text key={segment.key} className={textClassName}>
             <InlineNodes inlines={segment.inlines} navigation={navigation} />

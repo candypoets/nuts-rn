@@ -741,14 +741,27 @@ function NoteComponent({
     !eventRefIds.includes(ancestorReplyId as string) &&
     !ancestorIds.includes(ancestorReplyId as string)
   );
-  const ancestorRelays = useEffectiveAuthorRelays({
+  const ancestorHintRelays = useMemo(
+    () =>
+      kind1111
+        ? relayList(fbArray(kind1111, 'parentRelays'))
+        : EMPTY_RELAYS,
+    [kind1111],
+  );
+  const resolvedAncestorRelays = useEffectiveAuthorRelays({
     subId: shouldRenderAncestor ? (ancestorReplyId as string) : undefined,
     pubkey: shouldRenderAncestor
       ? kind1?.reply()?.author() || kind1111?.parentAuthor?.()
       : undefined,
     marker: 'read',
-    fallbackRelays: noteRelays,
+    fallbackRelays: ancestorHintRelays.length
+      ? ancestorHintRelays
+      : noteRelays,
   });
+  const ancestorRelays = useMemo(
+    () => relayList([...ancestorHintRelays, ...resolvedAncestorRelays]),
+    [ancestorHintRelays, resolvedAncestorRelays],
+  );
   const noteSubscriptionId = displayId || effectiveId;
   // The ancestor request only rides along while the ancestor event is
   // missing; kept as a single primitive so request inputs stay comparable
@@ -803,6 +816,7 @@ function NoteComponent({
             ids: [pendingAncestorId],
             limit: 2,
             relays: ancestorRelays.length ? ancestorRelays : noteRelays,
+            cacheFirst: true,
           },
         ]
       : [];

@@ -5,13 +5,16 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  View,
 } from 'react-native';
 import * as SafeAreaContext from 'react-native-safe-area-context';
 import HeaderMotion from 'react-native-header-motion';
 import {
   Feed,
+  FeedMotionHeader,
   FeedHeaderDynamic,
   FeedSticky,
+  type FeedMotionChromeProps,
 } from '../src/components/Feed';
 import {useMediaActivity} from '../src/media/MediaActivity';
 
@@ -78,6 +81,62 @@ test('motion header renders one interactive tree with sticky and dynamic section
       node => node.type === Text && node.props.testID === 'dynamic-context',
     ),
   ).toHaveLength(1);
+});
+
+test('shared motion header stays outside a keyed feed scroll surface', () => {
+  function SharedHeaderHarness() {
+    const [chromeProps, setChromeProps] =
+      React.useState<FeedMotionChromeProps | null>(null);
+    const capturedChromeRef = React.useRef(false);
+    const captureChromeProps = React.useCallback(
+      (next: FeedMotionChromeProps | null) => {
+        if (!next || capturedChromeRef.current) return;
+        capturedChromeRef.current = true;
+        setChromeProps(next);
+      },
+      [],
+    );
+
+    return (
+      <HeaderMotion>
+        <View testID="pager-page">
+          <Feed<Item>
+            items={[]}
+            renderItem={() => null}
+            motionScrollId="notes"
+            motionChromeRef={captureChromeProps}
+            empty={<Text>empty</Text>}
+          />
+        </View>
+        {chromeProps ? (
+          <FeedMotionHeader
+            chromeProps={chromeProps}
+            surfaceColor="#000000"
+          >
+            <Text testID="shared-header">Explore header</Text>
+          </FeedMotionHeader>
+        ) : null}
+      </HeaderMotion>
+    );
+  }
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(<SharedHeaderHarness />);
+  });
+
+  const motionScrollView = renderer!.root.findByType(HeaderMotion.ScrollView);
+  const sharedHeader = renderer!.root.findByProps({testID: 'shared-header'});
+  const pagerPage = renderer!.root.findByProps({testID: 'pager-page'});
+  let parent = sharedHeader.parent;
+  let isInsidePagerPage = false;
+  while (parent) {
+    if (parent === pagerPage) isInsidePagerPage = true;
+    parent = parent.parent;
+  }
+
+  expect(motionScrollView.props.scrollId).toBe('notes');
+  expect(isInsidePagerPage).toBe(false);
 });
 
 test('motion header can expose a scroll-to-top press surface', () => {

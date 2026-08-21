@@ -27,6 +27,7 @@ import {
   type PaginatedSubscription,
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
+import HeaderMotion, {useActiveScrollId} from 'react-native-header-motion';
 import {
   asConnectionStatus,
   asKind1,
@@ -39,9 +40,17 @@ import {
   fbArray,
 } from '@candypoets/nipworker/utils';
 import { ComposerFooter } from '../components/ComposerFooter';
-import { Feed, FeedHeaderDynamic, FeedSticky } from '../components/Feed';
+import {
+  Feed,
+  FeedHeaderDynamic,
+  FeedMotionHeader,
+  FeedSticky,
+  type FeedMotionChromeProps,
+} from '../components/Feed';
 import {
   FeedKindNavigator,
+  selectedFeedKindTab,
+  type FeedKindTab,
   type FeedKindTabId,
 } from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
@@ -119,6 +128,12 @@ type NewNotesState = {
   pubkeys: string[];
 };
 
+type ExploreHeaderRenderer = (props: FeedMotionChromeProps) => React.ReactNode;
+type ExplorePageHeader = {
+  chromeProps: FeedMotionChromeProps;
+  render: ExploreHeaderRenderer;
+};
+
 const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.wine',
   'wss://pyramid.fiatjaf.com',
@@ -160,12 +175,64 @@ export function ExploreFeed({
   stickyFooter,
   onChromeVisibilityChange,
 }: ExploreFeedProps) {
+  const theme = useAppTheme();
   const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
   const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
+  const selectedPageId = selectedFeedKindTab(
+    selectedKinds,
+    EXPLORE_KIND_TABS,
+  );
+  const [activeScroll, setActiveScroll] = useActiveScrollId(selectedPageId);
+  const [pageHeaders, setPageHeaders] = useState<
+    Partial<Record<FeedKindTabId, ExplorePageHeader>>
+  >({});
+
+  useEffect(() => {
+    if (activeScroll.state !== selectedPageId) {
+      setActiveScroll(selectedPageId);
+    }
+  }, [activeScroll.state, selectedPageId, setActiveScroll]);
+
+  const handleSelectKinds = useCallback(
+    (kinds: FeedKind[]) => {
+      setActiveScroll(selectedFeedKindTab(kinds, EXPLORE_KIND_TABS));
+      setSelectedKinds(kinds);
+    },
+    [setActiveScroll, setSelectedKinds],
+  );
+
+  const handlePageHeaderChange = useCallback(
+    (
+      pageId: FeedKindTabId,
+      render: ExploreHeaderRenderer,
+      chromeProps: FeedMotionChromeProps,
+    ) => {
+      setPageHeaders(current => {
+        const existing = current[pageId];
+        if (
+          existing?.render === render &&
+          existing.chromeProps === chromeProps
+        ) {
+          return current;
+        }
+        return {...current, [pageId]: {chromeProps, render}};
+      });
+    },
+    [],
+  );
 
   const renderPage = useCallback(
-    ({kinds, isActive}: {kinds: FeedKind[]; isActive: boolean}) => (
+    ({
+      id,
+      kinds,
+      isActive,
+    }: {
+      id: FeedKindTab['id'];
+      kinds: FeedKind[];
+      isActive: boolean;
+    }) => (
       <ExploreFeedSurface
+        pageId={id}
         enabled={enabled}
         scrollToTopKey={isActive ? scrollToTopKey : undefined}
         visible={visible && isActive}
@@ -176,29 +243,47 @@ export function ExploreFeed({
           isActive ? onChromeVisibilityChange : undefined
         }
         selectedKinds={kinds}
-        setSelectedKinds={setSelectedKinds}
+        setSelectedKinds={handleSelectKinds}
+        onMotionHeaderChange={handlePageHeaderChange}
       />
     ),
     [
       enabled,
+      handlePageHeaderChange,
+      handleSelectKinds,
       header,
       onChromeVisibilityChange,
       screenActive,
       scrollToTopKey,
-      setSelectedKinds,
       stickyFooter,
       visible,
     ],
   );
 
+  const activeHeader = pageHeaders[activeScroll.state];
+
   return (
-    <ExploreKindSwipe
-      enabled={enabled && visible}
-      selectedKinds={selectedKinds}
-      tabs={EXPLORE_KIND_TABS}
-      onSelectKinds={setSelectedKinds}
-      renderPage={renderPage}
-    />
+    <HeaderMotion
+      activeScrollId={activeScroll.sv}
+      measureDynamicMode="update"
+    >
+      <ExploreKindSwipe
+        enabled={enabled && visible}
+        selectedKinds={selectedKinds}
+        tabs={EXPLORE_KIND_TABS}
+        onSelectKinds={handleSelectKinds}
+        renderPage={renderPage}
+      />
+      {activeHeader ? (
+        <FeedMotionHeader
+          chromeProps={activeHeader.chromeProps}
+          pressToTop
+          surfaceColor={theme.colors.base300}
+        >
+          {activeHeader.render(activeHeader.chromeProps)}
+        </FeedMotionHeader>
+      ) : null}
+    </HeaderMotion>
   );
 }
 
@@ -212,9 +297,17 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
   onChromeVisibilityChange,
   selectedKinds,
   setSelectedKinds,
+  pageId,
+  onMotionHeaderChange,
 }: ExploreFeedProps & {
   selectedKinds: FeedKind[];
   setSelectedKinds: (kinds: FeedKind[]) => void;
+  pageId: FeedKindTabId;
+  onMotionHeaderChange: (
+    pageId: FeedKindTabId,
+    render: ExploreHeaderRenderer,
+    chromeProps: FeedMotionChromeProps,
+  ) => void;
 }) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
@@ -871,6 +964,13 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
     [],
   );
   const listHeader = header ?? defaultHeader;
+  const motionChromeRef = useCallback(
+    (chromeProps: FeedMotionChromeProps | null) => {
+      if (!chromeProps) return;
+      onMotionHeaderChange(pageId, listHeader, chromeProps);
+    },
+    [listHeader, onMotionHeaderChange, pageId],
+  );
 
   const empty = (
     <View className="items-center px-6 py-12">
@@ -901,8 +1001,8 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
         items={itemsRef.current}
         scrollToTopKey={combinedScrollToTopKey}
         getItemId={getItemId}
-        motionHeader={listHeader}
-        motionHeaderPressToTop
+        motionScrollId={pageId}
+        motionChromeRef={motionChromeRef}
         pullToRefresh
         headerSafeArea
         headerOwnsSafeArea

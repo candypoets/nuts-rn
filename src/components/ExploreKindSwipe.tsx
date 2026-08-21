@@ -22,6 +22,7 @@ export function ExploreKindSwipe({
   enabled?: boolean;
   onSelectKinds: (kinds: FeedKind[]) => void;
   renderPage: (params: {
+    id: FeedKindTab['id'];
     index: number;
     isActive: boolean;
     kinds: FeedKind[];
@@ -73,6 +74,7 @@ export function ExploreKindSwipe({
             testID={`explore-kind-page-${tab.id}`}
           >
             {renderPage({
+              id: tab.id,
               index,
               isActive: index === selectedIndex,
               kinds,

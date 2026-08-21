@@ -1,8 +1,10 @@
 import React, {
   type ReactElement,
+  type Ref,
   type ReactNode,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -47,7 +49,7 @@ import {getFeedTopInset} from './feedLayout';
 import {useAppTheme} from '../theme';
 import {MediaActivityProvider} from '../media/MediaActivity';
 
-type FeedChromeProps = {
+export type FeedChromeProps = {
   scrollY: SharedValue<number>;
   scrollToTop: () => void;
   safeAreaTop: number;
@@ -55,6 +57,11 @@ type FeedChromeProps = {
   scrolled: boolean;
   start: number;
 };
+
+export type FeedMotionChromeProps = Pick<
+  FeedChromeProps,
+  'safeAreaTop' | 'scrollToTop' | 'scrollY' | 'visible'
+>;
 
 export type FeedRenderItemInfo<T> = {
   data: readonly T[];
@@ -78,6 +85,10 @@ export type FeedProps<T> = {
   motionHeaderPressToTop?: boolean;
   motionHeaderOverlaysContent?: boolean;
   motionHeaderSurfaceColor?: string;
+  /** Joins a HeaderMotion provider owned by an ancestor. */
+  motionScrollId?: string;
+  /** Exposes the stable controls needed by an ancestor-owned motion header. */
+  motionChromeRef?: Ref<FeedMotionChromeProps>;
   footer?: (props: FeedChromeProps) => ReactNode;
   stickyHeader?: (props: FeedChromeProps) => ReactNode;
   stickyHeaderSafeAreaColor?: string;
@@ -442,6 +453,29 @@ function MotionHeader({
   );
 }
 
+export function FeedMotionHeader({
+  children,
+  chromeProps,
+  pressToTop = false,
+  surfaceColor,
+}: {
+  children: ReactNode;
+  chromeProps: FeedMotionChromeProps;
+  pressToTop?: boolean;
+  surfaceColor: string;
+}) {
+  return (
+    <MotionHeader
+      onPress={pressToTop ? chromeProps.scrollToTop : undefined}
+      paddingTop={0}
+      scrollY={chromeProps.scrollY}
+      surfaceColor={surfaceColor}
+    >
+      {children}
+    </MotionHeader>
+  );
+}
+
 export function Feed<T>({
   items,
   resetScrollKey,
@@ -454,6 +488,8 @@ export function Feed<T>({
   motionHeaderPressToTop = false,
   motionHeaderOverlaysContent = false,
   motionHeaderSurfaceColor,
+  motionScrollId,
+  motionChromeRef,
   footer,
   stickyHeader,
   stickyHeaderSafeAreaColor,
@@ -508,6 +544,7 @@ export function Feed<T>({
   const outerHeaderSafeAreaTop = headerOwnsSafeArea ? 0 : headerSafeAreaTop;
   const innerHeaderSafeAreaTop = headerOwnsSafeArea ? headerSafeAreaTop : 0;
   const refreshColor = getRefreshControlColor(theme);
+  const usesMotionHeader = Boolean(motionHeader || motionScrollId);
   const listItems = useMemo(
     () => items,
     [items],
@@ -587,6 +624,22 @@ export function Feed<T>({
       scrollToTop,
     }),
     [innerHeaderSafeAreaTop, screenActive, scrollToTop, scrollY, start],
+  );
+
+  useImperativeHandle(
+    motionChromeRef,
+    () => ({
+      safeAreaTop: chromeProps.safeAreaTop,
+      scrollToTop: chromeProps.scrollToTop,
+      scrollY: chromeProps.scrollY,
+      visible: chromeProps.visible,
+    }),
+    [
+      chromeProps.safeAreaTop,
+      chromeProps.scrollToTop,
+      chromeProps.scrollY,
+      chromeProps.visible,
+    ],
   );
 
   useEffect(() => {
@@ -835,14 +888,14 @@ export function Feed<T>({
   );
 
   const showCustomRefreshIndicator =
-    !bottom && !motionHeader && pullToRefresh && !!onRefresh && refreshing;
-  const customRefreshInset = motionHeader ? 0 : refreshInset;
+    !bottom && !usesMotionHeader && pullToRefresh && !!onRefresh && refreshing;
+  const customRefreshInset = usesMotionHeader ? 0 : refreshInset;
   const listHeader = useMemo(() => {
     if (!header && !showCustomRefreshIndicator) return null;
-    const inFlowChromeProps = showCustomRefreshIndicator || motionHeader
+    const inFlowChromeProps = showCustomRefreshIndicator || usesMotionHeader
       ? {...chromeProps, safeAreaTop: 0}
       : chromeProps;
-    const inFlowHeaderPaddingTop = showCustomRefreshIndicator || motionHeader
+    const inFlowHeaderPaddingTop = showCustomRefreshIndicator || usesMotionHeader
       ? 0
       : outerHeaderSafeAreaTop;
     return (
@@ -878,11 +931,11 @@ export function Feed<T>({
     chromeProps,
     customRefreshInset,
     header,
-    motionHeader,
     outerHeaderSafeAreaTop,
     refreshColor,
     showCustomRefreshIndicator,
     theme.colors.base300,
+    usesMotionHeader,
   ]);
 
   const listFooter = useMemo(() => {
@@ -954,7 +1007,7 @@ export function Feed<T>({
           }
           scrollEventThrottle={16}
         />
-      ) : motionHeader ? (
+      ) : usesMotionHeader ? (
         <HeaderMotion.ScrollView
           animatedRef={listRef as never}
           className="flex-1"
@@ -963,6 +1016,7 @@ export function Feed<T>({
           headerOffsetStrategy={
             motionHeaderOverlaysContent ? 'none' : undefined
           }
+          scrollId={motionScrollId}
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
               ? {minIndexForVisible: 0}

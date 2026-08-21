@@ -42,6 +42,7 @@ import {
   type FeedKindTabId,
 } from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
+import {ExploreKindSwipe} from '../components/ExploreKindSwipe';
 import { Note } from '../components/notes/Note';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { FEED_PAGE_WINDOW_SECONDS } from '../nostr/pagination';
@@ -757,33 +758,40 @@ export function ExploreFeed({
   );
 
   return (
-    <View className="flex-1">
-      <Feed
-        items={itemsRef.current}
-        scrollToTopKey={combinedScrollToTopKey}
-        getItemId={getItemId}
-        motionHeader={listHeader}
-        motionHeaderPressToTop
-        pullToRefresh
-        headerSafeArea
-        headerOwnsSafeArea
-        stickyFooter={stickyFooter ?? defaultStickyFooter}
-        renderItem={renderItem}
-        visible={visible}
-        screenActive={screenActive}
-        loading={loading || refreshing}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        onNearBottom={handleNearBottom}
-        nearBottomThreshold={1600}
-        onViewportStateChange={handleViewportStateChange}
-        onChromeVisibilityChange={onChromeVisibilityChange}
-        empty={empty}
-        contentContainerClassName="pb-44"
-        numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
-        columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
-      />
-    </View>
+    <ExploreKindSwipe
+      enabled={enabled && visible}
+      selectedKinds={selectedKinds}
+      tabs={EXPLORE_KIND_TABS}
+      onSelectKinds={setSelectedKinds}
+    >
+      <View className="flex-1">
+        <Feed
+          items={itemsRef.current}
+          scrollToTopKey={combinedScrollToTopKey}
+          getItemId={getItemId}
+          motionHeader={listHeader}
+          motionHeaderPressToTop
+          pullToRefresh
+          headerSafeArea
+          headerOwnsSafeArea
+          stickyFooter={stickyFooter ?? defaultStickyFooter}
+          renderItem={renderItem}
+          visible={visible}
+          screenActive={screenActive}
+          loading={loading || refreshing}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          onNearBottom={handleNearBottom}
+          nearBottomThreshold={1600}
+          onViewportStateChange={handleViewportStateChange}
+          onChromeVisibilityChange={onChromeVisibilityChange}
+          empty={empty}
+          contentContainerClassName="pb-44"
+          numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
+          columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
+        />
+      </View>
+    </ExploreKindSwipe>
   );
 }
 

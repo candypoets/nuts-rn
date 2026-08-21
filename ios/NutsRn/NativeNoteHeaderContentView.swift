@@ -217,8 +217,9 @@ class NativeNoteHeaderContentView: UIView {
   func updateNameFallback(_ value: String?) {
     let nextValue = value ?? ""
     if nameFallback == nextValue { return }
+    let showingFallback = name.isEmpty || name == nameFallback
     nameFallback = nextValue
-    if name.isEmpty {
+    if showingFallback {
       name = nextValue
     }
     setNeedsDisplay()

@@ -12,7 +12,6 @@ import type {ConnectionStatus, WorkerMessage} from '@candypoets/nipworker';
 import {usePublish as publishToNostr} from '@candypoets/nipworker/hooks';
 import {isConnectionStatus} from '@candypoets/nipworker/utils';
 import {Check, Radio, Search} from 'lucide-react-native';
-import type {EventTemplate} from 'nostr-tools';
 
 import {
   BOOTSTRAP_RELAYS,
@@ -20,9 +19,13 @@ import {
   useNostrStore,
   useRelayStore,
   useSendStatusStore,
-  type RelayMarker,
 } from '../stores';
 import { fetchRelayInfosForRelays } from '../nostr/nip11';
+import {
+  buildRelayListPublishPlan,
+  normalizeRelayUrl,
+  uniqueRelays,
+} from '../nostr/relayList';
 import {type AppTheme, type AppThemeColors, useAppTheme} from '../theme';
 
 type RelayMode = 'read' | 'write';
@@ -39,10 +42,6 @@ type RelayPreferencesModalProps = {
   onClose: () => void;
 };
 
-function normalizeRelayUrl(url: string) {
-  return url.trim().replace(/\/$/, '');
-}
-
 function relayLabel(url: string) {
   const normalized = normalizeRelayUrl(url);
   try {
@@ -57,35 +56,6 @@ function sameStringArray(left: string[], right: string[]) {
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
-}
-
-function uniqueRelays(relays: string[]) {
-  return Array.from(
-    new Set(
-      relays
-        .map(normalizeRelayUrl)
-        .filter(Boolean),
-    ),
-  );
-}
-
-function buildRelayMarkers(readUrls: string[], writeUrls: string[]) {
-  const readSet = new Set(readUrls.map(normalizeRelayUrl));
-  const writeSet = new Set(writeUrls.map(normalizeRelayUrl));
-  const allUrls = Array.from(new Set([...readSet, ...writeSet])).sort();
-
-  return allUrls.map(url => ({
-    url,
-    read: readSet.has(url),
-    write: writeSet.has(url),
-  }));
-}
-
-function buildRelayListTags(readUrls: string[], writeUrls: string[]) {
-  return buildRelayMarkers(readUrls, writeUrls).map(relay => {
-    if (relay.read && relay.write) return ['r', relay.url];
-    return ['r', relay.url, relay.read ? 'read' : 'write'];
-  });
 }
 
 function statusColor(status: string | undefined, colors: AppThemeColors) {
@@ -226,27 +196,20 @@ export function RelayPreferencesModal({onClose: _onClose}: RelayPreferencesModal
   const saveRelays = useCallback(() => {
     if (!hasChanges) return;
 
-    const tags = buildRelayListTags(draftReadRelays, draftWriteRelays);
-    const event: EventTemplate = {
-      kind: 10002,
-      created_at: Math.floor(Date.now() / 1000),
-      content: '',
-      tags,
-    };
-    const markers = buildRelayMarkers(draftReadRelays, draftWriteRelays);
-    const publishRelays = uniqueRelays([
-      ...draftWriteRelays,
-      ...draftReadRelays,
-      ...INDEXER_RELAYS,
-    ]);
+    const relayPlan = buildRelayListPublishPlan({
+      readRelays: draftReadRelays,
+      writeRelays: draftWriteRelays,
+      discoveryRelays: INDEXER_RELAYS,
+      createdAt: Math.floor(Date.now() / 1000),
+    });
     const sendId = `relays_${Date.now()}`;
     const sendStatus: Record<string, ConnectionStatus> = {};
 
     setSaveFeedback('Publishing relay preferences...');
-    setRelayMarkers(markers as RelayMarker[]);
+    setRelayMarkers(relayPlan.markers);
     publishToNostr(
       sendId,
-      event,
+      relayPlan.event,
       (message: WorkerMessage) => {
         const status = isConnectionStatus(message);
         const relayUrl = status?.relayUrl();
@@ -260,7 +223,7 @@ export function RelayPreferencesModal({onClose: _onClose}: RelayPreferencesModal
           setSaveFeedback('Some relays did not accept the update');
         }
       },
-      {defaultRelays: publishRelays, trackStatus: true},
+      {defaultRelays: relayPlan.publishRelays, trackStatus: true},
     );
   }, [
     draftReadRelays,

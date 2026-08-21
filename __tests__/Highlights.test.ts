@@ -16,8 +16,11 @@ describe('NIP-84 highlights', () => {
   });
 
   it('adapts the raw worker event into the normal note view', () => {
+    const highlightAuthor = 'cd'.repeat(32);
+    const sourceAuthor = '12'.repeat(32);
     const tags = [
       ['e', 'ef'.repeat(32), 'wss://relay.example'],
+      ['p', sourceAuthor, 'wss://relay.example', 'author'],
       ['context', 'Around the quote'],
     ];
     const raw = {
@@ -25,7 +28,7 @@ describe('NIP-84 highlights', () => {
       createdAt: () => 123,
       id: () => 'ab'.repeat(32),
       kind: () => 9802,
-      pubkey: () => 'cd'.repeat(32),
+      pubkey: () => highlightAuthor,
       tags: (index: number) => ({
         items: (itemIndex: number) => tags[index]?.[itemIndex] ?? null,
         itemsLength: () => tags[index]?.length ?? 0,
@@ -37,6 +40,8 @@ describe('NIP-84 highlights', () => {
     const content = parsed ? asPreGeneric(parsed)?.content() : null;
 
     expect(parsed?.kind()).toBe(9802);
+    expect(parsed?.pubkey()).toBe(highlightAuthor);
+    expect(parsed?.pubkey()).not.toBe(sourceAuthor);
     expect(content).toBe('A useful passage.');
     expect(parsed ? fbArray(parsed, 'relays') : []).toEqual([
       'wss://relay.example',

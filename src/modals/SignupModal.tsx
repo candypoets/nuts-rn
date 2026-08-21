@@ -52,6 +52,7 @@ import {
 import type {EventTemplate} from 'nostr-tools';
 
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {buildRelayListPublishPlan} from '../nostr/relayList';
 import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {
   deriveSignupKeypair,
@@ -77,6 +78,7 @@ import {
 } from './FeedBuilderModal';
 import {
   BOOTSTRAP_RELAYS,
+  INDEXER_RELAYS,
   type FeedPackSelection,
   useAuthStore,
   useFeedBuilderStore,
@@ -182,6 +184,7 @@ export function useSignupProfileController(
 ) {
   const setAuth = useAuthStore(state => state.setAuth);
   const setProfile = useNostrStore(state => state.setProfile);
+  const setRelayMarkers = useNostrStore(state => state.setRelayMarkers);
   const setTrustedMints = useNostrStore(state => state.setTrustedMints);
   const setWalletReadRelays = useNostrStore(state => state.setWalletReadRelays);
   const writeRelays = useNostrStore(state => state.writeRelays);
@@ -308,7 +311,13 @@ export function useSignupProfileController(
     }
     const signupAvatar = avatar;
     const trimmedBio = bio.trim();
-    const publishRelays = relays;
+    const relayPlan = buildRelayListPublishPlan({
+      readRelays: relays,
+      writeRelays: relays,
+      discoveryRelays: INDEXER_RELAYS,
+      createdAt: now(),
+    });
+    const publishRelays = relayPlan.writeRelays;
     const selectedMints = recommendedMint ? [recommendedMint.mint] : [];
     const profileContent = JSON.stringify({
       name: trimmedName,
@@ -329,10 +338,17 @@ export function useSignupProfileController(
       updatedAt: now(),
     });
     setWalletReadRelays(publishRelays);
+    setRelayMarkers(relayPlan.markers);
     setStatus(null);
 
     void (async () => {
       try {
+        publishWithStatus(
+          `signup_relays_${Date.now()}`,
+          relayPlan.event,
+          relayPlan.publishRelays,
+          updateSendStatus,
+        );
         let picture: string | null = null;
         if (signupAvatar) {
           let uploadSucceeded = false;
@@ -442,6 +458,7 @@ export function useSignupProfileController(
     relays,
     setActiveMintUrl,
     setProfile,
+    setRelayMarkers,
     setTrustedMints,
     setWalletMintUrls,
     setWalletReadRelays,

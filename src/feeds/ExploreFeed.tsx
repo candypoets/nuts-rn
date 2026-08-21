@@ -153,13 +153,69 @@ function isLegacySeparatedNotesSelection(kinds: FeedKind[]) {
 
 export function ExploreFeed({
   enabled,
-  scrollToTopKey: tabScrollToTopKey,
+  scrollToTopKey,
   visible,
   screenActive = visible,
   header,
   stickyFooter,
   onChromeVisibilityChange,
 }: ExploreFeedProps) {
+  const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
+  const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
+
+  const renderPage = useCallback(
+    ({kinds, isActive}: {kinds: FeedKind[]; isActive: boolean}) => (
+      <ExploreFeedSurface
+        enabled={enabled}
+        scrollToTopKey={isActive ? scrollToTopKey : undefined}
+        visible={visible && isActive}
+        screenActive={screenActive && isActive}
+        header={header}
+        stickyFooter={stickyFooter}
+        onChromeVisibilityChange={
+          isActive ? onChromeVisibilityChange : undefined
+        }
+        selectedKinds={kinds}
+        setSelectedKinds={setSelectedKinds}
+      />
+    ),
+    [
+      enabled,
+      header,
+      onChromeVisibilityChange,
+      screenActive,
+      scrollToTopKey,
+      setSelectedKinds,
+      stickyFooter,
+      visible,
+    ],
+  );
+
+  return (
+    <ExploreKindSwipe
+      enabled={enabled && visible}
+      selectedKinds={selectedKinds}
+      tabs={EXPLORE_KIND_TABS}
+      onSelectKinds={setSelectedKinds}
+      renderPage={renderPage}
+    />
+  );
+}
+
+const ExploreFeedSurface = memo(function ExploreFeedSurface({
+  enabled,
+  scrollToTopKey: tabScrollToTopKey,
+  visible,
+  screenActive = visible,
+  header,
+  stickyFooter,
+  onChromeVisibilityChange,
+  selectedKinds,
+  setSelectedKinds,
+}: ExploreFeedProps & {
+  selectedKinds: FeedKind[];
+  setSelectedKinds: (kinds: FeedKind[]) => void;
+}) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
   const requestCacheRef = useRef(0);
@@ -186,8 +242,6 @@ export function ExploreFeed({
       : `${tabScrollToTopKey ?? 0}:${scrollToTopKey ?? 0}`;
   const [allowGuestExplore, setAllowGuestExplore] = useState(false);
   const refreshingRef = useRef(false);
-  const selectedKinds = useFeedBuilderStore(state => state.selectedKinds);
-  const setSelectedKinds = useFeedBuilderStore(state => state.setSelectedKinds);
   const exploreAudienceMode = useFeedBuilderStore(
     state => state.exploreAudienceMode,
   );
@@ -842,42 +896,35 @@ export function ExploreFeed({
   );
 
   return (
-    <ExploreKindSwipe
-      enabled={enabled && visible}
-      selectedKinds={selectedKinds}
-      tabs={EXPLORE_KIND_TABS}
-      onSelectKinds={setSelectedKinds}
-    >
-      <View className="flex-1">
-        <Feed
-          items={itemsRef.current}
-          scrollToTopKey={combinedScrollToTopKey}
-          getItemId={getItemId}
-          motionHeader={listHeader}
-          motionHeaderPressToTop
-          pullToRefresh
-          headerSafeArea
-          headerOwnsSafeArea
-          stickyFooter={stickyFooter ?? defaultStickyFooter}
-          renderItem={renderItem}
-          visible={visible}
-          screenActive={screenActive}
-          loading={loading || refreshing}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          onNearBottom={handleNearBottom}
-          nearBottomThreshold={1600}
-          onViewportStateChange={handleViewportStateChange}
-          onChromeVisibilityChange={onChromeVisibilityChange}
-          empty={empty}
-          contentContainerClassName="pb-44"
-          numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
-          columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
-        />
-      </View>
-    </ExploreKindSwipe>
+    <View className="flex-1">
+      <Feed
+        items={itemsRef.current}
+        scrollToTopKey={combinedScrollToTopKey}
+        getItemId={getItemId}
+        motionHeader={listHeader}
+        motionHeaderPressToTop
+        pullToRefresh
+        headerSafeArea
+        headerOwnsSafeArea
+        stickyFooter={stickyFooter ?? defaultStickyFooter}
+        renderItem={renderItem}
+        visible={visible}
+        screenActive={screenActive}
+        loading={loading || refreshing}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onNearBottom={handleNearBottom}
+        nearBottomThreshold={1600}
+        onViewportStateChange={handleViewportStateChange}
+        onChromeVisibilityChange={onChromeVisibilityChange}
+        empty={empty}
+        contentContainerClassName="pb-44"
+        numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
+        columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
+      />
+    </View>
   );
-}
+});
 
 type MediaGridLink = {
   src: string;

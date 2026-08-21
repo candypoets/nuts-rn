@@ -146,8 +146,9 @@ class NativeNoteHeaderView(context: Context) : View(context) {
   fun setNameFallback(value: String?) {
     val next = value.orEmpty()
     if (nameFallback == next) return
+    val showingFallback = name.isEmpty() || name == nameFallback
     nameFallback = next
-    if (name.isEmpty()) name = next
+    if (showingFallback) name = next
     invalidate()
   }
 

@@ -1,98 +1,94 @@
-import React, {type ReactNode, useCallback, useMemo} from 'react';
+import React, {type ReactNode, useCallback, useEffect, useRef} from 'react';
 import {StyleSheet, View} from 'react-native';
 import * as Haptics from 'expo-haptics';
-import {Gesture, GestureDetector} from 'react-native-gesture-handler';
-import {scheduleOnRN} from 'react-native-worklets';
+import PagerView, {
+  type PagerViewOnPageSelectedEvent,
+} from 'react-native-pager-view';
 
 import type {FeedKind} from '../stores/appStore';
+import type {FeedKindTab} from './FeedKindNavigator';
 import {
-  selectedFeedKindTab,
-  type FeedKindTab,
-} from './FeedKindNavigator';
-
-const SWIPE_COMMIT_DISTANCE = 96;
-const SWIPE_DECELERATION_RATE = 0.998;
-
-export type ExploreKindSwipeDirection = -1 | 1;
-
-function projectedDistance(translationX: number, velocityX: number) {
-  'worklet';
-  const momentum =
-    ((velocityX / 1000) * SWIPE_DECELERATION_RATE) /
-    (1 - SWIPE_DECELERATION_RATE);
-  return translationX + momentum;
-}
-
-/** A leftward swipe selects the next tab; a rightward swipe selects the previous. */
-export function exploreKindSwipeDirection(
-  translationX: number,
-  velocityX: number,
-): ExploreKindSwipeDirection | 0 {
-  'worklet';
-  const projected = projectedDistance(translationX, velocityX);
-  if (projected <= -SWIPE_COMMIT_DISTANCE) return 1;
-  if (projected >= SWIPE_COMMIT_DISTANCE) return -1;
-  return 0;
-}
-
-export function adjacentExploreKinds(
-  selectedKinds: FeedKind[],
-  tabs: FeedKindTab[],
-  direction: ExploreKindSwipeDirection,
-): FeedKind[] | null {
-  const selectedId = selectedFeedKindTab(selectedKinds, tabs);
-  const selectedIndex = tabs.findIndex(tab => tab.id === selectedId);
-  const nextTab = tabs[selectedIndex + direction];
-  return nextTab ? [...(nextTab.kinds ?? [])] : null;
-}
+  exploreKindsAtIndex,
+  selectedExploreKindIndex,
+} from './exploreKindPagerModel';
 
 export function ExploreKindSwipe({
-  children,
   enabled = true,
   onSelectKinds,
+  renderPage,
   selectedKinds,
   tabs,
 }: {
-  children: ReactNode;
   enabled?: boolean;
   onSelectKinds: (kinds: FeedKind[]) => void;
+  renderPage: (params: {
+    index: number;
+    isActive: boolean;
+    kinds: FeedKind[];
+  }) => ReactNode;
   selectedKinds: FeedKind[];
   tabs: FeedKindTab[];
 }) {
-  const commitSwipe = useCallback(
-    (direction: ExploreKindSwipeDirection) => {
-      const nextKinds = adjacentExploreKinds(selectedKinds, tabs, direction);
-      if (!nextKinds) return;
+  const pagerRef = useRef<PagerView>(null);
+  const selectedIndex = selectedExploreKindIndex(selectedKinds, tabs);
+  const selectedIndexRef = useRef(selectedIndex);
+
+  useEffect(() => {
+    if (selectedIndexRef.current === selectedIndex) return;
+    selectedIndexRef.current = selectedIndex;
+    pagerRef.current?.setPageWithoutAnimation(selectedIndex);
+  }, [selectedIndex]);
+
+  const handlePageSelected = useCallback(
+    (event: PagerViewOnPageSelectedEvent) => {
+      const index = event.nativeEvent.position;
+      if (index === selectedIndexRef.current) return;
+      const kinds = exploreKindsAtIndex(tabs, index);
+      if (!kinds) return;
+
+      selectedIndexRef.current = index;
       Haptics.selectionAsync().catch(() => {});
-      onSelectKinds(nextKinds);
+      onSelectKinds(kinds);
     },
-    [onSelectKinds, selectedKinds, tabs],
-  );
-  const swipeGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .enabled(enabled && tabs.length > 1)
-        .activeOffsetX([-24, 24])
-        .failOffsetY([-18, 18])
-        .onEnd(event => {
-          const direction = exploreKindSwipeDirection(
-            event.translationX,
-            event.velocityX,
-          );
-          if (direction) scheduleOnRN(commitSwipe, direction);
-        }),
-    [commitSwipe, enabled, tabs.length],
+    [onSelectKinds, tabs],
   );
 
   return (
-    <GestureDetector gesture={swipeGesture}>
-      <View style={styles.container}>{children}</View>
-    </GestureDetector>
+    <PagerView
+      ref={pagerRef}
+      style={styles.pager}
+      initialPage={selectedIndex}
+      scrollEnabled={enabled && tabs.length > 1}
+      offscreenPageLimit={Math.max(1, tabs.length - 1)}
+      overScrollMode="never"
+      onPageSelected={handlePageSelected}
+    >
+      {tabs.map((tab, index) => {
+        const kinds = tab.kinds ?? [];
+        return (
+          <View
+            key={tab.id}
+            collapsable={false}
+            style={styles.page}
+            testID={`explore-kind-page-${tab.id}`}
+          >
+            {renderPage({
+              index,
+              isActive: index === selectedIndex,
+              kinds,
+            })}
+          </View>
+        );
+      })}
+    </PagerView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  pager: {
+    flex: 1,
+  },
+  page: {
     flex: 1,
   },
 });

@@ -891,6 +891,8 @@ export function Feed<T>({
     },
     [onNearBottom],
   );
+  const hasItems = items.length > 0;
+  const hasNearBottomHandler = Boolean(onNearBottom);
 
   useAnimatedReaction(
     () => {
@@ -903,8 +905,8 @@ export function Feed<T>({
         distance,
         eligible:
           !bottom &&
-          Boolean(onNearBottom) &&
-          items.length > 0 &&
+          hasNearBottomHandler &&
+          hasItems &&
           offset > 0 &&
           distance <= nearBottomThreshold,
       };
@@ -923,9 +925,9 @@ export function Feed<T>({
       animatedNearBottomTriggered,
       animatedViewportHeight,
       bottom,
-      items.length,
+      hasItems,
+      hasNearBottomHandler,
       nearBottomThreshold,
-      onNearBottom,
       scrollY,
       triggerNearBottomFromUI,
     ],

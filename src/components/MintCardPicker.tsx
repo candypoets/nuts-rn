@@ -34,6 +34,7 @@ type MintInfoResponse = {
 };
 
 const mintInfoCache = new Map<string, MintInfo>();
+const selectionTransitionEasing = 'ease-in-out' as const;
 
 export function MintCardPicker({
   mintUrls,
@@ -282,28 +283,28 @@ const styles = StyleSheet.create({
     transform: [{scale: 1}],
     transitionDuration: '180ms',
     transitionProperty: ['transform', 'opacity'],
-    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    transitionTimingFunction: selectionTransitionEasing,
   },
   mintSquareUnselectedMotion: {
     opacity: 0.78,
     transform: [{scale: 38 / 54}],
     transitionDuration: '180ms',
     transitionProperty: ['transform', 'opacity'],
-    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    transitionTimingFunction: selectionTransitionEasing,
   },
   mintSquareSelectedReducedMotion: {
     opacity: 1,
     transform: [{scale: 1}],
     transitionDuration: '120ms',
     transitionProperty: 'opacity',
-    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    transitionTimingFunction: selectionTransitionEasing,
   },
   mintSquareUnselectedReducedMotion: {
     opacity: 0.78,
     transform: [{scale: 1}],
     transitionDuration: '120ms',
     transitionProperty: 'opacity',
-    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    transitionTimingFunction: selectionTransitionEasing,
   },
   mintSquareImage: {
     height: '100%',

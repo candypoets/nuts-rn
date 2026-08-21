@@ -93,6 +93,8 @@ import {
 } from '../theme';
 import {useUIStore} from '../stores/uiStore';
 
+const selectionTransitionEasing = 'ease-in-out' as const;
+
 type ProfileModalTarget =
   | {type: 'login'}
   | {type: 'logout'}
@@ -2468,28 +2470,28 @@ function createProfileModalStyles(colors: AppThemeColors) {
       transform: [{scale: 1}],
       transitionDuration: '180ms',
       transitionProperty: ['transform', 'opacity'],
-      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+      transitionTimingFunction: selectionTransitionEasing,
     },
     accountAvatarUnselectedMotion: {
       opacity: 0.78,
       transform: [{scale: 42 / 56}],
       transitionDuration: '180ms',
       transitionProperty: ['transform', 'opacity'],
-      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+      transitionTimingFunction: selectionTransitionEasing,
     },
     accountAvatarSelectedReducedMotion: {
       opacity: 1,
       transform: [{scale: 1}],
       transitionDuration: '120ms',
       transitionProperty: 'opacity',
-      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+      transitionTimingFunction: selectionTransitionEasing,
     },
     accountAvatarUnselectedReducedMotion: {
       opacity: 0.78,
       transform: [{scale: 1}],
       transitionDuration: '120ms',
       transitionProperty: 'opacity',
-      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+      transitionTimingFunction: selectionTransitionEasing,
     },
     accountAvatarImageWrap: {
       borderColor: colors.primary,

@@ -1,5 +1,10 @@
-import type {NostrEvent as RawNostrEvent, ParsedEvent} from '@candypoets/nipworker';
+import type {
+  NostrEvent as RawNostrEvent,
+  ParsedEvent,
+} from '@candypoets/nipworker';
 import {
+  Message,
+  MessageType,
   ParsedData,
   ParsedEvent as FbParsedEvent,
   ParsedEventT,
@@ -9,9 +14,11 @@ import {
   SaveToDbPipeConfigT,
   SerializeEventsPipeConfigT,
   StringVecT,
+  WorkerMessage as FbWorkerMessage,
+  WorkerMessageT,
 } from '@candypoets/nipworker';
-import {fbArray} from '@candypoets/nipworker/utils';
-import {Builder, ByteBuffer} from 'flatbuffers';
+import { fbArray } from '@candypoets/nipworker/utils';
+import { Builder, ByteBuffer } from 'flatbuffers';
 import { naddrEncode, neventEncode } from 'nostr-tools/nip19';
 import type { EventTemplate } from 'nostr-tools';
 
@@ -76,6 +83,11 @@ export function highlightEventPipeline(subId: string) {
 /**
  * The worker's parsed-event pipeline does not retain generic kind content.
  * Materialize the one small ParsedEvent view Note/native header/footer need.
+ *
+ * Keep the ParsedEvent inside a WorkerMessage. Native note components receive
+ * the FlatBuffer's backing bytes and decode them from the WorkerMessage root;
+ * returning a standalone ParsedEvent leaves a recycled native header showing
+ * the previous row when that decode fails.
  */
 export function parsedHighlightFromRaw(
   event: RawNostrEvent,
@@ -103,12 +115,20 @@ export function parsedHighlightFromRaw(
     relays,
     tagVectors,
   );
+  const message = new WorkerMessageT(
+    `highlight_${id}`,
+    '',
+    MessageType.ParsedNostrEvent,
+    Message.ParsedEvent,
+    parsed,
+  );
   const builder = new Builder(2048);
-  const offset = parsed.pack(builder);
+  const offset = message.pack(builder);
   builder.finish(offset);
-  return FbParsedEvent.getRootAsParsedEvent(
+  const worker = FbWorkerMessage.getRootAsWorkerMessage(
     new ByteBuffer(builder.asUint8Array()),
   );
+  return worker.content(new FbParsedEvent()) as ParsedEvent | undefined;
 }
 
 export function highlightTagValue(

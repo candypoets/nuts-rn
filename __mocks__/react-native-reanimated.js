@@ -94,6 +94,11 @@ module.exports = {
       },
     };
   },
+  useEvent(handler) {
+    const eventHandler = event => handler(event.nativeEvent ?? event);
+    eventHandler.workletEventHandler = {};
+    return eventHandler;
+  },
   useAnimatedStyle(factory) {
     return factory();
   },

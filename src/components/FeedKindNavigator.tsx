@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {InteractionManager, View} from 'react-native';
+import type {SharedValue} from 'react-native-reanimated';
 import {type FeedKind} from '../stores';
 import {SegmentedTabs, type SegmentedTab} from './SegmentedTabs';
 
@@ -45,11 +46,13 @@ export function FeedKindNavigator({
   onSelectKinds,
   tabs = FEED_KIND_TABS,
   deferSelection = false,
+  selectionProgress,
 }: {
   selectedKinds: FeedKind[];
   onSelectKinds: (kinds: FeedKind[]) => void;
   tabs?: FeedKindTab[];
   deferSelection?: boolean;
+  selectionProgress?: SharedValue<number>;
 }) {
   const selectedIdFromStore = selectedFeedKindTab(selectedKinds, tabs);
   const [optimisticSelectedId, setOptimisticSelectedId] =
@@ -93,6 +96,7 @@ export function FeedKindNavigator({
         }}
         layout="adaptive"
         labelWeight="regular"
+        selectionProgress={selectionProgress}
       />
     </View>
   );

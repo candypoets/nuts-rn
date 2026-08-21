@@ -28,6 +28,7 @@ import {
   useSubscription as subscribeToNostr,
 } from '@candypoets/nipworker/hooks';
 import HeaderMotion, {useActiveScrollId} from 'react-native-header-motion';
+import {type SharedValue, useSharedValue} from 'react-native-reanimated';
 import {
   asConnectionStatus,
   asKind1,
@@ -55,6 +56,7 @@ import {
 } from '../components/FeedKindNavigator';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import {ExploreKindSwipe} from '../components/ExploreKindSwipe';
+import {selectedExploreKindIndex} from '../components/exploreKindPagerModel';
 import { Note } from '../components/notes/Note';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
 import { FEED_PAGE_WINDOW_SECONDS } from '../nostr/pagination';
@@ -182,6 +184,9 @@ export function ExploreFeed({
     selectedKinds,
     EXPLORE_KIND_TABS,
   );
+  const pageProgress = useSharedValue(
+    selectedExploreKindIndex(selectedKinds, EXPLORE_KIND_TABS),
+  );
   const [activeScroll, setActiveScroll] = useActiveScrollId(selectedPageId);
   const [pageHeaders, setPageHeaders] = useState<
     Partial<Record<FeedKindTabId, ExplorePageHeader>>
@@ -244,6 +249,7 @@ export function ExploreFeed({
         }
         selectedKinds={kinds}
         setSelectedKinds={handleSelectKinds}
+        pageProgress={pageProgress}
         onMotionHeaderChange={handlePageHeaderChange}
       />
     ),
@@ -257,6 +263,7 @@ export function ExploreFeed({
       scrollToTopKey,
       stickyFooter,
       visible,
+      pageProgress,
     ],
   );
 
@@ -272,6 +279,7 @@ export function ExploreFeed({
         selectedKinds={selectedKinds}
         tabs={EXPLORE_KIND_TABS}
         onSelectKinds={handleSelectKinds}
+        pageProgress={pageProgress}
         renderPage={renderPage}
       />
       {activeHeader ? (
@@ -297,12 +305,14 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
   onChromeVisibilityChange,
   selectedKinds,
   setSelectedKinds,
+  pageProgress,
   pageId,
   onMotionHeaderChange,
 }: ExploreFeedProps & {
   selectedKinds: FeedKind[];
   setSelectedKinds: (kinds: FeedKind[]) => void;
   pageId: FeedKindTabId;
+  pageProgress: SharedValue<number>;
   onMotionHeaderChange: (
     pageId: FeedKindTabId,
     render: ExploreHeaderRenderer,
@@ -633,6 +643,7 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
         relayStatuses={relayStatuses}
         selectedKinds={selectedKinds}
         setSelectedKinds={setSelectedKinds}
+        pageProgress={pageProgress}
         audienceMode={exploreAudienceMode}
         setAudienceMode={setExploreAudienceMode}
         relaySelectionSubId={relaySelectionSubId}
@@ -655,6 +666,7 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
       selectedKinds,
       setExploreAudienceMode,
       setSelectedKinds,
+      pageProgress,
     ],
   );
 
@@ -1491,6 +1503,7 @@ function ExploreHeader({
   relays,
   selectedKinds,
   setSelectedKinds,
+  pageProgress,
   audienceMode,
   setAudienceMode,
   relaySelectionSubId,
@@ -1506,6 +1519,7 @@ function ExploreHeader({
   relays: string[];
   selectedKinds: FeedKind[];
   setSelectedKinds: (kinds: FeedKind[]) => void;
+  pageProgress: SharedValue<number>;
   audienceMode: ExploreAudienceMode;
   setAudienceMode: (mode: ExploreAudienceMode) => void;
   relaySelectionSubId: string;
@@ -1589,6 +1603,7 @@ function ExploreHeader({
             selectedKinds={selectedKinds}
             onSelectKinds={setSelectedKinds}
             tabs={EXPLORE_KIND_TABS}
+            selectionProgress={pageProgress}
           />
         </View>
       ) : null}

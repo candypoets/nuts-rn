@@ -14,7 +14,10 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
+  Extrapolation,
   ReduceMotion,
+  type SharedValue,
+  interpolate,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -35,6 +38,7 @@ type SegmentedTabsProps<T extends string> = {
   labelWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
   className?: string;
   renderCount?: (count: number) => ReactNode;
+  selectionProgress?: SharedValue<number>;
 };
 
 export function SegmentedTabs<T extends string>({
@@ -46,6 +50,7 @@ export function SegmentedTabs<T extends string>({
   labelWeight,
   className,
   renderCount,
+  selectionProgress,
 }: SegmentedTabsProps<T>) {
   const [tabLayouts, setTabLayouts] = useState<
     Partial<Record<T, {x: number; width: number}>>
@@ -55,6 +60,18 @@ export function SegmentedTabs<T extends string>({
   const previousSelectedIdRef = useRef<T | null>(null);
   const selectedLayout = tabLayouts[selectedId];
   const pillInset = variant === 'pill' ? 1 : 0;
+  const progressLayouts = tabs.map(tab => tabLayouts[tab.id]);
+  const hasProgressLayouts =
+    !!selectionProgress &&
+    progressLayouts.length > 1 &&
+    progressLayouts.every(layoutValue => !!layoutValue);
+  const progressInputRange = tabs.map((_, index) => index);
+  const progressXRange = progressLayouts.map(
+    layoutValue => layoutValue?.x ?? 0,
+  );
+  const progressWidthRange = progressLayouts.map(layoutValue =>
+    Math.max(0, (layoutValue?.width ?? 0) - pillInset * 2),
+  );
 
   const handleTabLayout = useCallback((id: T, event: LayoutChangeEvent) => {
     const {x, width} = event.nativeEvent.layout;
@@ -114,10 +131,34 @@ export function SegmentedTabs<T extends string>({
     tabLayouts,
   ]);
 
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{translateX: indicatorX.get()}],
-    width: indicatorWidth.get(),
-  }));
+  const indicatorStyle = useAnimatedStyle(() => {
+    if (selectionProgress && hasProgressLayouts) {
+      const progress = selectionProgress.get();
+      return {
+        transform: [
+          {
+            translateX: interpolate(
+              progress,
+              progressInputRange,
+              progressXRange,
+              Extrapolation.CLAMP,
+            ),
+          },
+        ],
+        width: interpolate(
+          progress,
+          progressInputRange,
+          progressWidthRange,
+          Extrapolation.CLAMP,
+        ),
+      };
+    }
+
+    return {
+      transform: [{translateX: indicatorX.get()}],
+      width: indicatorWidth.get(),
+    };
+  });
   const effectiveLabelWeight =
     labelWeight ?? (variant === 'pill' ? 'bold' : 'semibold');
   const labelWeightClass =

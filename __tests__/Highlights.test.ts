@@ -1,5 +1,11 @@
-import type {NostrEvent as RawNostrEvent} from '@candypoets/nipworker';
-import {asPreGeneric, fbArray} from '@candypoets/nipworker/utils';
+import {
+  Message,
+  ParsedEvent as FbParsedEvent,
+  WorkerMessage as FbWorkerMessage,
+  type NostrEvent as RawNostrEvent,
+} from '@candypoets/nipworker';
+import { asPreGeneric, fbArray } from '@candypoets/nipworker/utils';
+import { ByteBuffer } from 'flatbuffers';
 import {
   buildHighlightEvent,
   cleanHighlightUrl,
@@ -46,6 +52,17 @@ describe('NIP-84 highlights', () => {
     expect(parsed ? fbArray(parsed, 'relays') : []).toEqual([
       'wss://relay.example',
     ]);
+
+    const backingBytes = (parsed as unknown as { bb?: { bytes_?: Uint8Array } })
+      ?.bb?.bytes_;
+    expect(backingBytes).toBeDefined();
+    const worker = FbWorkerMessage.getRootAsWorkerMessage(
+      new ByteBuffer(backingBytes as Uint8Array),
+    );
+    const nativeParsed = worker.content(new FbParsedEvent()) as FbParsedEvent;
+    expect(worker.contentType()).toBe(Message.ParsedEvent);
+    expect(nativeParsed.id()).toBe(parsed?.id());
+    expect(nativeParsed.pubkey()).toBe(highlightAuthor);
   });
 
   it('removes common tracking parameters from source URLs', () => {

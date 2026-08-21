@@ -1,5 +1,5 @@
 import React, {memo, useMemo} from 'react';
-import {Linking, Pressable, Text, View} from 'react-native';
+import {Linking, Pressable, StyleSheet, Text, View} from 'react-native';
 import {Image} from 'expo-image';
 import {router} from 'expo-router';
 import {useNavigation} from 'expo-router/react-navigation';
@@ -21,6 +21,7 @@ import {
 } from '@candypoets/nipworker';
 
 import {Avatar} from './Avatar';
+import {Footer} from './Footer';
 import {User} from './User';
 import {eventTags, formatTimestamp, stringValue, tagValue, tagValues} from './kindHelpers';
 import {pushDistinct} from '../../navigation/pushDistinct';
@@ -28,7 +29,13 @@ import type {AppNavigationProp} from '../../navigation/types';
 
 type Kind30023ArticleProps = {
   note: ParsedEvent;
+  relays: string[];
+  visible: boolean;
 };
+
+const styles = StyleSheet.create({
+  articleImage: {width: '100%', aspectRatio: 16 / 9},
+});
 
 function getKind30023(note: ParsedEvent) {
   try {
@@ -54,6 +61,25 @@ function inlineChildren(inline: ArticleInline) {
   return Array.from({length: inline.childrenLength()}, (_, index) =>
     inline.children(index),
   ).filter((child): child is ArticleInline => !!child);
+}
+
+function inlineIdentity(inline: ArticleInline) {
+  return [
+    inline.type(),
+    stringValue(inline.text()),
+    stringValue(inline.url()),
+    stringValue(inline.tag()),
+    stringValue(inline.entity()?.entity()),
+  ].join(':');
+}
+
+function blockIdentity(block: ArticleBlock) {
+  return [
+    block.type(),
+    block.depth(),
+    stringValue(block.text()),
+    stringValue(block.url()),
+  ].join(':');
 }
 
 function openNostrEntity(entity: string) {
@@ -235,6 +261,96 @@ function InlineNodes({
   );
 }
 
+function ArticleInlineImage({inline}: {inline: ArticleInline}) {
+  const url = stringValue(inline.url());
+  if (!url) return null;
+
+  const description = stringValue(inline.text()) || 'Article image';
+
+  return (
+    <Pressable
+      accessibilityLabel={description}
+      accessibilityRole="imagebutton"
+      className="overflow-hidden rounded-lg bg-base-200"
+      onPress={() => Linking.openURL(url).catch(() => {})}>
+      <Image
+        accessibilityLabel={description}
+        source={{uri: url}}
+        contentFit="contain"
+        cachePolicy="memory-disk"
+        style={styles.articleImage}
+      />
+    </Pressable>
+  );
+}
+
+function InlineContent({
+  inlines,
+  navigation,
+  textClassName,
+}: {
+  inlines: ArticleInline[];
+  navigation: AppNavigationProp;
+  textClassName: string;
+}) {
+  const segments: Array<
+    | {type: 'text'; key: string; inlines: ArticleInline[]}
+    | {type: 'image'; key: string; inline: ArticleInline}
+  > = [];
+  const keyCounts = new Map<string, number>();
+  let textInlines: ArticleInline[] = [];
+
+  const uniqueKey = (value: string) => {
+    const count = keyCounts.get(value) ?? 0;
+    keyCounts.set(value, count + 1);
+    return `${value}:${count}`;
+  };
+
+  const flushText = () => {
+    if (!textInlines.length) return;
+    const nextInlines = textInlines;
+    textInlines = [];
+    segments.push({
+      type: 'text',
+      key: uniqueKey(`text:${nextInlines.map(inlineIdentity).join('|')}`),
+      inlines: nextInlines,
+    });
+  };
+
+  inlines.forEach(inline => {
+    if (inline.type() !== ArticleInlineType.Image) {
+      textInlines.push(inline);
+      return;
+    }
+
+    flushText();
+    segments.push({
+      type: 'image',
+      key: uniqueKey(`image:${inlineIdentity(inline)}`),
+      inline,
+    });
+  });
+
+  flushText();
+
+  return (
+    <View className="gap-3">
+      {segments.map(segment =>
+        segment.type === 'image' ? (
+          <ArticleInlineImage
+            key={segment.key}
+            inline={segment.inline}
+          />
+        ) : (
+          <Text key={segment.key} className={textClassName}>
+            <InlineNodes inlines={segment.inlines} navigation={navigation} />
+          </Text>
+        ),
+      )}
+    </View>
+  );
+}
+
 function ArticleBlocks({
   blocks,
   navigation,
@@ -242,19 +358,26 @@ function ArticleBlocks({
   blocks: ArticleBlock[];
   navigation: AppNavigationProp;
 }) {
+  const keyCounts = new Map<string, number>();
+
   return (
     <View className="gap-3">
-      {blocks.map((block, index) => {
-        const key = `${block.type()}-${index}-${stringValue(block.text())}`;
+      {blocks.map(block => {
+        const identity = blockIdentity(block);
+        const count = keyCounts.get(identity) ?? 0;
+        keyCounts.set(identity, count + 1);
+        const key = `${identity}:${count}`;
         const inlines = blockInlines(block);
         const children = blockChildren(block);
 
         switch (block.type()) {
           case ArticleBlockType.Heading:
             return (
-              <Text
+              <InlineContent
                 key={key}
-                className={[
+                inlines={inlines}
+                navigation={navigation}
+                textClassName={[
                   'font-bold text-base-content',
                   block.depth() <= 1
                     ? 'text-2xl leading-8'
@@ -262,9 +385,7 @@ function ArticleBlocks({
                       ? 'text-xl leading-7'
                       : 'text-lg leading-6',
                 ].join(' ')}
-              >
-                <InlineNodes inlines={inlines} navigation={navigation} />
-              </Text>
+              />
             );
           case ArticleBlockType.Blockquote:
             return (
@@ -284,9 +405,11 @@ function ArticleBlocks({
                 <Text className="text-base leading-6 text-base-content">-</Text>
                 <View className="min-w-0 flex-1 gap-2">
                   {inlines.length ? (
-                    <Text className="text-base leading-6 text-base-content">
-                      <InlineNodes inlines={inlines} navigation={navigation} />
-                    </Text>
+                    <InlineContent
+                      inlines={inlines}
+                      navigation={navigation}
+                      textClassName="text-base leading-6 text-base-content"
+                    />
                   ) : null}
                   {children.length ? (
                     <ArticleBlocks blocks={children} navigation={navigation} />
@@ -311,7 +434,7 @@ function ArticleBlocks({
                   source={{uri: url}}
                   contentFit="cover"
                   cachePolicy="memory-disk"
-                  style={{width: '100%', aspectRatio: 16 / 9}}
+                  style={styles.articleImage}
                 />
               </View>
             );
@@ -322,9 +445,12 @@ function ArticleBlocks({
             return null;
           default:
             return (
-              <Text key={key} className="text-base leading-6 text-base-content">
-                <InlineNodes inlines={inlines} navigation={navigation} />
-              </Text>
+              <InlineContent
+                key={key}
+                inlines={inlines}
+                navigation={navigation}
+                textClassName="text-base leading-6 text-base-content"
+              />
             );
         }
       })}
@@ -332,7 +458,11 @@ function ArticleBlocks({
   );
 }
 
-function Kind30023ArticleComponent({note}: Kind30023ArticleProps) {
+function Kind30023ArticleComponent({
+  note,
+  relays,
+  visible,
+}: Kind30023ArticleProps) {
   const navigation =
     useNavigation<AppNavigationProp>();
   const parsed = useMemo(() => getKind30023(note), [note]);
@@ -410,10 +540,14 @@ function Kind30023ArticleComponent({note}: Kind30023ArticleProps) {
             source={{uri: image}}
             contentFit="cover"
             cachePolicy="memory-disk"
-            style={{width: '100%', aspectRatio: 16 / 9}}
+            style={styles.articleImage}
           />
         </View>
       ) : null}
+
+      <View className="border-y border-base-200 px-3 py-3">
+        <Footer note={note} visible={visible} main relays={relays} />
+      </View>
 
       <View className="p-5">
         {articleBlocks.length ? (

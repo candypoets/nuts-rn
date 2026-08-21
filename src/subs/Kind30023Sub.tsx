@@ -9,7 +9,6 @@ import {decode, type AddressPointer} from 'nostr-tools/nip19';
 import {Feed, FeedSticky} from '../components/Feed';
 import {Kind30023Article} from '../components/notes/Kind30023Article';
 import {eventTags, tagValue} from '../components/notes/kindHelpers';
-import {RelaysList as HeaderRelaysList} from '../components/RelaysList';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
 import {useNostrStore, useRelayStore} from '../stores';
@@ -48,20 +47,29 @@ function pointerRelays(data: AddressPointer) {
 
 const Kind30023Header = memo(function Kind30023Header({
   onClose,
-  relays,
 }: {
   onClose: () => void;
-  relays: string[];
 }) {
   const theme = useAppTheme();
-  const relayStatuses = useRelayStore(state => state.relayStatuses);
 
   return (
-    <View className="h-20 flex-row items-center justify-between rounded-lg bg-base-300/95 px-4 shadow-sm">
-      <Pressable className="h-9 w-9 items-center justify-center rounded-full bg-base-200" hitSlop={12} onPress={onClose}>
+    <View className="h-16 flex-row items-center justify-between border-b border-base-200 bg-base-300/95 px-4">
+      <Pressable
+        accessibilityLabel="Close article"
+        accessibilityRole="button"
+        className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
+        hitSlop={12}
+        onPress={onClose}>
         <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>
-      <HeaderRelaysList relays={relays} statuses={relayStatuses} mini />
+      <View
+        className="absolute inset-0 items-center justify-center"
+        pointerEvents="none">
+        <Text className="text-base font-semibold text-base-content">
+          article
+        </Text>
+      </View>
+      <View className="h-9 w-9" />
     </View>
   );
 });
@@ -209,10 +217,10 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
   const renderHeader = useCallback(
     () => (
       <FeedSticky>
-        <Kind30023Header onClose={onClose} relays={relays} />
+        <Kind30023Header onClose={onClose} />
       </FeedSticky>
     ),
-    [onClose, relays],
+    [onClose],
   );
 
   return (
@@ -228,7 +236,9 @@ export function Kind30023Sub({naddr, visible, onClose}: Kind30023SubProps) {
           </View>
         )
       }
-      renderItem={({item}) => <Kind30023Article note={item} />}
+      renderItem={({item}) => (
+        <Kind30023Article note={item} relays={relays} visible={visible} />
+      )}
     />
   );
 }

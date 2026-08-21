@@ -7,7 +7,6 @@ import React, {
   useState,
 } from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
-import * as Haptics from 'expo-haptics';
 import {Image} from 'expo-image';
 import {MenuView} from '@react-native-menu/menu';
 import {useRouter} from 'expo-router';
@@ -17,13 +16,7 @@ import Reanimated, {
   type SharedValue,
   interpolate,
   useAnimatedStyle,
-  useEvent,
-  useReducedMotion,
-  useSharedValue,
 } from 'react-native-reanimated';
-import PagerView, {
-  type PagerViewOnPageSelectedEvent,
-} from 'react-native-pager-view';
 import {
   NpubLimiterPipeConfigT,
   ParsePipeConfigT,
@@ -142,7 +135,6 @@ const COMMUNITY_EVENT_KINDS = [31922, 31923];
 const RSVP_KIND = 31925;
 const RSVP_LIMIT_PER_PUBKEY = 1;
 const RSVP_MAX_PUBKEYS = 1000;
-const AnimatedPagerView = Reanimated.createAnimatedComponent(PagerView);
 
 function relayLabel(url: string) {
   return normalizeRelayUrl(url)
@@ -498,34 +490,14 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
   );
 });
 function CommunityTabs({
-  pageProgress,
   selectedId,
   onSelect,
 }: {
-  pageProgress: SharedValue<number>;
   selectedId: CommunityKindFilterId;
   onSelect: (id: CommunityKindFilterId) => void;
 }) {
-  const [tabWidth, setTabWidth] = useState(0);
-  const underlineStyle = useAnimatedStyle(() => ({
-    transform: [{translateX: pageProgress.get() * tabWidth}],
-  }));
-
   return (
-    <View
-      className="relative flex-row"
-      onLayout={event => {
-        const nextWidth =
-          event.nativeEvent.layout.width / COMMUNITY_TABS.length;
-        setTabWidth(current =>
-          Math.abs(current - nextWidth) < 0.5 ? current : nextWidth,
-        );
-      }}
-    >
-      <Reanimated.View
-        className="absolute -bottom-2 left-0 h-0.5 rounded-full bg-primary"
-        style={[{width: tabWidth}, underlineStyle]}
-      />
+    <View className="relative flex-row">
       {COMMUNITY_TABS.map(tab => {
         const selected = tab.id === selectedId;
         return (
@@ -535,7 +507,7 @@ function CommunityTabs({
               tab.label
             }`}
             accessibilityState={{selected}}
-            className="h-10 flex-1 items-center justify-center"
+            className="relative h-10 flex-1 items-center justify-center"
             onPress={() => {
               if (!selected) onSelect(tab.id);
             }}
@@ -547,6 +519,9 @@ function CommunityTabs({
             >
               {tab.label}
             </Text>
+            {selected ? (
+              <View className="absolute -bottom-2 inset-x-0 h-0.5 rounded-full bg-primary" />
+            ) : null}
           </Pressable>
         );
       })}
@@ -559,7 +534,6 @@ const CommunityHeader = memo(function CommunityHeader({
   description,
   icon,
   name,
-  pageProgress,
   relationship,
   relay,
   selectedTab,
@@ -571,7 +545,6 @@ const CommunityHeader = memo(function CommunityHeader({
   description: string;
   icon?: string;
   name: string;
-  pageProgress: SharedValue<number>;
   relationship?: 'follow' | 'belong';
   relay: string;
   selectedTab: CommunityKindFilterId;
@@ -722,7 +695,6 @@ const CommunityHeader = memo(function CommunityHeader({
           </Text>
           <View className="mt-3">
             <CommunityTabs
-              pageProgress={pageProgress}
               selectedId={selectedTab}
               onSelect={onSelectTab}
             />
@@ -749,9 +721,6 @@ export function CommunitySub({
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const [selectedTab, setSelectedTab] =
     useState<CommunityKindFilterId>('notes');
-  const pagerRef = useRef<PagerView>(null);
-  const pageProgress = useSharedValue(0);
-  const reducedMotion = useReducedMotion();
   const eventUnsubscribeRef = useRef<(() => void) | null>(null);
   const rsvpUnsubscribeRef = useRef<(() => void)[]>([]);
   const rsvpsRef = useRef<Record<string, Record<string, CommunityRsvp>>>({});
@@ -779,41 +748,18 @@ export function CommunitySub({
     relayInfo?.description ||
     '';
   const icon = iconParam || communityAnchor?.image || relayInfo?.icon;
-  const handlePageScroll = useEvent<{offset: number; position: number}>(
-    event => {
-      'worklet';
-      pageProgress.set(event.position + event.offset);
-    },
-    ['onPageScroll'],
-  );
-  const handlePageSelected = useCallback(
-    (event: PagerViewOnPageSelectedEvent) => {
-      const tab = COMMUNITY_TABS[event.nativeEvent.position];
-      if (!tab || tab.id === selectedTab) return;
-      setSelectedTab(tab.id);
-      Haptics.selectionAsync().catch(() => {});
-    },
-    [selectedTab],
-  );
   const handleSelectTab = useCallback(
     (id: CommunityKindFilterId) => {
-      const index = COMMUNITY_TABS.findIndex(tab => tab.id === id);
-      if (index < 0 || id === selectedTab) return;
-      if (reducedMotion) {
-        pageProgress.set(index);
-        pagerRef.current?.setPageWithoutAnimation(index);
-      } else {
-        pagerRef.current?.setPage(index);
-      }
+      setSelectedTab(id);
     },
-    [pageProgress, reducedMotion, selectedTab],
+    [],
   );
+  const selectedTabConfig =
+    COMMUNITY_TABS.find(tab => tab.id === selectedTab) ?? COMMUNITY_TABS[0];
 
   useEffect(() => {
     setSelectedTab('notes');
-    pageProgress.set(0);
-    pagerRef.current?.setPageWithoutAnimation(0);
-  }, [normalizedRelay, pageProgress]);
+  }, [normalizedRelay]);
 
   useEffect(() => {
     fetchRelayInfosForRelays([normalizedRelay]);
@@ -1003,42 +949,21 @@ export function CommunitySub({
   ]);
 
   return (
-    <AnimatedPagerView
-      ref={pagerRef}
-      initialPage={0}
-      offscreenPageLimit={COMMUNITY_TABS.length - 1}
-      overScrollMode="never"
-      scrollEnabled={visible}
-      style={styles.pager}
-      onPageScroll={handlePageScroll as never}
-      onPageSelected={handlePageSelected}
-    >
-      {COMMUNITY_TABS.map(tab => (
-        <View
-          key={tab.id}
-          collapsable={false}
-          style={styles.page}
-          testID={`community-page-${tab.id}`}
-        >
-          <CommunityFeedSurface
-            active={visible && selectedTab === tab.id}
-            communityType={communityType}
-            description={description}
-            icon={icon}
-            name={name}
-            onClose={onClose}
-            onSelectTab={handleSelectTab}
-            pageProgress={pageProgress}
-            relationship={relationship}
-            relay={normalizedRelay}
-            rsvpsByAddress={rsvpsByAddress}
-            selectedTab={selectedTab}
-            tab={tab}
-            upcomingEvents={upcomingEvents}
-          />
-        </View>
-      ))}
-    </AnimatedPagerView>
+    <CommunityFeedSurface
+      active={visible}
+      communityType={communityType}
+      description={description}
+      icon={icon}
+      name={name}
+      onClose={onClose}
+      onSelectTab={handleSelectTab}
+      relationship={relationship}
+      relay={normalizedRelay}
+      rsvpsByAddress={rsvpsByAddress}
+      selectedTab={selectedTab}
+      tab={selectedTabConfig}
+      upcomingEvents={upcomingEvents}
+    />
   );
 }
 
@@ -1050,7 +975,6 @@ const CommunityFeedSurface = memo(function CommunityFeedSurface({
   name,
   onClose,
   onSelectTab,
-  pageProgress,
   relationship,
   relay,
   rsvpsByAddress,
@@ -1065,7 +989,6 @@ const CommunityFeedSurface = memo(function CommunityFeedSurface({
   name: string;
   onClose: () => void;
   onSelectTab: (id: CommunityKindFilterId) => void;
-  pageProgress: SharedValue<number>;
   relationship?: 'follow' | 'belong';
   relay: string;
   rsvpsByAddress: Record<string, Record<string, CommunityRsvp>>;
@@ -1191,7 +1114,6 @@ const CommunityFeedSurface = memo(function CommunityFeedSurface({
         description={description}
         icon={icon}
         name={name}
-        pageProgress={pageProgress}
         relationship={relationship}
         relay={relay}
         rsvpsByAddress={rsvpsByAddress}
@@ -1206,7 +1128,6 @@ const CommunityFeedSurface = memo(function CommunityFeedSurface({
       icon,
       name,
       onSelectTab,
-      pageProgress,
       relationship,
       relay,
       rsvpsByAddress,
@@ -1279,11 +1200,5 @@ const styles = StyleSheet.create({
   image: {
     height: '100%',
     width: '100%',
-  },
-  page: {
-    flex: 1,
-  },
-  pager: {
-    flex: 1,
   },
 });

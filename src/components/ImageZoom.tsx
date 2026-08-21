@@ -1,6 +1,13 @@
-import { VideoView } from 'expo-video';
-import { Image } from 'expo-image';
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import {VideoView} from 'expo-video';
+import {Image} from 'expo-image';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   FlatList,
   Modal,
@@ -11,32 +18,57 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {Pause, Play, RotateCcw, Volume2, VolumeX} from 'lucide-react-native';
+import {Gesture, GestureDetector} from 'react-native-gesture-handler';
+import {scheduleOnRN} from 'react-native-worklets';
 import Animated, {
-  runOnJS,
+  ReduceMotion,
+  cancelAnimation,
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ContentData } from '@candypoets/nipworker';
-import { asKind1, asKind20, asKind22, fbArray } from '@candypoets/nipworker/utils';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {ContentData} from '@candypoets/nipworker';
+import {
+  asKind1,
+  asKind20,
+  asKind22,
+  fbArray,
+} from '@candypoets/nipworker/utils';
 
-import { playExclusive, useSharedVideoPlayer } from '../media/videoPlayers';
-import { useUIStore, type UIStore } from '../stores/uiStore';
-import { Avatar } from './notes/Avatar';
-import { Footer } from './notes/Footer';
-import { User } from './notes/User';
+import {playExclusive, useSharedVideoPlayer} from '../media/videoPlayers';
+import {useUIStore, type UIStore} from '../stores/uiStore';
+import {Avatar} from './notes/Avatar';
+import {Footer} from './notes/Footer';
+import {User} from './notes/User';
 
 type ZoomLink = UIStore['imageZoom']['links'][number];
 const OrientationGate = NativeModules.OrientationGate as
-  | { setImageZoomActive?: (active: boolean) => void }
+  | {setImageZoomActive?: (active: boolean) => void}
   | undefined;
 const DISMISS_DIRECTION_THRESHOLD = 10;
 const DISMISS_VERTICAL_BIAS = 1.25;
+
+function clamp(value: number, min: number, max: number) {
+  'worklet';
+  return Math.max(min, Math.min(max, value));
+}
+
+function project(velocity: number, decelerationRate = 0.998) {
+  'worklet';
+  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
+}
+
+function rubberband(overshoot: number, dimension: number, constant = 0.55) {
+  'worklet';
+  return (
+    (overshoot * dimension * constant) /
+    (dimension + constant * Math.abs(overshoot))
+  );
+}
 
 function zoomNoteText(note: NonNullable<UIStore['imageZoom']['note']>) {
   const kind20 = asKind20(note);
@@ -75,7 +107,7 @@ function clampIndex(index: number | undefined, count: number) {
 }
 
 export function ImageZoom() {
-  const { width, height } = useWindowDimensions();
+  const {width, height} = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const imageZoom = useUIStore(state => state.imageZoom);
   const setImageZoom = useUIStore(state => state.setImageZoom);
@@ -103,10 +135,10 @@ export function ImageZoom() {
     setCurrentIndex(index);
     setCurrentImageZoomed(false);
     setChromeVisible(true);
-    translateY.value = 0;
-    backgroundOpacity.value = withTiming(1, { duration: 160 });
+    translateY.set(0);
+    backgroundOpacity.set(withTiming(1, {duration: 160}));
     requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({ index, animated: false });
+      listRef.current?.scrollToIndex({index, animated: false});
     });
   }, [backgroundOpacity, imageZoom.zoomed, links.length, translateY, visible]);
 
@@ -119,17 +151,54 @@ export function ImageZoom() {
   }, [visible]);
 
   const dismiss = useCallback(() => {
-    backgroundOpacity.value = withTiming(0, { duration: 140 });
-    close();
+    backgroundOpacity.set(
+      withTiming(0, {duration: 140}, finished => {
+        if (finished) scheduleOnRN(close);
+      }),
+    );
   }, [backgroundOpacity, close]);
 
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: backgroundOpacity.value,
+    opacity: backgroundOpacity.get(),
   }));
 
   const contentStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
+    transform: [{translateY: translateY.get()}],
   }));
+
+  const toggleChrome = useCallback(() => {
+    setChromeVisible(value => !value);
+  }, []);
+
+  const renderZoomPage = useCallback(
+    ({item, index}: {item: ZoomLink; index: number}) => (
+      <View style={[styles.page, {width, height}]}>
+        <ZoomPage
+          link={item}
+          width={width}
+          height={height}
+          onDismiss={close}
+          onToggleChrome={toggleChrome}
+          onZoomStateChange={zoomed => {
+            if (index === currentIndex) {
+              setCurrentImageZoomed(zoomed);
+            }
+          }}
+          overlayTranslateY={translateY}
+          backgroundOpacity={backgroundOpacity}
+        />
+      </View>
+    ),
+    [
+      backgroundOpacity,
+      close,
+      currentIndex,
+      height,
+      toggleChrome,
+      translateY,
+      width,
+    ],
+  );
 
   if (!visible) return null;
 
@@ -166,24 +235,7 @@ export function ImageZoom() {
               setCurrentImageZoomed(false);
               setChromeVisible(true);
             }}
-            renderItem={({ item, index }) => (
-              <View style={[styles.page, { width, height }]}>
-                <ZoomPage
-                  link={item}
-                  width={width}
-                  height={height}
-                  onDismiss={dismiss}
-                  onToggleChrome={() => setChromeVisible(value => !value)}
-                  onZoomStateChange={zoomed => {
-                    if (index === currentIndex) {
-                      setCurrentImageZoomed(zoomed);
-                    }
-                  }}
-                  overlayTranslateY={translateY}
-                  backgroundOpacity={backgroundOpacity}
-                />
-              </View>
-            )}
+            renderItem={renderZoomPage}
           />
         </Animated.View>
         <ZoomNoteOverlay
@@ -249,9 +301,7 @@ function ZoomNoteOverlay({
           ) : null}
           <Footer note={note} visible={zoomVisible} mode="zoom" />
         </View>
-        {link?.type === 'video' ? (
-          <ZoomVideoControls src={link.src} />
-        ) : null}
+        {link?.type === 'video' ? <ZoomVideoControls src={link.src} /> : null}
       </View>
     </View>
   );
@@ -327,8 +377,6 @@ function ZoomImage({
   const savedY = useSharedValue(0);
   const touchStartX = useSharedValue(0);
   const touchStartY = useSharedValue(0);
-  const dismissStartX = useSharedValue(0);
-  const dismissStartY = useSharedValue(0);
   const zoomState = useSharedValue(false);
 
   const syncZoomState = useCallback(
@@ -338,158 +386,280 @@ function ZoomImage({
     [onZoomStateChange],
   );
 
-  const updateZoomState = (zoomed: boolean) => {
-    'worklet';
-    if (zoomState.value === zoomed) return;
-    zoomState.value = zoomed;
-    runOnJS(syncZoomState)(zoomed);
-  };
+  const updateZoomState = useCallback(
+    (zoomed: boolean) => {
+      'worklet';
+      if (zoomState.get() === zoomed) return;
+      zoomState.set(zoomed);
+      scheduleOnRN(syncZoomState, zoomed);
+    },
+    [syncZoomState, zoomState],
+  );
 
-  const pinch = Gesture.Pinch()
-    .onUpdate(event => {
-      scale.value = Math.min(Math.max(savedScale.value * event.scale, 1), 4);
-      updateZoomState(scale.value > 1.02);
-    })
-    .onEnd(() => {
-      savedScale.value = scale.value;
-      if (scale.value <= 1.02) {
-        scale.value = withSpring(1);
-        savedScale.value = 1;
-        translateX.value = withSpring(0);
-        imageTranslateY.value = withSpring(0);
-        savedX.value = 0;
-        savedY.value = 0;
-        updateZoomState(false);
-      }
-    });
+  const pinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onUpdate(event => {
+          const rawScale = savedScale.get() * event.scale;
+          const nextScale =
+            rawScale < 1
+              ? 1 + rubberband(rawScale - 1, 1)
+              : rawScale > 4
+              ? 4 + rubberband(rawScale - 4, 1)
+              : rawScale;
+          scale.set(nextScale);
+          updateZoomState(nextScale > 1.02);
+        })
+        .onEnd(event => {
+          const settledScale = clamp(scale.get(), 1, 4);
+          savedScale.set(settledScale);
+          scale.set(
+            withSpring(settledScale, {
+              duration: 400,
+              dampingRatio: 0.8,
+              velocity: event.velocity,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+          if (settledScale <= 1.02) {
+            savedScale.set(1);
+            scale.set(
+              withSpring(1, {
+                duration: 400,
+                dampingRatio: 1,
+                reduceMotion: ReduceMotion.System,
+              }),
+            );
+            translateX.set(
+              withSpring(0, {
+                duration: 400,
+                dampingRatio: 0.8,
+                reduceMotion: ReduceMotion.System,
+              }),
+            );
+            imageTranslateY.set(
+              withSpring(0, {
+                duration: 400,
+                dampingRatio: 0.8,
+                reduceMotion: ReduceMotion.System,
+              }),
+            );
+            savedX.set(0);
+            savedY.set(0);
+            updateZoomState(false);
+          }
+        }),
+    [
+      imageTranslateY,
+      savedScale,
+      savedX,
+      savedY,
+      scale,
+      translateX,
+      updateZoomState,
+    ],
+  );
 
-  const pan = Gesture.Pan()
-    .manualActivation(true)
-    .onTouchesDown(event => {
-      const touch = event.allTouches[0];
-      if (!touch) return;
-      touchStartX.value = touch.absoluteX;
-      touchStartY.value = touch.absoluteY;
-    })
-    .onTouchesMove((event, state) => {
-      const touch = event.allTouches[0];
-      if (!touch) return;
-      if (scale.value <= 1.02) {
-        state.fail();
-        return;
-      }
-      const movedX = Math.abs(touch.absoluteX - touchStartX.value);
-      const movedY = Math.abs(touch.absoluteY - touchStartY.value);
-      if (Math.max(movedX, movedY) > 6) {
-        state.activate();
-      }
-    })
-    .onUpdate(event => {
-      if (scale.value <= 1.02) return;
-      translateX.value = savedX.value + event.translationX;
-      imageTranslateY.value = savedY.value + event.translationY;
-    })
-    .onEnd(() => {
-      savedX.value = translateX.value;
-      savedY.value = imageTranslateY.value;
-    });
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .maxPointers(1)
+        .manualActivation(true)
+        .onTouchesDown(event => {
+          const touch = event.allTouches[0];
+          if (!touch) return;
+          touchStartX.set(touch.absoluteX);
+          touchStartY.set(touch.absoluteY);
+        })
+        .onTouchesMove((event, state) => {
+          const touch = event.allTouches[0];
+          if (!touch) return;
+          if (scale.get() <= 1.02) {
+            state.fail();
+            return;
+          }
+          const movedX = Math.abs(touch.absoluteX - touchStartX.get());
+          const movedY = Math.abs(touch.absoluteY - touchStartY.get());
+          if (Math.max(movedX, movedY) > 6) state.activate();
+        })
+        .onStart(() => {
+          const currentX = translateX.get();
+          const currentY = imageTranslateY.get();
+          cancelAnimation(translateX);
+          cancelAnimation(imageTranslateY);
+          savedX.set(currentX);
+          savedY.set(currentY);
+        })
+        .onUpdate(event => {
+          const currentScale = scale.get();
+          if (currentScale <= 1.02) return;
+          const maxX = (width * (currentScale - 1)) / 2;
+          const maxY = (height * (currentScale - 1)) / 2;
+          const rawX = savedX.get() + event.translationX;
+          const rawY = savedY.get() + event.translationY;
+          translateX.set(
+            rawX > maxX
+              ? maxX + rubberband(rawX - maxX, width)
+              : rawX < -maxX
+              ? -maxX + rubberband(rawX + maxX, width)
+              : rawX,
+          );
+          imageTranslateY.set(
+            rawY > maxY
+              ? maxY + rubberband(rawY - maxY, height)
+              : rawY < -maxY
+              ? -maxY + rubberband(rawY + maxY, height)
+              : rawY,
+          );
+        })
+        .onEnd(event => {
+          const currentScale = scale.get();
+          const maxX = (width * (currentScale - 1)) / 2;
+          const maxY = (height * (currentScale - 1)) / 2;
+          const targetX = clamp(translateX.get(), -maxX, maxX);
+          const targetY = clamp(imageTranslateY.get(), -maxY, maxY);
+          savedX.set(targetX);
+          savedY.set(targetY);
+          translateX.set(
+            withSpring(targetX, {
+              duration: 400,
+              dampingRatio: 0.8,
+              velocity: event.velocityX,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+          imageTranslateY.set(
+            withSpring(targetY, {
+              duration: 400,
+              dampingRatio: 0.8,
+              velocity: event.velocityY,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+        }),
+    [
+      height,
+      imageTranslateY,
+      savedX,
+      savedY,
+      scale,
+      touchStartX,
+      touchStartY,
+      translateX,
+      width,
+    ],
+  );
 
-  const dismissPan = Gesture.Pan()
-    .manualActivation(true)
-    .onTouchesDown(event => {
-      const touch = event.allTouches[0];
-      if (!touch) return;
-      dismissStartX.value = touch.absoluteX;
-      dismissStartY.value = touch.absoluteY;
-    })
-    .onTouchesMove((event, state) => {
-      const touch = event.allTouches[0];
-      if (!touch) return;
-      if (scale.value > 1.02) {
-        state.fail();
-        return;
-      }
+  const dismissPan = useDismissPan({
+    blocked: zoomState,
+    height,
+    onDismiss,
+    overlayTranslateY,
+    backgroundOpacity,
+  });
 
-      const movedX = Math.abs(touch.absoluteX - dismissStartX.value);
-      const movedY = Math.abs(touch.absoluteY - dismissStartY.value);
-      if (
-        movedY > DISMISS_DIRECTION_THRESHOLD &&
-        movedY > movedX * DISMISS_VERTICAL_BIAS
-      ) {
-        state.activate();
-        return;
-      }
-      if (movedX > DISMISS_DIRECTION_THRESHOLD && movedX > movedY) {
-        state.fail();
-      }
-    })
-    .onUpdate(event => {
-      if (scale.value > 1.02) return;
-      overlayTranslateY.value = event.translationY;
-      backgroundOpacity.value = Math.max(
-        0.18,
-        1 - Math.abs(event.translationY) / Math.max(280, height * 0.45),
-      );
-    })
-    .onEnd(event => {
-      if (scale.value > 1.02) return;
-      const shouldClose =
-        Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 850;
-      if (shouldClose) {
-        overlayTranslateY.value = withTiming(
-          event.translationY > 0 ? height : -height,
-          { duration: 180 },
-          () => runOnJS(onDismiss)(),
-        );
-        return;
-      }
-      overlayTranslateY.value = withTiming(0, { duration: 160 });
-      backgroundOpacity.value = withTiming(1, { duration: 140 });
-    });
+  const doubleTap = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .onEnd(event => {
+          const nextScale = scale.get() > 1 ? 1 : 2.4;
+          savedScale.set(nextScale);
+          updateZoomState(nextScale > 1);
+          if (nextScale === 1) {
+            savedX.set(0);
+            savedY.set(0);
+            scale.set(
+              withSpring(1, {
+                duration: 400,
+                dampingRatio: 1,
+                reduceMotion: ReduceMotion.System,
+              }),
+            );
+            translateX.set(
+              withSpring(0, {
+                duration: 400,
+                dampingRatio: 1,
+                reduceMotion: ReduceMotion.System,
+              }),
+            );
+            imageTranslateY.set(
+              withSpring(0, {
+                duration: 400,
+                dampingRatio: 1,
+                reduceMotion: ReduceMotion.System,
+              }),
+            );
+            return;
+          }
 
-  const doubleTap = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(event => {
-      const nextScale = scale.value > 1 ? 1 : 2.4;
-      savedScale.value = nextScale;
-      if (nextScale === 1) {
-        scale.value = withTiming(1, { duration: 180 }, finished => {
-          if (finished) updateZoomState(false);
-        });
-        translateX.value = withTiming(0, { duration: 180 });
-        imageTranslateY.value = withTiming(0, { duration: 180 });
-        savedX.value = 0;
-        savedY.value = 0;
-      } else {
-        const offsetX = event.x - width / 2;
-        const offsetY = event.y - height / 2;
-        const nextX = -offsetX * (nextScale - 1);
-        const nextY = -offsetY * (nextScale - 1);
-        scale.value = withTiming(nextScale, { duration: 180 }, finished => {
-          if (finished) updateZoomState(true);
-        });
-        translateX.value = withTiming(nextX, { duration: 180 });
-        imageTranslateY.value = withTiming(nextY, { duration: 180 });
-        savedX.value = nextX;
-        savedY.value = nextY;
-      }
-    });
+          const maxX = (width * (nextScale - 1)) / 2;
+          const maxY = (height * (nextScale - 1)) / 2;
+          const nextX = clamp(
+            -(event.x - width / 2) * (nextScale - 1),
+            -maxX,
+            maxX,
+          );
+          const nextY = clamp(
+            -(event.y - height / 2) * (nextScale - 1),
+            -maxY,
+            maxY,
+          );
+          savedX.set(nextX);
+          savedY.set(nextY);
+          scale.set(
+            withSpring(nextScale, {
+              duration: 400,
+              dampingRatio: 1,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+          translateX.set(
+            withSpring(nextX, {
+              duration: 400,
+              dampingRatio: 1,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+          imageTranslateY.set(
+            withSpring(nextY, {
+              duration: 400,
+              dampingRatio: 1,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+        }),
+    [
+      height,
+      imageTranslateY,
+      savedScale,
+      savedX,
+      savedY,
+      scale,
+      translateX,
+      updateZoomState,
+      width,
+    ],
+  );
 
-  const gesture = Gesture.Simultaneous(doubleTap, pinch, pan, dismissPan);
+  const gesture = useMemo(
+    () => Gesture.Simultaneous(doubleTap, pinch, pan, dismissPan),
+    [dismissPan, doubleTap, pan, pinch],
+  );
   const imageStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: translateX.value },
-      { translateY: imageTranslateY.value },
-      { scale: scale.value },
+      {translateX: translateX.get()},
+      {translateY: imageTranslateY.get()},
+      {scale: scale.get()},
     ],
   }));
 
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={styles.zoomImageWrap}>
-        <Animated.View style={[{ width, height }, imageStyle]}>
+        <Animated.View style={[{width, height}, imageStyle]}>
           <Image
-            source={{ uri: link.src }}
+            source={{uri: link.src}}
             contentFit="contain"
             cachePolicy="memory-disk"
             style={styles.zoomImage}
@@ -500,67 +670,119 @@ function ZoomImage({
   );
 }
 
-function createDismissPan({
+function useDismissPan({
   height,
   onDismiss,
   overlayTranslateY,
   backgroundOpacity,
-  dismissStartX,
-  dismissStartY,
+  blocked,
 }: {
   height: number;
   onDismiss: () => void;
   overlayTranslateY: SharedValue<number>;
   backgroundOpacity: SharedValue<number>;
-  dismissStartX: SharedValue<number>;
-  dismissStartY: SharedValue<number>;
+  blocked?: SharedValue<boolean>;
 }) {
-  return Gesture.Pan()
-    .manualActivation(true)
-    .onTouchesDown(event => {
-      const touch = event.allTouches[0];
-      if (!touch) return;
-      dismissStartX.value = touch.absoluteX;
-      dismissStartY.value = touch.absoluteY;
-    })
-    .onTouchesMove((event, state) => {
-      const touch = event.allTouches[0];
-      if (!touch) return;
+  const dismissStartX = useSharedValue(0);
+  const dismissStartY = useSharedValue(0);
+  const dismissContextY = useSharedValue(0);
 
-      const movedX = Math.abs(touch.absoluteX - dismissStartX.value);
-      const movedY = Math.abs(touch.absoluteY - dismissStartY.value);
-      if (
-        movedY > DISMISS_DIRECTION_THRESHOLD &&
-        movedY > movedX * DISMISS_VERTICAL_BIAS
-      ) {
-        state.activate();
-        return;
-      }
-      if (movedX > DISMISS_DIRECTION_THRESHOLD && movedX > movedY) {
-        state.fail();
-      }
-    })
-    .onUpdate(event => {
-      overlayTranslateY.value = event.translationY;
-      backgroundOpacity.value = Math.max(
-        0.18,
-        1 - Math.abs(event.translationY) / Math.max(280, height * 0.45),
-      );
-    })
-    .onEnd(event => {
-      const shouldClose =
-        Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 850;
-      if (shouldClose) {
-        overlayTranslateY.value = withTiming(
-          event.translationY > 0 ? height : -height,
-          { duration: 180 },
-          () => runOnJS(onDismiss)(),
-        );
-        return;
-      }
-      overlayTranslateY.value = withTiming(0, { duration: 160 });
-      backgroundOpacity.value = withTiming(1, { duration: 140 });
-    });
+  return useMemo(
+    () =>
+      Gesture.Pan()
+        .maxPointers(1)
+        .manualActivation(true)
+        .onTouchesDown(event => {
+          const touch = event.allTouches[0];
+          if (!touch) return;
+          dismissStartX.set(touch.absoluteX);
+          dismissStartY.set(touch.absoluteY);
+        })
+        .onTouchesMove((event, state) => {
+          const touch = event.allTouches[0];
+          if (!touch) return;
+          if (blocked?.get()) {
+            state.fail();
+            return;
+          }
+
+          const movedX = Math.abs(touch.absoluteX - dismissStartX.get());
+          const movedY = Math.abs(touch.absoluteY - dismissStartY.get());
+          if (
+            movedY > DISMISS_DIRECTION_THRESHOLD &&
+            movedY > movedX * DISMISS_VERTICAL_BIAS
+          ) {
+            state.activate();
+            return;
+          }
+          if (movedX > DISMISS_DIRECTION_THRESHOLD && movedX > movedY) {
+            state.fail();
+          }
+        })
+        .onStart(() => {
+          const currentY = overlayTranslateY.get();
+          cancelAnimation(overlayTranslateY);
+          cancelAnimation(backgroundOpacity);
+          dismissContextY.set(currentY);
+        })
+        .onUpdate(event => {
+          if (blocked?.get()) return;
+          const nextY = dismissContextY.get() + event.translationY;
+          overlayTranslateY.set(nextY);
+          backgroundOpacity.set(
+            Math.max(0.18, 1 - Math.abs(nextY) / Math.max(280, height * 0.45)),
+          );
+        })
+        .onEnd(event => {
+          if (blocked?.get()) return;
+          const currentY = overlayTranslateY.get();
+          const projectedY = currentY + project(event.velocityY);
+          const shouldClose =
+            Math.abs(currentY) > 110 || Math.abs(projectedY) > height * 0.32;
+          if (shouldClose) {
+            const direction =
+              projectedY === 0
+                ? Math.sign(currentY) || 1
+                : Math.sign(projectedY);
+            overlayTranslateY.set(
+              withSpring(
+                direction * height,
+                {
+                  duration: 300,
+                  dampingRatio: 0.8,
+                  velocity: event.velocityY,
+                  overshootClamping: true,
+                  reduceMotion: ReduceMotion.System,
+                },
+                finished => {
+                  if (finished) scheduleOnRN(onDismiss);
+                },
+              ),
+            );
+            backgroundOpacity.set(withTiming(0, {duration: 180}));
+            return;
+          }
+          overlayTranslateY.set(
+            withSpring(0, {
+              duration: 400,
+              dampingRatio: 0.8,
+              velocity: event.velocityY,
+              reduceMotion: ReduceMotion.System,
+            }),
+          );
+          backgroundOpacity.set(withTiming(1, {duration: 140}));
+        }),
+    [
+      backgroundOpacity,
+      blocked,
+      dismissContextY,
+      dismissStartX,
+      dismissStartY,
+      height,
+      onDismiss,
+      overlayTranslateY,
+    ],
+  );
 }
 
 function ZoomVideo({
@@ -606,8 +828,6 @@ function ExpoZoomVideo({
   backgroundOpacity: SharedValue<number>;
 }) {
   const player = useSharedVideoPlayer(link.src);
-  const dismissStartX = useSharedValue(0);
-  const dismissStartY = useSharedValue(0);
 
   useEffect(() => {
     player.loop = false;
@@ -619,13 +839,11 @@ function ExpoZoomVideo({
     playExclusive(player);
   }, [player]);
 
-  const dismissPan = createDismissPan({
+  const dismissPan = useDismissPan({
     height,
     onDismiss,
     overlayTranslateY,
     backgroundOpacity,
-    dismissStartX,
-    dismissStartY,
   });
 
   return (
@@ -641,7 +859,7 @@ function ExpoZoomVideo({
         />
         {link.blurhash ? (
           <Image
-            source={{ uri: link.blurhash }}
+            source={{uri: link.blurhash}}
             contentFit="contain"
             cachePolicy="memory-disk"
             style={styles.videoPoster}
@@ -665,7 +883,7 @@ function formatDuration(seconds: number) {
   return `${minutes}:${rest.toString().padStart(2, '0')}`;
 }
 
-function ZoomVideoControls({ src }: { src: string }) {
+function ZoomVideoControls({src}: {src: string}) {
   const player = useSharedVideoPlayer(src);
   const [playing, setPlaying] = useState(player.playing);
   const [muted, setMuted] = useState(player.muted);
@@ -732,7 +950,7 @@ function ZoomVideoControls({ src }: { src: string }) {
     <View style={styles.videoControls}>
       <Pressable
         accessibilityLabel="Seek video"
-        hitSlop={{ top: 8, bottom: 8 }}
+        hitSlop={{top: 8, bottom: 8}}
         onLayout={event =>
           setTrackWidth(Math.max(1, event.nativeEvent.layout.width))
         }
@@ -749,7 +967,7 @@ function ZoomVideoControls({ src }: { src: string }) {
       >
         <View style={styles.videoTrackRail}>
           <View
-            style={[styles.videoTrackFill, { width: `${progress * 100}%` }]}
+            style={[styles.videoTrackFill, {width: `${progress * 100}%`}]}
           />
         </View>
       </Pressable>
@@ -899,7 +1117,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     textShadowColor: 'rgba(0, 0, 0, 0.45)',
-    textShadowOffset: { width: 0, height: 1 },
+    textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 2,
   },
   noteHeader: {

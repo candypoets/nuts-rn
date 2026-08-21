@@ -3,16 +3,12 @@ import {Image} from 'expo-image';
 import {Volume2, VolumeX} from 'lucide-react-native';
 import type {ParsedEvent} from '@candypoets/nipworker';
 import React, {useEffect, useMemo, useState} from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type ViewStyle,
-} from 'react-native';
+import {Pressable, StyleSheet, Text, View, type ViewStyle} from 'react-native';
 import Animated, {
   Easing,
+  cancelAnimation,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -47,21 +43,30 @@ const MAX_DISPLAY_LINKS = 6;
 export function MediaShimmerPlaceholder() {
   const viewportWidth = useUIStore(state => state.dimensions.width);
   const progress = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    progress.value = withRepeat(
-      withTiming(1, {duration: 1200, easing: Easing.inOut(Easing.quad)}),
-      -1,
-      false,
+    if (reducedMotion) {
+      progress.set(0.5);
+      return;
+    }
+
+    progress.set(
+      withRepeat(
+        withTiming(1, {duration: 1200, easing: Easing.inOut(Easing.quad)}),
+        -1,
+        false,
+      ),
     );
-  }, [progress]);
+    return () => cancelAnimation(progress);
+  }, [progress, reducedMotion]);
 
   const travelDistance = Math.max(240, viewportWidth);
   const shimmerStyle = useAnimatedStyle(
     () => ({
-      opacity: 0.14 + progress.value * 0.08,
+      opacity: 0.14 + progress.get() * 0.08,
       transform: [
-        {translateX: progress.value * travelDistance - travelDistance * 0.35},
+        {translateX: progress.get() * travelDistance - travelDistance * 0.35},
         {skewX: '-18deg'},
       ],
     }),
@@ -95,13 +100,23 @@ function parseDim(dim: string | null | undefined) {
   return {width, height};
 }
 
-function getImageHeight(dim: string | null | undefined, containerWidth: number) {
+function getImageHeight(
+  dim: string | null | undefined,
+  containerWidth: number,
+) {
   const parsed = parseDim(dim);
   if (!parsed) return Math.min(containerWidth, MAX_IMAGE_HEIGHT);
-  return Math.min((parsed.height * containerWidth) / parsed.width, MAX_IMAGE_HEIGHT);
+  return Math.min(
+    (parsed.height * containerWidth) / parsed.width,
+    MAX_IMAGE_HEIGHT,
+  );
 }
 
-function getGridTileLayout(total: number, index: number, width: number): ViewStyle {
+function getGridTileLayout(
+  total: number,
+  index: number,
+  width: number,
+): ViewStyle {
   const halfWidth = (width - IMAGE_GRID_GAP) / 2;
   const halfHeight = (IMAGE_GRID_HEIGHT - IMAGE_GRID_GAP) / 2;
   const thirdWidth = (width - IMAGE_GRID_GAP * 2) / 3;
@@ -443,9 +458,7 @@ function GridImage({
 
   return (
     <>
-      {loading ? (
-        <MediaShimmerPlaceholder />
-      ) : null}
+      {loading ? <MediaShimmerPlaceholder /> : null}
       <Image
         source={{uri: sourceUri}}
         contentFit={contentFit}
@@ -465,16 +478,16 @@ export function ImageGrid({
 }: ImageGridProps) {
   const viewportWidth = useUIStore(state => state.dimensions.width);
   const setImageZoom = useUIStore(state => state.setImageZoom);
-  const validLinks = useMemo(
-    () => links.filter(link => link.src),
-    [links],
-  );
+  const validLinks = useMemo(() => links.filter(link => link.src), [links]);
   const displayLinks = useMemo(
     () => validLinks.slice(0, MAX_DISPLAY_LINKS),
     [validLinks],
   );
   const remainingCount = Math.max(0, validLinks.length - displayLinks.length);
-  const resolvedContainerWidth = Math.max(160, containerWidth ?? viewportWidth - 88);
+  const resolvedContainerWidth = Math.max(
+    160,
+    containerWidth ?? viewportWidth - 88,
+  );
 
   if (!displayLinks.length) return null;
 
@@ -486,7 +499,12 @@ export function ImageGrid({
       <View
         style={
           displayLinks.length === 1
-            ? {height: getImageHeight(displayLinks[0]?.dim, resolvedContainerWidth)}
+            ? {
+                height: getImageHeight(
+                  displayLinks[0]?.dim,
+                  resolvedContainerWidth,
+                ),
+              }
             : {height: IMAGE_GRID_HEIGHT}
         }
       >
@@ -494,8 +512,13 @@ export function ImageGrid({
           const single = displayLinks.length === 1;
           const tileStyle: ViewStyle = single
             ? {height: '100%', left: 0, top: 0, width: resolvedContainerWidth}
-            : getGridTileLayout(displayLinks.length, index, resolvedContainerWidth);
-          const imageUri = link.type === 'video' && link.blurhash ? link.blurhash : link.src;
+            : getGridTileLayout(
+                displayLinks.length,
+                index,
+                resolvedContainerWidth,
+              );
+          const imageUri =
+            link.type === 'video' && link.blurhash ? link.blurhash : link.src;
           const autoplay = link.type === 'video' && (single || index === 0);
           const openZoom = () => {
             setImageZoom({
@@ -521,7 +544,9 @@ export function ImageGrid({
                 />
                 {remainingCount > 0 && index === displayLinks.length - 1 ? (
                   <View className="absolute inset-0 items-center justify-center bg-black/60">
-                    <Text className="text-2xl font-bold text-white">+{remainingCount}</Text>
+                    <Text className="text-2xl font-bold text-white">
+                      +{remainingCount}
+                    </Text>
                     <Text className="text-sm text-white">more</Text>
                   </View>
                 ) : null}
@@ -545,7 +570,9 @@ export function ImageGrid({
               />
               {remainingCount > 0 && index === displayLinks.length - 1 ? (
                 <View className="absolute inset-0 items-center justify-center bg-black/60">
-                  <Text className="text-2xl font-bold text-white">+{remainingCount}</Text>
+                  <Text className="text-2xl font-bold text-white">
+                    +{remainingCount}
+                  </Text>
                   <Text className="text-sm text-white">more</Text>
                 </View>
               ) : null}

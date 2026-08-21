@@ -27,15 +27,14 @@ import {
   type NativeStackScreenProps,
 } from 'expo-router/build/react-navigation/native-stack';
 import {useIsFocused} from 'expo-router/react-navigation';
+import {useReducedMotion} from 'react-native-reanimated';
 import type {
   ConnectionStatus,
   NostrManagerLike,
   ParsedEvent,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import {
-  usePublish as publishToNostr,
-} from '@candypoets/nipworker/hooks';
+import {usePublish as publishToNostr} from '@candypoets/nipworker/hooks';
 import * as ImagePicker from 'expo-image-picker';
 import {asNip51, asParsedEvent} from '@candypoets/nipworker/utils';
 import {isConnectionStatus} from '@candypoets/nipworker/utils';
@@ -54,10 +53,7 @@ import type {EventTemplate} from 'nostr-tools';
 import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
 import {buildRelayListPublishPlan} from '../nostr/relayList';
 import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
-import {
-  deriveSignupKeypair,
-  generateSignupMnemonic,
-} from '../nostr/keys';
+import {deriveSignupKeypair, generateSignupMnemonic} from '../nostr/keys';
 import {
   cashuMintRecommendationEvent,
   discoverRecommendedCashuMint,
@@ -69,7 +65,7 @@ import {
   type LocalUploadAsset,
 } from '../nostr/upload';
 import {deleteImagePickerAsset} from '../media/cache';
-import { AppButton } from '../components/AppButton';
+import {AppButton} from '../components/AppButton';
 import {useAppTheme} from '../theme';
 import {
   buildFollowListRequests,
@@ -117,11 +113,14 @@ type SignupWizardContextValue = {
   onDone: () => void;
 };
 
-const SignupWizardContext = createContext<SignupWizardContextValue | null>(null);
+const SignupWizardContext = createContext<SignupWizardContextValue | null>(
+  null,
+);
 
 function useSignupWizard() {
   const value = useContext(SignupWizardContext);
-  if (!value) throw new Error('Signup wizard screen rendered outside SignupModal');
+  if (!value)
+    throw new Error('Signup wizard screen rendered outside SignupModal');
   return value;
 }
 
@@ -139,14 +138,19 @@ function now() {
 }
 
 function uniquePubkeys(packs: FeedPackSelection[]) {
-  return Array.from(new Set(packs.flatMap(pack => pack.people))).filter(Boolean);
+  return Array.from(new Set(packs.flatMap(pack => pack.people))).filter(
+    Boolean,
+  );
 }
 
 function publishWithStatus(
   sendId: string,
   event: EventTemplate,
   relays: string[],
-  updateSendStatus: (sendId: string, status: Record<string, ConnectionStatus>) => void,
+  updateSendStatus: (
+    sendId: string,
+    status: Record<string, ConnectionStatus>,
+  ) => void,
 ) {
   const sendStatus: Record<string, ConnectionStatus> = {};
   console.log('[signup-publish] start', {
@@ -190,17 +194,24 @@ export function useSignupProfileController(
   const writeRelays = useNostrStore(state => state.writeRelays);
   const updateSendStatus = useSendStatusStore(state => state.updateSendStatus);
   const setWalletMnemonic = useWalletStore(state => state.setWalletMnemonic);
-  const setWalletMnemonicIndex = useWalletStore(state => state.setWalletMnemonicIndex);
-  const setWalletPassphrase = useWalletStore(state => state.setWalletPassphrase);
+  const setWalletMnemonicIndex = useWalletStore(
+    state => state.setWalletMnemonicIndex,
+  );
+  const setWalletPassphrase = useWalletStore(
+    state => state.setWalletPassphrase,
+  );
   const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
-  const keypairRef = useRef<ReturnType<typeof deriveSignupKeypair> | null>(null);
+  const keypairRef = useRef<ReturnType<typeof deriveSignupKeypair> | null>(
+    null,
+  );
   const mnemonicRef = useRef<string | null>(null);
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
   const [avatar, setAvatar] = useState<SelectedAvatar | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [recommendedMint, setRecommendedMint] = useState<RecommendedCashuMint | null>(null);
+  const [recommendedMint, setRecommendedMint] =
+    useState<RecommendedCashuMint | null>(null);
   const [mintDiscoveryReady, setMintDiscoveryReady] = useState(false);
   const avatarRef = useRef(avatar);
   const avatarUploadsRef = useRef(new Set<string>());
@@ -470,8 +481,8 @@ export function useSignupProfileController(
     bio,
     canContinue: Boolean(
       name.trim() &&
-      manager &&
-      (!requireRecommendedMint || (mintDiscoveryReady && recommendedMint)),
+        manager &&
+        (!requireRecommendedMint || (mintDiscoveryReady && recommendedMint)),
     ),
     continueFromProfile,
     name,
@@ -548,13 +559,10 @@ export function useSignupPacksController({
     return () => unsubscribe();
   }, [active, search]);
 
-  const packItems = useMemo(
-    () => {
-      void revision;
-      return publicPacksRef.current.filter(event => includePack(event, search));
-    },
-    [revision, search],
-  );
+  const packItems = useMemo(() => {
+    void revision;
+    return publicPacksRef.current.filter(event => includePack(event, search));
+  }, [revision, search]);
   const selectedPackIds = useMemo(
     () => new Set(selectedPacks.map(pack => pack.id)),
     [selectedPacks],
@@ -586,11 +594,23 @@ export function useSignupPacksController({
       created_at: now(),
       tags: people.map(pubkey => ['p', pubkey]),
     };
-    publishWithStatus(`signup_follows_${Date.now()}`, event, relays, updateSendStatus);
+    publishWithStatus(
+      `signup_follows_${Date.now()}`,
+      event,
+      relays,
+      updateSendStatus,
+    );
     setFollows(people);
     applySelection([1], [followListPack]);
     onDone();
-  }, [applySelection, onDone, relays, selectedPacks, setFollows, updateSendStatus]);
+  }, [
+    applySelection,
+    onDone,
+    relays,
+    selectedPacks,
+    setFollows,
+    updateSendStatus,
+  ]);
 
   return {
     finish,
@@ -615,6 +635,7 @@ export function SignupModal({
   onDone,
 }: SignupModalProps) {
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   const topPadding = Platform.OS === 'android' ? insets.top : 0;
   const footerPaddingBottom = Math.max(24, insets.bottom + 12);
   const contextValue = useMemo(
@@ -627,19 +648,22 @@ export function SignupModal({
       {/* Android's edge-to-edge modal needs an explicit status-bar inset.
           The native iOS modal sheet already starts inside its safe area, so
           applying the window inset there creates a second, oversized gap. */}
-      <View
-        className="h-full bg-base-100"
-        style={{paddingTop: topPadding}}
-      >
+      <View className="h-full bg-base-100" style={{paddingTop: topPadding}}>
         <SignupStack.Navigator
           screenOptions={{
-            animation: 'slide_from_right',
+            animation: reducedMotion ? 'fade' : 'slide_from_right',
             gestureEnabled: true,
             headerShown: false,
           }}
         >
-          <SignupStack.Screen component={SignupProfileScreen} name="SignupProfile" />
-          <SignupStack.Screen component={SignupPacksScreen} name="SignupPacks" />
+          <SignupStack.Screen
+            component={SignupProfileScreen}
+            name="SignupProfile"
+          />
+          <SignupStack.Screen
+            component={SignupPacksScreen}
+            name="SignupPacks"
+          />
         </SignupStack.Navigator>
       </View>
     </SignupWizardContext.Provider>
@@ -772,22 +796,38 @@ export function SignupProfileStep({
             >
               <View className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-base-200 bg-base-300">
                 {avatar ? (
-                  <Image source={{uri: avatar.previewUri}} className="h-full w-full" resizeMode="cover" />
+                  <Image
+                    source={{uri: avatar.previewUri}}
+                    className="h-full w-full"
+                    resizeMode="cover"
+                  />
                 ) : (
-                  <UserRound size={34} color={theme.colors.primaryContent} strokeWidth={1.8} />
+                  <UserRound
+                    size={34}
+                    color={theme.colors.primaryContent}
+                    strokeWidth={1.8}
+                  />
                 )}
               </View>
               <View
                 className="absolute bottom-0 right-0 h-8 w-8 items-center justify-center rounded-full border-2 border-base-100"
                 style={{backgroundColor: theme.colors.primary}}
               >
-                <Camera size={15} color={theme.button.primary.text} strokeWidth={2.4} />
+                <Camera
+                  size={15}
+                  color={theme.button.primary.text}
+                  strokeWidth={2.4}
+                />
               </View>
             </Pressable>
-            <Text className="mt-2 text-sm font-bold text-primary">Add photo</Text>
+            <Text className="mt-2 text-sm font-bold text-primary">
+              Add photo
+            </Text>
           </View>
           <View className="w-full" style={styles.profileForm}>
-            <Text className="mb-2 mt-5 text-sm font-semibold text-base-content">Display name</Text>
+            <Text className="mb-2 mt-5 text-sm font-semibold text-base-content">
+              Display name
+            </Text>
             <TextInput
               className="rounded-lg border border-base-200 bg-base-300 px-3 py-3 text-base text-base-content"
               placeholder="What should people call you?"
@@ -798,7 +838,9 @@ export function SignupProfileStep({
               onSubmitEditing={Keyboard.dismiss}
             />
             <View className="mb-2 mt-4 flex-row items-center justify-between">
-              <Text className="text-sm font-semibold text-base-content">About you</Text>
+              <Text className="text-sm font-semibold text-base-content">
+                About you
+              </Text>
               <Text className="text-xs text-primary-content">Optional</Text>
             </View>
             <TextInput
@@ -816,15 +858,31 @@ export function SignupProfileStep({
             {showWalletStatus && status ? (
               <View className="mt-3 flex-row items-center gap-2">
                 {preparingWallet ? (
-                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.primary}
+                  />
                 ) : walletReady ? (
-                  <Check size={16} color={theme.colors.primary} strokeWidth={2.5} />
+                  <Check
+                    size={16}
+                    color={theme.colors.primary}
+                    strokeWidth={2.5}
+                  />
                 ) : (
-                  <CircleAlert size={16} color={theme.colors.error} strokeWidth={2.2} />
+                  <CircleAlert
+                    size={16}
+                    color={theme.colors.error}
+                    strokeWidth={2.2}
+                  />
                 )}
                 <Text
                   className="flex-1 text-sm"
-                  style={{color: walletReady || preparingWallet ? theme.colors.primaryContent : theme.colors.error}}
+                  style={{
+                    color:
+                      walletReady || preparingWallet
+                        ? theme.colors.primaryContent
+                        : theme.colors.error,
+                  }}
                 >
                   {status}
                 </Text>
@@ -842,9 +900,17 @@ export function SignupProfileStep({
             />
             {showAccountSwitch ? (
               <View className="mt-3 min-h-10 flex-row items-center justify-center gap-1">
-                <Text className="text-sm text-primary-content">Already have an account?</Text>
-                <Pressable accessibilityRole="button" hitSlop={8} onPress={onBack}>
-                  <Text className="text-sm font-extrabold text-primary">Sign in</Text>
+                <Text className="text-sm text-primary-content">
+                  Already have an account?
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={onBack}
+                >
+                  <Text className="text-sm font-extrabold text-primary">
+                    Sign in
+                  </Text>
                 </Pressable>
               </View>
             ) : null}
@@ -884,7 +950,8 @@ export function SignupPacksStep({
           Choose what to see
         </Text>
         <Text className="mt-2 text-sm leading-5 text-primary-content">
-          Select follow packs. We will create your follow list from the people inside them.
+          Select follow packs. We will create your follow list from the people
+          inside them.
         </Text>
         <SearchBox value={search} onChangeText={onSearchChange} />
         <Text className="mb-2 text-xs font-semibold text-primary-content">
@@ -900,7 +967,9 @@ export function SignupPacksStep({
         renderItem={({item}) => (
           <SignupPackItem
             item={item}
-            selected={selectedPackIds.has(packSelectionFromEvent(item)?.id || '')}
+            selected={selectedPackIds.has(
+              packSelectionFromEvent(item)?.id || '',
+            )}
             onToggle={onTogglePack}
           />
         )}
@@ -921,7 +990,13 @@ export function SignupPacksStep({
   );
 }
 
-function SignupHeader({progress, onBack}: {progress: string; onBack: () => void}) {
+function SignupHeader({
+  progress,
+  onBack,
+}: {
+  progress: string;
+  onBack: () => void;
+}) {
   const theme = useAppTheme();
   return (
     <View className="h-12 flex-row items-center justify-between">
@@ -931,9 +1006,15 @@ function SignupHeader({progress, onBack}: {progress: string; onBack: () => void}
         hitSlop={12}
         onPress={onBack}
       >
-        <ChevronLeft size={22} color={theme.colors.primaryContent} strokeWidth={2.2} />
+        <ChevronLeft
+          size={22}
+          color={theme.colors.primaryContent}
+          strokeWidth={2.2}
+        />
       </Pressable>
-      <Text className="text-sm font-semibold text-primary-content">{progress}</Text>
+      <Text className="text-sm font-semibold text-primary-content">
+        {progress}
+      </Text>
       <View className="h-10 w-10" />
     </View>
   );
@@ -993,13 +1074,24 @@ const SignupPackItem = memo(function SignupPackItem({
   const hasImage = selection.image && !selection.image.startsWith('data:');
 
   return (
-    <Pressable className="overflow-hidden rounded-lg border border-base-200 bg-base-300" onPress={handlePress}>
+    <Pressable
+      className="overflow-hidden rounded-lg border border-base-200 bg-base-300"
+      onPress={handlePress}
+    >
       <View className="h-28 bg-base-200">
         {hasImage ? (
-          <Image className="h-full w-full" resizeMode="cover" source={{uri: selection.image ?? undefined}} />
+          <Image
+            className="h-full w-full"
+            resizeMode="cover"
+            source={{uri: selection.image ?? undefined}}
+          />
         ) : (
           <View className="h-full w-full items-center justify-center bg-base-200">
-            <UserPlus size={34} color={theme.colors.primaryContent} strokeWidth={1.8} />
+            <UserPlus
+              size={34}
+              color={theme.colors.primaryContent}
+              strokeWidth={1.8}
+            />
           </View>
         )}
         {selected ? (
@@ -1009,11 +1101,17 @@ const SignupPackItem = memo(function SignupPackItem({
         ) : null}
       </View>
       <View className="px-3 py-3">
-        <Text className="text-base font-bold text-base-content" numberOfLines={1}>
+        <Text
+          className="text-base font-bold text-base-content"
+          numberOfLines={1}
+        >
           {selection.title}
         </Text>
         {selection.description ? (
-          <Text className="mt-1 text-sm leading-5 text-primary-content" numberOfLines={2}>
+          <Text
+            className="mt-1 text-sm leading-5 text-primary-content"
+            numberOfLines={2}
+          >
             {selection.description}
           </Text>
         ) : null}

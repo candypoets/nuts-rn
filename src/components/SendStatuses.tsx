@@ -2,6 +2,7 @@ import React, {memo, useEffect} from 'react';
 import {View} from 'react-native';
 import type {ConnectionStatus} from '@candypoets/nipworker';
 import Animated, {
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -29,21 +30,29 @@ const StatusDot = memo(function StatusDot({
   const progress = useSharedValue(0);
 
   useEffect(() => {
-    progress.value = withTiming(1, {duration: 220});
+    progress.set(
+      withTiming(1, {duration: 220, reduceMotion: ReduceMotion.System}),
+    );
     const timeout = setTimeout(() => {
-      progress.value = withTiming(2, {duration: 220});
+      progress.set(
+        withTiming(2, {duration: 220, reduceMotion: ReduceMotion.System}),
+      );
     }, 5000);
     return () => clearTimeout(timeout);
   }, [progress]);
 
   const style = useAnimatedStyle(() => {
-    const entering = progress.value <= 1;
+    const currentProgress = progress.get();
+    const entering = currentProgress <= 1;
     const offset = entering
-      ? (1 - progress.value) * 1000
-      : -(progress.value - 1) * 1000;
+      ? (1 - currentProgress) * 1000
+      : -(currentProgress - 1) * 1000;
     return {
       backgroundColor: color,
-      opacity: progress.value <= 1 ? 0.5 + progress.value * 0.5 : 2 - progress.value,
+      opacity:
+        currentProgress <= 1
+          ? 0.5 + currentProgress * 0.5
+          : 2 - currentProgress,
       transform: [{translateY: offset}],
     };
   }, [color]);

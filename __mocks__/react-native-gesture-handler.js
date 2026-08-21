@@ -11,9 +11,16 @@ function chainableGesture() {
     'activeOffsetX',
     'enabled',
     'failOffsetY',
+    'manualActivation',
+    'maxPointers',
+    'numberOfTaps',
     'onBegin',
     'onChange',
     'onEnd',
+    'onFinalize',
+    'onStart',
+    'onTouchesDown',
+    'onTouchesMove',
     'onUpdate',
     'shouldCancelWhenOutside',
   ];
@@ -26,6 +33,9 @@ function chainableGesture() {
 module.exports = {
   Gesture: {
     Pan: chainableGesture,
+    Pinch: chainableGesture,
+    Simultaneous: (...gestures) => ({gestures}),
+    Tap: chainableGesture,
   },
   GestureDetector: ({children}) => children,
   GestureHandlerRootView,

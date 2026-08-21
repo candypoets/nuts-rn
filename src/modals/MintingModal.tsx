@@ -16,6 +16,7 @@ import {
 import {Wallet as CashuWallet} from '@cashu/cashu-ts';
 import {ArrowLeft, Check, ClipboardCopy, RefreshCw} from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
+import {useReducedMotion} from 'react-native-reanimated';
 
 import {AppButton} from '../components/AppButton';
 import {MintCardPicker} from '../components/MintCardPicker';
@@ -75,7 +76,9 @@ function formatExpiresIn(seconds: number) {
 
 function isRetryableMintNetworkError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /cancelled|canceled|network request failed|fetch failed/i.test(message);
+  return /cancelled|canceled|network request failed|fetch failed/i.test(
+    message,
+  );
 }
 
 async function retryMintNetworkCall<T>(
@@ -109,6 +112,7 @@ async function retryMintNetworkCall<T>(
  */
 export function MintingModal({onClose: _onClose}: MintingModalProps) {
   const resetMinting = useMintingStore(state => state.resetMinting);
+  const reducedMotion = useReducedMotion();
 
   // Fresh state every time the flow is opened.
   useEffect(() => {
@@ -118,12 +122,18 @@ export function MintingModal({onClose: _onClose}: MintingModalProps) {
   return (
     <MintingStack.Navigator
       screenOptions={{
-        animation: 'slide_from_right',
+        animation: reducedMotion ? 'fade' : 'slide_from_right',
         headerShown: false,
       }}
     >
-      <MintingStack.Screen component={MintingAmountScreen} name="MintingAmount" />
-      <MintingStack.Screen component={MintingInvoiceScreen} name="MintingInvoice" />
+      <MintingStack.Screen
+        component={MintingAmountScreen}
+        name="MintingAmount"
+      />
+      <MintingStack.Screen
+        component={MintingInvoiceScreen}
+        name="MintingInvoice"
+      />
     </MintingStack.Navigator>
   );
 }
@@ -137,7 +147,9 @@ function MintingAmountScreen({
   const storedActiveMintUrl = useWalletStore(state => state.activeMintUrl);
   const balanceByMint = useWalletStore(state => state.balanceByMint);
   const setActiveMintUrl = useWalletStore(state => state.setActiveMintUrl);
-  const savePendingMintQuote = useWalletStore(state => state.savePendingMintQuote);
+  const savePendingMintQuote = useWalletStore(
+    state => state.savePendingMintQuote,
+  );
   const amount = useMintingStore(state => state.amount);
   const status = useMintingStore(state => state.status);
   const setAmount = useMintingStore(state => state.setAmount);
@@ -146,7 +158,8 @@ function MintingAmountScreen({
   const setError = useMintingStore(state => state.setError);
 
   const mints = useMemo(
-    () => Array.from(new Set(walletMintUrls.map(normalizeMintUrl))).filter(Boolean),
+    () =>
+      Array.from(new Set(walletMintUrls.map(normalizeMintUrl))).filter(Boolean),
     [walletMintUrls],
   );
   const selectedMint =
@@ -184,7 +197,9 @@ function MintingAmountScreen({
       navigation.navigate('MintingInvoice');
     } catch (cause) {
       console.error('[minting] failed to create or mint invoice', cause);
-      setError(cause instanceof Error ? cause.message : 'Unknown minting error');
+      setError(
+        cause instanceof Error ? cause.message : 'Unknown minting error',
+      );
       setStatus('error');
     }
   }, [
@@ -202,7 +217,8 @@ function MintingAmountScreen({
 
   const selectMint = useCallback(
     (mint: string | null) => {
-      if (status === 'creating' || status === 'waiting' || status === 'minting') return;
+      if (status === 'creating' || status === 'waiting' || status === 'minting')
+        return;
       setActiveMintUrl(mint ? normalizeMintUrl(mint) : null);
     },
     [setActiveMintUrl, status],
@@ -229,7 +245,9 @@ function MintingInvoiceScreen({
 }: NativeStackScreenProps<MintingStackParamList, 'MintingInvoice'>) {
   const authPubkey = useAuthStore(state => state.pubkey);
   const pendingMintQuotes = useWalletStore(state => state.pendingMintQuotes);
-  const deletePendingMintQuote = useWalletStore(state => state.deletePendingMintQuote);
+  const deletePendingMintQuote = useWalletStore(
+    state => state.deletePendingMintQuote,
+  );
   const amount = useMintingStore(state => state.amount);
   const quote = useMintingStore(state => state.quote);
   const status = useMintingStore(state => state.status);
@@ -237,7 +255,9 @@ function MintingInvoiceScreen({
   const setStatus = useMintingStore(state => state.setStatus);
   const setError = useMintingStore(state => state.setError);
   const [copied, setCopied] = useState(false);
-  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const [nowSeconds, setNowSeconds] = useState(() =>
+    Math.floor(Date.now() / 1000),
+  );
 
   // Back is blocked while a quote is being created or proofs are minting.
   const backBlocked = status === 'creating' || status === 'minting';
@@ -376,7 +396,9 @@ function MintingAmountStep({
 
         <View className="mt-10 items-center">
           <View className="flex-row items-center">
-            <Text className="mr-2 -translate-y-2 text-4xl font-black text-base-content">丰</Text>
+            <Text className="mr-2 -translate-y-2 text-4xl font-black text-base-content">
+              丰
+            </Text>
             <TextInput
               className="h-24 min-w-40 max-w-72 p-0 text-center text-7xl font-bold text-base-content"
               keyboardType="number-pad"
@@ -385,7 +407,9 @@ function MintingAmountStep({
               textAlignVertical="center"
               value={amount}
               editable={status !== 'creating'}
-              onChangeText={value => onAmountChange(value.replace(/[^0-9]/g, ''))}
+              onChangeText={value =>
+                onAmountChange(value.replace(/[^0-9]/g, ''))
+              }
             />
           </View>
         </View>
@@ -393,7 +417,9 @@ function MintingAmountStep({
         <AppButton
           className="mt-10"
           disabled={!canCreate}
-          title={status === 'creating' ? 'Creating...' : 'Create Lightning Invoice'}
+          title={
+            status === 'creating' ? 'Creating...' : 'Create Lightning Invoice'
+          }
           onPress={onCreateInvoice}
         />
       </ScrollView>
@@ -431,8 +457,14 @@ function MintingInvoiceStep({
           className="mt-4 h-10 flex-row items-center self-start rounded-full px-1"
           onPress={onBack}
         >
-          <ArrowLeft size={20} color={theme.colors.primaryContent} strokeWidth={2.4} />
-          <Text className="ml-1 text-sm font-bold text-primary-content">Back</Text>
+          <ArrowLeft
+            size={20}
+            color={theme.colors.primaryContent}
+            strokeWidth={2.4}
+          />
+          <Text className="ml-1 text-sm font-bold text-primary-content">
+            Back
+          </Text>
         </Pressable>
 
         <View className="mt-4 items-center rounded-lg bg-base-200 py-3">
@@ -471,8 +503,8 @@ function MintingInvoiceStep({
               {status === 'paid'
                 ? 'Payment received!'
                 : status === 'waiting' && expiresInSeconds !== null
-                  ? `Expires in ${formatExpiresIn(expiresInSeconds)}`
-                  : statusText(status)}
+                ? `Expires in ${formatExpiresIn(expiresInSeconds)}`
+                : statusText(status)}
             </Text>
           </View>
         </View>
@@ -488,7 +520,11 @@ function MintingInvoiceStep({
           >
             {invoice || 'Generating...'}
           </Text>
-          <ClipboardCopy size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
+          <ClipboardCopy
+            size={18}
+            color={theme.colors.primaryContent}
+            strokeWidth={2.2}
+          />
         </Pressable>
         <Text className="mt-2 text-center text-xs font-semibold text-primary-content">
           {copied ? 'Copied' : 'Tap QR or invoice to copy'}

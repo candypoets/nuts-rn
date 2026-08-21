@@ -1,8 +1,14 @@
-import React, { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  Animated,
   AppState,
-  Easing,
   Linking,
   Pressable,
   ScrollView,
@@ -12,21 +18,26 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Image } from 'expo-image';
-import { Mint } from '@cashu/cashu-ts';
-import { schnorr } from '@noble/curves/secp256k1.js';
-import { useRouter } from 'expo-router';
-import { useNavigation } from 'expo-router/react-navigation';
-import { pushDistinct } from '../navigation/pushDistinct';
+import {Image} from 'expo-image';
+import Animated, {useReducedMotion} from 'react-native-reanimated';
+import {Mint} from '@cashu/cashu-ts';
+import {schnorr} from '@noble/curves/secp256k1.js';
+import {useRouter} from 'expo-router';
+import {useNavigation} from 'expo-router/react-navigation';
+import {pushDistinct} from '../navigation/pushDistinct';
 import QRCode from 'react-native-qrcode-svg';
 import type {
   ConnectionStatus,
   NostrManagerLike,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import { usePublish as publishToNostr } from '@candypoets/nipworker/hooks';
-import { connectWithQRCode, isConnectionStatus } from '@candypoets/nipworker/utils';
+import {usePublish as publishToNostr} from '@candypoets/nipworker/hooks';
+import {
+  connectWithQRCode,
+  isConnectionStatus,
+} from '@candypoets/nipworker/utils';
 import {
   Check,
   CircleAlert,
@@ -45,16 +56,16 @@ import {
   Wallet,
   X,
 } from 'lucide-react-native';
-import { nip19, type EventTemplate } from 'nostr-tools';
+import {nip19, type EventTemplate} from 'nostr-tools';
 import type {SearchBarCommands} from 'react-native-screens';
 
-import { HeaderProfileButton } from '../components/HeaderProfileButton';
-import { AppButton } from '../components/AppButton';
-import { Avatar } from '../components/notes';
-import { getCurrentPushToken } from '../hooks/usePushNotifications';
-import { shortNpub } from '../lib/identity';
-import type { AppNavigationProp } from '../navigation/types';
-import { unregisterPushDeviceForLogout } from '../notifications/pushRegistration';
+import {HeaderProfileButton} from '../components/HeaderProfileButton';
+import {AppButton} from '../components/AppButton';
+import {Avatar} from '../components/notes';
+import {getCurrentPushToken} from '../hooks/usePushNotifications';
+import {shortNpub} from '../lib/identity';
+import type {AppNavigationProp} from '../navigation/types';
+import {unregisterPushDeviceForLogout} from '../notifications/pushRegistration';
 import {
   BOOTSTRAP_RELAYS,
   useAuthStore,
@@ -63,17 +74,14 @@ import {
   useWalletStore,
   type AuthState,
 } from '../stores';
-import {
-  deriveSignupKeypair,
-  generateSignupMnemonic,
-} from '../nostr/keys';
+import {deriveSignupKeypair, generateSignupMnemonic} from '../nostr/keys';
 import {
   cashuMintRecommendationEvent,
   discoverRecommendedCashuMint,
   type RecommendedCashuMint,
 } from '../nostr/cashu';
-import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
-import { resetSignEventQueue } from '../nostr/upload';
+import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
+import {resetSignEventQueue} from '../nostr/upload';
 import {
   appThemeIds,
   appThemes,
@@ -83,15 +91,15 @@ import {
   type AppThemeColors,
   useAppTheme,
 } from '../theme';
-import { useUIStore } from '../stores/uiStore';
+import {useUIStore} from '../stores/uiStore';
 
 type ProfileModalTarget =
-  | { type: 'login' }
-  | { type: 'logout' }
-  | { type: 'keys' }
-  | { type: 'mints' }
-  | { type: 'theme' }
-  | { type: 'profileStub'; path: 'relays' | 'wallet' | 'nprofile' };
+  | {type: 'login'}
+  | {type: 'logout'}
+  | {type: 'keys'}
+  | {type: 'mints'}
+  | {type: 'theme'}
+  | {type: 'profileStub'; path: 'relays' | 'wallet' | 'nprofile'};
 
 type ProfileModalProps = {
   auth: Pick<AuthState, 'pubkey' | 'hasSigner' | 'nsec'>;
@@ -117,8 +125,7 @@ function decodePrivateKey(input: string) {
 
   if (value.toLowerCase().startsWith('nsec')) {
     const decoded = nip19.decode(value);
-    if (decoded.type !== 'nsec')
-      throw new Error('Enter a valid private key.');
+    if (decoded.type !== 'nsec') throw new Error('Enter a valid private key.');
     return decoded.data;
   }
 
@@ -135,8 +142,7 @@ function decodePublicKey(input: string) {
 
   if (value.toLowerCase().startsWith('npub')) {
     const decoded = nip19.decode(value);
-    if (decoded.type !== 'npub')
-      throw new Error('Enter a valid public key.');
+    if (decoded.type !== 'npub') throw new Error('Enter a valid public key.');
     return decoded.data;
   }
 
@@ -162,15 +168,19 @@ function friendlyLoginError(message: string) {
   return message;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalProps) {
+export function ProfileModal({
+  auth,
+  manager,
+  onClose: _onClose,
+}: ProfileModalProps) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const iconColor = theme.colors.primaryContent;
   const accounts = useAuthStore(state => state.accounts);
   const setAuth = useAuthStore(state => state.setAuth);
-  const [pendingSelectedPubkey, setPendingSelectedPubkey] = useState<string | null>(null);
+  const [pendingSelectedPubkey, setPendingSelectedPubkey] = useState<
+    string | null
+  >(null);
   const switchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedPubkey = pendingSelectedPubkey ?? auth.pubkey;
   const accountEntries = useMemo(() => {
@@ -188,8 +198,7 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
     }
     return entries;
   }, [accounts, auth.hasSigner, auth.nsec, auth.pubkey]);
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
   const router = useRouter();
   const navigate = useCallback(
     (item: ProfileModalTarget) => {
@@ -227,12 +236,12 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
         setTimeout(() => {
           pushDistinct(router, {
             pathname: '/PublicProfile',
-            params: { pubkey },
+            params: {pubkey},
           });
         }, 350);
         return;
       }
-      navigation.navigate('ProfileStub', { path: item.path });
+      navigation.navigate('ProfileStub', {path: item.path});
     },
     [auth.pubkey, navigation, router],
   );
@@ -302,15 +311,15 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
                   account.nsec
                     ? 'key'
                     : account.hasSigner
-                      ? 'remote'
-                      : 'readonly'
+                    ? 'remote'
+                    : 'readonly'
                 }
                 onPress={() => switchAccount(pubkey)}
               />
             ))}
             <Pressable
               style={styles.addAccountButton}
-              onPress={() => navigate({ type: 'login' })}
+              onPress={() => navigate({type: 'login'})}
             >
               <Plus size={22} color={iconColor} strokeWidth={2.4} />
             </Pressable>
@@ -321,13 +330,15 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
               <ProfileMenuRow
                 icon={<LogOut size={21} color={iconColor} strokeWidth={2.1} />}
                 label="Log out"
-                onPress={() => navigate({ type: 'logout' })}
+                onPress={() => navigate({type: 'logout'})}
               />
             ) : (
               <ProfileMenuRow
-                icon={<KeyRound size={21} color={iconColor} strokeWidth={2.1} />}
+                icon={
+                  <KeyRound size={21} color={iconColor} strokeWidth={2.1} />
+                }
                 label="Sign in"
-                onPress={() => navigate({ type: 'login' })}
+                onPress={() => navigate({type: 'login'})}
               />
             )}
           </View>
@@ -335,7 +346,8 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
           {auth.pubkey && auth.nsec ? (
             <View style={styles.warningBox}>
               <Text style={styles.warningText}>
-                Save your key. It is the only way to recover this account on another device.
+                Save your key. It is the only way to recover this account on
+                another device.
               </Text>
             </View>
           ) : null}
@@ -345,9 +357,7 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
             <ProfileMenuRow
               icon={<User size={21} color={iconColor} strokeWidth={2.1} />}
               label="My Profile"
-              onPress={() =>
-                navigate({ type: 'profileStub', path: 'nprofile' })
-              }
+              onPress={() => navigate({type: 'profileStub', path: 'nprofile'})}
             />
             <ProfileMenuRow
               icon={<Ticket size={21} color={iconColor} strokeWidth={2.1} />}
@@ -358,31 +368,31 @@ export function ProfileModal({ auth, manager, onClose: _onClose }: ProfileModalP
             <ProfileMenuRow
               icon={<KeyRound size={21} color={iconColor} strokeWidth={2.1} />}
               label="Keys"
-              onPress={() => navigate({ type: 'keys' })}
+              onPress={() => navigate({type: 'keys'})}
             />
             <ProfileMenuRow
               icon={<Radio size={21} color={iconColor} strokeWidth={2.1} />}
               label="Relays"
               detail="Your relay preferences"
-              onPress={() => navigate({ type: 'profileStub', path: 'relays' })}
+              onPress={() => navigate({type: 'profileStub', path: 'relays'})}
             />
             <ProfileMenuRow
               icon={<Wallet size={21} color={iconColor} strokeWidth={2.1} />}
               label="Wallet"
               detail="Wallet preferences"
-              onPress={() => navigate({ type: 'profileStub', path: 'wallet' })}
+              onPress={() => navigate({type: 'profileStub', path: 'wallet'})}
             />
             <ProfileMenuRow
               icon={<Plus size={21} color={iconColor} strokeWidth={2.1} />}
               label="Mints"
               detail="Select trusted Cashu mints"
-              onPress={() => navigate({ type: 'mints' })}
+              onPress={() => navigate({type: 'mints'})}
             />
             <ProfileMenuRow
               icon={<Palette size={21} color={iconColor} strokeWidth={2.1} />}
               label="Theme"
               detail="Appearance settings"
-              onPress={() => navigate({ type: 'theme' })}
+              onPress={() => navigate({type: 'theme'})}
               last
             />
           </View>
@@ -445,10 +455,7 @@ export function PrivateKeyLogin({
   const loginPendingRef = useRef(false);
   const loginInputRef = useRef<TextInput>(null);
   const lastLoginAttemptRef = useRef<
-    | { type: 'qr' }
-    | { type: 'openSigner' }
-    | { type: 'bunker'; value: string }
-    | null
+    {type: 'qr'} | {type: 'openSigner'} | {type: 'bunker'; value: string} | null
   >(null);
   const nip46AuthUrl = useAuthStore(state => state.nip46AuthUrl);
   const authError = useAuthStore(state => state.authError);
@@ -493,7 +500,7 @@ export function PrivateKeyLogin({
     () => () => {
       const store = useAuthStore.getState();
       if (store.nip46AuthUrl || store.authError) {
-        store.setAuth({ nip46AuthUrl: null, authError: null });
+        store.setAuth({nip46AuthUrl: null, authError: null});
       }
     },
     [],
@@ -507,19 +514,24 @@ export function PrivateKeyLogin({
     if (!manager) return;
 
     const handleAuth = (event: Event) => {
-      const detail = (event as Event & {detail?: {pubkey?: string | null}}).detail;
+      const detail = (event as Event & {detail?: {pubkey?: string | null}})
+        .detail;
       if (detail?.pubkey) finishLogin();
     };
     let previousAppState = AppState.currentState;
-    const appStateSubscription = AppState.addEventListener('change', nextState => {
-      const resumed =
-        (previousAppState === 'background' || previousAppState === 'inactive') &&
-        nextState === 'active';
-      previousAppState = nextState;
-      if (resumed && loginPendingRef.current) {
-        manager.getPublicKey();
-      }
-    });
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      nextState => {
+        const resumed =
+          (previousAppState === 'background' ||
+            previousAppState === 'inactive') &&
+          nextState === 'active';
+        previousAppState = nextState;
+        if (resumed && loginPendingRef.current) {
+          manager.getPublicKey();
+        }
+      },
+    );
 
     manager.addEventListener('auth', handleAuth);
     return () => {
@@ -537,12 +549,12 @@ export function PrivateKeyLogin({
     // New attempt: drop any previous global auth failure. Private keys are
     // deliberately never retained for automatic retries.
     lastLoginAttemptRef.current = null;
-    useAuthStore.getState().setAuth({ authError: null });
+    useAuthStore.getState().setAuth({authError: null});
 
     try {
       const value = privateKey.trim();
       if (value.startsWith('bunker://')) {
-        lastLoginAttemptRef.current = { type: 'bunker', value };
+        lastLoginAttemptRef.current = {type: 'bunker', value};
         setLoginPending(true);
         manager.setNip46Bunker(value);
         setPrivateKey('');
@@ -569,9 +581,11 @@ export function PrivateKeyLogin({
       setError(null);
     } catch (nextError) {
       setLoginPending(false);
-      setError(friendlyLoginError(
-        nextError instanceof Error ? nextError.message : String(nextError),
-      ));
+      setError(
+        friendlyLoginError(
+          nextError instanceof Error ? nextError.message : String(nextError),
+        ),
+      );
     }
   }, [manager, privateKey, setLoginPending]);
 
@@ -582,9 +596,9 @@ export function PrivateKeyLogin({
     }
 
     try {
-      lastLoginAttemptRef.current = { type: 'qr' };
+      lastLoginAttemptRef.current = {type: 'qr'};
       setError(null);
-      useAuthStore.getState().setAuth({ authError: null });
+      useAuthStore.getState().setAuth({authError: null});
       setLoginPending(true);
       const nextQrText = await connectWithQRCode('Nuts', DEFAULT_FEED_RELAYS);
       // Dev-only: log the URL so the QR (nostrconnect) login can be
@@ -597,9 +611,11 @@ export function PrivateKeyLogin({
       setQrLinkCopied(false);
     } catch (nextError) {
       setLoginPending(false);
-      setError(friendlyLoginError(
-        nextError instanceof Error ? nextError.message : String(nextError),
-      ));
+      setError(
+        friendlyLoginError(
+          nextError instanceof Error ? nextError.message : String(nextError),
+        ),
+      );
     }
   }, [manager, setLoginPending]);
 
@@ -614,7 +630,7 @@ export function PrivateKeyLogin({
     if (!qrText) return;
 
     try {
-      lastLoginAttemptRef.current = { type: 'openSigner' };
+      lastLoginAttemptRef.current = {type: 'openSigner'};
       setError(null);
       await Linking.openURL(qrText);
     } catch {
@@ -628,7 +644,7 @@ export function PrivateKeyLogin({
   const retryLogin = useCallback(() => {
     const attempt = lastLoginAttemptRef.current;
     setError(null);
-    useAuthStore.getState().setAuth({ authError: null });
+    useAuthStore.getState().setAuth({authError: null});
 
     if (attempt?.type === 'qr') {
       startQrConnect();
@@ -644,9 +660,11 @@ export function PrivateKeyLogin({
         manager.setNip46Bunker(attempt.value);
       } catch (nextError) {
         setLoginPending(false);
-        setError(friendlyLoginError(
-          nextError instanceof Error ? nextError.message : String(nextError),
-        ));
+        setError(
+          friendlyLoginError(
+            nextError instanceof Error ? nextError.message : String(nextError),
+          ),
+        );
       }
       return;
     }
@@ -674,7 +692,7 @@ export function PrivateKeyLogin({
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: !manager }}
+              accessibilityState={{disabled: !manager}}
               disabled={!manager}
               style={[
                 styles.nip46Button,
@@ -683,7 +701,11 @@ export function PrivateKeyLogin({
               onPress={startQrConnect}
             >
               <View style={styles.nip46Icon}>
-                <Radio size={22} color={theme.colors.primary} strokeWidth={2.2} />
+                <Radio
+                  size={22}
+                  color={theme.colors.primary}
+                  strokeWidth={2.2}
+                />
               </View>
               <View style={styles.nip46Text}>
                 <View style={styles.nip46TitleRow}>
@@ -696,7 +718,11 @@ export function PrivateKeyLogin({
                   Approve securely in another app.
                 </Text>
               </View>
-              <ChevronRight size={20} color={mutedIconColor} strokeWidth={2.1} />
+              <ChevronRight
+                size={20}
+                color={mutedIconColor}
+                strokeWidth={2.1}
+              />
             </Pressable>
             {qrText ? (
               <View style={styles.qrPanel}>
@@ -709,7 +735,11 @@ export function PrivateKeyLogin({
                 <Pressable style={styles.secondaryAction} onPress={copyQrText}>
                   <View style={styles.copyConnectionRow}>
                     {qrLinkCopied ? (
-                      <Check size={16} color={theme.colors.primary} strokeWidth={2.5} />
+                      <Check
+                        size={16}
+                        color={theme.colors.primary}
+                        strokeWidth={2.5}
+                      />
                     ) : null}
                     <Text style={styles.secondaryActionText}>
                       {qrLinkCopied ? 'Copied' : 'Copy connection link'}
@@ -760,7 +790,11 @@ export function PrivateKeyLogin({
                 accessibilityLiveRegion="assertive"
                 style={styles.loginErrorBanner}
               >
-                <CircleAlert size={20} color={theme.colors.error} strokeWidth={2.2} />
+                <CircleAlert
+                  size={20}
+                  color={theme.colors.error}
+                  strokeWidth={2.2}
+                />
                 <Text accessibilityRole="alert" style={styles.loginErrorText}>
                   {error}
                 </Text>
@@ -832,62 +866,40 @@ function AccountAvatarButton({
   onPress: () => void;
 }) {
   const styles = useProfileModalStyles();
-  const sizeProgress = useRef(new Animated.Value(selected ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.timing(sizeProgress, {
-      toValue: selected ? 1 : 0,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [selected, sizeProgress]);
-
-  const tileSize = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [42, 58],
-  });
-  const tileRadius = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [21, 29],
-  });
+  const reducedMotion = useReducedMotion();
+  const selectionStyle = reducedMotion
+    ? selected
+      ? styles.accountAvatarSelectedReducedMotion
+      : styles.accountAvatarUnselectedReducedMotion
+    : selected
+    ? styles.accountAvatarSelectedMotion
+    : styles.accountAvatarUnselectedMotion;
   return (
-    <AnimatedPressable
+    <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={[
-        styles.profileAvatarWrap,
-        {
-          borderRadius: tileRadius,
-          height: tileSize,
-          width: tileSize,
-        },
-        selected ? styles.selectedAccountAvatar : styles.accountAvatar,
-      ]}
+      accessibilityState={{selected}}
+      pressRetentionOffset={16}
+      onPress={() => {
+        if (!selected) Haptics.selectionAsync().catch(() => {});
+        onPress();
+      }}
+      style={styles.profileAvatarWrap}
     >
-      <Animated.View
-        style={[
-          styles.accountAvatarImageWrap,
-          {
-            borderRadius: tileRadius,
-            height: tileSize,
-            width: tileSize,
-          },
-        ]}
-      >
-        <Avatar pubkey={pubkey} size="fill" />
+      <Animated.View style={[styles.accountAvatarSurface, selectionStyle]}>
+        <View style={styles.accountAvatarImageWrap}>
+          <Avatar pubkey={pubkey} size="fill" />
+        </View>
+        <View style={styles.loginMethodBadge}>
+          {loginMethod === 'readonly' ? (
+            <Binoculars size={15} color="#ffffff" strokeWidth={2.4} />
+          ) : loginMethod === 'key' ? (
+            <KeyRound size={15} color="#ffffff" strokeWidth={2.4} />
+          ) : (
+            <Radio size={15} color="#ffffff" strokeWidth={2.4} />
+          )}
+        </View>
       </Animated.View>
-      <View style={styles.loginMethodBadge}>
-        {loginMethod === 'readonly' ? (
-          <Binoculars size={15} color="#ffffff" strokeWidth={2.4} />
-        ) : loginMethod === 'key' ? (
-          <KeyRound size={15} color="#ffffff" strokeWidth={2.4} />
-        ) : (
-          <Radio size={15} color="#ffffff" strokeWidth={2.4} />
-        )}
-      </View>
-    </AnimatedPressable>
+    </Pressable>
   );
 }
 
@@ -956,7 +968,7 @@ export function LogoutModal({
   );
 }
 
-export function KeysModal({ onClose }: { onClose: () => void }) {
+export function KeysModal({onClose}: {onClose: () => void}) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
   const mutedIconColor = theme.colors.primaryContent;
@@ -974,13 +986,17 @@ export function KeysModal({ onClose }: { onClose: () => void }) {
     await Clipboard.setStringAsync(value);
     setCopyError(null);
     setCopied(value);
-    setTimeout(() => setCopied(current => (current === value ? '' : current)), 2000);
+    setTimeout(
+      () => setCopied(current => (current === value ? '' : current)),
+      2000,
+    );
   }, []);
 
   const copyPrivateKey = useCallback(async () => {
     if (!nsec) return;
 
-    const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+    const supportedTypes =
+      await LocalAuthentication.supportedAuthenticationTypesAsync();
     const hasFaceId = supportedTypes.includes(
       LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION,
     );
@@ -1040,7 +1056,8 @@ export function KeysModal({ onClose }: { onClose: () => void }) {
             </Text>
           </Pressable>
           <Text style={styles.keyHelpText}>
-            Anyone on Nostr can find you via your public key. Feel free to share it with others.
+            Anyone on Nostr can find you via your public key. Feel free to share
+            it with others.
           </Text>
 
           <Text style={[styles.keySectionLabel, styles.privateKeyLabel]}>
@@ -1048,7 +1065,11 @@ export function KeysModal({ onClose }: { onClose: () => void }) {
           </Text>
           <View style={styles.keyCard}>
             <View style={styles.keyIcon}>
-              <KeyRound size={34} color={theme.colors.warning} strokeWidth={2.2} />
+              <KeyRound
+                size={34}
+                color={theme.colors.warning}
+                strokeWidth={2.2}
+              />
             </View>
             <Text style={styles.keyValue}>{privateMask}</Text>
           </View>
@@ -1067,7 +1088,8 @@ export function KeysModal({ onClose }: { onClose: () => void }) {
           </Pressable>
           {copyError ? <Text style={styles.errorText}>{copyError}</Text> : null}
           <Text style={styles.privateWarningText}>
-            Warning: Keep your private key secret. Anyone with your private key can access your account.
+            Warning: Keep your private key secret. Anyone with your private key
+            can access your account.
           </Text>
         </ScrollView>
       </View>
@@ -1235,11 +1257,15 @@ export function WalletModal({
   const mutedIconColor = theme.colors.primaryContent;
   const authPubkey = useAuthStore(state => state.pubkey);
   const walletMnemonic = useWalletStore(state => state.walletMnemonic);
-  const walletMnemonicIndex = useWalletStore(state => state.walletMnemonicIndex);
+  const walletMnemonicIndex = useWalletStore(
+    state => state.walletMnemonicIndex,
+  );
   const walletPrivateKey = useWalletStore(state => state.walletPrivateKey);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const setWalletMnemonic = useWalletStore(state => state.setWalletMnemonic);
-  const setWalletMnemonicIndex = useWalletStore(state => state.setWalletMnemonicIndex);
+  const setWalletMnemonicIndex = useWalletStore(
+    state => state.setWalletMnemonicIndex,
+  );
   const setWalletKeys = useWalletStore(state => state.setWalletKeys);
   const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);
   const writeRelays = useNostrStore(state => state.writeRelays);
@@ -1276,7 +1302,10 @@ export function WalletModal({
     if (!value) return;
     await Clipboard.setStringAsync(value);
     setCopied(value);
-    setTimeout(() => setCopied(current => (current === value ? '' : current)), 1800);
+    setTimeout(
+      () => setCopied(current => (current === value ? '' : current)),
+      1800,
+    );
   }, []);
 
   const regenerateMnemonic = useCallback(() => {
@@ -1309,7 +1338,10 @@ export function WalletModal({
       selectedMints = [recommendedMint.mint];
     }
     const publishRelays = [
-      ...new Set([...(writeRelays.length ? writeRelays : BOOTSTRAP_RELAYS), ...WALLET_PUBLISH_RELAYS]),
+      ...new Set([
+        ...(writeRelays.length ? writeRelays : BOOTSTRAP_RELAYS),
+        ...WALLET_PUBLISH_RELAYS,
+      ]),
     ];
     if (!authPubkey) {
       manager.setSigner('privkey', keypair.privkey);
@@ -1426,9 +1458,18 @@ export function WalletModal({
                   setSaved(false);
                 }}
               />
-              <Pressable style={styles.secondaryInlineAction} onPress={regenerateMnemonic}>
-                <RefreshCw size={17} color={theme.colors.primaryContent} strokeWidth={2.2} />
-                <Text style={styles.secondaryInlineText}>Regenerate mnemonic</Text>
+              <Pressable
+                style={styles.secondaryInlineAction}
+                onPress={regenerateMnemonic}
+              >
+                <RefreshCw
+                  size={17}
+                  color={theme.colors.primaryContent}
+                  strokeWidth={2.2}
+                />
+                <Text style={styles.secondaryInlineText}>
+                  Regenerate mnemonic
+                </Text>
               </Pressable>
             </View>
           )}
@@ -1457,8 +1498,18 @@ export function WalletModal({
               <WalletKeyRow
                 copied={false}
                 label="derivation path"
-                value={`${CASHU_BASE_PATH}/${Math.max(0, Number.parseInt(index, 10) || 0)}`}
-                onCopy={() => copyToClipboard(`${CASHU_BASE_PATH}/${Math.max(0, Number.parseInt(index, 10) || 0)}`)}
+                value={`${CASHU_BASE_PATH}/${Math.max(
+                  0,
+                  Number.parseInt(index, 10) || 0,
+                )}`}
+                onCopy={() =>
+                  copyToClipboard(
+                    `${CASHU_BASE_PATH}/${Math.max(
+                      0,
+                      Number.parseInt(index, 10) || 0,
+                    )}`,
+                  )
+                }
               />
             </>
           ) : null}
@@ -1502,14 +1553,20 @@ function WalletKeyRow({
       <View style={styles.walletKeyText}>
         <Text style={styles.meta}>{label}</Text>
         <Text style={styles.keyValue}>
-          {privateValue && value ? '•'.repeat(Math.min(48, value.length)) : value}
+          {privateValue && value
+            ? '•'.repeat(Math.min(48, value.length))
+            : value}
         </Text>
       </View>
       <Pressable style={styles.copyButton} onPress={onCopy}>
         {copied ? (
           <Check size={18} color={theme.colors.primary} strokeWidth={2.5} />
         ) : (
-          <ClipboardCopy size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
+          <ClipboardCopy
+            size={18}
+            color={theme.colors.primaryContent}
+            strokeWidth={2.2}
+          />
         )}
       </Pressable>
     </View>
@@ -1525,8 +1582,7 @@ export function MintsModal({
 }) {
   const styles = useProfileModalStyles();
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const walletPrivateKey = useWalletStore(state => state.walletPrivateKey);
   const setWalletMintUrls = useWalletStore(state => state.setWalletMintUrls);
@@ -1543,7 +1599,8 @@ export function MintsModal({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchActive, setSearchActive] = useState(false);
-  const [autoRecommendedMint, setAutoRecommendedMint] = useState<RecommendedCashuMint | null>(null);
+  const [autoRecommendedMint, setAutoRecommendedMint] =
+    useState<RecommendedCashuMint | null>(null);
   const searchBarRef = useRef<SearchBarCommands | null>(null);
   const isDarkHeader = useMemo(
     () => isDarkColor(theme.colors.base300),
@@ -1592,29 +1649,26 @@ export function MintsModal({
       .slice(0, 24);
   }, [availableMints, search, selectedMints]);
 
-  const addMintUrl = useCallback(
-    async (url: string) => {
-      const normalized = normalizeMintUrl(url);
-      if (!normalized) return;
-      setLoading(true);
-      setError(null);
-      const valid = await isMintUrlValid(normalized);
-      setLoading(false);
-      if (!valid) {
-        setError('Invalid mint URL.');
-        return;
-      }
-      setSelectedMints(current =>
-        Array.from(new Set([normalized, ...current.map(normalizeMintUrl)])),
-      );
-      setAutoRecommendedMint(null);
-      setSearch('');
-      setSearchActive(false);
-      searchBarRef.current?.cancelSearch();
-      setSaved(false);
-    },
-    [],
-  );
+  const addMintUrl = useCallback(async (url: string) => {
+    const normalized = normalizeMintUrl(url);
+    if (!normalized) return;
+    setLoading(true);
+    setError(null);
+    const valid = await isMintUrlValid(normalized);
+    setLoading(false);
+    if (!valid) {
+      setError('Invalid mint URL.');
+      return;
+    }
+    setSelectedMints(current =>
+      Array.from(new Set([normalized, ...current.map(normalizeMintUrl)])),
+    );
+    setAutoRecommendedMint(null);
+    setSearch('');
+    setSearchActive(false);
+    searchBarRef.current?.cancelSearch();
+    setSaved(false);
+  }, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -1634,7 +1688,12 @@ export function MintsModal({
         </Text>
       ),
       headerBackground: () => (
-        <View style={[StyleSheet.absoluteFill, {backgroundColor: theme.colors.base300}]}>
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {backgroundColor: theme.colors.base300},
+          ]}
+        >
           <View
             style={{
               alignSelf: 'center',
@@ -1696,7 +1755,9 @@ export function MintsModal({
 
   const removeMint = useCallback((mint: string) => {
     setSelectedMints(current => current.filter(value => value !== mint));
-    setAutoRecommendedMint(current => (current?.mint === mint ? null : current));
+    setAutoRecommendedMint(current =>
+      current?.mint === mint ? null : current,
+    );
     setSaved(false);
   }, []);
 
@@ -1710,7 +1771,9 @@ export function MintsModal({
       setError('Create or restore the wallet before saving mints.');
       return;
     }
-    const normalized = Array.from(new Set(selectedMints.map(normalizeMintUrl))).filter(Boolean);
+    const normalized = Array.from(
+      new Set(selectedMints.map(normalizeMintUrl)),
+    ).filter(Boolean);
     let keypair: ReturnType<typeof walletKeypairFromPrivateKey>;
     try {
       keypair = walletKeypairFromPrivateKey(decodePrivateKey(walletPrivateKey));
@@ -1719,7 +1782,10 @@ export function MintsModal({
       return;
     }
     const publishRelays = [
-      ...new Set([...(writeRelays.length ? writeRelays : BOOTSTRAP_RELAYS), ...WALLET_PUBLISH_RELAYS]),
+      ...new Set([
+        ...(writeRelays.length ? writeRelays : BOOTSTRAP_RELAYS),
+        ...WALLET_PUBLISH_RELAYS,
+      ]),
     ];
     setWalletMintUrls(normalized);
     setTrustedMints(normalized);
@@ -1804,7 +1870,11 @@ export function MintsModal({
                   onPress={() => addMintUrl(search)}
                 >
                   <View style={styles.mintAvatar}>
-                    <Plus size={18} color={theme.colors.primaryContent} strokeWidth={2.2} />
+                    <Plus
+                      size={18}
+                      color={theme.colors.primaryContent}
+                      strokeWidth={2.2}
+                    />
                   </View>
                   <View style={styles.mintRowText}>
                     <Text style={styles.menuLabel}>Add custom mint</Text>
@@ -1815,7 +1885,9 @@ export function MintsModal({
                 </Pressable>
               ) : (
                 <Text style={styles.emptySearchText}>
-                  {availableMints.length ? 'No more mints available.' : 'Loading mints...'}
+                  {availableMints.length
+                    ? 'No more mints available.'
+                    : 'Loading mints...'}
                 </Text>
               )}
             </View>
@@ -1839,15 +1911,21 @@ export function MintsModal({
                 )}
               </View>
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
-              {saved ? <Text style={styles.successText}>Mints saved.</Text> : null}
+              {saved ? (
+                <Text style={styles.successText}>Mints saved.</Text>
+              ) : null}
               <Pressable
                 style={[
                   styles.action,
-                  selectedMints.length && !loading ? styles.loginAction : styles.disabledAction,
+                  selectedMints.length && !loading
+                    ? styles.loginAction
+                    : styles.disabledAction,
                 ]}
                 onPress={saveMints}
               >
-                <Text style={styles.actionText}>{loading ? 'Checking mint...' : 'Save Mints'}</Text>
+                <Text style={styles.actionText}>
+                  {loading ? 'Checking mint...' : 'Save Mints'}
+                </Text>
               </Pressable>
             </>
           )}
@@ -1869,10 +1947,14 @@ function MintCatalogRow({
     <Pressable style={styles.mintResultRow} onPress={onPress}>
       <MintAvatar mint={mint} />
       <View style={styles.mintRowText}>
-        <Text style={styles.menuLabel} numberOfLines={1}>{mint.title}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{mint.url}</Text>
+        <Text style={styles.menuLabel} numberOfLines={1}>
+          {mint.title}
+        </Text>
+        <Text style={styles.meta} numberOfLines={1}>
+          {mint.url}
+        </Text>
         <Text style={styles.mintStats} numberOfLines={1}>
-          {getStatsText(mint)}  {getRatingDisplay(mint.rating)}
+          {getStatsText(mint)} {getRatingDisplay(mint.rating)}
         </Text>
       </View>
       <MintStatusDot state={mint.state} />
@@ -1898,7 +1980,9 @@ function SelectedMintRow({
         <Text style={styles.menuLabel} numberOfLines={1}>
           {mint?.title || displayMintName(mintUrl)}
         </Text>
-        <Text style={styles.meta} numberOfLines={1}>{mintUrl}</Text>
+        <Text style={styles.meta} numberOfLines={1}>
+          {mintUrl}
+        </Text>
         {mint ? (
           <Text style={styles.mintStats} numberOfLines={1}>
             {getStatsText(mint)}
@@ -1907,7 +1991,11 @@ function SelectedMintRow({
       </View>
       {mint ? <MintStatusDot state={mint.state} /> : null}
       <Pressable style={styles.copyButton} onPress={onRemove}>
-        <Trash2 size={19} color={theme.colors.primaryContent} strokeWidth={2.2} />
+        <Trash2
+          size={19}
+          color={theme.colors.primaryContent}
+          strokeWidth={2.2}
+        />
       </Pressable>
     </View>
   );
@@ -1925,9 +2013,15 @@ function MintAvatar({
   return (
     <View style={styles.mintAvatar}>
       {mint?.iconUrl ? (
-        <Image source={{uri: mint.iconUrl}} style={styles.mintAvatarImage} contentFit="cover" />
+        <Image
+          source={{uri: mint.iconUrl}}
+          style={styles.mintAvatarImage}
+          contentFit="cover"
+        />
       ) : (
-        <Text style={styles.mintAvatarText}>{label.slice(0, 1).toUpperCase()}</Text>
+        <Text style={styles.mintAvatarText}>
+          {label.slice(0, 1).toUpperCase()}
+        </Text>
       )}
     </View>
   );
@@ -2056,28 +2150,19 @@ function ThemeRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected: active }}
+      accessibilityState={{selected: active}}
       style={[styles.themeRow, active && styles.themeRowActive]}
       onPress={onPress}
     >
       <View style={styles.themeSwatches}>
         <View
-          style={[
-            styles.themeSwatch,
-            { backgroundColor: theme.colors.primary },
-          ]}
+          style={[styles.themeSwatch, {backgroundColor: theme.colors.primary}]}
         />
         <View
-          style={[
-            styles.themeSwatch,
-            { backgroundColor: theme.colors.base100 },
-          ]}
+          style={[styles.themeSwatch, {backgroundColor: theme.colors.base100}]}
         />
         <View
-          style={[
-            styles.themeSwatch,
-            { backgroundColor: theme.colors.accent },
-          ]}
+          style={[styles.themeSwatch, {backgroundColor: theme.colors.accent}]}
         />
       </View>
       <View style={styles.themeText}>
@@ -2101,674 +2186,701 @@ function useProfileModalStyles() {
 function createProfileModalStyles(colors: AppThemeColors) {
   const contentColor = readableContentColor(colors.base100);
   return StyleSheet.create({
-  modalBody: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  profileSheet: {
-    backgroundColor: colors.base100,
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  modalSheet: {
-    backgroundColor: colors.base300,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  logoutSheet: {
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  fullModalSheet: {
-    backgroundColor: colors.base300,
-    flex: 1,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  mintsNativeSheet: {
-    backgroundColor: colors.base300,
-    flex: 1,
-    paddingHorizontal: 18,
-    paddingBottom: 28,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    backgroundColor: colors.primaryContent,
-    borderRadius: 2,
-    height: 4,
-    marginBottom: 14,
-    width: 42,
-  },
-  modalHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-  },
-  stackTitle: {
-    color: contentColor,
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  modalTitleSlot: {
-    flex: 1,
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  stackBody: {
-    color: colors.primaryContent,
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  loginContent: {
-    flexGrow: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-  },
-  loginIntro: {
-    marginBottom: 26,
-  },
-  loginTitle: {
-    color: contentColor,
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -0.7,
-  },
-  loginSubtitle: {
-    color: colors.primaryContent,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 6,
-  },
-  loginActions: {
-    paddingBottom: 8,
-    paddingTop: 20,
-  },
-  nip46Button: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: 'row',
-    minHeight: 76,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  disabledNip46Button: {
-    opacity: 0.55,
-  },
-  nip46Icon: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderRadius: 22,
-    height: 44,
-    justifyContent: 'center',
-    marginRight: 12,
-    width: 44,
-  },
-  nip46Text: {
-    flex: 1,
-  },
-  nip46TitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  nip46Title: {
-    color: contentColor,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  recommendedBadge: {
-    backgroundColor: colors.base100,
-    borderColor: colors.primary,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  recommendedText: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  nip46Detail: {
-    color: colors.primaryContent,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 2,
-  },
-  loginDivider: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    marginVertical: 22,
-  },
-  dividerLine: {
-    backgroundColor: colors.base200,
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-  },
-  dividerText: {
-    color: colors.primaryContent,
-    fontSize: 13,
-  },
-  loginFieldLabel: {
-    color: contentColor,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  loginFieldHelp: {
-    color: colors.primaryContent,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 7,
-  },
-  loginInput: {
-    minHeight: 54,
-    paddingHorizontal: 14,
-  },
-  loginErrorBanner: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderColor: colors.error,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-    minHeight: 64,
-    paddingLeft: 14,
-    paddingRight: 6,
-  },
-  loginErrorText: {
-    color: contentColor,
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  loginRetryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    minWidth: 76,
-    paddingHorizontal: 8,
-  },
-  loginRetryText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  accountSwitch: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 5,
-    justifyContent: 'center',
-    marginTop: 12,
-    minHeight: 48,
-  },
-  accountSwitchButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-  },
-  accountSwitchText: {
-    color: colors.primaryContent,
-    fontSize: 14,
-  },
-  accountSwitchLink: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  qrPanel: {
-    alignItems: 'center',
-    backgroundColor: colors.base300,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 14,
-    padding: 16,
-  },
-  qrCodeBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
-  },
-  qrHelpText: {
-    color: colors.primaryContent,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  accountButtons: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    paddingBottom: 18,
-    paddingTop: 8,
-    paddingHorizontal: 2,
-    overflow: 'visible',
-  },
-  accountStrip: {
-    marginBottom: 0,
-    overflow: 'visible',
-  },
-  profileAvatarWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56,
-    overflow: 'visible',
-    width: 56,
-  },
-  accountAvatar: {
-    opacity: 0.78,
-  },
-  selectedAccountAvatar: {
-    opacity: 1,
-  },
-  accountAvatarImageWrap: {
-    borderColor: colors.primary,
-    borderRadius: 28,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 56,
-    overflow: 'hidden',
-    width: 56,
-  },
-  loginMethodBadge: {
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    borderRadius: 11,
-    height: 20,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: 2,
-    top: -6,
-    width: 20,
-  },
-  addAccountButton: {
-    alignItems: 'center',
-    backgroundColor: colors.base300,
-    borderColor: colors.base200,
-    borderRadius: 28,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 56,
-    justifyContent: 'center',
-    width: 56,
-  },
-  sectionTitle: {
-    color: colors.primaryContent,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0,
-    marginBottom: 8,
-    marginTop: 10,
-    textTransform: 'uppercase',
-  },
-  menuGroup: {
-    backgroundColor: colors.base300,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  menuRow: {
-    alignItems: 'center',
-    borderBottomColor: colors.base200,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    minHeight: 58,
-    paddingHorizontal: 14,
-  },
-  menuRowLast: {
-    borderBottomWidth: 0,
-  },
-  menuIcon: {
-    alignItems: 'center',
-    height: 28,
-    justifyContent: 'center',
-    marginRight: 12,
-    width: 28,
-  },
-  menuText: {
-    flex: 1,
-  },
-  menuLabel: {
-    color: contentColor,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  meta: {
-    color: colors.primaryContent,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  input: {
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 10,
-    borderWidth: 1,
-    color: contentColor,
-    fontSize: 15,
-    minHeight: 48,
-    paddingHorizontal: 12,
-  },
-  mnemonicInput: {
-    minHeight: 96,
-    paddingTop: 12,
-    textAlignVertical: 'top',
-  },
-  segmentedControl: {
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  segmentButton: {
-    alignItems: 'center',
-    flex: 1,
-    minHeight: 42,
-    justifyContent: 'center',
-  },
-  segmentButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  segmentText: {
-    color: colors.primaryContent,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  segmentTextActive: {
-    color: '#ffffff',
-  },
-  walletFields: {
-    gap: 10,
-  },
-  derivationRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  derivationPath: {
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.primaryContent,
-    flex: 1,
-    fontSize: 13,
-    minHeight: 48,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-  },
-  indexInput: {
-    width: 86,
-  },
-  secondaryInlineAction: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    minHeight: 36,
-  },
-  secondaryInlineText: {
-    color: colors.primaryContent,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  walletKeyRow: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    marginBottom: 10,
-    minHeight: 68,
-    paddingHorizontal: 12,
-  },
-  walletKeyText: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  mintResults: {
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 8,
-    overflow: 'hidden',
-  },
-  emptySearchText: {
-    color: colors.primaryContent,
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 16,
-  },
-  mintResultRow: {
-    alignItems: 'center',
-    borderBottomColor: colors.base200,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    minHeight: 72,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  selectedMintList: {
-    gap: 10,
-  },
-  selectedMintRow: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    minHeight: 72,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  mintAvatar: {
-    alignItems: 'center',
-    backgroundColor: colors.base200,
-    borderRadius: 18,
-    height: 36,
-    justifyContent: 'center',
-    marginRight: 12,
-    overflow: 'hidden',
-    width: 36,
-  },
-  mintAvatarImage: {
-    height: 36,
-    width: 36,
-  },
-  mintAvatarText: {
-    color: colors.primaryContent,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  mintRowText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  mintStats: {
-    color: colors.primaryContent,
-    fontSize: 12,
-    marginTop: 3,
-  },
-  mintStatusDot: {
-    borderRadius: 4,
-    height: 8,
-    marginHorizontal: 10,
-    width: 8,
-  },
-  copyButton: {
-    alignItems: 'center',
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  action: {
-    alignItems: 'center',
-    borderRadius: 10,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    marginTop: 14,
-    minHeight: 48,
-  },
-  loginAction: {
-    backgroundColor: colors.primary,
-  },
-  disabledAction: {
-    backgroundColor: colors.base200,
-  },
-  warningAction: {
-    backgroundColor: colors.warning,
-  },
-  actionText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  secondaryAction: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    minHeight: 42,
-  },
-  copyConnectionRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'center',
-  },
-  secondaryActionText: {
-    color: colors.primaryContent,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  errorText: {
-    color: colors.error,
-    fontSize: 13,
-    marginTop: 8,
-  },
-  successText: {
-    color: colors.primary,
-    fontSize: 13,
-    marginTop: 8,
-  },
-  warningBox: {
-    backgroundColor: colors.base300,
-    borderColor: colors.warning,
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 12,
-  },
-  warningText: {
-    color: colors.warning,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  keySectionLabel: {
-    color: contentColor,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  privateKeyLabel: {
-    marginTop: 30,
-  },
-  keyCard: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 12,
-    minHeight: 72,
-    padding: 14,
-  },
-  keyIcon: {
-    alignItems: 'center',
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  keyValue: {
-    color: contentColor,
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  keyHelpText: {
-    color: colors.primaryContent,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 12,
-  },
-  privateWarningText: {
-    color: colors.warning,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 12,
-  },
-  themeList: {
-    gap: 10,
-    paddingBottom: 16,
-  },
-  themeRow: {
-    alignItems: 'center',
-    backgroundColor: colors.base100,
-    borderColor: colors.base200,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    minHeight: 64,
-    paddingHorizontal: 12,
-  },
-  themeRowActive: {
-    borderColor: colors.primary,
-  },
-  themeSwatches: {
-    flexDirection: 'row',
-    marginRight: 12,
-  },
-  themeSwatch: {
-    borderColor: colors.base200,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 28,
-    marginLeft: -6,
-    width: 28,
-  },
-  themeText: {
-    flex: 1,
-  },
-  themeCheck: {
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
+    modalBody: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    profileSheet: {
+      backgroundColor: colors.base100,
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 10,
+      paddingBottom: 28,
+    },
+    modalSheet: {
+      backgroundColor: colors.base300,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 28,
+    },
+    logoutSheet: {
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 28,
+    },
+    fullModalSheet: {
+      backgroundColor: colors.base300,
+      flex: 1,
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 28,
+    },
+    mintsNativeSheet: {
+      backgroundColor: colors.base300,
+      flex: 1,
+      paddingHorizontal: 18,
+      paddingBottom: 28,
+    },
+    modalHandle: {
+      alignSelf: 'center',
+      backgroundColor: colors.primaryContent,
+      borderRadius: 2,
+      height: 4,
+      marginBottom: 14,
+      width: 42,
+    },
+    modalHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 18,
+    },
+    stackTitle: {
+      color: contentColor,
+      fontSize: 22,
+      fontWeight: '800',
+    },
+    modalTitleSlot: {
+      flex: 1,
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    stackBody: {
+      color: colors.primaryContent,
+      fontSize: 15,
+      lineHeight: 22,
+      marginBottom: 16,
+    },
+    loginContent: {
+      flexGrow: 1,
+      justifyContent: 'space-between',
+      paddingHorizontal: 4,
+    },
+    loginIntro: {
+      marginBottom: 26,
+    },
+    loginTitle: {
+      color: contentColor,
+      fontSize: 30,
+      fontWeight: '800',
+      letterSpacing: -0.7,
+    },
+    loginSubtitle: {
+      color: colors.primaryContent,
+      fontSize: 15,
+      lineHeight: 22,
+      marginTop: 6,
+    },
+    loginActions: {
+      paddingBottom: 8,
+      paddingTop: 20,
+    },
+    nip46Button: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 14,
+      borderWidth: 1,
+      flexDirection: 'row',
+      minHeight: 76,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    disabledNip46Button: {
+      opacity: 0.55,
+    },
+    nip46Icon: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderRadius: 22,
+      height: 44,
+      justifyContent: 'center',
+      marginRight: 12,
+      width: 44,
+    },
+    nip46Text: {
+      flex: 1,
+    },
+    nip46TitleRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    nip46Title: {
+      color: contentColor,
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    recommendedBadge: {
+      backgroundColor: colors.base100,
+      borderColor: colors.primary,
+      borderRadius: 999,
+      borderWidth: 1,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+    },
+    recommendedText: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '800',
+    },
+    nip46Detail: {
+      color: colors.primaryContent,
+      fontSize: 13,
+      lineHeight: 18,
+      marginTop: 2,
+    },
+    loginDivider: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+      marginVertical: 22,
+    },
+    dividerLine: {
+      backgroundColor: colors.base200,
+      flex: 1,
+      height: StyleSheet.hairlineWidth,
+    },
+    dividerText: {
+      color: colors.primaryContent,
+      fontSize: 13,
+    },
+    loginFieldLabel: {
+      color: contentColor,
+      fontSize: 14,
+      fontWeight: '700',
+      marginBottom: 8,
+    },
+    loginFieldHelp: {
+      color: colors.primaryContent,
+      fontSize: 12,
+      lineHeight: 18,
+      marginTop: 7,
+    },
+    loginInput: {
+      minHeight: 54,
+      paddingHorizontal: 14,
+    },
+    loginErrorBanner: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderColor: colors.error,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 14,
+      minHeight: 64,
+      paddingLeft: 14,
+      paddingRight: 6,
+    },
+    loginErrorText: {
+      color: contentColor,
+      flex: 1,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    loginRetryButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 48,
+      minWidth: 76,
+      paddingHorizontal: 8,
+    },
+    loginRetryText: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    accountSwitch: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 5,
+      justifyContent: 'center',
+      marginTop: 12,
+      minHeight: 48,
+    },
+    accountSwitchButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 48,
+    },
+    accountSwitchText: {
+      color: colors.primaryContent,
+      fontSize: 14,
+    },
+    accountSwitchLink: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    qrPanel: {
+      alignItems: 'center',
+      backgroundColor: colors.base300,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginBottom: 14,
+      padding: 16,
+    },
+    qrCodeBox: {
+      backgroundColor: '#ffffff',
+      borderRadius: 12,
+      padding: 12,
+    },
+    qrHelpText: {
+      color: colors.primaryContent,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 12,
+      textAlign: 'center',
+    },
+    accountButtons: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+      paddingBottom: 18,
+      paddingTop: 8,
+      paddingHorizontal: 2,
+      overflow: 'visible',
+    },
+    accountStrip: {
+      marginBottom: 0,
+      overflow: 'visible',
+    },
+    profileAvatarWrap: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 56,
+      overflow: 'visible',
+      width: 56,
+    },
+    accountAvatarSurface: {
+      height: 56,
+      overflow: 'visible',
+      width: 56,
+    },
+    accountAvatarSelectedMotion: {
+      opacity: 1,
+      transform: [{scale: 1}],
+      transitionDuration: '180ms',
+      transitionProperty: ['transform', 'opacity'],
+      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    },
+    accountAvatarUnselectedMotion: {
+      opacity: 0.78,
+      transform: [{scale: 42 / 56}],
+      transitionDuration: '180ms',
+      transitionProperty: ['transform', 'opacity'],
+      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    },
+    accountAvatarSelectedReducedMotion: {
+      opacity: 1,
+      transform: [{scale: 1}],
+      transitionDuration: '120ms',
+      transitionProperty: 'opacity',
+      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    },
+    accountAvatarUnselectedReducedMotion: {
+      opacity: 0.78,
+      transform: [{scale: 1}],
+      transitionDuration: '120ms',
+      transitionProperty: 'opacity',
+      transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    },
+    accountAvatarImageWrap: {
+      borderColor: colors.primary,
+      borderRadius: 28,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 56,
+      overflow: 'hidden',
+      width: 56,
+    },
+    loginMethodBadge: {
+      alignItems: 'center',
+      backgroundColor: '#000000',
+      borderRadius: 11,
+      height: 20,
+      justifyContent: 'center',
+      position: 'absolute',
+      right: 2,
+      top: -6,
+      width: 20,
+    },
+    addAccountButton: {
+      alignItems: 'center',
+      backgroundColor: colors.base300,
+      borderColor: colors.base200,
+      borderRadius: 28,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 56,
+      justifyContent: 'center',
+      width: 56,
+    },
+    sectionTitle: {
+      color: colors.primaryContent,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0,
+      marginBottom: 8,
+      marginTop: 10,
+      textTransform: 'uppercase',
+    },
+    menuGroup: {
+      backgroundColor: colors.base300,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginBottom: 16,
+      overflow: 'hidden',
+    },
+    menuRow: {
+      alignItems: 'center',
+      borderBottomColor: colors.base200,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      minHeight: 58,
+      paddingHorizontal: 14,
+    },
+    menuRowLast: {
+      borderBottomWidth: 0,
+    },
+    menuIcon: {
+      alignItems: 'center',
+      height: 28,
+      justifyContent: 'center',
+      marginRight: 12,
+      width: 28,
+    },
+    menuText: {
+      flex: 1,
+    },
+    menuLabel: {
+      color: contentColor,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    meta: {
+      color: colors.primaryContent,
+      fontSize: 13,
+      marginTop: 2,
+    },
+    input: {
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 10,
+      borderWidth: 1,
+      color: contentColor,
+      fontSize: 15,
+      minHeight: 48,
+      paddingHorizontal: 12,
+    },
+    mnemonicInput: {
+      minHeight: 96,
+      paddingTop: 12,
+      textAlignVertical: 'top',
+    },
+    segmentedControl: {
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      marginBottom: 14,
+      overflow: 'hidden',
+    },
+    segmentButton: {
+      alignItems: 'center',
+      flex: 1,
+      minHeight: 42,
+      justifyContent: 'center',
+    },
+    segmentButtonActive: {
+      backgroundColor: colors.primary,
+    },
+    segmentText: {
+      color: colors.primaryContent,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    segmentTextActive: {
+      color: '#ffffff',
+    },
+    walletFields: {
+      gap: 10,
+    },
+    derivationRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 10,
+    },
+    derivationPath: {
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: colors.primaryContent,
+      flex: 1,
+      fontSize: 13,
+      minHeight: 48,
+      paddingHorizontal: 12,
+      paddingVertical: 14,
+    },
+    indexInput: {
+      width: 86,
+    },
+    secondaryInlineAction: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      minHeight: 36,
+    },
+    secondaryInlineText: {
+      color: colors.primaryContent,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    walletKeyRow: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      marginBottom: 10,
+      minHeight: 68,
+      paddingHorizontal: 12,
+    },
+    walletKeyText: {
+      flex: 1,
+      paddingRight: 10,
+    },
+    mintResults: {
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginTop: 8,
+      overflow: 'hidden',
+    },
+    emptySearchText: {
+      color: colors.primaryContent,
+      fontSize: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 16,
+    },
+    mintResultRow: {
+      alignItems: 'center',
+      borderBottomColor: colors.base200,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      minHeight: 72,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    selectedMintList: {
+      gap: 10,
+    },
+    selectedMintRow: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      minHeight: 72,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    mintAvatar: {
+      alignItems: 'center',
+      backgroundColor: colors.base200,
+      borderRadius: 18,
+      height: 36,
+      justifyContent: 'center',
+      marginRight: 12,
+      overflow: 'hidden',
+      width: 36,
+    },
+    mintAvatarImage: {
+      height: 36,
+      width: 36,
+    },
+    mintAvatarText: {
+      color: colors.primaryContent,
+      fontSize: 14,
+      fontWeight: '900',
+    },
+    mintRowText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    mintStats: {
+      color: colors.primaryContent,
+      fontSize: 12,
+      marginTop: 3,
+    },
+    mintStatusDot: {
+      borderRadius: 4,
+      height: 8,
+      marginHorizontal: 10,
+      width: 8,
+    },
+    copyButton: {
+      alignItems: 'center',
+      height: 42,
+      justifyContent: 'center',
+      width: 42,
+    },
+    action: {
+      alignItems: 'center',
+      borderRadius: 10,
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'center',
+      marginTop: 14,
+      minHeight: 48,
+    },
+    loginAction: {
+      backgroundColor: colors.primary,
+    },
+    disabledAction: {
+      backgroundColor: colors.base200,
+    },
+    warningAction: {
+      backgroundColor: colors.warning,
+    },
+    actionText: {
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    secondaryAction: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 12,
+      minHeight: 42,
+    },
+    copyConnectionRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 6,
+      justifyContent: 'center',
+    },
+    secondaryActionText: {
+      color: colors.primaryContent,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    errorText: {
+      color: colors.error,
+      fontSize: 13,
+      marginTop: 8,
+    },
+    successText: {
+      color: colors.primary,
+      fontSize: 13,
+      marginTop: 8,
+    },
+    warningBox: {
+      backgroundColor: colors.base300,
+      borderColor: colors.warning,
+      borderRadius: 10,
+      borderWidth: 1,
+      padding: 12,
+    },
+    warningText: {
+      color: colors.warning,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    keySectionLabel: {
+      color: contentColor,
+      fontSize: 16,
+      fontWeight: '700',
+      marginBottom: 10,
+    },
+    privateKeyLabel: {
+      marginTop: 30,
+    },
+    keyCard: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: 12,
+      minHeight: 72,
+      padding: 14,
+    },
+    keyIcon: {
+      alignItems: 'center',
+      height: 40,
+      justifyContent: 'center',
+      width: 40,
+    },
+    keyValue: {
+      color: contentColor,
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    keyHelpText: {
+      color: colors.primaryContent,
+      fontSize: 12,
+      lineHeight: 18,
+      marginTop: 12,
+    },
+    privateWarningText: {
+      color: colors.warning,
+      fontSize: 12,
+      lineHeight: 18,
+      marginTop: 12,
+    },
+    themeList: {
+      gap: 10,
+      paddingBottom: 16,
+    },
+    themeRow: {
+      alignItems: 'center',
+      backgroundColor: colors.base100,
+      borderColor: colors.base200,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      minHeight: 64,
+      paddingHorizontal: 12,
+    },
+    themeRowActive: {
+      borderColor: colors.primary,
+    },
+    themeSwatches: {
+      flexDirection: 'row',
+      marginRight: 12,
+    },
+    themeSwatch: {
+      borderColor: colors.base200,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 28,
+      marginLeft: -6,
+      width: 28,
+    },
+    themeText: {
+      flex: 1,
+    },
+    themeCheck: {
+      alignItems: 'center',
+      backgroundColor: colors.primary,
+      borderRadius: 14,
+      height: 28,
+      justifyContent: 'center',
+      width: 28,
+    },
   });
 }
 

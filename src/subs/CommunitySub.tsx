@@ -1,13 +1,13 @@
-import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {
-  Animated,
-  Easing,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
+import * as Haptics from 'expo-haptics';
 import {Image} from 'expo-image';
 import {MenuView} from '@react-native-menu/menu';
 import {useRouter} from 'expo-router';
@@ -17,7 +17,13 @@ import Reanimated, {
   type SharedValue,
   interpolate,
   useAnimatedStyle,
+  useEvent,
+  useReducedMotion,
+  useSharedValue,
 } from 'react-native-reanimated';
+import PagerView, {
+  type PagerViewOnPageSelectedEvent,
+} from 'react-native-pager-view';
 import {
   NpubLimiterPipeConfigT,
   ParsePipeConfigT,
@@ -56,7 +62,11 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Feed, FeedHeaderBlurSurface} from '../components/Feed';
 import {Note} from '../components/notes';
 import {Avatar} from '../components/notes/Avatar';
-import {eventTags, stringValue, tagValue} from '../components/notes/kindHelpers';
+import {
+  eventTags,
+  stringValue,
+  tagValue,
+} from '../components/notes/kindHelpers';
 import {
   COMMUNITY_ANCHOR_D,
   COMMUNITY_ANCHOR_KIND,
@@ -132,6 +142,7 @@ const COMMUNITY_EVENT_KINDS = [31922, 31923];
 const RSVP_KIND = 31925;
 const RSVP_LIMIT_PER_PUBKEY = 1;
 const RSVP_MAX_PUBKEYS = 1000;
+const AnimatedPagerView = Reanimated.createAnimatedComponent(PagerView);
 
 function relayLabel(url: string) {
   return normalizeRelayUrl(url)
@@ -186,8 +197,8 @@ function parseCalendarEvent(event: ParsedEvent): CommunityCalendarEvent | null {
     event.kind() === 31922
       ? Math.floor(Date.parse(`${startTag}T00:00:00`) / 1000)
       : pre
-        ? Number(pre.starts())
-        : Number(startTag);
+      ? Number(pre.starts())
+      : Number(startTag);
   if (!id || !d || !start || start < Math.floor(Date.now() / 1000)) return null;
   const participants = pre ? fbArray(pre, 'participants') : [];
   const currentParticipants = Number(pre?.currentParticipants?.() ?? 0);
@@ -215,7 +226,10 @@ function parseCalendarEvent(event: ParsedEvent): CommunityCalendarEvent | null {
   };
 }
 
-function parseRsvp(event: ParsedEvent, addresses: Set<string>): CommunityRsvp | null {
+function parseRsvp(
+  event: ParsedEvent,
+  addresses: Set<string>,
+): CommunityRsvp | null {
   if (event.kind() !== RSVP_KIND) return null;
   const pubkey = event.pubkey();
   if (!pubkey) return null;
@@ -225,7 +239,11 @@ function parseRsvp(event: ParsedEvent, addresses: Set<string>): CommunityRsvp | 
   const address = tagValue(tags, 'a');
   const status = stringValue(pre?.status()) || tagValue(tags, 'status');
   if (!address || !addresses.has(address)) return null;
-  if (status !== 'accepted' && status !== 'declined' && status !== 'tentative') {
+  if (
+    status !== 'accepted' &&
+    status !== 'declined' &&
+    status !== 'tentative'
+  ) {
     return null;
   }
 
@@ -251,7 +269,8 @@ function summarizeRsvps(
     accepted: acceptedPubkeys.length,
     acceptedPubkeys,
     declined: latestByPubkey.filter(rsvp => rsvp.status === 'declined').length,
-    tentative: latestByPubkey.filter(rsvp => rsvp.status === 'tentative').length,
+    tentative: latestByPubkey.filter(rsvp => rsvp.status === 'tentative')
+      .length,
   };
 }
 
@@ -301,8 +320,7 @@ function EventCard({
   rsvpSummary: CommunityRsvpSummary;
 }) {
   const theme = useAppTheme();
-  const navigation =
-    useNavigation<AppNavigationProp>();
+  const navigation = useNavigation<AppNavigationProp>();
   const goingCount = rsvpSummary.accepted || event.attendeeCount;
   const acceptedPubkeys = rsvpSummary.acceptedPubkeys.slice(0, 3);
   const spotsLeft = event.capacity
@@ -343,14 +361,23 @@ function EventCard({
       </View>
 
       <View className="min-h-[116px] p-3">
-        <Text className="text-base font-bold text-base-content" numberOfLines={1}>
+        <Text
+          className="text-base font-bold text-base-content"
+          numberOfLines={1}
+        >
           {event.title}
         </Text>
-        <Text className="mt-2 text-sm font-medium text-primary-content" numberOfLines={1}>
+        <Text
+          className="mt-2 text-sm font-medium text-primary-content"
+          numberOfLines={1}
+        >
           {formatEventTime(event.start)}
         </Text>
         {event.location ? (
-          <Text className="mt-1 text-sm font-medium text-primary-content" numberOfLines={1}>
+          <Text
+            className="mt-1 text-sm font-medium text-primary-content"
+            numberOfLines={1}
+          >
             {event.location}
           </Text>
         ) : null}
@@ -409,10 +436,7 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
   scrollY: SharedValue<number>;
 }) {
   const theme = useAppTheme();
-  const heroExitOffset = Math.max(
-    1,
-    COMMUNITY_HERO_HEIGHT + safeAreaTop - 64,
-  );
+  const heroExitOffset = Math.max(1, COMMUNITY_HERO_HEIGHT + safeAreaTop - 64);
   const surfaceStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
       scrollY.value,
@@ -433,7 +457,8 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
   return (
     <Reanimated.View
       className="flex-row items-center justify-between px-4"
-      style={{height: 64 + safeAreaTop, paddingTop: safeAreaTop}}>
+      style={{height: 64 + safeAreaTop, paddingTop: safeAreaTop}}
+    >
       <Reanimated.View
         className="absolute inset-0 border-b"
         pointerEvents="none"
@@ -450,16 +475,19 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
         accessibilityLabel="Close community"
         className="h-10 w-10 items-center justify-center rounded-full bg-base-300/80"
         hitSlop={12}
-        onPress={onClose}>
+        onPress={onClose}
+      >
         <ChevronLeft size={22} color={theme.colors.primaryContent} />
       </Pressable>
       <Reanimated.View
         className="min-w-0 flex-1 items-center px-3"
         pointerEvents="none"
-        style={titleStyle}>
+        style={titleStyle}
+      >
         <Text
           className="text-base font-semibold text-base-content"
-          numberOfLines={1}>
+          numberOfLines={1}
+        >
           {name}
         </Text>
       </Reanimated.View>
@@ -470,49 +498,42 @@ const CommunityMotionHeader = memo(function CommunityMotionHeader({
   );
 });
 function CommunityTabs({
+  pageProgress,
   selectedId,
   onSelect,
 }: {
+  pageProgress: SharedValue<number>;
   selectedId: CommunityKindFilterId;
   onSelect: (id: CommunityKindFilterId) => void;
 }) {
   const [tabWidth, setTabWidth] = useState(0);
-  const underlineX = useRef(new Animated.Value(0)).current;
-  const selectedIndex = Math.max(
-    0,
-    COMMUNITY_TABS.findIndex(tab => tab.id === selectedId),
-  );
-
-  useEffect(() => {
-    if (!tabWidth) return;
-    Animated.timing(underlineX, {
-      toValue: selectedIndex * tabWidth,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [selectedIndex, tabWidth, underlineX]);
+  const underlineStyle = useAnimatedStyle(() => ({
+    transform: [{translateX: pageProgress.get() * tabWidth}],
+  }));
 
   return (
     <View
       className="relative flex-row"
       onLayout={event => {
-        const nextWidth = event.nativeEvent.layout.width / COMMUNITY_TABS.length;
+        const nextWidth =
+          event.nativeEvent.layout.width / COMMUNITY_TABS.length;
         setTabWidth(current =>
           Math.abs(current - nextWidth) < 0.5 ? current : nextWidth,
         );
       }}
     >
-      <Animated.View
+      <Reanimated.View
         className="absolute -bottom-2 left-0 h-0.5 rounded-full bg-primary"
-        style={{width: tabWidth, transform: [{translateX: underlineX}]}}
+        style={[{width: tabWidth}, underlineStyle]}
       />
       {COMMUNITY_TABS.map(tab => {
         const selected = tab.id === selectedId;
         return (
           <Pressable
             key={tab.id}
-            accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
+            accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${
+              tab.label
+            }`}
             accessibilityState={{selected}}
             className="h-10 flex-1 items-center justify-center"
             onPress={() => {
@@ -538,6 +559,7 @@ const CommunityHeader = memo(function CommunityHeader({
   description,
   icon,
   name,
+  pageProgress,
   relationship,
   relay,
   selectedTab,
@@ -549,6 +571,7 @@ const CommunityHeader = memo(function CommunityHeader({
   description: string;
   icon?: string;
   name: string;
+  pageProgress: SharedValue<number>;
   relationship?: 'follow' | 'belong';
   relay: string;
   selectedTab: CommunityKindFilterId;
@@ -577,11 +600,13 @@ const CommunityHeader = memo(function CommunityHeader({
 
       <View className="-mt-10 px-4 pb-4">
         <View className="flex-row items-end justify-between gap-3">
-          <View
-            className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-white bg-base-200"
-          >
+          <View className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-white bg-base-200">
             {icon ? (
-              <Image source={{uri: icon}} style={styles.image} contentFit="cover" />
+              <Image
+                source={{uri: icon}}
+                style={styles.image}
+                contentFit="cover"
+              />
             ) : (
               <RadioTower size={38} color={theme.colors.primaryContent} />
             )}
@@ -610,10 +635,16 @@ const CommunityHeader = memo(function CommunityHeader({
           </MenuView>
         </View>
 
-        <Text className="mt-4 text-3xl font-bold text-base-content" numberOfLines={2}>
+        <Text
+          className="mt-4 text-3xl font-bold text-base-content"
+          numberOfLines={2}
+        >
           {name}
         </Text>
-        <Text className="mt-1 text-base font-medium text-primary-content" numberOfLines={1}>
+        <Text
+          className="mt-1 text-base font-medium text-primary-content"
+          numberOfLines={1}
+        >
           Public community · {relayLabel(relay)}
         </Text>
         <Text className="mt-5 text-base leading-6 text-primary-content">
@@ -630,7 +661,9 @@ const CommunityHeader = memo(function CommunityHeader({
           </Pressable>
           <Pressable className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-lg bg-base-200">
             <UserPlus size={20} color={theme.colors.primary} />
-            <Text className="text-base font-bold text-base-content">Invite</Text>
+            <Text className="text-base font-bold text-base-content">
+              Invite
+            </Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -688,7 +721,11 @@ const CommunityHeader = memo(function CommunityHeader({
             Recent activity
           </Text>
           <View className="mt-3">
-            <CommunityTabs selectedId={selectedTab} onSelect={onSelectTab} />
+            <CommunityTabs
+              pageProgress={pageProgress}
+              selectedId={selectedTab}
+              onSelect={onSelectTab}
+            />
           </View>
         </View>
       </View>
@@ -710,23 +747,20 @@ export function CommunitySub({
   const relayInfo = relayInfos[normalizedRelay]?.info;
   const setRelayStatus = useRelayStore(state => state.setRelayStatus);
   const setSubRelays = useRelayStore(state => state.setSubRelays);
-  const [selectedTab, setSelectedTab] = useState<CommunityKindFilterId>('notes');
-  const [items, setItems] = useState<ParsedEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [emptyTimedOut, setEmptyTimedOut] = useState(false);
-  const itemsRef = useRef<ParsedEvent[]>([]);
-  const seenIdsRef = useRef(new Set<string>());
-  const flushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
+  const [selectedTab, setSelectedTab] =
+    useState<CommunityKindFilterId>('notes');
+  const pagerRef = useRef<PagerView>(null);
+  const pageProgress = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
   const eventUnsubscribeRef = useRef<(() => void) | null>(null);
   const rsvpUnsubscribeRef = useRef<(() => void)[]>([]);
   const rsvpsRef = useRef<Record<string, Record<string, CommunityRsvp>>>({});
   const [rsvpsByAddress, setRsvpsByAddress] = useState<
     Record<string, Record<string, CommunityRsvp>>
   >({});
-  const [upcomingEvents, setUpcomingEvents] = useState<CommunityCalendarEvent[]>(
-    [],
-  );
+  const [upcomingEvents, setUpcomingEvents] = useState<
+    CommunityCalendarEvent[]
+  >([]);
   const [communityType, setCommunityType] = useState<CommunityType | undefined>(
     undefined,
   );
@@ -734,11 +768,6 @@ export function CommunitySub({
     CommunityAnchor | undefined
   >(undefined);
   const communityAnchorRef = useRef<CommunityAnchor | undefined>(undefined);
-  const requestKinds = useMemo(
-    () => COMMUNITY_TABS.find(tab => tab.id === selectedTab)?.kinds ?? [1, 6],
-    [selectedTab],
-  );
-  const requestKindSet = useMemo(() => new Set<number>(requestKinds), [requestKinds]);
   const name =
     nameParam ||
     communityAnchor?.name ||
@@ -750,6 +779,41 @@ export function CommunitySub({
     relayInfo?.description ||
     '';
   const icon = iconParam || communityAnchor?.image || relayInfo?.icon;
+  const handlePageScroll = useEvent<{offset: number; position: number}>(
+    event => {
+      'worklet';
+      pageProgress.set(event.position + event.offset);
+    },
+    ['onPageScroll'],
+  );
+  const handlePageSelected = useCallback(
+    (event: PagerViewOnPageSelectedEvent) => {
+      const tab = COMMUNITY_TABS[event.nativeEvent.position];
+      if (!tab || tab.id === selectedTab) return;
+      setSelectedTab(tab.id);
+      Haptics.selectionAsync().catch(() => {});
+    },
+    [selectedTab],
+  );
+  const handleSelectTab = useCallback(
+    (id: CommunityKindFilterId) => {
+      const index = COMMUNITY_TABS.findIndex(tab => tab.id === id);
+      if (index < 0 || id === selectedTab) return;
+      if (reducedMotion) {
+        pageProgress.set(index);
+        pagerRef.current?.setPageWithoutAnimation(index);
+      } else {
+        pagerRef.current?.setPage(index);
+      }
+    },
+    [pageProgress, reducedMotion, selectedTab],
+  );
+
+  useEffect(() => {
+    setSelectedTab('notes');
+    pageProgress.set(0);
+    pagerRef.current?.setPageWithoutAnimation(0);
+  }, [normalizedRelay, pageProgress]);
 
   useEffect(() => {
     fetchRelayInfosForRelays([normalizedRelay]);
@@ -814,101 +878,6 @@ export function CommunitySub({
     rsvpUnsubscribeRef.current = [];
   }, [normalizedRelay]);
 
-  const addItem = useCallback((event: ParsedEvent): boolean => {
-    if (!shouldShowCommunityPost(event)) return false;
-    const id = event.id();
-    if (!id || seenIdsRef.current.has(id)) return false;
-    seenIdsRef.current.add(id);
-    itemsRef.current.push(event);
-    if (flushRef.current) return true;
-    flushRef.current = requestAnimationFrame(() => {
-      flushRef.current = null;
-      itemsRef.current.sort((left, right) => right.createdAt() - left.createdAt());
-      setItems([...itemsRef.current]);
-    });
-    return true;
-  }, []);
-
-  useEffect(() => {
-    itemsRef.current = [];
-    seenIdsRef.current.clear();
-    setItems([]);
-    setEmptyTimedOut(false);
-  }, [normalizedRelay, selectedTab]);
-
-  useEffect(() => {
-    if (!visible || !normalizedRelay) return undefined;
-
-    const subId = `community_nocache_${relayHash(normalizedRelay)}_${requestKinds.join('-')}`;
-    setLoading(true);
-    setSubRelays(subId, [normalizedRelay]);
-    setRelayStatus(normalizedRelay, 'SUBSCRIBED');
-    feedSubscriptionRef.current?.close();
-    setEmptyTimedOut(false);
-    feedSubscriptionRef.current = createPaginatedSubscription({
-      subId,
-      requests: [
-        {
-          kinds: requestKinds,
-          limit: 50,
-          noCache: true,
-          relays: [normalizedRelay],
-        },
-      ],
-      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
-      maxEmptyPages: 3,
-      rootTimeoutMs: COMMUNITY_EMPTY_TIMEOUT_MS,
-      initialLoading: itemsRef.current.length === 0,
-      onMessage: message => {
-        const status = asConnectionStatus(message);
-        if (status) {
-          const relayUrl = status.relayUrl();
-          const relayStatus = status.status()?.toString();
-          if (relayUrl && relayStatus) {
-            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
-          }
-          return undefined;
-        }
-
-        const event = asParsedEvent(message);
-        if (!event || !requestKindSet.has(event.kind())) return undefined;
-        if (!addItem(event)) return undefined;
-        setEmptyTimedOut(false);
-        return event.createdAt();
-      },
-      onStateChange: state => {
-        setLoading(state.loading);
-        if (!state.loading && !itemsRef.current.length) {
-          setEmptyTimedOut(true);
-        }
-      },
-      options: {bytesPerEvent: 10 * 1024},
-    });
-    feedSubscriptionRef.current.start();
-
-    return () => {
-      feedSubscriptionRef.current?.close();
-      feedSubscriptionRef.current = null;
-      if (flushRef.current) {
-        cancelAnimationFrame(flushRef.current);
-        flushRef.current = null;
-      }
-    };
-  }, [
-    addItem,
-    normalizedRelay,
-    requestKindSet,
-    requestKinds,
-    setRelayStatus,
-    setSubRelays,
-    visible,
-  ]);
-
-  const handleNearBottom = useCallback(() => {
-    if (loading || !itemsRef.current.length) return;
-    feedSubscriptionRef.current?.loadMore();
-  }, [loading]);
-
   useEffect(() => {
     if (!visible || !normalizedRelay) return undefined;
 
@@ -943,7 +912,9 @@ export function CommunitySub({
         event.relays = [normalizedRelay];
         events.set(event.id, event);
         setUpcomingEvents(
-          Array.from(events.values()).sort((left, right) => left.start - right.start),
+          Array.from(events.values()).sort(
+            (left, right) => left.start - right.start,
+          ),
         );
       },
       {bytesPerEvent: 8 * 1024},
@@ -962,12 +933,15 @@ export function CommunitySub({
   const eventAddressKey = eventAddresses.join('|');
 
   useEffect(() => {
-    if (!visible || !normalizedRelay || !eventAddresses.length) return undefined;
+    if (!visible || !normalizedRelay || !eventAddresses.length)
+      return undefined;
 
     rsvpUnsubscribeRef.current.forEach(unsubscribe => unsubscribe());
     rsvpUnsubscribeRef.current = eventAddresses.map(address => {
       const addresses = new Set([address]);
-      const subId = `community_rsvps_nocache_${relayHash(normalizedRelay)}_${relayHash(address)}`;
+      const subId = `community_rsvps_nocache_${relayHash(
+        normalizedRelay,
+      )}_${relayHash(address)}`;
       setSubRelays(subId, [normalizedRelay]);
 
       return subscribeUntilEose(
@@ -1028,6 +1002,188 @@ export function CommunitySub({
     visible,
   ]);
 
+  return (
+    <AnimatedPagerView
+      ref={pagerRef}
+      initialPage={0}
+      offscreenPageLimit={COMMUNITY_TABS.length - 1}
+      overScrollMode="never"
+      scrollEnabled={visible}
+      style={styles.pager}
+      onPageScroll={handlePageScroll as never}
+      onPageSelected={handlePageSelected}
+    >
+      {COMMUNITY_TABS.map(tab => (
+        <View
+          key={tab.id}
+          collapsable={false}
+          style={styles.page}
+          testID={`community-page-${tab.id}`}
+        >
+          <CommunityFeedSurface
+            active={visible && selectedTab === tab.id}
+            communityType={communityType}
+            description={description}
+            icon={icon}
+            name={name}
+            onClose={onClose}
+            onSelectTab={handleSelectTab}
+            pageProgress={pageProgress}
+            relationship={relationship}
+            relay={normalizedRelay}
+            rsvpsByAddress={rsvpsByAddress}
+            selectedTab={selectedTab}
+            tab={tab}
+            upcomingEvents={upcomingEvents}
+          />
+        </View>
+      ))}
+    </AnimatedPagerView>
+  );
+}
+
+const CommunityFeedSurface = memo(function CommunityFeedSurface({
+  active,
+  communityType,
+  description,
+  icon,
+  name,
+  onClose,
+  onSelectTab,
+  pageProgress,
+  relationship,
+  relay,
+  rsvpsByAddress,
+  selectedTab,
+  tab,
+  upcomingEvents,
+}: {
+  active: boolean;
+  communityType?: CommunityType;
+  description: string;
+  icon?: string;
+  name: string;
+  onClose: () => void;
+  onSelectTab: (id: CommunityKindFilterId) => void;
+  pageProgress: SharedValue<number>;
+  relationship?: 'follow' | 'belong';
+  relay: string;
+  rsvpsByAddress: Record<string, Record<string, CommunityRsvp>>;
+  selectedTab: CommunityKindFilterId;
+  tab: CommunityTab;
+  upcomingEvents: CommunityCalendarEvent[];
+}) {
+  const setRelayStatus = useRelayStore(state => state.setRelayStatus);
+  const setSubRelays = useRelayStore(state => state.setSubRelays);
+  const [items, setItems] = useState<ParsedEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [emptyTimedOut, setEmptyTimedOut] = useState(false);
+  const itemsRef = useRef<ParsedEvent[]>([]);
+  const seenIdsRef = useRef(new Set<string>());
+  const flushRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(
+    null,
+  );
+  const feedSubscriptionRef = useRef<PaginatedSubscription | null>(null);
+  const requestKindSet = useMemo(() => new Set<number>(tab.kinds), [tab.kinds]);
+
+  const addItem = useCallback((event: ParsedEvent): boolean => {
+    if (!shouldShowCommunityPost(event)) return false;
+    const id = event.id();
+    if (!id || seenIdsRef.current.has(id)) return false;
+    seenIdsRef.current.add(id);
+    itemsRef.current.push(event);
+    if (flushRef.current) return true;
+    flushRef.current = requestAnimationFrame(() => {
+      flushRef.current = null;
+      itemsRef.current.sort(
+        (left, right) => right.createdAt() - left.createdAt(),
+      );
+      setItems([...itemsRef.current]);
+    });
+    return true;
+  }, []);
+
+  useEffect(() => {
+    itemsRef.current = [];
+    seenIdsRef.current.clear();
+    setItems([]);
+    setEmptyTimedOut(false);
+  }, [relay, tab.id]);
+
+  useEffect(() => {
+    if (!active || !relay) return undefined;
+
+    const subId = `community_nocache_${relayHash(relay)}_${tab.kinds.join(
+      '-',
+    )}`;
+    setLoading(true);
+    setSubRelays(subId, [relay]);
+    setRelayStatus(relay, 'SUBSCRIBED');
+    feedSubscriptionRef.current?.close();
+    setEmptyTimedOut(false);
+    feedSubscriptionRef.current = createPaginatedSubscription({
+      subId,
+      requests: [
+        {
+          kinds: tab.kinds,
+          limit: 50,
+          noCache: true,
+          relays: [relay],
+        },
+      ],
+      windowSeconds: FEED_PAGE_WINDOW_SECONDS,
+      maxEmptyPages: 3,
+      rootTimeoutMs: COMMUNITY_EMPTY_TIMEOUT_MS,
+      initialLoading: itemsRef.current.length === 0,
+      onMessage: message => {
+        const status = asConnectionStatus(message);
+        if (status) {
+          const relayUrl = status.relayUrl();
+          const relayStatus = status.status()?.toString();
+          if (relayUrl && relayStatus) {
+            setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+          }
+          return undefined;
+        }
+
+        const event = asParsedEvent(message);
+        if (!event || !requestKindSet.has(event.kind())) return undefined;
+        if (!addItem(event)) return undefined;
+        setEmptyTimedOut(false);
+        return event.createdAt();
+      },
+      onStateChange: state => {
+        setLoading(state.loading);
+        if (!state.loading && !itemsRef.current.length) {
+          setEmptyTimedOut(true);
+        }
+      },
+      options: {bytesPerEvent: 10 * 1024},
+    });
+    feedSubscriptionRef.current.start();
+
+    return () => {
+      feedSubscriptionRef.current?.close();
+      feedSubscriptionRef.current = null;
+      if (flushRef.current) {
+        cancelAnimationFrame(flushRef.current);
+        flushRef.current = null;
+      }
+    };
+  }, [
+    active,
+    addItem,
+    relay,
+    requestKindSet,
+    setRelayStatus,
+    setSubRelays,
+    tab.kinds,
+  ]);
+
+  const handleNearBottom = useCallback(() => {
+    if (loading || !itemsRef.current.length) return;
+    feedSubscriptionRef.current?.loadMore();
+  }, [loading]);
   const header = useCallback(
     () => (
       <CommunityHeader
@@ -1035,11 +1191,12 @@ export function CommunitySub({
         description={description}
         icon={icon}
         name={name}
+        pageProgress={pageProgress}
         relationship={relationship}
-        relay={normalizedRelay}
+        relay={relay}
         rsvpsByAddress={rsvpsByAddress}
         selectedTab={selectedTab}
-        onSelectTab={setSelectedTab}
+        onSelectTab={onSelectTab}
         upcomingEvents={upcomingEvents}
       />
     ),
@@ -1048,8 +1205,10 @@ export function CommunitySub({
       description,
       icon,
       name,
-      normalizedRelay,
+      onSelectTab,
+      pageProgress,
       relationship,
+      relay,
       rsvpsByAddress,
       selectedTab,
       upcomingEvents,
@@ -1073,10 +1232,10 @@ export function CommunitySub({
     [name, onClose],
   );
   const renderItem = useCallback(
-    ({item, visible: itemVisible}: {item: ParsedEvent; visible: boolean}) => (
-      <Note note={item} visible={visible && itemVisible} />
+    ({item, visible}: {item: ParsedEvent; visible: boolean}) => (
+      <Note note={item} visible={active && visible} />
     ),
-    [visible],
+    [active],
   );
   const getItemId = useCallback(
     (item: ParsedEvent) => item.id() || item.createdAt(),
@@ -1085,7 +1244,9 @@ export function CommunitySub({
   const empty = (
     <View className="px-6 py-16">
       <Text className="text-center text-base font-semibold text-primary-content">
-        {emptyTimedOut ? 'No community posts yet.' : 'Loading community posts...'}
+        {emptyTimedOut
+          ? 'No community posts yet.'
+          : 'Loading community posts...'}
       </Text>
     </View>
   );
@@ -1103,13 +1264,13 @@ export function CommunitySub({
       renderItem={renderItem}
       loading={loading}
       onNearBottom={handleNearBottom}
-      visible={visible}
+      visible={active}
       removeClippedSubviews={false}
       empty={empty}
       contentContainerClassName="pb-28"
     />
   );
-}
+});
 
 const styles = StyleSheet.create({
   hero: {
@@ -1118,5 +1279,11 @@ const styles = StyleSheet.create({
   image: {
     height: '100%',
     width: '100%',
+  },
+  page: {
+    flex: 1,
+  },
+  pager: {
+    flex: 1,
   },
 });

@@ -34,6 +34,7 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
   Extrapolation,
+  ReduceMotion,
   type SharedValue,
   interpolate,
   useAnimatedRef,
@@ -265,11 +266,7 @@ function getRefreshControlColor(theme: ReturnType<typeof useAppTheme>) {
   return isDarkHex(theme.colors.base100) ? '#ffffff' : theme.colors.primary;
 }
 
-export function FeedHeaderBlurSurface({
-  surfaceColor,
-}: {
-  surfaceColor: string;
-}) {
+export function FeedHeaderBlurSurface({surfaceColor}: {surfaceColor: string}) {
   if (surfaceColor === 'transparent') return null;
 
   return (
@@ -316,11 +313,7 @@ export function FeedSticky({children}: {children: ReactNode}) {
     };
   }, [progress, progressThreshold]);
 
-  return (
-    <Animated.View style={stickyStyle}>
-      {children}
-    </Animated.View>
-  );
+  return <Animated.View style={stickyStyle}>{children}</Animated.View>;
 }
 
 /**
@@ -421,8 +414,7 @@ function MotionHeader({
     return {
       transform: [
         {
-          translateY:
-            -progress.get() * collapseDistance - directionalOffset,
+          translateY: -progress.get() * collapseDistance - directionalOffset,
         },
       ],
       zIndex: 30,
@@ -432,11 +424,8 @@ function MotionHeader({
   return (
     <HeaderMotion.Header
       onLayout={handleLayout}
-      style={[
-        styles.motionHeaderSurface,
-        {paddingTop},
-        headerStyle,
-      ]}>
+      style={[styles.motionHeaderSurface, {paddingTop}, headerStyle]}
+    >
       <FeedHeaderBlurSurface surfaceColor={surfaceColor} />
       {onPress ? (
         <Pressable
@@ -524,7 +513,6 @@ export function Feed<T>({
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
-  const lastStickyOffsetRef = useRef(0);
   const scrollViewportHeightRef = useRef(0);
   const scrollContentHeightRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
@@ -538,6 +526,14 @@ export function Feed<T>({
   const stickyHeight = useSharedValue(88);
   const footerVisible = useSharedValue(1);
   const scrollY = useSharedValue(0);
+  const animatedStart = useSharedValue(0);
+  const animatedDown = useSharedValue(true);
+  const animatedNearTop = useSharedValue(true);
+  const animatedLastDirectionOffset = useSharedValue(0);
+  const animatedLastStickyOffset = useSharedValue(0);
+  const animatedViewportHeight = useSharedValue(0);
+  const animatedContentHeight = useSharedValue(0);
+  const animatedNearBottomTriggered = useSharedValue(false);
   const topInset = getFeedTopInset(insets.top);
   const refreshInset = headerSafeArea ? topInset : 0;
   const headerSafeAreaTop = headerSafeArea ? topInset : 0;
@@ -545,10 +541,7 @@ export function Feed<T>({
   const innerHeaderSafeAreaTop = headerOwnsSafeArea ? headerSafeAreaTop : 0;
   const refreshColor = getRefreshControlColor(theme);
   const usesMotionHeader = Boolean(motionHeader || motionScrollId);
-  const listItems = useMemo(
-    () => items,
-    [items],
-  );
+  const listItems = useMemo(() => items, [items]);
   const virtualRows = useMemo<FeedVirtualRow<T>[]>(() => {
     const columns = Math.max(1, numColumns);
     const rows: FeedVirtualRow<T>[] = [];
@@ -606,13 +599,16 @@ export function Feed<T>({
     }
   }, [bottom, listRef]);
 
-  const scrollToBottom = useCallback((animated: boolean) => {
-    if (bottom) {
-      bottomListRef.current?.scrollToOffset({offset: 0, animated});
-    } else {
-      listRef.current?.scrollToEnd({animated});
-    }
-  }, [bottom, listRef]);
+  const scrollToBottom = useCallback(
+    (animated: boolean) => {
+      if (bottom) {
+        bottomListRef.current?.scrollToOffset({offset: 0, animated});
+      } else {
+        listRef.current?.scrollToEnd({animated});
+      }
+    },
+    [bottom, listRef],
+  );
 
   const chromeProps = useMemo(
     () => ({
@@ -645,9 +641,10 @@ export function Feed<T>({
   useEffect(() => {
     if (start === 0 || items.length < lastItemsLengthRef.current) {
       nearBottomTriggeredRef.current = false;
+      animatedNearBottomTriggered.set(false);
     }
     lastItemsLengthRef.current = items.length;
-  }, [items.length, start]);
+  }, [animatedNearBottomTriggered, items.length, start]);
 
   useEffect(() => {
     if (!bottom) return;
@@ -669,23 +666,39 @@ export function Feed<T>({
 
   useEffect(() => {
     if (resetScrollKey === undefined || bottom) return;
-    stickyReveal.value = 0;
+    stickyReveal.set(0);
+    animatedLastDirectionOffset.set(0);
+    animatedLastStickyOffset.set(0);
     requestAnimationFrame(() => {
       listRef.current?.scrollTo({y: 0, animated: false});
-      lastOffsetRef.current = 0;
       setDown(true);
     });
-  }, [bottom, listRef, resetScrollKey, stickyReveal]);
+  }, [
+    animatedLastDirectionOffset,
+    animatedLastStickyOffset,
+    bottom,
+    listRef,
+    resetScrollKey,
+    stickyReveal,
+  ]);
 
   useEffect(() => {
     if (scrollToTopKey === undefined) return;
-    stickyReveal.value = 0;
+    stickyReveal.set(0);
+    animatedLastDirectionOffset.set(0);
+    animatedLastStickyOffset.set(0);
     requestAnimationFrame(() => {
       scrollToTop();
       lastOffsetRef.current = 0;
       setDown(true);
     });
-  }, [scrollToTop, scrollToTopKey, stickyReveal]);
+  }, [
+    animatedLastDirectionOffset,
+    animatedLastStickyOffset,
+    scrollToTop,
+    scrollToTopKey,
+    stickyReveal,
+  ]);
 
   useEffect(() => {
     if (scrollToBottomKey === undefined) return;
@@ -704,31 +717,97 @@ export function Feed<T>({
     onViewportStateChange?.({start, down});
   }, [down, onViewportStateChange, start]);
 
-  useEffect(() => {
-    if (nearTop || start < 1) {
-      stickyReveal.value = withTiming(0, {duration: 220});
-    }
-    footerVisible.value = withTiming(
-      bottom || stickyFooterVisible || !down || start < 1 ? 1 : 0,
-      {duration: 220},
-    );
-  }, [bottom, down, footerVisible, nearTop, start, stickyFooterVisible, stickyReveal]);
+  const syncAnimatedViewportState = useCallback(
+    (nextStart: number, nextDown: boolean, nextNearTop: boolean) => {
+      setStart(current => (current === nextStart ? current : nextStart));
+      setDown(current => (current === nextDown ? current : nextDown));
+      setNearTop(current => (current === nextNearTop ? current : nextNearTop));
+    },
+    [],
+  );
 
-  const stickyHeaderStyle = useAnimatedStyle(() => ({
-    opacity: stickyReveal.value,
-    backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base300,
-    paddingTop: outerHeaderSafeAreaTop,
-    transform: [{translateY: (stickyReveal.value - 1) * stickyHeight.value}],
-  }), [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base300]);
+  useAnimatedReaction(
+    () => ({
+      start: animatedStart.get(),
+      down: animatedDown.get(),
+      nearTop: animatedNearTop.get(),
+    }),
+    (current, previous) => {
+      if (
+        previous &&
+        current.start === previous.start &&
+        current.down === previous.down &&
+        current.nearTop === previous.nearTop
+      ) {
+        return;
+      }
 
-  const handleStickyLayout = useCallback((event: LayoutChangeEvent) => {
-    stickyHeight.value = event.nativeEvent.layout.height;
-  }, [stickyHeight]);
+      scheduleOnRN(
+        syncAnimatedViewportState,
+        current.start,
+        current.down,
+        current.nearTop,
+      );
+    },
+    [animatedDown, animatedNearTop, animatedStart, syncAnimatedViewportState],
+  );
+
+  useAnimatedReaction(
+    () => ({
+      down: animatedDown.get(),
+      nearTop: animatedNearTop.get(),
+      start: animatedStart.get(),
+    }),
+    current => {
+      if (current.nearTop || current.start < 1) {
+        stickyReveal.set(
+          withTiming(0, {
+            duration: 220,
+            reduceMotion: ReduceMotion.System,
+          }),
+        );
+      }
+      footerVisible.set(
+        withTiming(
+          bottom || stickyFooterVisible || !current.down || current.start < 1
+            ? 1
+            : 0,
+          {duration: 220, reduceMotion: ReduceMotion.System},
+        ),
+      );
+    },
+    [
+      animatedDown,
+      animatedNearTop,
+      animatedStart,
+      bottom,
+      footerVisible,
+      stickyFooterVisible,
+      stickyReveal,
+    ],
+  );
+
+  const stickyHeaderStyle = useAnimatedStyle(
+    () => ({
+      opacity: stickyReveal.get(),
+      backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base300,
+      paddingTop: outerHeaderSafeAreaTop,
+      transform: [{translateY: (stickyReveal.get() - 1) * stickyHeight.get()}],
+    }),
+    [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base300],
+  );
+
+  const handleStickyLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      stickyHeight.set(event.nativeEvent.layout.height);
+    },
+    [stickyHeight],
+  );
 
   const stickyFooterStyle = useAnimatedStyle(() => ({
-    opacity: footerVisible.value,
+    opacity: footerVisible.get(),
     paddingBottom: insets.bottom,
-    transform: [{translateY: (1 - footerVisible.value) * (88 + insets.bottom)}],
+    transform: [{translateY: (1 - footerVisible.get()) * (88 + insets.bottom)}],
   }));
 
   const handleViewableItemsChanged = useCallback(
@@ -763,75 +842,165 @@ export function Feed<T>({
     [items.length, nearBottomThreshold],
   );
 
-  const maybeTriggerNearBottom = useCallback((distance: number, offset: number) => {
-    if (
-      !onNearBottom ||
-      items.length === 0 ||
-      offset <= 0 ||
-      distance > nearBottomThreshold ||
-      nearBottomTriggeredRef.current
-    ) {
-      return;
-    }
-    nearBottomTriggeredRef.current = true;
-    onNearBottom({distance: Math.max(0, distance)});
-  }, [items.length, nearBottomThreshold, onNearBottom]);
-
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
-    const offset = contentOffset.y;
-    scrollY.set(offset);
-    scrollViewportHeightRef.current = layoutMeasurement.height;
-    scrollContentHeightRef.current = contentSize.height;
-    setStart(offset >= 1 ? 1 : 0);
-    setNearTop(offset < STICKY_HEADER_HIDE_OFFSET);
-    const stickyDelta = offset - lastStickyOffsetRef.current;
-    lastStickyOffsetRef.current = offset;
-    if (offset <= STICKY_HEADER_HIDE_OFFSET + stickyHeight.value) {
-      stickyReveal.value = 0;
-    } else {
-      stickyReveal.value = Math.min(
-        1,
-        Math.max(0, stickyReveal.value - stickyDelta / stickyHeight.value),
-      );
-    }
-    const distanceFromBottom = Math.max(
-      0,
-      contentSize.height - layoutMeasurement.height - offset,
-    );
-    if (offset <= 0 || distanceFromBottom > nearBottomThreshold) {
-      nearBottomTriggeredRef.current = false;
-    }
-    maybeTriggerNearBottom(distanceFromBottom, offset);
-    const delta = offset - lastOffsetRef.current;
-    if (Math.abs(delta) > 4) {
-      setDown(delta > 0);
-      lastOffsetRef.current = offset;
-    }
-  }, [maybeTriggerNearBottom, nearBottomThreshold, scrollY, stickyHeight, stickyReveal]);
-  const forwardScrollToReact = useAnimatedScrollHandler(
-    event => {
-      'worklet';
-      scrollY.set(event.contentOffset.y);
-      scheduleOnRN(
-        handleScroll,
-        {nativeEvent: event} as unknown as NativeSyntheticEvent<NativeScrollEvent>,
-      );
+  const maybeTriggerNearBottom = useCallback(
+    (distance: number, offset: number) => {
+      if (
+        !onNearBottom ||
+        items.length === 0 ||
+        offset <= 0 ||
+        distance > nearBottomThreshold ||
+        nearBottomTriggeredRef.current
+      ) {
+        return;
+      }
+      nearBottomTriggeredRef.current = true;
+      onNearBottom({distance: Math.max(0, distance)});
     },
-    [handleScroll, scrollY],
+    [items.length, nearBottomThreshold, onNearBottom],
   );
 
-  const handleContentSizeChange = useCallback((_width: number, height: number) => {
-    scrollContentHeightRef.current = height;
-    const distanceFromBottom = Math.max(
-      0,
-      height - scrollViewportHeightRef.current - lastOffsetRef.current,
-    );
-    if (lastOffsetRef.current <= 0 || distanceFromBottom > nearBottomThreshold) {
-      nearBottomTriggeredRef.current = false;
-    }
-    maybeTriggerNearBottom(distanceFromBottom, lastOffsetRef.current);
-  }, [maybeTriggerNearBottom, nearBottomThreshold]);
+  const handleBottomScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
+      const offset = contentOffset.y;
+      scrollY.set(offset);
+      scrollViewportHeightRef.current = layoutMeasurement.height;
+      scrollContentHeightRef.current = contentSize.height;
+      setStart(offset >= 1 ? 1 : 0);
+      setNearTop(offset < STICKY_HEADER_HIDE_OFFSET);
+      const distanceFromBottom = Math.max(
+        0,
+        contentSize.height - layoutMeasurement.height - offset,
+      );
+      if (offset <= 0 || distanceFromBottom > nearBottomThreshold) {
+        nearBottomTriggeredRef.current = false;
+      }
+      maybeTriggerNearBottom(distanceFromBottom, offset);
+      const delta = offset - lastOffsetRef.current;
+      if (Math.abs(delta) > 4) {
+        setDown(delta > 0);
+        lastOffsetRef.current = offset;
+      }
+    },
+    [maybeTriggerNearBottom, nearBottomThreshold, scrollY],
+  );
+
+  const triggerNearBottomFromUI = useCallback(
+    (distance: number) => {
+      onNearBottom?.({distance: Math.max(0, distance)});
+    },
+    [onNearBottom],
+  );
+
+  useAnimatedReaction(
+    () => {
+      const offset = scrollY.get();
+      const distance = Math.max(
+        0,
+        animatedContentHeight.get() - animatedViewportHeight.get() - offset,
+      );
+      return {
+        distance,
+        eligible:
+          !bottom &&
+          Boolean(onNearBottom) &&
+          items.length > 0 &&
+          offset > 0 &&
+          distance <= nearBottomThreshold,
+      };
+    },
+    current => {
+      if (!current.eligible) {
+        animatedNearBottomTriggered.set(false);
+        return;
+      }
+      if (animatedNearBottomTriggered.get()) return;
+      animatedNearBottomTriggered.set(true);
+      scheduleOnRN(triggerNearBottomFromUI, current.distance);
+    },
+    [
+      animatedContentHeight,
+      animatedNearBottomTriggered,
+      animatedViewportHeight,
+      bottom,
+      items.length,
+      nearBottomThreshold,
+      onNearBottom,
+      scrollY,
+      triggerNearBottomFromUI,
+    ],
+  );
+
+  const handleAnimatedScroll = useAnimatedScrollHandler(
+    event => {
+      'worklet';
+      const offset = event.contentOffset.y;
+      scrollY.set(offset);
+      animatedViewportHeight.set(event.layoutMeasurement.height);
+      animatedContentHeight.set(event.contentSize.height);
+      animatedStart.set(offset >= 1 ? 1 : 0);
+      animatedNearTop.set(offset < STICKY_HEADER_HIDE_OFFSET);
+
+      const stickyDelta = offset - animatedLastStickyOffset.get();
+      animatedLastStickyOffset.set(offset);
+      if (offset <= STICKY_HEADER_HIDE_OFFSET + stickyHeight.get()) {
+        stickyReveal.set(0);
+      } else {
+        stickyReveal.set(
+          Math.min(
+            1,
+            Math.max(0, stickyReveal.get() - stickyDelta / stickyHeight.get()),
+          ),
+        );
+      }
+
+      const directionDelta = offset - animatedLastDirectionOffset.get();
+      if (Math.abs(directionDelta) > 4) {
+        animatedDown.set(directionDelta > 0);
+        animatedLastDirectionOffset.set(offset);
+      }
+    },
+    [
+      animatedContentHeight,
+      animatedDown,
+      animatedLastDirectionOffset,
+      animatedLastStickyOffset,
+      animatedNearTop,
+      animatedStart,
+      animatedViewportHeight,
+      scrollY,
+      stickyHeight,
+      stickyReveal,
+    ],
+  );
+
+  const handleContentSizeChange = useCallback(
+    (_width: number, height: number) => {
+      if (!bottom) {
+        animatedContentHeight.set(height);
+        return;
+      }
+
+      scrollContentHeightRef.current = height;
+      const distanceFromBottom = Math.max(
+        0,
+        height - scrollViewportHeightRef.current - lastOffsetRef.current,
+      );
+      if (
+        lastOffsetRef.current <= 0 ||
+        distanceFromBottom > nearBottomThreshold
+      ) {
+        nearBottomTriggeredRef.current = false;
+      }
+      maybeTriggerNearBottom(distanceFromBottom, lastOffsetRef.current);
+    },
+    [
+      animatedContentHeight,
+      bottom,
+      maybeTriggerNearBottom,
+      nearBottomThreshold,
+    ],
+  );
 
   const keyExtractor = useCallback(
     (item: T, index: number) => String(getItemId(item, index)),
@@ -853,18 +1022,21 @@ export function Feed<T>({
     ),
     [bottomVisibleIndexes, items, renderItem, screenActive, visible],
   );
-  const handleEndReached = useCallback((event?: {distanceFromEnd?: number}) => {
-    if (
-      !onNearBottom ||
-      items.length === 0 ||
-      start === 0 ||
-      nearBottomTriggeredRef.current
-    ) {
-      return;
-    }
-    nearBottomTriggeredRef.current = true;
-    onNearBottom({distance: Math.max(0, event?.distanceFromEnd ?? 0)});
-  }, [items.length, onNearBottom, start]);
+  const handleEndReached = useCallback(
+    (event?: {distanceFromEnd?: number}) => {
+      if (
+        !onNearBottom ||
+        items.length === 0 ||
+        start === 0 ||
+        nearBottomTriggeredRef.current
+      ) {
+        return;
+      }
+      nearBottomTriggeredRef.current = true;
+      onNearBottom({distance: Math.max(0, event?.distanceFromEnd ?? 0)});
+    },
+    [items.length, onNearBottom, start],
+  );
 
   const renderVirtualRowContent = useCallback(
     (row: FeedVirtualRow<T>) => (
@@ -892,12 +1064,14 @@ export function Feed<T>({
   const customRefreshInset = usesMotionHeader ? 0 : refreshInset;
   const listHeader = useMemo(() => {
     if (!header && !showCustomRefreshIndicator) return null;
-    const inFlowChromeProps = showCustomRefreshIndicator || usesMotionHeader
-      ? {...chromeProps, safeAreaTop: 0}
-      : chromeProps;
-    const inFlowHeaderPaddingTop = showCustomRefreshIndicator || usesMotionHeader
-      ? 0
-      : outerHeaderSafeAreaTop;
+    const inFlowChromeProps =
+      showCustomRefreshIndicator || usesMotionHeader
+        ? {...chromeProps, safeAreaTop: 0}
+        : chromeProps;
+    const inFlowHeaderPaddingTop =
+      showCustomRefreshIndicator || usesMotionHeader
+        ? 0
+        : outerHeaderSafeAreaTop;
     return (
       <>
         {showCustomRefreshIndicator ? (
@@ -947,7 +1121,9 @@ export function Feed<T>({
     if (loading) {
       return (
         <View className="px-6 py-14">
-          <Text className="text-center text-base text-primary-content">Loading...</Text>
+          <Text className="text-center text-base text-primary-content">
+            Loading...
+          </Text>
         </View>
       );
     }
@@ -958,7 +1134,8 @@ export function Feed<T>({
     <View
       collapsable={false}
       className="relative flex-1"
-      style={{backgroundColor: theme.colors.base100}}>
+      style={{backgroundColor: theme.colors.base100}}
+    >
       {bottom ? (
         <FlashList
           ref={bottomListRef}
@@ -977,16 +1154,16 @@ export function Feed<T>({
             shouldMaintainVisibleContentPosition
               ? bottomAutoScroll === true
                 ? {
-                  startRenderingFromBottom: true,
-                  autoscrollToBottomThreshold: 0.2,
-                  animateAutoScrollToBottom: true,
-                }
+                    startRenderingFromBottom: true,
+                    autoscrollToBottomThreshold: 0.2,
+                    animateAutoScrollToBottom: true,
+                  }
                 : undefined
               : {disabled: true}
           }
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.35}
-          onScroll={handleScroll}
+          onScroll={handleBottomScroll}
           onViewableItemsChanged={handleViewableItemsChanged}
           refreshControl={
             pullToRefresh && onRefresh ? (
@@ -1023,7 +1200,7 @@ export function Feed<T>({
               : undefined
           }
           onContentSizeChange={handleContentSizeChange}
-          onScroll={forwardScrollToReact}
+          onScroll={handleAnimatedScroll}
           refreshControl={
             pullToRefresh && onRefresh ? (
               <RefreshControl
@@ -1065,7 +1242,7 @@ export function Feed<T>({
               : undefined
           }
           onContentSizeChange={handleContentSizeChange}
-          onScroll={forwardScrollToReact}
+          onScroll={handleAnimatedScroll}
           refreshControl={
             pullToRefresh && onRefresh ? (
               // See the FlashList refresh control above.
@@ -1103,7 +1280,8 @@ export function Feed<T>({
           onPress={motionHeaderPressToTop ? scrollToTop : undefined}
           paddingTop={outerHeaderSafeAreaTop}
           scrollY={scrollY}
-          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base300}>
+          surfaceColor={motionHeaderSurfaceColor ?? theme.colors.base300}
+        >
           {motionHeader(chromeProps)}
         </MotionHeader>
       ) : null}
@@ -1112,7 +1290,8 @@ export function Feed<T>({
           pointerEvents={start >= 1 && !down && !nearTop ? 'auto' : 'none'}
           className="absolute left-0 right-0 top-0 z-30"
           onLayout={handleStickyLayout}
-          style={stickyHeaderStyle}>
+          style={stickyHeaderStyle}
+        >
           <Pressable onPress={scrollToTop}>{stickyContent}</Pressable>
         </Animated.View>
       ) : null}
@@ -1120,7 +1299,8 @@ export function Feed<T>({
         <Animated.View
           pointerEvents="box-none"
           className="absolute bottom-0 left-0 right-0 z-30"
-          style={stickyFooterStyle}>
+          style={stickyFooterStyle}
+        >
           {stickyFooter(chromeProps)}
         </Animated.View>
       ) : null}
@@ -1128,9 +1308,7 @@ export function Feed<T>({
   );
 
   return motionHeader ? (
-    <HeaderMotion measureDynamicMode="update">
-      {feedContent}
-    </HeaderMotion>
+    <HeaderMotion measureDynamicMode="update">{feedContent}</HeaderMotion>
   ) : (
     feedContent
   );

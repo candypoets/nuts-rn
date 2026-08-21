@@ -2,7 +2,7 @@ const React = require('react');
 const ReactNative = require('react-native');
 
 const AnimatedView = React.forwardRef((props, ref) =>
-  React.createElement(ReactNative.View, { ...props, ref }),
+  React.createElement(ReactNative.View, {...props, ref}),
 );
 
 function createAnimatedComponent(Component) {
@@ -36,6 +36,11 @@ module.exports = {
   },
   Extrapolation: {
     CLAMP: 'clamp',
+  },
+  ReduceMotion: {
+    Always: 'always',
+    Never: 'never',
+    System: 'system',
   },
   ReanimatedLogLevel: {
     warn: 'warn',
@@ -91,6 +96,9 @@ module.exports = {
   },
   useAnimatedStyle(factory) {
     return factory();
+  },
+  useReducedMotion() {
+    return false;
   },
   useSharedValue(initialValue) {
     const ref = React.useRef(null);

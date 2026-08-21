@@ -1,4 +1,11 @@
-import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   FlatList,
   Keyboard,
@@ -15,7 +22,10 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import {usePublish as publishToNostr, useSubscription as subscribeToNostr} from '@candypoets/nipworker/hooks';
+import {
+  usePublish as publishToNostr,
+  useSubscription as subscribeToNostr,
+} from '@candypoets/nipworker/hooks';
 import {
   asConnectionStatus,
   asKind1111,
@@ -29,6 +39,7 @@ import {Heart, MessageCircle, Send} from 'lucide-react-native';
 import {useRouter} from 'expo-router';
 import {pushDistinct} from '../navigation/pushDistinct';
 import Animated, {
+  ReduceMotion,
   useAnimatedStyle,
   withSequence,
   withTiming,
@@ -164,10 +175,19 @@ const CommentItem = memo(function CommentItem({
       {
         translateX: isReplyTarget
           ? withSequence(
-              withTiming(12, {duration: 140}),
-              withTiming(8, {duration: 180}),
+              withTiming(12, {
+                duration: 140,
+                reduceMotion: ReduceMotion.System,
+              }),
+              withTiming(8, {
+                duration: 180,
+                reduceMotion: ReduceMotion.System,
+              }),
             )
-          : withTiming(0, {duration: 160}),
+          : withTiming(0, {
+              duration: 160,
+              reduceMotion: ReduceMotion.System,
+            }),
       },
     ],
   }));
@@ -208,8 +228,13 @@ const CommentItem = memo(function CommentItem({
                 onReply(item.event, name);
               }}
             >
-              <MessageCircle size={14} color={isReplyTarget ? '#158777' : themeTint} />
-              <Text className="text-xs font-medium text-primary-content">Reply</Text>
+              <MessageCircle
+                size={14}
+                color={isReplyTarget ? '#158777' : themeTint}
+              />
+              <Text className="text-xs font-medium text-primary-content">
+                Reply
+              </Text>
             </Pressable>
             <Pressable
               className="flex-row items-center gap-1 py-1"
@@ -259,7 +284,9 @@ export function Kind1111CommentsModal({
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
-  const [likedCommentIds, setLikedCommentIds] = useState<Set<string>>(() => new Set());
+  const [likedCommentIds, setLikedCommentIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const relays = useMemo(
     () => [
       ...new Set([
@@ -335,9 +362,7 @@ export function Kind1111CommentsModal({
             ? [['e', target.id, relays[0] || '', target.author]]
             : [['e', target.id, relays[0] || '']]),
           ...(target.kind ? [['k', String(target.kind)]] : []),
-          ...(target.author
-            ? [['p', target.author, relays[0] || '']]
-            : []),
+          ...(target.author ? [['p', target.author, relays[0] || '']] : []),
         ];
     const event: EventTemplate = {
       kind: 1111,
@@ -364,61 +389,78 @@ export function Kind1111CommentsModal({
       },
       {
         defaultRelays: relays,
-        subId: [`kind1111_${target.id}`, `comment_${target.id}`, `f_${target.id}`],
+        subId: [
+          `kind1111_${target.id}`,
+          `comment_${target.id}`,
+          `f_${target.id}`,
+        ],
         trackStatus: true,
       },
     );
     setTimeout(() => setIsSubmitting(false), 5000);
   }, [canSubmit, relays, replyTarget, target, text, updateSendStatus]);
-  const sendReaction = useCallback((comment: ParsedEvent) => {
-    dismissComposer();
-    const commentId = comment.id();
-    const commentPubkey = comment.pubkey();
-    if (
-      !pubkey ||
-      !commentId ||
-      !commentPubkey ||
-      !relays.length ||
-      likedCommentIds.has(commentId)
-    ) {
-      return;
-    }
+  const sendReaction = useCallback(
+    (comment: ParsedEvent) => {
+      dismissComposer();
+      const commentId = comment.id();
+      const commentPubkey = comment.pubkey();
+      if (
+        !pubkey ||
+        !commentId ||
+        !commentPubkey ||
+        !relays.length ||
+        likedCommentIds.has(commentId)
+      ) {
+        return;
+      }
 
-    setLikedCommentIds(current => {
-      if (current.has(commentId)) return current;
-      const next = new Set(current);
-      next.add(commentId);
-      return next;
-    });
+      setLikedCommentIds(current => {
+        if (current.has(commentId)) return current;
+        const next = new Set(current);
+        next.add(commentId);
+        return next;
+      });
 
-    const event: EventTemplate = {
-      kind: 7,
-      tags: [
-        ['e', commentId],
-        ['p', commentPubkey],
-      ],
-      content: '+',
-      created_at: Math.floor(Date.now() / 1000),
-    };
-    const sendStatus: Record<string, ConnectionStatus> = {};
-    const sendId = `reaction_${commentId}_${Date.now()}`;
-    publishToNostr(
-      sendId,
-      event,
-      (message: WorkerMessage) => {
-        const status = isConnectionStatus(message);
-        const relayUrl = status?.relayUrl();
-        if (!status || !relayUrl) return;
-        sendStatus[relayUrl] = status;
-        updateSendStatus(sendId, sendStatus);
-      },
-      {
-        defaultRelays: relays,
-        subId: [`kind1111_${target?.id || commentId}`, `reaction_${commentId}`],
-        trackStatus: true,
-      },
-    );
-  }, [dismissComposer, likedCommentIds, pubkey, relays, target, updateSendStatus]);
+      const event: EventTemplate = {
+        kind: 7,
+        tags: [
+          ['e', commentId],
+          ['p', commentPubkey],
+        ],
+        content: '+',
+        created_at: Math.floor(Date.now() / 1000),
+      };
+      const sendStatus: Record<string, ConnectionStatus> = {};
+      const sendId = `reaction_${commentId}_${Date.now()}`;
+      publishToNostr(
+        sendId,
+        event,
+        (message: WorkerMessage) => {
+          const status = isConnectionStatus(message);
+          const relayUrl = status?.relayUrl();
+          if (!status || !relayUrl) return;
+          sendStatus[relayUrl] = status;
+          updateSendStatus(sendId, sendStatus);
+        },
+        {
+          defaultRelays: relays,
+          subId: [
+            `kind1111_${target?.id || commentId}`,
+            `reaction_${commentId}`,
+          ],
+          trackStatus: true,
+        },
+      );
+    },
+    [
+      dismissComposer,
+      likedCommentIds,
+      pubkey,
+      relays,
+      target,
+      updateSendStatus,
+    ],
+  );
   const startReply = useCallback((comment: ParsedEvent, name: string) => {
     const commentId = comment.id();
     const commentPubkey = comment.pubkey();
@@ -430,15 +472,18 @@ export function Kind1111CommentsModal({
     });
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
-  const openProfile = useCallback((nextPubkey: string) => {
-    router.back();
-    setTimeout(() => {
-      pushDistinct(router, {
-        pathname: '/PublicProfile',
-        params: {pubkey: nextPubkey},
-      });
-    }, 350);
-  }, [router]);
+  const openProfile = useCallback(
+    (nextPubkey: string) => {
+      router.back();
+      setTimeout(() => {
+        pushDistinct(router, {
+          pathname: '/PublicProfile',
+          params: {pubkey: nextPubkey},
+        });
+      }, 350);
+    },
+    [router],
+  );
   const emptyContent = !target ? (
     <View className="flex-1 items-center justify-center py-8">
       <Text className="text-primary-content">Invalid note id</Text>
@@ -450,7 +495,9 @@ export function Kind1111CommentsModal({
   ) : (
     <View className="flex-1 items-center justify-center py-8">
       <Text className="text-base-content">No comments yet</Text>
-      <Text className="text-sm text-primary-content">Be the first to comment.</Text>
+      <Text className="text-sm text-primary-content">
+        Be the first to comment.
+      </Text>
     </View>
   );
 
@@ -460,7 +507,9 @@ export function Kind1111CommentsModal({
         <View className="flex-row items-center gap-2">
           <MessageCircle size={22} color={theme.colors.primary} />
           <Text className="text-xl font-bold text-base-content">Comments</Text>
-          <Text className="text-sm text-primary-content">({comments.length})</Text>
+          <Text className="text-sm text-primary-content">
+            ({comments.length})
+          </Text>
         </View>
       </View>
 
@@ -473,7 +522,9 @@ export function Kind1111CommentsModal({
             ref={inputRef}
             value={text}
             onChangeText={setText}
-            placeholder={replyTarget ? `Reply to ${replyTarget.name}` : 'Add a comment'}
+            placeholder={
+              replyTarget ? `Reply to ${replyTarget.name}` : 'Add a comment'
+            }
             placeholderTextColor={theme.colors.primaryContent}
             multiline
             className="min-h-10 text-base text-base-content"
@@ -490,11 +541,13 @@ export function Kind1111CommentsModal({
                   setReplyTarget(null);
                 }}
               >
-                <Text className="text-xs font-semibold text-primary">Cancel</Text>
+                <Text className="text-xs font-semibold text-primary">
+                  Cancel
+                </Text>
               </Pressable>
             </View>
           ) : null}
-          {(text.trim() || isSubmitting) ? (
+          {text.trim() || isSubmitting ? (
             <View className="mt-2 flex-row justify-end">
               <Pressable
                 className={[
@@ -507,10 +560,19 @@ export function Kind1111CommentsModal({
                   submit();
                 }}
               >
-                <Text className={canSubmit ? 'font-semibold text-white' : 'font-semibold text-primary-content'}>
+                <Text
+                  className={
+                    canSubmit
+                      ? 'font-semibold text-white'
+                      : 'font-semibold text-primary-content'
+                  }
+                >
                   {isSubmitting ? 'Signing...' : 'Comment'}
                 </Text>
-                <Send size={16} color={canSubmit ? '#ffffff' : theme.colors.primaryContent} />
+                <Send
+                  size={16}
+                  color={canSubmit ? '#ffffff' : theme.colors.primaryContent}
+                />
               </Pressable>
             </View>
           ) : null}
@@ -523,7 +585,9 @@ export function Kind1111CommentsModal({
     <FlatList
       className="flex-1 bg-base-100"
       data={flatComments}
-      keyExtractor={item => item.event.id() || `${item.event.createdAt()}-${item.depth}`}
+      keyExtractor={item =>
+        item.event.id() || `${item.event.createdAt()}-${item.depth}`
+      }
       renderItem={({item}) => (
         <CommentItem
           item={item}

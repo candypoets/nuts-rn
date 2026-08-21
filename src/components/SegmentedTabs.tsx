@@ -14,6 +14,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -55,23 +56,20 @@ export function SegmentedTabs<T extends string>({
   const selectedLayout = tabLayouts[selectedId];
   const pillInset = variant === 'pill' ? 1 : 0;
 
-  const handleTabLayout = useCallback(
-    (id: T, event: LayoutChangeEvent) => {
-      const {x, width} = event.nativeEvent.layout;
-      setTabLayouts(current => {
-        const previous = current[id];
-        if (
-          previous &&
-          Math.abs(previous.x - x) < 0.5 &&
-          Math.abs(previous.width - width) < 0.5
-        ) {
-          return current;
-        }
-        return {...current, [id]: {x, width}};
-      });
-    },
-    [],
-  );
+  const handleTabLayout = useCallback((id: T, event: LayoutChangeEvent) => {
+    const {x, width} = event.nativeEvent.layout;
+    setTabLayouts(current => {
+      const previous = current[id];
+      if (
+        previous &&
+        Math.abs(previous.x - x) < 0.5 &&
+        Math.abs(previous.width - width) < 0.5
+      ) {
+        return current;
+      }
+      return {...current, [id]: {x, width}};
+    });
+  }, []);
 
   useEffect(() => {
     if (!selectedLayout) return;
@@ -83,25 +81,42 @@ export function SegmentedTabs<T extends string>({
     const nextWidth = Math.max(0, selectedLayout.width - pillInset * 2);
 
     if (!previousSelectedId) {
-      indicatorX.value = selectedLayout.x;
-      indicatorWidth.value = nextWidth;
+      indicatorX.set(selectedLayout.x);
+      indicatorWidth.set(nextWidth);
       previousSelectedIdRef.current = selectedId;
       return;
     }
 
     if (previousLayout) {
-      indicatorX.value = previousLayout.x;
-      indicatorWidth.value = Math.max(0, previousLayout.width - pillInset * 2);
+      indicatorX.set(previousLayout.x);
+      indicatorWidth.set(Math.max(0, previousLayout.width - pillInset * 2));
     }
 
-    indicatorX.value = withTiming(selectedLayout.x, {duration: 220});
-    indicatorWidth.value = withTiming(nextWidth, {duration: 220});
+    indicatorX.set(
+      withTiming(selectedLayout.x, {
+        duration: 220,
+        reduceMotion: ReduceMotion.System,
+      }),
+    );
+    indicatorWidth.set(
+      withTiming(nextWidth, {
+        duration: 220,
+        reduceMotion: ReduceMotion.System,
+      }),
+    );
     previousSelectedIdRef.current = selectedId;
-  }, [indicatorWidth, indicatorX, pillInset, selectedId, selectedLayout, tabLayouts]);
+  }, [
+    indicatorWidth,
+    indicatorX,
+    pillInset,
+    selectedId,
+    selectedLayout,
+    tabLayouts,
+  ]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{translateX: indicatorX.value}],
-    width: indicatorWidth.value,
+    transform: [{translateX: indicatorX.get()}],
+    width: indicatorWidth.get(),
   }));
   const effectiveLabelWeight =
     labelWeight ?? (variant === 'pill' ? 'bold' : 'semibold');
@@ -109,10 +124,10 @@ export function SegmentedTabs<T extends string>({
     effectiveLabelWeight === 'regular'
       ? 'font-normal'
       : effectiveLabelWeight === 'medium'
-        ? 'font-medium'
-        : effectiveLabelWeight === 'bold'
-          ? 'font-bold'
-          : 'font-semibold';
+      ? 'font-medium'
+      : effectiveLabelWeight === 'bold'
+      ? 'font-bold'
+      : 'font-semibold';
 
   const content = (
     <View
@@ -141,14 +156,16 @@ export function SegmentedTabs<T extends string>({
         return (
           <Pressable
             key={tab.id}
-            accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${tab.label}`}
+            accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${
+              tab.label
+            }`}
             accessibilityState={{selected}}
             className={`h-9 items-center justify-center ${
               layout === 'equal'
                 ? 'flex-1'
                 : layout === 'scroll'
-                  ? 'min-w-20 px-3'
-                  : 'px-2'
+                ? 'min-w-20 px-3'
+                : 'px-2'
             } ${variant === 'pill' ? 'flex-row gap-2 px-3' : 'pb-2 pt-1'}`}
             style={layout === 'adaptive' ? styles.adaptiveTab : undefined}
             onLayout={event => handleTabLayout(tab.id, event)}

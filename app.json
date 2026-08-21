@@ -11,6 +11,7 @@
     "ios": {
       "bundleIdentifier": "com.nutsrn",
       "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true,
         "LSApplicationQueriesSchemes": ["nostrconnect"]
       }
     },
@@ -30,7 +31,9 @@
         },
         {
           "action": "VIEW",
-          "data": [{ "scheme": "https", "host": "nuts.cash", "pathPrefix": "/redeem" }],
+          "data": [
+            { "scheme": "https", "host": "nuts.cash", "pathPrefix": "/redeem" }
+          ],
           "category": ["DEFAULT", "BROWSABLE"]
         }
       ]

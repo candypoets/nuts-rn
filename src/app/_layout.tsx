@@ -3,61 +3,54 @@ import '../../textEncodingPolyfill';
 import 'react-native-get-random-values';
 
 import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {Linking, Platform, StatusBar, StyleSheet, View} from 'react-native';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {
-  Animated,
-  Easing,
-  Keyboard,
-  Linking,
-  Platform,
-  StatusBar,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-  type KeyboardEvent,
-} from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { enableFreeze, enableScreens } from 'react-native-screens';
+  KeyboardAvoidingView,
+  KeyboardProvider,
+} from 'react-native-keyboard-controller';
+import {enableFreeze, enableScreens} from 'react-native-screens';
 import {
   ReanimatedLogLevel,
   configureReanimatedLogger,
+  useReducedMotion,
 } from 'react-native-reanimated';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import type { NostrManagerLike } from '@candypoets/nipworker';
-import { MintQuoteState, Wallet as CashuWallet } from '@cashu/cashu-ts';
-import { nip19 } from 'nostr-tools';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+import type {NostrManagerLike} from '@candypoets/nipworker';
+import {MintQuoteState, Wallet as CashuWallet} from '@cashu/cashu-ts';
+import {nip19} from 'nostr-tools';
 import {Stack, usePathname, useRouter} from 'expo-router';
 
-import { useFollowListPackSync } from '../hooks/useFollowListPackSync';
-import { useNotificationSubscription } from '../hooks/useNotificationSubscription';
-import { usePushNotifications } from '../hooks/usePushNotifications';
-import { useRelayTracking } from '../hooks/useRelayTracking';
-import { useRootNostrSubscriptions } from '../hooks/useRootNostrSubscriptions';
-import { useWalletProofSubscription } from '../hooks/useWalletProofSubscription';
+import {useFollowListPackSync} from '../hooks/useFollowListPackSync';
+import {useNotificationSubscription} from '../hooks/useNotificationSubscription';
+import {usePushNotifications} from '../hooks/usePushNotifications';
+import {useRelayTracking} from '../hooks/useRelayTracking';
+import {useRootNostrSubscriptions} from '../hooks/useRootNostrSubscriptions';
+import {useWalletProofSubscription} from '../hooks/useWalletProofSubscription';
 import {
   useAuthStore,
   useFeedBuilderStore,
   useNostrStore,
   useWalletStore,
 } from '../stores';
-import { ImageZoom } from '../components/ImageZoom';
-import { SendStatuses } from '../components/SendStatuses';
-import { publishProofsBackup } from '../nostr/proofBackup';
-import { uniqueWalletRelays } from '../hooks/useWalletSubscription';
-import { resumePendingTransactions } from '../model/cashu/txRecovery';
-import { getAppThemeVars, isAppThemeDark, useAppTheme } from '../theme';
-import { startNativeDebugLogRelay } from '../debug/nativeDebugBridge';
-import { NativeParityHarness } from '../debug/NativeParityHarness';
-import { getSharedNostrManager } from '../nostr/manager';
-import {resolveInviteDeepLink, resolveNostrDeepLink} from '../navigation/linking';
+import {ImageZoom} from '../components/ImageZoom';
+import {SendStatuses} from '../components/SendStatuses';
+import {publishProofsBackup} from '../nostr/proofBackup';
+import {uniqueWalletRelays} from '../hooks/useWalletSubscription';
+import {resumePendingTransactions} from '../model/cashu/txRecovery';
+import {getAppThemeVars, isAppThemeDark, useAppTheme} from '../theme';
+import {startNativeDebugLogRelay} from '../debug/nativeDebugBridge';
+import {NativeParityHarness} from '../debug/NativeParityHarness';
+import {getSharedNostrManager} from '../nostr/manager';
+import {
+  resolveInviteDeepLink,
+  resolveNostrDeepLink,
+} from '../navigation/linking';
 import {
   singularByParams,
   singularNostrRoute,
 } from '../navigation/singularRoutes';
-import {
-  configureImageCache,
-  runMediaCacheMaintenance,
-} from '../media/cache';
+import {configureImageCache, runMediaCacheMaintenance} from '../media/cache';
 
 enableScreens(true);
 enableFreeze(true);
@@ -98,7 +91,9 @@ function scheduleNostrCleanup(manager: NostrManagerLike | null, delay = 1000) {
 
 function isRetryableMintNetworkError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /cancelled|canceled|network request failed|fetch failed/i.test(message);
+  return /cancelled|canceled|network request failed|fetch failed/i.test(
+    message,
+  );
 }
 
 function hexToBytes(hex: string) {
@@ -137,9 +132,12 @@ export default function RootLayout() {
   const [manager] = useState<NostrManagerLike | null>(() =>
     getSharedNostrManager(),
   );
-  const keyboardResizeStyle = useKeyboardResizeStyle();
+  const reducedMotion = useReducedMotion();
+  const stackAnimation = reducedMotion
+    ? ('fade' as const)
+    : ('default' as const);
   const contentStyle = useMemo(
-    () => [styles.root, { backgroundColor: theme.colors.base100 }],
+    () => [styles.root, {backgroundColor: theme.colors.base100}],
     [theme],
   );
 
@@ -177,7 +175,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView
-      style={[styles.root, { backgroundColor: theme.colors.base100 }]}
+      style={[styles.root, {backgroundColor: theme.colors.base100}]}
     >
       <KeyboardProvider>
         <SafeAreaProvider>
@@ -185,16 +183,16 @@ export default function RootLayout() {
             style={[
               styles.root,
               themeVars,
-              { backgroundColor: theme.colors.base100 },
+              {backgroundColor: theme.colors.base100},
             ]}
           >
             <RootServices manager={manager} />
-            <Animated.View
-              style={[
-                styles.root,
-                { backgroundColor: theme.colors.base100 },
-                keyboardResizeStyle,
-              ]}
+            <KeyboardAvoidingView
+              behavior={
+                Platform.OS === 'ios' ? 'translate-with-padding' : undefined
+              }
+              enabled={Platform.OS === 'ios'}
+              style={[styles.root, {backgroundColor: theme.colors.base100}]}
             >
               <StatusBar
                 translucent
@@ -207,6 +205,7 @@ export default function RootLayout() {
                 <>
                   <Stack
                     screenOptions={{
+                      animation: stackAnimation,
                       contentStyle,
                       freezeOnBlur: true,
                       fullScreenGestureEnabled: true,
@@ -219,7 +218,7 @@ export default function RootLayout() {
                   >
                     <Stack.Screen
                       name="(tabs)"
-                      options={{ freezeOnBlur: false }}
+                      options={{freezeOnBlur: false}}
                     />
                     {/* presentation/animation are read at push time, so they
                         must be declared here — in-route <Stack.Screen options>
@@ -228,69 +227,136 @@ export default function RootLayout() {
                     <Stack.Screen
                       name="PublicProfile"
                       dangerouslySingular={singularProfile}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="Community"
                       dangerouslySingular={singularCommunity}
-                      options={{ animation: 'default' }}
+                      options={{
+                        animation: stackAnimation,
+                        fullScreenGestureEnabled: false,
+                      }}
                     />
                     <Stack.Screen
                       name="Store"
                       dangerouslySingular={singularStore}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="CalendarEvent"
                       dangerouslySingular={singularCalendarEvent}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="ChatThread"
                       dangerouslySingular={singularChat}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="Kind1Thread"
                       dangerouslySingular={singularNostrRoute}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="Kind30023Thread"
                       dangerouslySingular={singularNostrRoute}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="Tags"
                       dangerouslySingular={singularTags}
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     <Stack.Screen
                       name="Notifications"
                       dangerouslySingular
-                      options={{ animation: 'default' }}
+                      options={{animation: stackAnimation}}
                     />
                     {/* Modal screens */}
-                    <Stack.Screen name="LiveStream" options={{ presentation: 'modal', gestureEnabled: true }} />
-                    <Stack.Screen name="Mints" options={{ presentation: 'modal', headerShown: true, title: 'Mints' }} />
-                    <Stack.Screen name="Profile" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Login" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Keys" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Theme" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="RelayPreferences" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Wallet" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="FeedBuilder" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Receive" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Minting" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Send" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="NewChat" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="SendEcash" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Scan" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Award" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Passes" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Tapcash" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="Lightning" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="ProfileStub" options={{ presentation: 'modal' }} />
+                    <Stack.Screen
+                      name="LiveStream"
+                      options={{presentation: 'modal', gestureEnabled: true}}
+                    />
+                    <Stack.Screen
+                      name="Mints"
+                      options={{
+                        presentation: 'modal',
+                        headerShown: true,
+                        title: 'Mints',
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Profile"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Login"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Keys"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Theme"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="RelayPreferences"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Wallet"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="FeedBuilder"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Receive"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Minting"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Send"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="NewChat"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="SendEcash"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Scan"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Award"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Passes"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Tapcash"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="Lightning"
+                      options={{presentation: 'modal'}}
+                    />
+                    <Stack.Screen
+                      name="ProfileStub"
+                      options={{presentation: 'modal'}}
+                    />
                     {/* Form sheets */}
                     <Stack.Screen
                       name="Kind1111Comments"
@@ -337,14 +403,23 @@ export default function RootLayout() {
                       }}
                     />
                     {/* Full-screen modals */}
-                    <Stack.Screen name="Post" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
-                    <Stack.Screen name="CmdK" options={{ presentation: 'fullScreenModal' }} />
+                    <Stack.Screen
+                      name="Post"
+                      options={{
+                        presentation: 'fullScreenModal',
+                        gestureEnabled: false,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="CmdK"
+                      options={{presentation: 'fullScreenModal'}}
+                    />
                   </Stack>
                   <ImageZoom />
                 </>
               )}
               <SendStatuses />
-            </Animated.View>
+            </KeyboardAvoidingView>
             <PathnameCleanup manager={manager} />
             <NostrDeepLinkHandler />
           </View>
@@ -393,9 +468,11 @@ function NostrDeepLinkHandler() {
       }
     };
 
-    Linking.getInitialURL().then(openUrl).catch(error => {
-      console.warn('[deep-link] failed to read initial URL', error);
-    });
+    Linking.getInitialURL()
+      .then(openUrl)
+      .catch(error => {
+        console.warn('[deep-link] failed to read initial URL', error);
+      });
     const subscription = Linking.addEventListener('url', event =>
       openUrl(event.url),
     );
@@ -409,7 +486,7 @@ function NostrDeepLinkHandler() {
  * Replaces the old NavigationContainer onStateChange -> scheduleCleanup hook:
  * schedules a nostr cleanup on every route change.
  */
-function PathnameCleanup({ manager }: { manager: NostrManagerLike | null }) {
+function PathnameCleanup({manager}: {manager: NostrManagerLike | null}) {
   const pathname = usePathname();
   const cleanupCancelRef = useRef<(() => void) | null>(null);
 
@@ -429,65 +506,25 @@ function PathnameCleanup({ manager }: { manager: NostrManagerLike | null }) {
   return null;
 }
 
-function useKeyboardResizeStyle() {
-  const { height: windowHeight } = useWindowDimensions();
-  const height = useRef(new Animated.Value(windowHeight)).current;
-
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return undefined;
-
-    height.setValue(windowHeight);
-  }, [height, windowHeight]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return undefined;
-
-    const animateToKeyboardFrame = (event: KeyboardEvent) => {
-      const keyboardTop = event.endCoordinates.screenY;
-      const nextHeight = Math.max(0, Math.min(windowHeight, keyboardTop));
-
-      Animated.timing(height, {
-        toValue: nextHeight,
-        duration: Math.max(1, event.duration || 250),
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    };
-
-    const change = Keyboard.addListener(
-      'keyboardWillChangeFrame',
-      animateToKeyboardFrame,
-    );
-    const hide = Keyboard.addListener('keyboardWillHide', event => {
-      Animated.timing(height, {
-        toValue: windowHeight,
-        duration: Math.max(1, event.duration || 250),
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    });
-
-    return () => {
-      change.remove();
-      hide.remove();
-    };
-  }, [height, windowHeight]);
-
-  if (Platform.OS !== 'ios') return null;
-  return { flex: 0, height };
-}
-
-function RootServices({ manager }: { manager: NostrManagerLike | null }) {
+function RootServices({manager}: {manager: NostrManagerLike | null}) {
   const setAuth = useAuthStore(state => state.setAuth);
   const authPubkey = useAuthStore(state => state.pubkey);
   const walletMintUrls = useWalletStore(state => state.walletMintUrls);
   const proofsLoaded = useWalletStore(state => state.proofsLoaded);
   const pendingMintQuotes = useWalletStore(state => state.pendingMintQuotes);
-  const loadPendingMintQuotes = useWalletStore(state => state.loadPendingMintQuotes);
-  const deletePendingMintQuote = useWalletStore(state => state.deletePendingMintQuote);
+  const loadPendingMintQuotes = useWalletStore(
+    state => state.loadPendingMintQuotes,
+  );
+  const deletePendingMintQuote = useWalletStore(
+    state => state.deletePendingMintQuote,
+  );
   const addProofs = useWalletStore(state => state.addProofs);
-  const getUnspentProofsForMint = useWalletStore(state => state.getUnspentProofsForMint);
-  const verifyAndCleanProofs = useWalletStore(state => state.verifyAndCleanProofs);
+  const getUnspentProofsForMint = useWalletStore(
+    state => state.getUnspentProofsForMint,
+  );
+  const verifyAndCleanProofs = useWalletStore(
+    state => state.verifyAndCleanProofs,
+  );
   const resetWalletSession = useWalletStore(state => state.resetWalletSession);
   const walletReadRelays = useNostrStore(state => state.walletReadRelays);
   const readRelays = useNostrStore(state => state.readRelays);
@@ -559,10 +596,10 @@ function RootServices({ manager }: { manager: NostrManagerLike | null }) {
 
     const handleAuthUrl = (event: Event) => {
       const detail = (
-        event as Event & { detail?: { url?: string; requestId?: string } }
+        event as Event & {detail?: {url?: string; requestId?: string}}
       ).detail;
       if (typeof detail?.url !== 'string' || !detail.url) return;
-      setAuth({ nip46AuthUrl: detail.url });
+      setAuth({nip46AuthUrl: detail.url});
     };
 
     manager.addEventListener('authUrl', handleAuthUrl);

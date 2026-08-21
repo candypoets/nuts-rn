@@ -1,7 +1,5 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
-  Animated,
-  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,7 +7,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import {Image} from 'expo-image';
+import Animated, {useReducedMotion} from 'react-native-reanimated';
 
 type MintCardPickerProps = {
   mintUrls: string[];
@@ -33,8 +33,6 @@ type MintInfoResponse = {
   icon_url?: string;
 };
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedImage = Animated.createAnimatedComponent(Image);
 const mintInfoCache = new Map<string, MintInfo>();
 
 export function MintCardPicker({
@@ -113,7 +111,9 @@ export function MintCardPicker({
                 placeholder="0"
                 placeholderTextColor="#cbd5e1"
               />
-              <Text className="pb-3 text-base font-bold text-primary-content">sats</Text>
+              <Text className="pb-3 text-base font-bold text-primary-content">
+                sats
+              </Text>
             </View>
             <Text className="text-xs font-semibold text-primary-content">
               max {maxAmount} sats
@@ -147,7 +147,7 @@ function MintSquare({
     name: displayMintName(mintUrl),
     url: mintUrl,
   }));
-  const sizeProgress = useRef(new Animated.Value(selected ? 1 : 0)).current;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     let alive = true;
@@ -159,68 +159,54 @@ function MintSquare({
     };
   }, [mintUrl]);
 
-  useEffect(() => {
-    Animated.timing(sizeProgress, {
-      toValue: selected ? 1 : 0,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [selected, sizeProgress]);
-
   const colors = mintColors(mint.name || mintUrl);
-  const initial = (mint.name || displayMintName(mintUrl)).trim().charAt(0).toUpperCase();
-  const tileSize = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [38, 54],
-  });
-  const tileRadius = sizeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [11, 16],
-  });
-  const initialClassName = selected ? 'text-2xl' : 'text-lg';
+  const initial = (mint.name || displayMintName(mintUrl))
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+  const selectionStyle = reducedMotion
+    ? selected
+      ? styles.mintSquareSelectedReducedMotion
+      : styles.mintSquareUnselectedReducedMotion
+    : selected
+    ? styles.mintSquareSelectedMotion
+    : styles.mintSquareUnselectedMotion;
 
   return (
-    <AnimatedPressable
-      className="items-center justify-center overflow-hidden"
-      style={[
-        {
-          backgroundColor: mint.iconUrl ? 'transparent' : colors.base,
-          borderRadius: tileRadius,
-          height: tileSize,
-          width: tileSize,
-        },
-        selected ? styles.selectedMintSquare : styles.mintSquare,
-      ]}
-      onPress={onPress}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{selected}}
+      className="items-center justify-center"
+      pressRetentionOffset={16}
+      style={[styles.mintSquareSlot, selected && styles.selectedMintSquareSlot]}
+      onPress={() => {
+        if (!selected) Haptics.selectionAsync().catch(() => {});
+        onPress();
+      }}
     >
-      {mint.iconUrl ? (
-        <AnimatedImage
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          source={{uri: mint.iconUrl}}
-          style={{
-            borderRadius: tileRadius,
-            height: tileSize,
-            width: tileSize,
-          }}
-        />
-      ) : (
-        <Animated.View
-          className="items-center justify-center"
-          style={{
+      <Animated.View
+        className="items-center justify-center overflow-hidden"
+        style={[
+          styles.mintSquareSurface,
+          selectionStyle,
+          {
             backgroundColor: colors.base,
-            borderRadius: tileRadius,
-            height: tileSize,
-            width: tileSize,
-          }}
-        >
-          <Text className={`${initialClassName} font-black text-white`}>
-            {initial}
-          </Text>
-        </Animated.View>
-      )}
-    </AnimatedPressable>
+          },
+          selected ? styles.selectedMintSquare : styles.mintSquare,
+        ]}
+      >
+        {mint.iconUrl ? (
+          <Image
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            source={{uri: mint.iconUrl}}
+            style={styles.mintSquareImage}
+          />
+        ) : (
+          <Text className="text-2xl font-black text-white">{initial}</Text>
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -278,6 +264,50 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 64,
     paddingHorizontal: 12,
+  },
+  mintSquareSlot: {
+    height: 54,
+    width: 54,
+  },
+  selectedMintSquareSlot: {
+    zIndex: 2,
+  },
+  mintSquareSurface: {
+    borderRadius: 16,
+    height: 54,
+    width: 54,
+  },
+  mintSquareSelectedMotion: {
+    opacity: 1,
+    transform: [{scale: 1}],
+    transitionDuration: '180ms',
+    transitionProperty: ['transform', 'opacity'],
+    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+  },
+  mintSquareUnselectedMotion: {
+    opacity: 0.78,
+    transform: [{scale: 38 / 54}],
+    transitionDuration: '180ms',
+    transitionProperty: ['transform', 'opacity'],
+    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+  },
+  mintSquareSelectedReducedMotion: {
+    opacity: 1,
+    transform: [{scale: 1}],
+    transitionDuration: '120ms',
+    transitionProperty: 'opacity',
+    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+  },
+  mintSquareUnselectedReducedMotion: {
+    opacity: 0.78,
+    transform: [{scale: 1}],
+    transitionDuration: '120ms',
+    transitionProperty: 'opacity',
+    transitionTimingFunction: 'cubic-bezier(0.77, 0, 0.175, 1)',
+  },
+  mintSquareImage: {
+    height: '100%',
+    width: '100%',
   },
   mintSquare: {
     shadowColor: '#0f172a',

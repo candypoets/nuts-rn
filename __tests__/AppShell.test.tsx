@@ -53,7 +53,9 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
 
   const stack = renderer.root.findByType(Stack);
   expect(stack.props.screenOptions).toMatchObject({
+    animationMatchesGesture: false,
     freezeOnBlur: true,
+    fullScreenGestureEnabled: true,
     headerShown: false,
   });
   const screens = renderer.root.findAllByType(Stack.Screen);
@@ -67,7 +69,7 @@ test('root layout mounts the provider tree, root stack and overlays', async () =
   expect(optionsByName['(tabs)']).toEqual({freezeOnBlur: false});
   // presentation/animation are read at push time, so they must be declared
   // on the root Stack — in-route <Stack.Screen options> lands too late.
-  expect(optionsByName.PublicProfile).toEqual({animation: 'simple_push'});
+  expect(optionsByName.PublicProfile).toEqual({animation: 'default'});
   expect(
     screensByName.Kind1Thread.props.dangerouslySingular,
   ).toEqual(expect.any(Function));

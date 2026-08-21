@@ -210,7 +210,10 @@ export default function RootLayout() {
                       contentStyle,
                       freezeOnBlur: true,
                       fullScreenGestureEnabled: true,
-                      animationMatchesGesture: true,
+                      // Keep push-screen dismissal on iOS's native interactive
+                      // pop path so the screen underneath can resume scrolling
+                      // immediately after a full-screen swipe.
+                      animationMatchesGesture: false,
                       headerShown: false,
                     }}
                   >
@@ -225,47 +228,47 @@ export default function RootLayout() {
                     <Stack.Screen
                       name="PublicProfile"
                       dangerouslySingular={singularProfile}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="Community"
                       dangerouslySingular={singularCommunity}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="Store"
                       dangerouslySingular={singularStore}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="CalendarEvent"
                       dangerouslySingular={singularCalendarEvent}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="ChatThread"
                       dangerouslySingular={singularChat}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="Kind1Thread"
                       dangerouslySingular={singularNostrRoute}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="Kind30023Thread"
                       dangerouslySingular={singularNostrRoute}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="Tags"
                       dangerouslySingular={singularTags}
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     <Stack.Screen
                       name="Notifications"
                       dangerouslySingular
-                      options={{ animation: 'simple_push' }}
+                      options={{ animation: 'default' }}
                     />
                     {/* Modal screens */}
                     <Stack.Screen name="LiveStream" options={{ presentation: 'modal', gestureEnabled: true }} />

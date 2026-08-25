@@ -1,5 +1,4 @@
 PODS:
-  - Common (25.12.19)
   - EXApplication (57.0.2):
     - ExpoModulesCore
   - EXConstants (57.0.8):
@@ -271,7 +270,7 @@ PODS:
   - EXUpdatesInterface (57.0.1):
     - ExpoModulesCore
   - FBLazyVector (0.86.0)
-  - FlatBuffers (25.12.19)
+  - FlatBuffers (25.2.10)
   - hermes-engine (250829098.0.14):
     - hermes-engine/Pre-built (= 250829098.0.14)
   - hermes-engine/Pre-built (250829098.0.14)
@@ -292,8 +291,8 @@ PODS:
   - libwebp/sharpyuv (1.5.0)
   - libwebp/webp (1.5.0):
     - libwebp/sharpyuv
-  - NipworkerReactNative (0.99.3):
-    - FlatBuffers (~> 25.12.19)
+  - NipworkerReactNative (0.99.14):
+    - FlatBuffers (= 25.2.10)
     - RCTRequired
     - RCTTypeSafety
     - React-Core
@@ -2540,7 +2539,6 @@ PODS:
     - ZXingObjC/Core
 
 DEPENDENCIES:
-  - Common (from `./FlatBuffersCommon-25.12.19.podspec`)
   - EXApplication (from `../node_modules/expo-application/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
@@ -2580,7 +2578,7 @@ DEPENDENCIES:
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - EXUpdatesInterface (from `../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
-  - FlatBuffers (from `./FlatBuffers-25.12.19.podspec`)
+  - FlatBuffers (from `./FlatBuffers-25.2.10.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - "NipworkerReactNative (from `../node_modules/@candypoets/nipworker`)"
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -2684,8 +2682,6 @@ SPEC REPOS:
     - ZXingObjC
 
 EXTERNAL SOURCES:
-  Common:
-    :podspec: "./FlatBuffersCommon-25.12.19.podspec"
   EXApplication:
     :path: "../node_modules/expo-application/ios"
   EXConstants:
@@ -2765,7 +2761,7 @@ EXTERNAL SOURCES:
   FBLazyVector:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
   FlatBuffers:
-    :podspec: "./FlatBuffers-25.12.19.podspec"
+    :podspec: "./FlatBuffers-25.2.10.podspec"
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v250829098.0.14
@@ -2944,13 +2940,7 @@ EXTERNAL SOURCES:
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
-CHECKOUT OPTIONS:
-  FlatBuffers:
-    :git: https://github.com/google/flatbuffers.git
-    :tag: v25.12.19
-
 SPEC CHECKSUMS:
-  Common: c123348b964e6d85442bf4e51eb462baa6bee3ea
   EXApplication: bbd517d50878ca1d121fb3843392beb210181e28
   EXConstants: 5efe6122eecac2d970aa50a2a502ecc6ce4b7564
   EXJSONUtils: 7a1683cfa2cbe6d11fca97097d51a496755b0287
@@ -2990,12 +2980,12 @@ SPEC CHECKSUMS:
   ExpoWebBrowser: 9b98d939d5f1c5dd8f523f0a0683056fb1204434
   EXUpdatesInterface: 92d2aa5194b6fb93ca8ab749db75665cb28b2e60
   FBLazyVector: 688bade2cc6ee3de2ba9a411c85c21fd908af3bc
-  FlatBuffers: 2a21d145dded10868f0c84918cb96aa87790c3f7
+  FlatBuffers: 7f448c4808a2af50de479fad182c0a6dcecc9557
   hermes-engine: d3870ad757783f8f946fd92cc3e4f9720e54adef
   libavif: 5f8e715bea24debec477006f21ef9e95432e254d
   libdav1d: 23581a4d8ec811ff171ed5e2e05cd27bad64c39f
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
-  NipworkerReactNative: dd80686931ed0dd2ea71091dacc0c6c687494c99
+  NipworkerReactNative: 1d3701b07aa0173ad6297abdeff44907fba01c26
   RCTDeprecation: 8f1dc8057e54ea6fd01df47d0d29487adc92c1a9
   RCTRequired: 9d02105f758490fab48d77fead2599a449321ab7
   RCTSwiftUI: 714ca60953e8b7779821eea889ebdc891851682b
@@ -3089,6 +3079,6 @@ SPEC CHECKSUMS:
   Yoga: 18b7c3b4ad4df70f7c1f90871213fd001e6c3528
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: b0e2b99c293168bdba0270c9123404dc2d84da2b
+PODFILE CHECKSUM: 850adeb0b44045bc059613916e35477c03c80605
 
 COCOAPODS: 1.16.2

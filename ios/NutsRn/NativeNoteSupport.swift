@@ -104,7 +104,8 @@ final class NativeAuthorReadRelaysHook {
 
   private func readRelays(from kind10002: nostr_fb_Kind10002Parsed) -> [String] {
     var relays: [String] = []
-    for relay in kind10002.relays {
+    for index in 0..<kind10002.relaysCount {
+      guard let relay = kind10002.relays(at: index) else { continue }
       guard relay.read, let url = relay.url else { continue }
       relays.append(url)
       if relays.count >= 5 { break }

@@ -597,11 +597,15 @@ enum NativeContentBlockParser {
       currentTextRuns.append(run)
     }
 
-    let sourceContent = !forceFullContent && kind1.shortenedContent.count > 0
-      ? kind1.shortenedContent
-      : kind1.parsedContent
+    let useShortenedContent = !forceFullContent && kind1.shortenedContentCount > 0
+    let sourceContentCount = useShortenedContent
+      ? kind1.shortenedContentCount
+      : kind1.parsedContentCount
 
-    for block in sourceContent {
+    for index in 0..<sourceContentCount {
+      guard let block = useShortenedContent
+        ? kind1.shortenedContent(at: index)
+        : kind1.parsedContent(at: index) else { continue }
       let blockText = normalizeText(block.text)
       switch block.dataType {
       case .none_:
@@ -618,7 +622,7 @@ enum NativeContentBlockParser {
 
         if isQuote {
           flushText()
-          let quoteRelays = Array(nostr.relays.compactMap { $0 })
+          let quoteRelays = (0..<nostr.relaysCount).compactMap { nostr.relays(at: $0) }
           let mergedRelays = quoteRelays.isEmpty ? resolveRelays() : quoteRelays
           let quoteId = "q_\(lines.count)-\(id)"
           lines.append(
@@ -703,7 +707,8 @@ enum NativeContentBlockParser {
       case .mediagroupdata:
         if let media = block.data(type: nostr_fb_MediaGroupData.self) {
           var mediaItems: [MediaInfo] = []
-          for item in media.items {
+          for index in 0..<media.itemsCount {
+            guard let item = media.items(at: index) else { continue }
             if let image = item.image?.url {
               if showMedia {
                 mediaItems.append(MediaInfo(
@@ -961,7 +966,8 @@ private final class NativeMediaNoteOverlayView: UIView {
           let kind1 = event.parsed(type: nostr_fb_Kind1Parsed.self) else {
       return ""
     }
-    let parts = kind1.parsedContent.compactMap { block -> String? in
+    let parts = (0..<kind1.parsedContentCount).compactMap { index -> String? in
+      guard let block = kind1.parsedContent(at: index) else { return nil }
       switch block.dataType {
       case .imagedata, .videodata, .mediagroupdata:
         return nil

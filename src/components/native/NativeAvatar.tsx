@@ -8,17 +8,25 @@ type Props = {
   query?: boolean;
   initials?: string;
   avatarColor?: string;
+  borderColor?: string;
   style?: object;
 };
 
-export function NativeAvatar({pubkey, query = true, initials, avatarColor, style}: Props) {
+export function NativeAvatar({
+  pubkey,
+  query = true,
+  initials,
+  avatarColor,
+  borderColor,
+  style,
+}: Props) {
   const theme = useAppTheme();
   return (
     <NativeAvatarComponent
       pubkey={pubkey}
       query={query}
       backgroundColor={theme.colors.base200}
-      borderColor={theme.colors.base200}
+      borderColor={borderColor ?? theme.colors.base200}
       initials={initials}
       avatarColor={avatarColor}
       style={[styles.root, style]}

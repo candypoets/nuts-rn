@@ -90,6 +90,7 @@ import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { FeedKindIcon } from '../components/FeedKindIcon';
 import { Avatar } from '../components/notes/Avatar';
+import { NativeAvatar } from '../components/native/NativeAvatar';
 import { useUIStore } from '../stores/uiStore';
 import {
   eventTags,
@@ -147,7 +148,7 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
-const MEDIA_GRID_SEPARATOR = 1;
+const MEDIA_GRID_SEPARATOR = StyleSheet.hairlineWidth;
 const MAX_NEW_NOTE_AVATARS = 3;
 const EMPTY_NEW_NOTES: NewNotesState = { count: 0, pubkeys: [] };
 const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6, 1068];
@@ -1332,7 +1333,11 @@ function MediaGridNoteComponent({
       pointerEvents="none"
       className="absolute bottom-1.5 left-1.5"
     >
-      <Avatar pubkey={pubkey} size="s" />
+      <NativeAvatar
+        pubkey={pubkey}
+        borderColor="transparent"
+        style={styles.mediaAvatar}
+      />
     </View>
   );
 
@@ -1753,6 +1758,10 @@ const styles = StyleSheet.create({
   mediaGridColumns: {
     flexDirection: 'row',
     columnGap: 0,
+  },
+  mediaAvatar: {
+    height: 32,
+    width: 32,
   },
   mediaTile: {
     borderBottomWidth: MEDIA_GRID_SEPARATOR,

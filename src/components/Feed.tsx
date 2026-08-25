@@ -118,6 +118,15 @@ export type FeedProps<T> = {
    * content.
    */
   unwrappedMotionContent?: boolean;
+  /**
+   * Motion-header path only: forwarded as maintainVisibleContentPosition's
+   * minIndexForVisible. Thread screens pass the ancestor-row count so the
+   * anchor stays pinned to the focused row. With the default 0 the anchor
+   * sticks to the topmost partially visible row — an ancestor skeleton —
+   * and that row's height growth when its note resolves is never
+   * compensated (the helper only tracks the anchor's top edge).
+   */
+  maintainVisibleContentMinIndex?: number;
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   numColumns?: number;
@@ -510,6 +519,7 @@ export function Feed<T>({
   bottomAutoScroll = true,
   disableMaintainVisibleContentPosition = false,
   unwrappedMotionContent = false,
+  maintainVisibleContentMinIndex = 0,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   numColumns = 1,
@@ -1278,7 +1288,7 @@ export function Feed<T>({
                 shouldMaintainVisibleContentPosition &&
                 !showCustomRefreshIndicator &&
                 motionAnchorReady
-                  ? { minIndexForVisible: 0 }
+                  ? { minIndexForVisible: maintainVisibleContentMinIndex }
                   : undefined
               }
               onContentSizeChange={handleContentSizeChange}

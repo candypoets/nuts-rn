@@ -6,7 +6,10 @@ import {Feed} from '../src/components/Feed';
 
 type Item = {id: string};
 
-function renderMotionFeed(unwrappedMotionContent: boolean) {
+function renderMotionFeed(
+  unwrappedMotionContent: boolean,
+  maintainVisibleContentMinIndex?: number,
+) {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
@@ -16,6 +19,7 @@ function renderMotionFeed(unwrappedMotionContent: boolean) {
         motionHeader={() => <Text testID="motion-header">Post</Text>}
         empty={<Text>empty</Text>}
         unwrappedMotionContent={unwrappedMotionContent}
+        maintainVisibleContentMinIndex={maintainVisibleContentMinIndex}
       />,
     );
   });
@@ -97,5 +101,23 @@ describe('Feed unwrappedMotionContent', () => {
     expect(scrollView.props.maintainVisibleContentPosition).toEqual({
       minIndexForVisible: 0,
     });
+  });
+
+  test('unwrapped motion path forwards maintainVisibleContentMinIndex', () => {
+    const renderer = renderMotionFeed(true, 2);
+    jest.useFakeTimers();
+
+    const scrollView = renderer.root.findByType(ScrollView);
+    act(() => {
+      scrollView.props.onContentSizeChange(400, 1000);
+    });
+    act(() => {
+      jest.advanceTimersByTime(10);
+    });
+
+    expect(
+      renderer.root.findByType(ScrollView).props
+        .maintainVisibleContentPosition,
+    ).toEqual({ minIndexForVisible: 2 });
   });
 });

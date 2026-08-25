@@ -101,6 +101,11 @@ import {
   NativeMediaViewer,
   isNativeMediaViewerAvailable,
 } from '../components/native/NativeMediaViewer';
+import {
+  EXPLORE_MEDIA_GRID_COLUMNS,
+  exploreMediaTileSize,
+  shouldHoldExploreItem,
+} from './exploreFeedModel';
 
 type ExploreFeedProps = {
   enabled: boolean;
@@ -142,8 +147,7 @@ const GUEST_EXPLORE_RELAYS = [
   'wss://nostr.mom',
 ];
 const AUTH_FALLBACK_DELAY_MS = 1200;
-const MEDIA_GRID_COLUMNS = 2;
-const MEDIA_TILE_HEIGHT = 286;
+const MEDIA_GRID_SEPARATOR = 1;
 const MAX_NEW_NOTE_AVATARS = 3;
 const EMPTY_NEW_NOTES: NewNotesState = { count: 0, pubkeys: [] };
 const DEFAULT_EXPLORE_KINDS: FeedKind[] = [1, 6, 1068];
@@ -321,6 +325,8 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
 }) {
   const itemsRef = useRef<ParsedEvent[]>([]);
   const seenIdsRef = useRef(new Set<string>());
+  const presentedIdsRef = useRef(new Set<string>());
+  const loadedFeedKeyRef = useRef<string | null>(null);
   const requestCacheRef = useRef(0);
   const authFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -535,8 +541,6 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
   const stopRootSubscription = useCallback(
     (clearLoading = true) => {
       subscriptionResolvingRef.current = false;
-      pendingItemsRef.current = [];
-      heldNewItemsRef.current = [];
       if (clearLoading) {
         setLoadingState(false);
         setRefreshingState(false);
@@ -560,6 +564,11 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
     const pending = pendingItemsRef.current;
     if (!pending.length) return;
     pendingItemsRef.current = [];
+
+    pending.forEach(item => {
+      const id = item.id();
+      if (id) presentedIdsRef.current.add(id);
+    });
 
     itemsRef.current = [...itemsRef.current, ...pending].sort(
       (left, right) => right.createdAt() - left.createdAt(),
@@ -589,9 +598,12 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
       seenIdsRef.current.add(id);
       const topItemCreatedAt = itemsRef.current[0]?.createdAt();
       if (
-        !subscriptionResolvingRef.current &&
-        topItemCreatedAt !== undefined &&
-        parsedEvent.createdAt() > topItemCreatedAt
+        shouldHoldExploreItem({
+          itemCreatedAt: parsedEvent.createdAt(),
+          previouslyPresented: presentedIdsRef.current.has(id),
+          subscriptionResolving: subscriptionResolvingRef.current,
+          topItemCreatedAt,
+        })
       ) {
         // Live post: hold it back instead of prepending it mid-read. The
         // "N more posts" header control merges held posts on demand.
@@ -821,7 +833,6 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
     subscriptionResolvingRef.current = false;
     feedSubscriptionRef.current?.close();
     const rootSubId = `${baseSubId}_${relayKey}_${requestCacheRef.current}`;
-    pendingItemsRef.current = [];
     subscriptionResolvingRef.current = true;
     setSubRelays(relaySelectionSubId, feedRelays.map(normalizeRelayUrl));
     feedRelays.forEach(relay => {
@@ -944,7 +955,10 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
       return;
     }
 
-    resetFeedRef.current();
+    if (loadedFeedKeyRef.current !== feedKey) {
+      resetFeedRef.current();
+      loadedFeedKeyRef.current = feedKey;
+    }
     startRootSubscriptionRef.current();
 
     return () => {
@@ -1031,7 +1045,7 @@ const ExploreFeedSurface = memo(function ExploreFeedSurface({
         onChromeVisibilityChange={onChromeVisibilityChange}
         empty={empty}
         contentContainerClassName="pb-44"
-        numColumns={mediaGrid ? MEDIA_GRID_COLUMNS : 1}
+        numColumns={mediaGrid ? EXPLORE_MEDIA_GRID_COLUMNS : 1}
         columnWrapperStyle={mediaGrid ? styles.mediaGridColumns : undefined}
       />
     </View>
@@ -1275,7 +1289,21 @@ function MediaGridNoteComponent({
   const setImageZoom = useUIStore(state => state.setImageZoom);
   const pubkey = note.pubkey() || '';
   const links = useMemo(() => media.filter(item => item.src), [media]);
-  const tileWidth = Math.max(160, viewportWidth / MEDIA_GRID_COLUMNS);
+  const tileSize = exploreMediaTileSize(
+    viewportWidth,
+    EXPLORE_MEDIA_GRID_COLUMNS,
+  );
+  const tileStyle = useMemo(
+    () => [
+      styles.mediaTile,
+      {
+        borderColor: theme.colors.base100,
+        height: tileSize,
+        width: tileSize,
+      },
+    ],
+    [theme.colors.base100, tileSize],
+  );
   const openNote = useCallback(() => {
     if (!links.length) return;
     setImageZoom({
@@ -1289,41 +1317,59 @@ function MediaGridNoteComponent({
       zoomed: 0,
     });
   }, [links, note, setImageZoom]);
-  const overlayTextClassName =
-    theme.id === 'snowwhite' ? 'text-neutral-950' : 'text-white';
+  const videoBadge =
+    primary?.type === 'video' ? (
+      <View
+        pointerEvents="none"
+        className="absolute right-1.5 top-1.5 h-6 w-6 items-center justify-center rounded-full bg-black/65"
+      >
+        <Play size={10} color="#ffffff" fill="#ffffff" />
+      </View>
+    ) : null;
+  const attribution = (
+    <View
+      pointerEvents="none"
+      className="absolute bottom-0 left-0 right-0 bg-black/55 px-1 py-1"
+    >
+      <View className="min-w-0 flex-row items-center gap-1">
+        <Avatar pubkey={pubkey} size="xs" />
+        <User
+          pubkey={pubkey}
+          className="min-w-0 flex-1 text-[10px] font-semibold text-white"
+        />
+      </View>
+    </View>
+  );
 
   if (isNativeMediaViewerAvailable) {
     return (
       <View
         className="relative overflow-hidden bg-base-200"
-        style={styles.mediaTile}
+        style={tileStyle}
       >
         <NativeMediaViewer
           note={note}
           relays={relays}
           visible={visible}
           links={links}
-          containerWidth={tileWidth}
-          height={MEDIA_TILE_HEIGHT}
+          containerWidth={tileSize}
+          height={tileSize}
           style={styles.mediaTileNativeViewer}
         />
-        <View className="absolute bottom-0 left-0 right-0 px-1.5 py-1.5">
-          <View className="min-w-0 flex-row items-center gap-2">
-            <Avatar pubkey={pubkey} size="xxs" />
-            <User
-              pubkey={pubkey}
-              className={`min-w-0 flex-1 text-[11px] font-semibold ${overlayTextClassName}`}
-            />
-          </View>
-        </View>
+        {videoBadge}
+        {attribution}
       </View>
     );
   }
 
   return (
     <Pressable
+      accessibilityLabel={
+        primary?.type === 'video' ? 'Open video post' : 'Open media post'
+      }
+      accessibilityRole="button"
       className="relative overflow-hidden bg-base-200"
-      style={styles.mediaTile}
+      style={tileStyle}
       onPress={openNote}
     >
       <View className="relative h-full w-full bg-base-200">
@@ -1342,23 +1388,9 @@ function MediaGridNoteComponent({
             style={styles.fill}
           />
         ) : null}
-        {primary?.type === 'video' ? (
-          <View className="absolute inset-0 items-center justify-center">
-            <View className="h-8 w-8 items-center justify-center rounded-full bg-black/55">
-              <Play size={14} color="#ffffff" fill="#ffffff" />
-            </View>
-          </View>
-        ) : null}
       </View>
-      <View className="absolute bottom-0 left-0 right-0 px-1.5 py-1.5">
-        <View className="min-w-0 flex-row items-center gap-2">
-          <Avatar pubkey={pubkey} size="xxs" />
-          <User
-            pubkey={pubkey}
-            className={`min-w-0 flex-1 text-[11px] font-semibold ${overlayTextClassName}`}
-          />
-        </View>
-      </View>
+      {videoBadge}
+      {attribution}
     </Pressable>
   );
 }
@@ -1728,7 +1760,9 @@ const styles = StyleSheet.create({
     columnGap: 0,
   },
   mediaTile: {
-    height: MEDIA_TILE_HEIGHT,
+    borderBottomWidth: MEDIA_GRID_SEPARATOR,
+    borderRadius: 0,
+    borderRightWidth: MEDIA_GRID_SEPARATOR,
   },
   mediaTileNativeViewer: {
     borderRadius: 0,

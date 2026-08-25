@@ -261,7 +261,21 @@ function FeedVirtualRowContent<T>({
   if (numColumns <= 1) {
     return rowContent[0] ?? null;
   }
-  return <View style={columnWrapperStyle}>{rowContent}</View>;
+  const missingColumns = Math.max(0, numColumns - row.items.length);
+  return (
+    <View style={columnWrapperStyle}>
+      {rowContent}
+      {Array.from({length: missingColumns}, (_, index) => (
+        <View
+          key={`empty-column:${index}`}
+          accessibilityElementsHidden
+          className="flex-1"
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+        />
+      ))}
+    </View>
+  );
 }
 
 function isDarkHex(hex: string) {

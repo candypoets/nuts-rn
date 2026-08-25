@@ -1069,7 +1069,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   override init(frame: CGRect) {
     super.init(frame: frame)
     clipsToBounds = true
-    layer.cornerRadius = 8
+    layer.cornerRadius = 0
     backgroundColor = .clear
     configureRemainingItemsLabel()
     noteOverlayView.onNativeRoute = { [weak self] route in
@@ -1083,7 +1083,7 @@ class NativeMediaViewerContentView: UIView, UIScrollViewDelegate, UIGestureRecog
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     clipsToBounds = true
-    layer.cornerRadius = 8
+    layer.cornerRadius = 0
     backgroundColor = .clear
     configureRemainingItemsLabel()
     noteOverlayView.onNativeRoute = { [weak self] route in

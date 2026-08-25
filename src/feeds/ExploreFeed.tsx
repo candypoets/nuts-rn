@@ -90,7 +90,6 @@ import type { AppNavigationProp } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { FeedKindIcon } from '../components/FeedKindIcon';
 import { Avatar } from '../components/notes/Avatar';
-import { User } from '../components/notes/User';
 import { useUIStore } from '../stores/uiStore';
 import {
   eventTags,
@@ -103,6 +102,7 @@ import {
 } from '../components/native/NativeMediaViewer';
 import {
   EXPLORE_MEDIA_GRID_COLUMNS,
+  exploreMediaTileHeight,
   exploreMediaTileSize,
   shouldHoldExploreItem,
 } from './exploreFeedModel';
@@ -1293,16 +1293,17 @@ function MediaGridNoteComponent({
     viewportWidth,
     EXPLORE_MEDIA_GRID_COLUMNS,
   );
+  const tileHeight = exploreMediaTileHeight(tileSize);
   const tileStyle = useMemo(
     () => [
       styles.mediaTile,
       {
         borderColor: theme.colors.base100,
-        height: tileSize,
+        height: tileHeight,
         width: tileSize,
       },
     ],
-    [theme.colors.base100, tileSize],
+    [theme.colors.base100, tileHeight, tileSize],
   );
   const openNote = useCallback(() => {
     if (!links.length) return;
@@ -1326,18 +1327,12 @@ function MediaGridNoteComponent({
         <Play size={10} color="#ffffff" fill="#ffffff" />
       </View>
     ) : null;
-  const attribution = (
+  const avatarOverlay = (
     <View
       pointerEvents="none"
-      className="absolute bottom-0 left-0 right-0 bg-black/55 px-1 py-1"
+      className="absolute bottom-1.5 left-1.5"
     >
-      <View className="min-w-0 flex-row items-center gap-1">
-        <Avatar pubkey={pubkey} size="xs" />
-        <User
-          pubkey={pubkey}
-          className="min-w-0 flex-1 text-[10px] font-semibold text-white"
-        />
-      </View>
+      <Avatar pubkey={pubkey} size="s" />
     </View>
   );
 
@@ -1353,11 +1348,11 @@ function MediaGridNoteComponent({
           visible={visible}
           links={links}
           containerWidth={tileSize}
-          height={tileSize}
+          height={tileHeight}
           style={styles.mediaTileNativeViewer}
         />
         {videoBadge}
-        {attribution}
+        {avatarOverlay}
       </View>
     );
   }
@@ -1390,7 +1385,7 @@ function MediaGridNoteComponent({
         ) : null}
       </View>
       {videoBadge}
-      {attribution}
+      {avatarOverlay}
     </Pressable>
   );
 }

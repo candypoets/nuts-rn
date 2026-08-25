@@ -1,5 +1,7 @@
 import {
   EXPLORE_MEDIA_GRID_COLUMNS,
+  EXPLORE_MEDIA_TILE_HEIGHT_RATIO,
+  exploreMediaTileHeight,
   exploreMediaTileSize,
   shouldHoldExploreItem,
 } from '../src/feeds/exploreFeedModel';
@@ -47,5 +49,10 @@ describe('Explore media grid', () => {
 
   it('keeps a partial final row on the same grid track', () => {
     expect(exploreMediaTileSize(412, 3)).toBeCloseTo(137.333, 3);
+  });
+
+  it('uses a modest portrait ratio instead of square thumbnails', () => {
+    expect(EXPLORE_MEDIA_TILE_HEIGHT_RATIO).toBe(1.2);
+    expect(exploreMediaTileHeight(130)).toBe(156);
   });
 });

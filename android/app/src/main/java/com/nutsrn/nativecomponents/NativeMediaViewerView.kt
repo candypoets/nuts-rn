@@ -64,7 +64,7 @@ class NativeMediaViewerView(context:Context):ViewGroup(context){
   private val cells=mutableListOf<NativeMediaCell>();private var dialog:Dialog?=null
   private var playbackActive=true
   private var mediaPropsDirty=false
-  init{clipChildren=true;clipToPadding=true;background=rounded(Color.TRANSPARENT,8f)}
+  init{clipChildren=true;clipToPadding=true;setBackgroundColor(Color.TRANSPARENT)}
   fun setUrls(v:ReadableArray?){urls=v.strings();mediaPropsDirty=true};fun setTypes(v:ReadableArray?){types=v.strings();mediaPropsDirty=true};fun setThumbnails(v:ReadableArray?){thumbnails=v.strings();mediaPropsDirty=true};fun setDims(v:ReadableArray?){dims=v.strings();mediaPropsDirty=true};fun setItemKeys(v:ReadableArray?){keys=v.strings();mediaPropsDirty=true}
   internal fun commitMediaProps(){if(!mediaPropsDirty)return;mediaPropsDirty=false;rebuild()}
   internal fun setMediaItems(value:List<AndroidMediaInfo>){urls=value.map{it.url};types=value.map{it.type};thumbnails=value.map{it.thumbnail.orEmpty()};dims=value.map{it.dim.orEmpty()};keys=value.map{it.key};mediaPropsDirty=false;rebuild()}
@@ -99,7 +99,7 @@ class NativeMediaViewerView(context:Context):ViewGroup(context){
       }
     }
   }
-  private fun rounded(c:Int,r:Float)=android.graphics.drawable.GradientDrawable().apply{setColor(c);cornerRadius=dp(r)};private fun dp(v:Float)=v*resources.displayMetrics.density;private fun exact(v:Int)=MeasureSpec.makeMeasureSpec(v,MeasureSpec.EXACTLY);private fun color(v:String?,f:Int)=nativeCssColor(v,f);private fun ReadableArray?.strings()=if(this==null)emptyList()else(0 until size()).map{getString(it).orEmpty()};private fun ReadableArray.bytes()=ByteArray(size()){(getInt(it)and 255).toByte()}
+  private fun dp(v:Float)=v*resources.displayMetrics.density;private fun exact(v:Int)=MeasureSpec.makeMeasureSpec(v,MeasureSpec.EXACTLY);private fun color(v:String?,f:Int)=nativeCssColor(v,f);private fun ReadableArray?.strings()=if(this==null)emptyList()else(0 until size()).map{getString(it).orEmpty()};private fun ReadableArray.bytes()=ByteArray(size()){(getInt(it)and 255).toByte()}
 }
 
 private class NativeMediaCell(context:Context,val item:AndroidMediaInfo,session:String,grid:Boolean,autoplay:Boolean,val tapped:(()->Unit)?):FrameLayout(context){

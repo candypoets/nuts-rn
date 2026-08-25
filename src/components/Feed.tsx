@@ -107,6 +107,17 @@ export type FeedProps<T> = {
   bottom?: boolean;
   bottomAutoScroll?: boolean | 'initial';
   disableMaintainVisibleContentPosition?: boolean;
+  /**
+   * Motion-header path only: renders rows as direct children of the native
+   * scroll view instead of inside HeaderMotion's content wrapper view. The
+   * platform maintainVisibleContentPosition anchors on the first visible
+   * DIRECT child of the scroll content view; inside the wrapper it can never
+   * see the rows, so prepended content (e.g. thread ancestors) pushes the
+   * viewport. Only use with a motion header whose total height is fixed after
+   * mount — a header-height change would be compensated like prepended
+   * content.
+   */
+  unwrappedMotionContent?: boolean;
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   numColumns?: number;
@@ -498,6 +509,7 @@ export function Feed<T>({
   bottom = false,
   bottomAutoScroll = true,
   disableMaintainVisibleContentPosition = false,
+  unwrappedMotionContent = false,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   numColumns = 1,
@@ -512,11 +524,14 @@ export function Feed<T>({
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
   const [nearTop, setNearTop] = useState(true);
+  const [motionAnchorReady, setMotionAnchorReady] = useState(false);
   const listRef = useAnimatedRef<ScrollView>();
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
+  const anchorReadyFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const anchorReadyScheduledRef = useRef(false);
   const scrollViewportHeightRef = useRef(0);
   const scrollContentHeightRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
@@ -985,10 +1000,37 @@ export function Feed<T>({
     ],
   );
 
+  // The motion header offset starts at paddingTop: 0 and is applied once the
+  // header measures itself, one or two frames after the first content layout.
+  // Latch maintainVisibleContentPosition on only after that has landed so the
+  // initial offset application is not compensated as if content had been
+  // prepended above the anchor row.
+  const scheduleMotionAnchorReady = useCallback(() => {
+    if (anchorReadyScheduledRef.current) return;
+    anchorReadyScheduledRef.current = true;
+    anchorReadyFrameRef.current = requestAnimationFrame(() => {
+      anchorReadyFrameRef.current = requestAnimationFrame(() => {
+        anchorReadyFrameRef.current = null;
+        setMotionAnchorReady(true);
+      });
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (anchorReadyFrameRef.current) {
+        cancelAnimationFrame(anchorReadyFrameRef.current);
+        anchorReadyFrameRef.current = null;
+      }
+    },
+    [],
+  );
+
   const handleContentSizeChange = useCallback(
     (_width: number, height: number) => {
       if (!bottom) {
         animatedContentHeight.set(height);
+        if (unwrappedMotionContent) scheduleMotionAnchorReady();
         return;
       }
 
@@ -1010,6 +1052,8 @@ export function Feed<T>({
       bottom,
       maybeTriggerNearBottom,
       nearBottomThreshold,
+      scheduleMotionAnchorReady,
+      unwrappedMotionContent,
     ],
   );
 
@@ -1150,6 +1194,7 @@ export function Feed<T>({
       {bottom ? (
         <FlashList
           ref={bottomListRef}
+          alwaysBounceVertical
           contentInsetAdjustmentBehavior="never"
           data={items}
           keyExtractor={keyExtractor}
@@ -1195,9 +1240,72 @@ export function Feed<T>({
           }
           scrollEventThrottle={16}
         />
+      ) : usesMotionHeader && unwrappedMotionContent ? (
+        <HeaderMotion.ScrollManager
+          scrollId={motionScrollId}
+          animatedRef={listRef as never}
+          onScroll={handleAnimatedScroll}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={[refreshColor]}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        >
+          {(scrollableProps, { originalHeaderHeight }) => (
+            <Animated.ScrollView
+              {...(scrollableProps as unknown as Pick<
+                React.ComponentProps<typeof Animated.ScrollView>,
+                'onLayout' | 'onScroll' | 'refreshControl' | 'ref'
+              >)}
+              alwaysBounceVertical
+              className="flex-1"
+              contentInsetAdjustmentBehavior="never"
+              contentContainerClassName={contentContainerClassName}
+              contentContainerStyle={
+                motionHeaderOverlaysContent
+                  ? undefined
+                  : { paddingTop: originalHeaderHeight }
+              }
+              maintainVisibleContentPosition={
+                shouldMaintainVisibleContentPosition &&
+                !showCustomRefreshIndicator &&
+                motionAnchorReady
+                  ? { minIndexForVisible: 0 }
+                  : undefined
+              }
+              onContentSizeChange={handleContentSizeChange}
+              scrollEventThrottle={16}
+            >
+              {listHeader}
+              {items.length === 0 ? (
+                listEmpty
+              ) : (
+                <VirtualColumn
+                  items={virtualRowsCollection}
+                  itemToKey={row => row.key}
+                  onItemModeChange={handleVirtualRowModeChange}
+                  removeClippedSubviews={removeClippedSubviews}
+                  testID={`feed-virtual-column:${numColumns}`}
+                >
+                  {renderVirtualRowContent}
+                </VirtualColumn>
+              )}
+              {listFooter}
+            </Animated.ScrollView>
+          )}
+        </HeaderMotion.ScrollManager>
       ) : usesMotionHeader ? (
         <HeaderMotion.ScrollView
           animatedRef={listRef as never}
+          alwaysBounceVertical
           className="flex-1"
           contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}
@@ -1244,6 +1352,7 @@ export function Feed<T>({
       ) : (
         <Animated.ScrollView
           ref={listRef}
+          alwaysBounceVertical
           className="flex-1"
           contentInsetAdjustmentBehavior="never"
           contentContainerClassName={contentContainerClassName}

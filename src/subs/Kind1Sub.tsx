@@ -730,7 +730,10 @@ export function Kind1Sub({
 
     // Let the focused row mount as the ScrollView's first visible child, then
     // prepend its parent as an independent VirtualColumn row. The ScrollView's
-    // maintainVisibleContentPosition keeps the focused row in place.
+    // maintainVisibleContentPosition keeps the focused row in place — this
+    // only works because the Feed below sets unwrappedMotionContent: inside
+    // HeaderMotion's content wrapper the platform anchor helper cannot see
+    // individual rows, and prepends would push the focused row down.
     const frame = requestAnimationFrame(() => {
       setAncestorRows(current =>
         current.some(row => row.id === parentId)
@@ -1332,6 +1335,7 @@ export function Kind1Sub({
       renderItem={renderItem}
       motionHeader={motionHeader}
       headerSafeArea
+      unwrappedMotionContent
       visible={visible}
       loading={loading && !refreshing}
       pullToRefresh

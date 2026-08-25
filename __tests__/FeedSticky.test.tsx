@@ -192,6 +192,10 @@ test('motion feed exposes its scroll view as the first native descendant', () =>
       .contentInsetAdjustmentBehavior,
   ).toBe('never');
   expect(
+    (firstChild as ReactTestRenderer.ReactTestInstance).props
+      .alwaysBounceVertical,
+  ).toBe(true);
+  expect(
     (firstChild as ReactTestRenderer.ReactTestInstance).findAllByType(
       ScrollView,
     ),

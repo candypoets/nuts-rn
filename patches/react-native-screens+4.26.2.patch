@@ -1,0 +1,109 @@
+diff --git a/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h b/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h
+index 04d40b3..8a70838 100644
+--- a/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h
++++ b/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h
+@@ -15,6 +15,13 @@
+  */
+ + (nullable UIScrollView *)findScrollViewInFirstDescendantChainFrom:(nullable UIView *)view;
+ 
++/**
++ * Searches the visible subtree breadth-first for a vertically scrolling view.
++ * Horizontal pagers can otherwise be mistaken for tab content and prevent the
++ * iOS tab bar's minimize-on-scroll behavior from following the page's feed.
++ */
+++ (nullable UIScrollView *)findVerticalScrollViewBreadthFirstFrom:(nullable UIView *)view;
++
+ /**
+  * Looks for UIScrollView in a similar way to `findScrollViewInFirstDescendantChainFrom`, until it finds
+  * `RNSContentScrollViewProviding`. Then, it delegates the task to the provider, and returns the results. This can
+diff --git a/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.mm b/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.mm
+index 2434c61..0f84283 100644
+--- a/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.mm
++++ b/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.mm
+@@ -19,6 +19,48 @@
+   return nil;
+ }
+ 
+++ (nullable UIScrollView *)findVerticalScrollViewBreadthFirstFrom:(nullable UIView *)view
++{
++  if (view == nil) {
++    return nil;
++  }
++
++  UIWindow *window = view.window;
++  NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:view];
++  NSUInteger index = 0;
++
++  static constexpr NSUInteger kMaxVisitedViews = 2000;
++  while (index < queue.count && index < kMaxVisitedViews) {
++    UIView *currentView = queue[index++];
++    if (currentView != view && (currentView.hidden || currentView.alpha <= 0.01)) {
++      continue;
++    }
++
++    if (window != nil && currentView != view) {
++      if (currentView.window != window) {
++        continue;
++      }
++      CGRect visibleFrame = [currentView convertRect:currentView.bounds toView:window];
++      if (!CGRectIntersectsRect(window.bounds, visibleFrame)) {
++        continue;
++      }
++    }
++
++    if ([currentView isKindOfClass:UIScrollView.class]) {
++      UIScrollView *scrollView = static_cast<UIScrollView *>(currentView);
++      const BOOL hasVerticalContent =
++          scrollView.contentSize.height > CGRectGetHeight(scrollView.bounds) + 1.0;
++      if (scrollView.scrollEnabled && (scrollView.alwaysBounceVertical || hasVerticalContent)) {
++        return scrollView;
++      }
++    }
++
++    [queue addObjectsFromArray:currentView.subviews];
++  }
++
++  return nil;
++}
++
+ + (nullable UIScrollView *)findContentScrollViewWithDelegatingToProvider:(nullable UIView *)view
+ {
+   UIView *currentView = view;
+diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
+index 24bb71e..05d1df1 100644
+--- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
++++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
+@@ -2,6 +2,7 @@
+ #import "RNSContainer.h"
+ #import "RNSContainerItemSupport.h"
+ #import "RNSLog.h"
++#import "RNSScrollViewFinder.h"
+ #import "RNSTabBarController.h"
+ #import "UIScrollView+RNScreens.h"
+ 
+@@ -140,6 +141,25 @@
+ 
+ #if !TARGET_OS_TV
+ 
++- (nullable UIScrollView *)contentScrollViewForEdge:(NSDirectionalRectEdge)edge API_AVAILABLE(ios(26.0))
++{
++  // Work around https://github.com/software-mansion/react-native-screens/issues/4145.
++  // UIKit can otherwise select a horizontal pager before the active vertical feed.
++  if (edge == NSDirectionalRectEdgeBottom) {
++    UIScrollView *verticalScrollView =
++        [RNSScrollViewFinder findVerticalScrollViewBreadthFirstFrom:self.tabScreenComponentView];
++    if (verticalScrollView != nil) {
++      return verticalScrollView;
++    }
++  }
++
++  return [super contentScrollViewForEdge:edge];
++}
++
++#endif // !TARGET_OS_TV
++
++#if !TARGET_OS_TV
++
+ - (RNSOrientation)evaluateOrientation
+ {
+   if ([self.childViewControllers.lastObject respondsToSelector:@selector(evaluateOrientation)]) {

@@ -352,7 +352,6 @@ export function Kind1Sub({
   const [headerItem, setHeaderItem] = useState<ParsedEvent | null>(null);
   const [authorReadRelays, setAuthorReadRelays] = useState<string[]>([]);
   const [ancestorRows, setAncestorRows] = useState<AncestorRow[]>([]);
-  const [focusedRowReady, setFocusedRowReady] = useState(false);
   const [items, setItems] = useState<ParsedEvent[]>([]);
   const [allReplies, setAllReplies] = useState<ParsedEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -695,7 +694,6 @@ export function Kind1Sub({
     firstCommitAtRef.current = null;
     setHeaderItem(null);
     setAncestorRows(current => (current.length ? [] : current));
-    setFocusedRowReady(false);
     // Bail when already empty: fresh [] literals would change state identity
     // and force an extra render pass on every mount and root change.
     setAuthorReadRelays(current =>
@@ -726,14 +724,13 @@ export function Kind1Sub({
   }, [logEffectCycle, reset, rootId, runLifecycleEffects]);
 
   useEffect(() => {
-    if (!runLifecycleEffects || !headerItem || !focusedRowReady) {
-      return undefined;
-    }
+    if (!runLifecycleEffects || !headerItem) return undefined;
     const parentId = threadAncestorId(headerItem);
     if (!parentId || parentId === rootId) return undefined;
 
-    // Mount the focused row first. Once its keyed list is ready, parents can
-    // be prepended as independent rows and the list opens on the focused key.
+    // Let the focused row mount as the ScrollView's first visible child, then
+    // prepend its parent as an independent VirtualColumn row. The ScrollView's
+    // maintainVisibleContentPosition keeps the focused row in place.
     const frame = requestAnimationFrame(() => {
       setAncestorRows(current =>
         current.some(row => row.id === parentId)
@@ -742,7 +739,7 @@ export function Kind1Sub({
       );
     });
     return () => cancelAnimationFrame(frame);
-  }, [focusedRowReady, headerItem, rootId, runLifecycleEffects]);
+  }, [headerItem, rootId, runLifecycleEffects]);
 
   useEffect(() => {
     if (!runLifecycleEffects) return undefined;
@@ -1195,10 +1192,6 @@ export function Kind1Sub({
     },
     [rootId],
   );
-  const handleFeedReady = useCallback(() => {
-    setFocusedRowReady(true);
-  }, []);
-
   const threadRows = useMemo<ThreadRow[]>(() => {
     if (!headerItem || headerItem.id() !== rootId) return [];
 
@@ -1344,11 +1337,9 @@ export function Kind1Sub({
       pullToRefresh
       refreshing={refreshing}
       onRefresh={handleRefresh}
-      onReady={handleFeedReady}
       onNearBottom={handleNearBottom}
       removeClippedSubviews={false}
       contentContainerClassName="pb-28"
-      anchorItemId={`focused:${rootId}`}
     />
   );
 }

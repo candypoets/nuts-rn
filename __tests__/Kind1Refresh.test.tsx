@@ -275,7 +275,6 @@ describe('Kind1 thread pull to refresh', () => {
         expect.objectContaining({ item: focused, type: 'focused' }),
       ]),
     );
-    expect(getFeedProps().anchorItemId).toBe(`focused:${focusedId}`);
 
     const renderItem = getFeedProps().renderItem as (info: {
       index: number;
@@ -296,9 +295,6 @@ describe('Kind1 thread pull to refresh', () => {
       threadCard: true,
     });
 
-    act(() => {
-      (getFeedProps().onReady as () => void)();
-    });
     act(() => {
       jest.advanceTimersByTime(20);
     });

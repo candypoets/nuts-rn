@@ -26,7 +26,6 @@
   "dependencies": {
     "@candypoets/nipworker": "0.99.14",
     "@cashu/cashu-ts": "^3.1.1",
-    "@legendapp/list": "^3.0.6",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-menu/menu": "^2.0.0",

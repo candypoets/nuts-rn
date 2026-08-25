@@ -17,17 +17,15 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewStyle,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
-import type { ColumnWrapperStyle } from '@legendapp/list/react-native';
-import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import {
   FlashList,
   type FlashListRef,
@@ -112,16 +110,13 @@ export type FeedProps<T> = {
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   numColumns?: number;
-  columnWrapperStyle?: ColumnWrapperStyle;
+  columnWrapperStyle?: ViewStyle;
   onRefresh?: () => void | Promise<void>;
-  onReady?: () => void;
   onNearBottom?: (event: { distance: number }) => void;
   onChromeVisibilityChange?: (visible: boolean) => void;
   onViewportStateChange?: (state: { start: number; down: boolean }) => void;
   contentContainerClassName?: string;
   removeClippedSubviews?: boolean;
-  /** Opens with this keyed item at the start while preceding rows stay scrollable. */
-  anchorItemId?: string | number;
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
@@ -206,7 +201,7 @@ function createFeedViewportStore(): FeedViewportStore {
 }
 
 type FeedVirtualRowContentProps<T> = {
-  columnWrapperStyle?: ColumnWrapperStyle;
+  columnWrapperStyle?: ViewStyle;
   data: readonly T[];
   numColumns: number;
   renderItem: (info: FeedRenderItemInfo<T>) => ReactElement | null;
@@ -508,13 +503,11 @@ export function Feed<T>({
   numColumns = 1,
   columnWrapperStyle,
   onRefresh,
-  onReady,
   onNearBottom,
   onChromeVisibilityChange,
   onViewportStateChange,
   contentContainerClassName = 'pb-28',
   removeClippedSubviews = false,
-  anchorItemId,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
@@ -522,7 +515,6 @@ export function Feed<T>({
   const listRef = useAnimatedRef<ScrollView>();
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
   const scrollViewportHeightRef = useRef(0);
@@ -600,13 +592,6 @@ export function Feed<T>({
     }),
     [virtualRows],
   );
-  const anchorRowIndex = useMemo(() => {
-    if (anchorItemId === undefined) return -1;
-    const anchorKey = String(anchorItemId);
-    return virtualRows.findIndex(row =>
-      row.items.some(item => item.key === anchorKey),
-    );
-  }, [anchorItemId, virtualRows]);
   const shouldMaintainVisibleContentPosition =
     !disableMaintainVisibleContentPosition && (items.length > 0 || !loading);
 
@@ -1078,10 +1063,6 @@ export function Feed<T>({
     ),
     [columnWrapperStyle, items, numColumns, renderItem, screenActive, visible],
   );
-  const renderAnchoredRow = useCallback(
-    ({ item }: { item: FeedVirtualRow<T> }) => renderVirtualRowContent(item),
-    [renderVirtualRowContent],
-  );
   const handleVirtualRowModeChange = useCallback(
     (row: FeedVirtualRow<T>, _key: string, event: FeedModeChangeEvent) => {
       row.viewport.setMode(event.mode);
@@ -1146,15 +1127,6 @@ export function Feed<T>({
     if (!footer) return null;
     return <View className="w-full">{footer(chromeProps)}</View>;
   }, [chromeProps, footer]);
-  const anchoredListFooter = useMemo(
-    () => (
-      <>
-        {listFooter}
-        <View pointerEvents="none" style={{ height: windowHeight }} />
-      </>
-    ),
-    [listFooter, windowHeight],
-  );
 
   const listEmpty = useMemo(() => {
     if (loading) {
@@ -1223,76 +1195,6 @@ export function Feed<T>({
           }
           scrollEventThrottle={16}
         />
-      ) : usesMotionHeader && anchorItemId !== undefined ? (
-        <HeaderMotion.ScrollManager
-          animatedRef={listRef as never}
-          scrollId={motionScrollId}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          onScroll={handleAnimatedScroll}
-          refreshControl={
-            pullToRefresh && onRefresh ? (
-              <RefreshControl
-                colors={[refreshColor]}
-                progressBackgroundColor={theme.colors.base200}
-                refreshing={refreshing}
-                tintColor={refreshColor}
-                onRefresh={onRefresh}
-              />
-            ) : undefined
-          }
-        >
-          {(scrollableProps, { originalHeaderHeight }) => (
-            <AnimatedLegendList
-              key={`anchored-feed:${anchorRowIndex}:${Math.round(
-                originalHeaderHeight,
-              )}`}
-              refScrollView={scrollableProps.ref as never}
-              className="flex-1"
-              contentContainerClassName={contentContainerClassName}
-              contentContainerStyle={
-                motionHeaderOverlaysContent
-                  ? undefined
-                  : { paddingTop: originalHeaderHeight }
-              }
-              contentInsetAdjustmentBehavior="never"
-              data={virtualRows}
-              estimatedItemSize={180}
-              initialScrollIndex={
-                anchorRowIndex > 0
-                  ? {
-                      index: anchorRowIndex,
-                      viewOffset: originalHeaderHeight,
-                      viewPosition: 0,
-                    }
-                  : undefined
-              }
-              keyExtractor={row => row.key}
-              ListEmptyComponent={listEmpty}
-              ListFooterComponent={anchoredListFooter}
-              ListHeaderComponent={listHeader}
-              maintainVisibleContentPosition={false}
-              alwaysRender={
-                anchorRowIndex >= 0
-                  ? {
-                      indices: Array.from(
-                        { length: anchorRowIndex + 1 },
-                        (_, index) => index,
-                      ),
-                    }
-                  : undefined
-              }
-              renderItem={renderAnchoredRow}
-              recycleItems={false}
-              onContentSizeChange={handleContentSizeChange}
-              onLayout={scrollableProps.onLayout}
-              onLoad={onReady}
-              onScroll={scrollableProps.onScroll as never}
-              refreshControl={scrollableProps.refreshControl as never}
-              scrollEventThrottle={16}
-            />
-          )}
-        </HeaderMotion.ScrollManager>
       ) : usesMotionHeader ? (
         <HeaderMotion.ScrollView
           animatedRef={listRef as never}

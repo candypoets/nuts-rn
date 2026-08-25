@@ -41,7 +41,7 @@ import { Header } from './Header';
 import { Kind20Content } from './Kind20Content';
 import { Kind1068Content } from './Kind1068Content';
 import { Kind30023Content } from './Kind30023Content';
-import {Kind9802Content} from './Kind9802Content';
+import { Kind9802Content } from './Kind9802Content';
 import { KindPreGenericContent } from './KindPreGenericContent';
 import { ZapSummary } from './ZapSummary';
 import { eventTags, tagValue } from './kindHelpers';
@@ -154,12 +154,15 @@ type NoteProps = {
   showQuote?: boolean;
   showMedia?: boolean;
   showRoot?: boolean;
+  /** Resolves the ancestor normally but leaves rendering to the parent list. */
+  inlineAncestor?: boolean;
   threadCard?: boolean;
   disableOpen?: boolean;
   depth?: number;
   leading?: boolean;
   tailing?: boolean;
   ancestorIds?: string[];
+  onResolved?: (event: ParsedEvent) => void;
   showReplies?: (post: ParsedEvent) => (events: ParsedEvent[]) => ParsedEvent[];
 };
 
@@ -495,12 +498,14 @@ function NoteComponent({
   showQuote = true,
   showMedia = true,
   showRoot = true,
+  inlineAncestor = true,
   threadCard = false,
   disableOpen = false,
   depth = 0,
   leading = false,
   tailing = false,
   ancestorIds = EMPTY_ANCESTOR_IDS,
+  onResolved,
   showReplies,
 }: NoteProps) {
   const theme = useAppTheme();
@@ -550,6 +555,10 @@ function NoteComponent({
     () => relayList([...readRelays, ...relays]),
     [readRelays, relays],
   );
+
+  useEffect(() => {
+    if (displayNote) onResolved?.(displayNote);
+  }, [displayNote, onResolved]);
   const authorRelayState = useEffectiveAuthorRelayState({
     subId: displayId || undefined,
     pubkey: displayNote?.pubkey(),
@@ -610,14 +619,7 @@ function NoteComponent({
       return;
     }
     pushDistinct(router, { pathname: '/Kind1Thread', params: { nevent } });
-  }, [
-    disableOpen,
-    displayId,
-    displayNote,
-    effectiveId,
-    noteRelays,
-    router,
-  ]);
+  }, [disableOpen, displayId, displayNote, effectiveId, noteRelays, router]);
 
   useEffect(() => {
     const nextContext = [...contextRef.current];
@@ -733,7 +735,7 @@ function NoteComponent({
     () => (showReplies && displayNote ? showReplies(displayNote)(replies) : []),
     [displayNote, replies, showReplies],
   );
-  const shouldRenderAncestor = !!(
+  const shouldResolveAncestor = !!(
     showRoot &&
     ancestorReplyId &&
     ancestorReplyId !== displayId &&
@@ -743,20 +745,16 @@ function NoteComponent({
   );
   const ancestorHintRelays = useMemo(
     () =>
-      kind1111
-        ? relayList(fbArray(kind1111, 'parentRelays'))
-        : EMPTY_RELAYS,
+      kind1111 ? relayList(fbArray(kind1111, 'parentRelays')) : EMPTY_RELAYS,
     [kind1111],
   );
   const resolvedAncestorRelays = useEffectiveAuthorRelays({
-    subId: shouldRenderAncestor ? (ancestorReplyId as string) : undefined,
-    pubkey: shouldRenderAncestor
+    subId: shouldResolveAncestor ? (ancestorReplyId as string) : undefined,
+    pubkey: shouldResolveAncestor
       ? kind1?.reply()?.author() || kind1111?.parentAuthor?.()
       : undefined,
     marker: 'read',
-    fallbackRelays: ancestorHintRelays.length
-      ? ancestorHintRelays
-      : noteRelays,
+    fallbackRelays: ancestorHintRelays.length ? ancestorHintRelays : noteRelays,
   });
   const ancestorRelays = useMemo(
     () => relayList([...ancestorHintRelays, ...resolvedAncestorRelays]),
@@ -847,7 +845,7 @@ function NoteComponent({
     pendingAncestorId,
   ]);
   const isQuote = depth > 0;
-  const hasTopThreadConnector = shouldRenderAncestor || tailing;
+  const hasTopThreadConnector = shouldResolveAncestor || tailing;
   const hasBottomThreadConnector = leading || visibleReplies.length > 0;
   const containerClassName = threadCard
     ? [
@@ -987,19 +985,20 @@ function NoteComponent({
     ),
     [noteRelays, visible],
   );
-  const ancestor = shouldRenderAncestor ? (
-    <Note
-      noteId={ancestorReplyId as string}
-      context={contextRef.current}
-      visible={visible}
-      relays={ancestorRelays}
-      showQuote={showQuote}
-      showMedia={showMedia}
-      leading
-      depth={depth}
-      ancestorIds={displayId ? [...ancestorIds, displayId] : ancestorIds}
-    />
-  ) : null;
+  const ancestor =
+    shouldResolveAncestor && inlineAncestor ? (
+      <Note
+        noteId={ancestorReplyId as string}
+        context={contextRef.current}
+        visible={visible}
+        relays={ancestorRelays}
+        showQuote={showQuote}
+        showMedia={showMedia}
+        leading
+        depth={depth}
+        ancestorIds={displayId ? [...ancestorIds, displayId] : ancestorIds}
+      />
+    ) : null;
   if (depth > 3) {
     return null;
   }
@@ -1131,12 +1130,14 @@ export const Note = memo(
     (previous.showQuote ?? true) === (next.showQuote ?? true) &&
     (previous.showMedia ?? true) === (next.showMedia ?? true) &&
     (previous.showRoot ?? true) === (next.showRoot ?? true) &&
+    (previous.inlineAncestor ?? true) === (next.inlineAncestor ?? true) &&
     (previous.threadCard ?? false) === (next.threadCard ?? false) &&
     (previous.disableOpen ?? false) === (next.disableOpen ?? false) &&
     (previous.depth ?? 0) === (next.depth ?? 0) &&
     (previous.leading ?? false) === (next.leading ?? false) &&
     (previous.tailing ?? false) === (next.tailing ?? false) &&
     previous.showReplies === next.showReplies &&
+    previous.onResolved === next.onResolved &&
     sameStringArray(
       previous.ancestorIds ?? EMPTY_RELAYS,
       next.ancestorIds ?? EMPTY_RELAYS,

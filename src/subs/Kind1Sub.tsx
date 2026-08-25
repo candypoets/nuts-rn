@@ -1,11 +1,18 @@
-import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Pressable, Text, View} from 'react-native';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Pressable, Text, View } from 'react-native';
 import type {
   ParsedEvent,
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
-import {MessageType} from '@candypoets/nipworker';
+import { MessageType } from '@candypoets/nipworker';
 import {
   createPaginatedSubscription,
   type PaginatedSubscription,
@@ -21,24 +28,24 @@ import {
   isKind10002,
   isParsedEvent,
 } from '@candypoets/nipworker/utils';
-import {ChevronLeft} from 'lucide-react-native';
-import {decode, type EventPointer} from 'nostr-tools/nip19';
+import { ChevronLeft } from 'lucide-react-native';
+import { decode, type EventPointer } from 'nostr-tools/nip19';
 
-import {Feed} from '../components/Feed';
-import {Note} from '../components/notes/Note';
-import {RelaysList as NoteRelaysList} from '../components/notes/RelaysList';
-import {DEFAULT_FEED_RELAYS} from '../nostr/relays';
-import {subscribeUntilEose} from '../nostr/subscribeUntilEose';
-import {FEED_PAGE_WINDOW_SECONDS} from '../nostr/pagination';
-import {kind1RepliesSubIdPrefix} from '../nostr/subscriptionIds';
+import { Feed } from '../components/Feed';
+import { Note } from '../components/notes/Note';
+import { RelaysList as NoteRelaysList } from '../components/notes/RelaysList';
+import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
+import { subscribeUntilEose } from '../nostr/subscribeUntilEose';
+import { FEED_PAGE_WINDOW_SECONDS } from '../nostr/pagination';
+import { kind1RepliesSubIdPrefix } from '../nostr/subscriptionIds';
 import {
   HIGHLIGHT_KIND,
   highlightEventPipeline,
   parsedHighlightFromRaw,
 } from '../nostr/highlights';
-import {useNostrStore} from '../stores/nostrStore';
-import {useRelayStore} from '../stores/relayStore';
-import {useAppTheme} from '../theme';
+import { useNostrStore } from '../stores/nostrStore';
+import { useRelayStore } from '../stores/relayStore';
+import { useAppTheme } from '../theme';
 
 const PAGE_LIMIT = 50;
 const REPLY_BYTES_PER_EVENT = 96 * 1024;
@@ -71,17 +78,36 @@ type Kind1MotionHeaderProps = {
   relays: string[];
 };
 
-type Kind1PostHeaderProps = {
-  headerItem: ParsedEvent | null;
-  visible: boolean;
-};
-
 type ReplyItemProps = {
   headerAuthorPubkey?: string;
   index: number;
   item: ParsedEvent;
   visible: boolean;
 };
+
+type AncestorRow = {
+  event?: ParsedEvent;
+  id: string;
+  type: 'ancestor';
+};
+
+type FocusedPostRow = {
+  item: ParsedEvent;
+  type: 'focused';
+};
+
+type ReplyRow = {
+  item: ParsedEvent;
+  replyIndex: number;
+  type: 'reply';
+};
+
+type ThreadStatusRow = {
+  status: 'empty' | 'loading';
+  type: 'status';
+};
+
+type ThreadRow = AncestorRow | FocusedPostRow | ReplyRow | ThreadStatusRow;
 
 type ReplyThreadNodeProps = {
   headerAuthorPubkey?: string;
@@ -117,16 +143,18 @@ function sameStringArray(left: string[], right: string[]) {
 
 function decodeEventPointer(nevent: string): EventPointer {
   try {
-    const decoded = decode(nevent) as unknown as {data?: EventPointer};
-    return decoded?.data ?? ({id: '', relays: []} as EventPointer);
+    const decoded = decode(nevent) as unknown as { data?: EventPointer };
+    return decoded?.data ?? ({ id: '', relays: [] } as EventPointer);
   } catch (error) {
     console.warn('[kind1] failed to decode nevent', error);
-    return {id: '', relays: []} as EventPointer;
+    return { id: '', relays: [] } as EventPointer;
   }
 }
 
 function pointerRelays(data: EventPointer) {
-  return [...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl))];
+  return [
+    ...new Set((data.relays ?? []).filter(Boolean).map(normalizeRelayUrl)),
+  ];
 }
 
 function replyParentId(event: ParsedEvent) {
@@ -134,6 +162,20 @@ function replyParentId(event: ParsedEvent) {
   if (event.kind() === 1111)
     return asKind1111(event)?.parentId?.() || undefined;
   return undefined;
+}
+
+function threadAncestorId(event: ParsedEvent) {
+  const parentId = replyParentId(event);
+  if (!parentId || parentId === event.id()) return undefined;
+
+  const kind1 = event.kind() === 1 ? asKind1(event) : null;
+  if (
+    kind1 &&
+    fbArray(kind1, 'eventRefs').some(eventRef => eventRef.id() === parentId)
+  ) {
+    return undefined;
+  }
+  return parentId;
 }
 
 function replyRequests(
@@ -148,8 +190,8 @@ function replyRequests(
     ...options,
   };
   return [
-    { ...common, kinds: [1], tags: {'#e': [rootId]} },
-    { ...common, kinds: [1111], tags: {'#E': [rootId]} },
+    { ...common, kinds: [1], tags: { '#e': [rootId] } },
+    { ...common, kinds: [1111], tags: { '#E': [rootId] } },
   ];
 }
 
@@ -167,12 +209,14 @@ const Kind1MotionHeader = memo(function Kind1MotionHeader({
           accessibilityLabel="Close post"
           className="h-9 w-9 items-center justify-center rounded-full bg-base-200"
           hitSlop={12}
-          onPress={onClose}>
+          onPress={onClose}
+        >
           <ChevronLeft size={22} color={theme.colors.primaryContent} />
         </Pressable>
         <View
           className="absolute inset-0 items-center justify-center"
-          pointerEvents="none">
+          pointerEvents="none"
+        >
           <Text className="text-base font-semibold text-base-content">
             Post
           </Text>
@@ -192,29 +236,13 @@ const Kind1MotionHeader = memo(function Kind1MotionHeader({
   );
 });
 
-const Kind1PostHeader = memo(function Kind1PostHeader({
-  headerItem,
-  visible,
-}: Kind1PostHeaderProps) {
-  if (!headerItem) return null;
-
-  return (
-    <View className="px-1 pb-2">
-      {KIND1_RENDER_HEADER_NOTE ? (
-        <Note note={headerItem} visible={visible} main threadCard />
-      ) : (
-        <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
-          <Text className="text-sm text-primary-content">
-            Kind1 header loaded: {headerItem.id()?.slice(0, 12)}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-});
-
 const ReplyItem = memo(
-  function ReplyItem({headerAuthorPubkey, index, item, visible}: ReplyItemProps) {
+  function ReplyItem({
+    headerAuthorPubkey,
+    index,
+    item,
+    visible,
+  }: ReplyItemProps) {
     return (
       <View className={index === 0 ? 'px-1 pb-1.5 pt-1' : 'px-1 pb-1.5'}>
         <ReplyThreadNode
@@ -291,7 +319,10 @@ function kind1Trace(
   data?: Record<string, unknown>,
 ) {
   if (!__DEV__ || !KIND1_TRACE) return;
-  console.log(`[kind1-trace] t+${Date.now() - startedAt}ms ${message}`, data ?? {});
+  console.log(
+    `[kind1-trace] t+${Date.now() - startedAt}ms ${message}`,
+    data ?? {},
+  );
 }
 
 export function Kind1Sub({
@@ -305,7 +336,8 @@ export function Kind1Sub({
   onClose,
 }: Kind1SubProps) {
   const instanceId = useMemo(
-    () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    () =>
+      `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     [],
   );
   const effectCountsRef = useRef<Record<string, number> | null>(null);
@@ -315,17 +347,21 @@ export function Kind1Sub({
   const rootId = data.id ?? '';
   const rootKind = data.kind;
   const subscriptionVisible = visible || keepSubscriptionsOnBlur;
-  const diagnosticContextRef = useRef({rootId, visible});
+  const diagnosticContextRef = useRef({ rootId, visible });
   const initialRelays = useMemo(() => pointerRelays(data), [data]);
   const [headerItem, setHeaderItem] = useState<ParsedEvent | null>(null);
   const [authorReadRelays, setAuthorReadRelays] = useState<string[]>([]);
+  const [ancestorRows, setAncestorRows] = useState<AncestorRow[]>([]);
+  const [focusedRowReady, setFocusedRowReady] = useState(false);
   const [items, setItems] = useState<ParsedEvent[]>([]);
   const [allReplies, setAllReplies] = useState<ParsedEvent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [{nonce: refreshNonce, refreshing}, setRefreshState] = useState(() => ({
-    nonce: 0,
-    refreshing: false,
-  }));
+  const [{ nonce: refreshNonce, refreshing }, setRefreshState] = useState(
+    () => ({
+      nonce: 0,
+      refreshing: false,
+    }),
+  );
   const itemsRef = useRef<ParsedEvent[]>([]);
   const allRepliesRef = useRef<ParsedEvent[]>([]);
   const renderedItemsLengthRef = useRef(0);
@@ -339,7 +375,9 @@ export function Kind1Sub({
     dropQuote: 0,
     dropRoot: 0,
   });
-  const commitFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const commitFrameRef = useRef<ReturnType<
+    typeof requestAnimationFrame
+  > | null>(null);
   const mainUnsubRef = useRef<(() => void) | null>(null);
   const authorRelayDiscoveryUnsubRef = useRef<(() => void) | null>(null);
   const repliesSubscriptionRef = useRef<PaginatedSubscription | null>(null);
@@ -356,11 +394,11 @@ export function Kind1Sub({
   const setSubRelays = useRelayStore(state => state.setSubRelays);
   const activeRelays = useMemo(
     () => [
-      ...new Set([
-        ...rootReadRelays,
-        ...initialRelays,
-        ...DEFAULT_FEED_RELAYS,
-      ].map(normalizeRelayUrl)),
+      ...new Set(
+        [...rootReadRelays, ...initialRelays, ...DEFAULT_FEED_RELAYS].map(
+          normalizeRelayUrl,
+        ),
+      ),
     ],
     [initialRelays, rootReadRelays],
   );
@@ -400,7 +438,7 @@ export function Kind1Sub({
   );
 
   useEffect(() => {
-    diagnosticContextRef.current = {rootId, visible};
+    diagnosticContextRef.current = { rootId, visible };
   }, [rootId, visible]);
 
   useEffect(() => {
@@ -451,7 +489,7 @@ export function Kind1Sub({
       if (refreshNonceRef.current !== nonce) return;
       clearRefreshTimeout();
       setRefreshState(current =>
-        current.refreshing ? {...current, refreshing: false} : current,
+        current.refreshing ? { ...current, refreshing: false } : current,
       );
     },
     [clearRefreshTimeout],
@@ -462,8 +500,12 @@ export function Kind1Sub({
       cancelAnimationFrame(commitFrameRef.current);
       commitFrameRef.current = null;
     }
-    itemsRef.current.sort((left, right) => right.createdAt() - left.createdAt());
-    allRepliesRef.current.sort((left, right) => right.createdAt() - left.createdAt());
+    itemsRef.current.sort(
+      (left, right) => right.createdAt() - left.createdAt(),
+    );
+    allRepliesRef.current.sort(
+      (left, right) => right.createdAt() - left.createdAt(),
+    );
     const nextItems = [...itemsRef.current];
     renderedItemsLengthRef.current = nextItems.length;
     setItems(nextItems);
@@ -586,7 +628,8 @@ export function Kind1Sub({
       if (status) {
         const relayUrl = status.relayUrl();
         const relayStatus = status.status()?.toString();
-        if (relayUrl && relayStatus) setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
+        if (relayUrl && relayStatus)
+          setRelayStatus(normalizeRelayUrl(relayUrl), relayStatus);
         if (relayStatus === 'EOSE') {
           kind1Trace(traceStartedAtRef.current, 'reply relay eose', {
             rootId: rootId.slice(0, 12),
@@ -651,14 +694,18 @@ export function Kind1Sub({
     firstReplyAtRef.current = null;
     firstCommitAtRef.current = null;
     setHeaderItem(null);
+    setAncestorRows(current => (current.length ? [] : current));
+    setFocusedRowReady(false);
     // Bail when already empty: fresh [] literals would change state identity
     // and force an extra render pass on every mount and root change.
-    setAuthorReadRelays(current => (current.length ? EMPTY_RELAY_LIST : current));
+    setAuthorReadRelays(current =>
+      current.length ? EMPTY_RELAY_LIST : current,
+    );
     setItems(current => (current.length ? EMPTY_EVENTS : current));
     setAllReplies(current => (current.length ? EMPTY_EVENTS : current));
     setLoading(false);
     setRefreshState(current =>
-      current.refreshing ? {...current, refreshing: false} : current,
+      current.refreshing ? { ...current, refreshing: false } : current,
     );
     cleanupSubscriptions();
   }, [cleanupSubscriptions, rootId]);
@@ -679,6 +726,25 @@ export function Kind1Sub({
   }, [logEffectCycle, reset, rootId, runLifecycleEffects]);
 
   useEffect(() => {
+    if (!runLifecycleEffects || !headerItem || !focusedRowReady) {
+      return undefined;
+    }
+    const parentId = threadAncestorId(headerItem);
+    if (!parentId || parentId === rootId) return undefined;
+
+    // Mount the focused row first. Once its keyed list is ready, parents can
+    // be prepended as independent rows and the list opens on the focused key.
+    const frame = requestAnimationFrame(() => {
+      setAncestorRows(current =>
+        current.some(row => row.id === parentId)
+          ? current
+          : [{ id: parentId, type: 'ancestor' }, ...current],
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusedRowReady, headerItem, rootId, runLifecycleEffects]);
+
+  useEffect(() => {
     if (!runLifecycleEffects) return undefined;
     logEffectCycle('header-subscription', 'run', {
       activeRelays: activeRelays.length,
@@ -695,7 +761,9 @@ export function Kind1Sub({
     headerSubSeqRef.current += 1;
     const headerSeq = headerSubSeqRef.current;
     const refreshSuffix = refreshNonce ? `_refresh_${refreshNonce}` : '';
-    const headerSubId = `kind1_${rootId}_${relayHash(activeRelays)}${refreshSuffix}`;
+    const headerSubId = `kind1_${rootId}_${relayHash(
+      activeRelays,
+    )}${refreshSuffix}`;
     const headerStartedAt = Date.now();
     setLoading(true);
     setSubRelays(headerSubId, activeRelays);
@@ -727,79 +795,71 @@ export function Kind1Sub({
         ids: [rootId],
         limit: 1,
         relays: activeRelays,
-        ...(refreshNonce ? {noCache: true} : {cacheFirst: true}),
+        ...(refreshNonce ? { noCache: true } : { cacheFirst: true }),
       },
     ];
     const handleHeaderMessage = (message: WorkerMessage) => {
-        const status = asConnectionStatus(message);
-        if (status) {
-          kind1Trace(traceStartedAtRef.current, 'header status', {
-            seq: headerSeq,
-            elapsed: Date.now() - headerStartedAt,
-            relay: status.relayUrl(),
-            status: status.status()?.toString(),
-          });
-        }
-        const parsedEvent =
-          rootKind === HIGHLIGHT_KIND
-            ? (() => {
-                const raw = asNostrEvent(message);
-                return raw
-                  ? parsedHighlightFromRaw(raw, activeRelays)
-                  : undefined;
-              })()
-            : isParsedEvent(message);
-        if (!parsedEvent || parsedEvent.id() !== rootId) return;
-        kind1Trace(traceStartedAtRef.current, 'header found', {
+      const status = asConnectionStatus(message);
+      if (status) {
+        kind1Trace(traceStartedAtRef.current, 'header status', {
           seq: headerSeq,
           elapsed: Date.now() - headerStartedAt,
-          rootId: rootId.slice(0, 12),
-          pubkey: parsedEvent.pubkey()?.slice(0, 12),
-          createdAt: parsedEvent.createdAt(),
-          items: itemsRef.current.length,
-          allReplies: allRepliesRef.current.length,
-          firstReplyElapsed: firstReplyAtRef.current
-            ? firstReplyAtRef.current - traceStartedAtRef.current
-            : null,
+          relay: status.relayUrl(),
+          status: status.status()?.toString(),
         });
-        headerFoundRef.current = true;
-        // Guard identity: relays/cache can redeliver the same root event as a
-        // new FlatBuffers instance; keep the previous object so dependents of
-        // headerItem do not re-run.
-        setHeaderItem(current =>
-          current?.id() === parsedEvent.id() ? current : parsedEvent,
-        );
-        kind1Debug('header found', {
-          rootId: rootId.slice(0, 12),
-          pubkey: parsedEvent.pubkey()?.slice(0, 12),
-        });
-        setLoading(false);
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        if (!enableReplySubscriptions || !subscriptionVisible) {
-          completeRefresh(refreshNonce);
-        }
+      }
+      const parsedEvent =
+        rootKind === HIGHLIGHT_KIND
+          ? (() => {
+              const raw = asNostrEvent(message);
+              return raw
+                ? parsedHighlightFromRaw(raw, activeRelays)
+                : undefined;
+            })()
+          : isParsedEvent(message);
+      if (!parsedEvent || parsedEvent.id() !== rootId) return;
+      kind1Trace(traceStartedAtRef.current, 'header found', {
+        seq: headerSeq,
+        elapsed: Date.now() - headerStartedAt,
+        rootId: rootId.slice(0, 12),
+        pubkey: parsedEvent.pubkey()?.slice(0, 12),
+        createdAt: parsedEvent.createdAt(),
+        items: itemsRef.current.length,
+        allReplies: allRepliesRef.current.length,
+        firstReplyElapsed: firstReplyAtRef.current
+          ? firstReplyAtRef.current - traceStartedAtRef.current
+          : null,
+      });
+      headerFoundRef.current = true;
+      // Guard identity: relays/cache can redeliver the same root event as a
+      // new FlatBuffers instance; keep the previous object so dependents of
+      // headerItem do not re-run.
+      setHeaderItem(current =>
+        current?.id() === parsedEvent.id() ? current : parsedEvent,
+      );
+      kind1Debug('header found', {
+        rootId: rootId.slice(0, 12),
+        pubkey: parsedEvent.pubkey()?.slice(0, 12),
+      });
+      setLoading(false);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (!enableReplySubscriptions || !subscriptionVisible) {
+        completeRefresh(refreshNonce);
+      }
     };
     mainUnsubRef.current =
       rootKind === HIGHLIGHT_KIND
-        ? subscribeToNostr(
-            headerSubId,
-            headerRequests,
-            handleHeaderMessage,
-            {
-              bytesPerEvent: REPLY_BYTES_PER_EVENT,
-              closeOnEose: true,
-              pipeline: highlightEventPipeline(headerSubId),
-            },
-          )
-        : subscribeUntilEose(
-            headerSubId,
-            headerRequests,
-            handleHeaderMessage,
-            {bytesPerEvent: REPLY_BYTES_PER_EVENT},
-          );
+        ? subscribeToNostr(headerSubId, headerRequests, handleHeaderMessage, {
+            bytesPerEvent: REPLY_BYTES_PER_EVENT,
+            closeOnEose: true,
+            pipeline: highlightEventPipeline(headerSubId),
+          })
+        : subscribeUntilEose(headerSubId, headerRequests, handleHeaderMessage, {
+            bytesPerEvent: REPLY_BYTES_PER_EVENT,
+          });
 
     return () => {
       logEffectCycle('header-subscription', 'cleanup');
@@ -856,7 +916,9 @@ export function Kind1Sub({
     const repliesSeq = repliesSubSeqRef.current;
     const repliesStartedAt = Date.now();
     const refreshSuffix = refreshNonce ? `_refresh_${refreshNonce}` : '';
-    const subId = `${kind1RepliesSubIdPrefix(rootId)}${relayHash(displayedRelays)}${refreshSuffix}`;
+    const subId = `${kind1RepliesSubIdPrefix(rootId)}${relayHash(
+      displayedRelays,
+    )}${refreshSuffix}`;
     setSubRelays(subId, displayedRelays);
     displayedRelays.forEach(relay => setRelayStatus(relay, 'SUBSCRIBED'));
     kind1Trace(traceStartedAtRef.current, 'replies subscribe', {
@@ -872,9 +934,9 @@ export function Kind1Sub({
       requests: replyRequests(
         rootId,
         displayedRelays,
-        refreshNonce ? {noCache: true} : {cacheFirst: true},
+        refreshNonce ? { noCache: true } : { cacheFirst: true },
       ),
-      pageRequests: replyRequests(rootId, displayedRelays, {noCache: true}),
+      pageRequests: replyRequests(rootId, displayedRelays, { noCache: true }),
       windowSeconds: FEED_PAGE_WINDOW_SECONDS,
       maxEmptyPages: 3,
       initialLoading: refreshNonce > 0,
@@ -886,7 +948,7 @@ export function Kind1Sub({
         }
         setLoading(state.loading);
       },
-      options: {bytesPerEvent: REPLY_BYTES_PER_EVENT},
+      options: { bytesPerEvent: REPLY_BYTES_PER_EVENT },
     });
     repliesSubscriptionRef.current.start();
 
@@ -923,18 +985,10 @@ export function Kind1Sub({
       activeRelays: activeRelays.length,
       enabled: enableReplySubscriptions,
       eligible:
-        enableReplySubscriptions &&
-        visible &&
-        !!rootId &&
-        !!authorPubkey,
+        enableReplySubscriptions && visible && !!rootId && !!authorPubkey,
       author: authorPubkey?.slice(0, 12) ?? null,
     });
-    if (
-      !enableReplySubscriptions ||
-      !visible ||
-      !rootId ||
-      !authorPubkey
-    ) {
+    if (!enableReplySubscriptions || !visible || !rootId || !authorPubkey) {
       return undefined;
     }
 
@@ -957,7 +1011,9 @@ export function Kind1Sub({
       authorRelayDiscoveryUnsubRef.current = null;
     }, 1000);
 
-    const discoverySubId = `kind1_author_relays_${authorPubkey}_${relayHash(activeRelays)}`;
+    const discoverySubId = `kind1_author_relays_${authorPubkey}_${relayHash(
+      activeRelays,
+    )}`;
     authorRelayDiscoveryUnsubRef.current?.();
     kind1Trace(traceStartedAtRef.current, 'author relays subscribe', {
       subId: discoverySubId,
@@ -1003,7 +1059,9 @@ export function Kind1Sub({
         // Bail when discovery resolves to the same relays: a new array here
         // would rerender and churn displayedRelays/motionHeader for nothing.
         setAuthorReadRelays(current =>
-          sameStringArray(current, incrementalRelays) ? current : incrementalRelays,
+          sameStringArray(current, incrementalRelays)
+            ? current
+            : incrementalRelays,
         );
         kind1Trace(traceStartedAtRef.current, 'author relays found', {
           elapsed: Date.now() - authorDiscoveryStartedAt,
@@ -1018,7 +1076,7 @@ export function Kind1Sub({
           relays: incrementalRelays,
         });
       },
-      {bytesPerEvent: REPLY_BYTES_PER_EVENT},
+      { bytesPerEvent: REPLY_BYTES_PER_EVENT },
     );
 
     return () => {
@@ -1082,7 +1140,7 @@ export function Kind1Sub({
 
     const nextRefreshNonce = refreshNonceRef.current + 1;
     refreshNonceRef.current = nextRefreshNonce;
-    setRefreshState({nonce: nextRefreshNonce, refreshing: true});
+    setRefreshState({ nonce: nextRefreshNonce, refreshing: true });
     clearRefreshTimeout();
     refreshTimeoutRef.current = setTimeout(() => {
       refreshTimeoutRef.current = null;
@@ -1107,36 +1165,162 @@ export function Kind1Sub({
     ),
     [displayedRelays, headerItem, onClose],
   );
-  const header = useCallback(
-    () => <Kind1PostHeader headerItem={headerItem} visible={visible} />,
-    [headerItem, visible],
+
+  const handleAncestorResolved = useCallback(
+    (event: ParsedEvent) => {
+      const eventId = event.id();
+      if (!eventId) return;
+
+      setAncestorRows(current => {
+        const rowIndex = current.findIndex(row => row.id === eventId);
+        if (rowIndex < 0) return current;
+
+        let changed = false;
+        const next = current.map((row, index) => {
+          if (index !== rowIndex || row.event?.id() === eventId) return row;
+          changed = true;
+          return { ...row, event };
+        });
+        const parentId = threadAncestorId(event);
+        const isCycle =
+          !parentId ||
+          parentId === rootId ||
+          next.some(row => row.id === parentId);
+        if (!isCycle) {
+          next.unshift({ id: parentId, type: 'ancestor' });
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+    },
+    [rootId],
   );
+  const handleFeedReady = useCallback(() => {
+    setFocusedRowReady(true);
+  }, []);
+
+  const threadRows = useMemo<ThreadRow[]>(() => {
+    if (!headerItem || headerItem.id() !== rootId) return [];
+
+    const rows: ThreadRow[] = [
+      ...ancestorRows,
+      { item: headerItem, type: 'focused' },
+      ...items.map<ReplyRow>((item, replyIndex) => ({
+        item,
+        replyIndex,
+        type: 'reply',
+      })),
+    ];
+    if (!items.length) {
+      rows.push({
+        status: loading && !refreshing ? 'loading' : 'empty',
+        type: 'status',
+      });
+    }
+    return rows;
+  }, [ancestorRows, headerItem, items, loading, refreshing, rootId]);
+
   const renderItem = useCallback(
-    ({item, index, visible: itemVisible}: {item: ParsedEvent; index: number; visible: boolean}) => {
+    ({
+      item,
+      index,
+      visible: itemVisible,
+    }: {
+      item: ThreadRow;
+      index: number;
+      visible: boolean;
+    }) => {
       if (__DEV__ && index < 3) {
         kind1Debug('render row', {
           rootId: rootId.slice(0, 12),
           index,
-          id: item.id()?.slice(0, 12),
-          createdAt: item.createdAt(),
+          id:
+            item.type === 'ancestor'
+              ? item.id.slice(0, 12)
+              : item.type === 'status'
+              ? item.status
+              : item.item.id()?.slice(0, 12),
+          type: item.type,
           visible: visible && itemVisible,
         });
       }
+
+      if (item.type === 'ancestor') {
+        return (
+          <View className="px-1">
+            <Note
+              note={item.event}
+              noteId={item.event ? undefined : item.id}
+              relays={displayedRelays}
+              visible={visible}
+              inlineAncestor={false}
+              leading
+              onResolved={handleAncestorResolved}
+            />
+          </View>
+        );
+      }
+
+      if (item.type === 'focused') {
+        return (
+          <View className="px-1 pb-2">
+            {KIND1_RENDER_HEADER_NOTE ? (
+              <Note
+                note={item.item}
+                visible={visible && itemVisible}
+                inlineAncestor={false}
+                main
+                threadCard
+              />
+            ) : (
+              <View className="rounded-xl border border-base-200 bg-base-300/95 px-4 py-6">
+                <Text className="text-sm text-primary-content">
+                  Kind1 header loaded: {item.item.id()?.slice(0, 12)}
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+      }
+
+      if (item.type === 'status') {
+        return item.status === 'loading' ? (
+          <View className="px-6 py-14">
+            <Text className="text-center text-base text-primary-content">
+              Loading...
+            </Text>
+          </View>
+        ) : (
+          <View className="px-12 py-24">
+            <Text className="text-center text-sm text-primary-content">
+              No replies found.
+            </Text>
+          </View>
+        );
+      }
+
       return (
         <ReplyItem
           headerAuthorPubkey={headerAuthorPubkey}
-          index={index}
-          item={item}
+          index={item.replyIndex}
+          item={item.item}
           visible={visible && itemVisible}
         />
       );
     },
-    [headerAuthorPubkey, rootId, visible],
+    [
+      displayedRelays,
+      handleAncestorResolved,
+      headerAuthorPubkey,
+      rootId,
+      visible,
+    ],
   );
-  const getItemId = useCallback(
-    (item: ParsedEvent) => item.id() || String(item.createdAt()),
-    [],
-  );
+  const getItemId = useCallback((item: ThreadRow) => {
+    if (item.type === 'ancestor') return `ancestor:${item.id}`;
+    if (item.type === 'status') return `status:${item.status}`;
+    return `${item.type}:${item.item.id() || item.item.createdAt()}`;
+  }, []);
 
   if (!renderFeed) {
     return (
@@ -1150,27 +1334,21 @@ export function Kind1Sub({
 
   return (
     <Feed
-      items={items}
+      items={threadRows}
       getItemId={getItemId}
       renderItem={renderItem}
       motionHeader={motionHeader}
-      header={header}
       headerSafeArea
       visible={visible}
       loading={loading && !refreshing}
       pullToRefresh
       refreshing={refreshing}
       onRefresh={handleRefresh}
+      onReady={handleFeedReady}
       onNearBottom={handleNearBottom}
       removeClippedSubviews={false}
-      empty={headerItem ? (
-        <View className="px-6 py-12">
-          <Text className="text-center text-sm text-primary-content">
-            No replies found.
-          </Text>
-        </View>
-      ) : null}
       contentContainerClassName="pb-28"
+      anchorItemId={`focused:${rootId}`}
     />
   );
 }

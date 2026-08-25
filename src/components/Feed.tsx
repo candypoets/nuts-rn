@@ -11,7 +11,7 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import * as ReactNative from 'react-native';
-import {BlurView} from 'expo-blur';
+import { BlurView } from 'expo-blur';
 import {
   ActivityIndicator,
   type LayoutChangeEvent,
@@ -23,15 +23,17 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import type {ColumnWrapperStyle} from '@legendapp/list/react-native';
+import type { ColumnWrapperStyle } from '@legendapp/list/react-native';
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import {
   FlashList,
   type FlashListRef,
   type ListRenderItemInfo as FlashListRenderItemInfo,
 } from '@shopify/flash-list';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Extrapolation,
   ReduceMotion,
@@ -44,11 +46,11 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import {scheduleOnRN} from 'react-native-worklets';
-import HeaderMotion, {useMotionProgress} from 'react-native-header-motion';
-import {getFeedTopInset} from './feedLayout';
-import {useAppTheme} from '../theme';
-import {MediaActivityProvider} from '../media/MediaActivity';
+import { scheduleOnRN } from 'react-native-worklets';
+import HeaderMotion, { useMotionProgress } from 'react-native-header-motion';
+import { getFeedTopInset } from './feedLayout';
+import { useAppTheme } from '../theme';
+import { MediaActivityProvider } from '../media/MediaActivity';
 
 export type FeedChromeProps = {
   scrollY: SharedValue<number>;
@@ -112,11 +114,14 @@ export type FeedProps<T> = {
   numColumns?: number;
   columnWrapperStyle?: ColumnWrapperStyle;
   onRefresh?: () => void | Promise<void>;
-  onNearBottom?: (event: {distance: number}) => void;
+  onReady?: () => void;
+  onNearBottom?: (event: { distance: number }) => void;
   onChromeVisibilityChange?: (visible: boolean) => void;
-  onViewportStateChange?: (state: {start: number; down: boolean}) => void;
+  onViewportStateChange?: (state: { start: number; down: boolean }) => void;
   contentContainerClassName?: string;
   removeClippedSubviews?: boolean;
+  /** Opens with this keyed item at the start while preceding rows stay scrollable. */
+  anchorItemId?: string | number;
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
@@ -225,7 +230,7 @@ function FeedVirtualRowContent<T>({
     row.viewport.getSnapshot,
   );
   const mediaActive = screenActive && viewportVisible;
-  const rowContent = row.items.map(({key, item, index}) => (
+  const rowContent = row.items.map(({ key, item, index }) => (
     <MediaActivityProvider key={key} active={mediaActive}>
       <View className={numColumns > 1 ? 'flex-1' : undefined}>
         {renderItem({
@@ -266,7 +271,11 @@ function getRefreshControlColor(theme: ReturnType<typeof useAppTheme>) {
   return isDarkHex(theme.colors.base100) ? '#ffffff' : theme.colors.primary;
 }
 
-export function FeedHeaderBlurSurface({surfaceColor}: {surfaceColor: string}) {
+export function FeedHeaderBlurSurface({
+  surfaceColor,
+}: {
+  surfaceColor: string;
+}) {
   if (surfaceColor === 'transparent') return null;
 
   return (
@@ -278,7 +287,7 @@ export function FeedHeaderBlurSurface({surfaceColor}: {surfaceColor: string}) {
       pointerEvents="none"
       style={[
         StyleSheet.absoluteFill,
-        {backgroundColor: withAlpha(surfaceColor, 0.76)},
+        { backgroundColor: withAlpha(surfaceColor, 0.76) },
       ]}
       tint={isDarkHex(surfaceColor) ? 'dark' : 'light'}
     />
@@ -286,7 +295,7 @@ export function FeedHeaderBlurSurface({surfaceColor}: {surfaceColor: string}) {
 }
 
 function defaultGetItemId<T>(item: T, index: number) {
-  const maybeItem = item as T & {id?: unknown};
+  const maybeItem = item as T & { id?: unknown };
   if (typeof maybeItem?.id === 'function') {
     const id = (maybeItem.id as () => string | number | undefined)();
     if (id !== undefined) return id;
@@ -302,14 +311,14 @@ function defaultGetItemId<T>(item: T, index: number) {
  * collapses. Use this when the sticky controls appear before the dynamic
  * section in the expanded layout.
  */
-export function FeedSticky({children}: {children: ReactNode}) {
-  const {progress, progressThreshold} = useMotionProgress();
+export function FeedSticky({ children }: { children: ReactNode }) {
+  const { progress, progressThreshold } = useMotionProgress();
   const stickyStyle = useAnimatedStyle(() => {
     const threshold = progressThreshold.get();
     const distance = Number.isFinite(threshold) ? threshold : 0;
     return {
       zIndex: 10,
-      transform: [{translateY: distance ? progress.get() * distance : 0}],
+      transform: [{ translateY: distance ? progress.get() * distance : 0 }],
     };
   }, [progress, progressThreshold]);
 
@@ -319,8 +328,8 @@ export function FeedSticky({children}: {children: ReactNode}) {
 /**
  * Marks the measured section that scrolls away as a motion header collapses.
  */
-export function FeedHeaderDynamic({children}: {children: ReactNode}) {
-  const {progress} = useMotionProgress();
+export function FeedHeaderDynamic({ children }: { children: ReactNode }) {
+  const { progress } = useMotionProgress();
   const dynamicStyle = useAnimatedStyle(
     () => ({
       opacity: interpolate(
@@ -355,7 +364,7 @@ function MotionHeader({
   scrollY: SharedValue<number>;
   surfaceColor: string;
 }) {
-  const {progress, progressThreshold} = useMotionProgress();
+  const { progress, progressThreshold } = useMotionProgress();
   const headerHeight = useSharedValue(0);
   const revealProgress = useSharedValue(1);
 
@@ -424,7 +433,7 @@ function MotionHeader({
   return (
     <HeaderMotion.Header
       onLayout={handleLayout}
-      style={[styles.motionHeaderSurface, {paddingTop}, headerStyle]}
+      style={[styles.motionHeaderSurface, { paddingTop }, headerStyle]}
     >
       <FeedHeaderBlurSurface surfaceColor={surfaceColor} />
       {onPress ? (
@@ -499,11 +508,13 @@ export function Feed<T>({
   numColumns = 1,
   columnWrapperStyle,
   onRefresh,
+  onReady,
   onNearBottom,
   onChromeVisibilityChange,
   onViewportStateChange,
   contentContainerClassName = 'pb-28',
   removeClippedSubviews = false,
+  anchorItemId,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
@@ -511,6 +522,7 @@ export function Feed<T>({
   const listRef = useAnimatedRef<ScrollView>();
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
   const scrollViewportHeightRef = useRef(0);
@@ -588,23 +600,30 @@ export function Feed<T>({
     }),
     [virtualRows],
   );
+  const anchorRowIndex = useMemo(() => {
+    if (anchorItemId === undefined) return -1;
+    const anchorKey = String(anchorItemId);
+    return virtualRows.findIndex(row =>
+      row.items.some(item => item.key === anchorKey),
+    );
+  }, [anchorItemId, virtualRows]);
   const shouldMaintainVisibleContentPosition =
     !disableMaintainVisibleContentPosition && (items.length > 0 || !loading);
 
   const scrollToTop = useCallback(() => {
     if (bottom) {
-      bottomListRef.current?.scrollToOffset({offset: 0, animated: true});
+      bottomListRef.current?.scrollToOffset({ offset: 0, animated: true });
     } else {
-      listRef.current?.scrollTo({y: 0, animated: true});
+      listRef.current?.scrollTo({ y: 0, animated: true });
     }
   }, [bottom, listRef]);
 
   const scrollToBottom = useCallback(
     (animated: boolean) => {
       if (bottom) {
-        bottomListRef.current?.scrollToOffset({offset: 0, animated});
+        bottomListRef.current?.scrollToOffset({ offset: 0, animated });
       } else {
-        listRef.current?.scrollToEnd({animated});
+        listRef.current?.scrollToEnd({ animated });
       }
     },
     [bottom, listRef],
@@ -670,7 +689,7 @@ export function Feed<T>({
     animatedLastDirectionOffset.set(0);
     animatedLastStickyOffset.set(0);
     requestAnimationFrame(() => {
-      listRef.current?.scrollTo({y: 0, animated: false});
+      listRef.current?.scrollTo({ y: 0, animated: false });
       setDown(true);
     });
   }, [
@@ -714,7 +733,7 @@ export function Feed<T>({
   }, [down, onChromeVisibilityChange, start]);
 
   useEffect(() => {
-    onViewportStateChange?.({start, down});
+    onViewportStateChange?.({ start, down });
   }, [down, onViewportStateChange, start]);
 
   const syncAnimatedViewportState = useCallback(
@@ -772,7 +791,7 @@ export function Feed<T>({
           bottom || stickyFooterVisible || !current.down || current.start < 1
             ? 1
             : 0,
-          {duration: 220, reduceMotion: ReduceMotion.System},
+          { duration: 220, reduceMotion: ReduceMotion.System },
         ),
       );
     },
@@ -792,7 +811,9 @@ export function Feed<T>({
       opacity: stickyReveal.get(),
       backgroundColor: stickyHeaderSafeAreaColor ?? theme.colors.base300,
       paddingTop: outerHeaderSafeAreaTop,
-      transform: [{translateY: (stickyReveal.get() - 1) * stickyHeight.get()}],
+      transform: [
+        { translateY: (stickyReveal.get() - 1) * stickyHeight.get() },
+      ],
     }),
     [outerHeaderSafeAreaTop, stickyHeaderSafeAreaColor, theme.colors.base300],
   );
@@ -807,11 +828,13 @@ export function Feed<T>({
   const stickyFooterStyle = useAnimatedStyle(() => ({
     opacity: footerVisible.get(),
     paddingBottom: insets.bottom,
-    transform: [{translateY: (1 - footerVisible.get()) * (88 + insets.bottom)}],
+    transform: [
+      { translateY: (1 - footerVisible.get()) * (88 + insets.bottom) },
+    ],
   }));
 
   const handleViewableItemsChanged = useCallback(
-    ({viewableItems}: {viewableItems: Array<{index: number | null}>}) => {
+    ({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
       const indexes = viewableItems
         .map(item => item.index)
         .filter((index): index is number => typeof index === 'number')
@@ -854,14 +877,15 @@ export function Feed<T>({
         return;
       }
       nearBottomTriggeredRef.current = true;
-      onNearBottom({distance: Math.max(0, distance)});
+      onNearBottom({ distance: Math.max(0, distance) });
     },
     [items.length, nearBottomThreshold, onNearBottom],
   );
 
   const handleBottomScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const {contentOffset, contentSize, layoutMeasurement} = event.nativeEvent;
+      const { contentOffset, contentSize, layoutMeasurement } =
+        event.nativeEvent;
       const offset = contentOffset.y;
       scrollY.set(offset);
       scrollViewportHeightRef.current = layoutMeasurement.height;
@@ -887,7 +911,7 @@ export function Feed<T>({
 
   const triggerNearBottomFromUI = useCallback(
     (distance: number) => {
-      onNearBottom?.({distance: Math.max(0, distance)});
+      onNearBottom?.({ distance: Math.max(0, distance) });
     },
     [onNearBottom],
   );
@@ -1025,7 +1049,7 @@ export function Feed<T>({
     [bottomVisibleIndexes, items, renderItem, screenActive, visible],
   );
   const handleEndReached = useCallback(
-    (event?: {distanceFromEnd?: number}) => {
+    (event?: { distanceFromEnd?: number }) => {
       if (
         !onNearBottom ||
         items.length === 0 ||
@@ -1035,7 +1059,7 @@ export function Feed<T>({
         return;
       }
       nearBottomTriggeredRef.current = true;
-      onNearBottom({distance: Math.max(0, event?.distanceFromEnd ?? 0)});
+      onNearBottom({ distance: Math.max(0, event?.distanceFromEnd ?? 0) });
     },
     [items.length, onNearBottom, start],
   );
@@ -1054,6 +1078,10 @@ export function Feed<T>({
     ),
     [columnWrapperStyle, items, numColumns, renderItem, screenActive, visible],
   );
+  const renderAnchoredRow = useCallback(
+    ({ item }: { item: FeedVirtualRow<T> }) => renderVirtualRowContent(item),
+    [renderVirtualRowContent],
+  );
   const handleVirtualRowModeChange = useCallback(
     (row: FeedVirtualRow<T>, _key: string, event: FeedModeChangeEvent) => {
       row.viewport.setMode(event.mode);
@@ -1068,7 +1096,7 @@ export function Feed<T>({
     if (!header && !showCustomRefreshIndicator) return null;
     const inFlowChromeProps =
       showCustomRefreshIndicator || usesMotionHeader
-        ? {...chromeProps, safeAreaTop: 0}
+        ? { ...chromeProps, safeAreaTop: 0 }
         : chromeProps;
     const inFlowHeaderPaddingTop =
       showCustomRefreshIndicator || usesMotionHeader
@@ -1098,7 +1126,7 @@ export function Feed<T>({
               paddingTop: inFlowHeaderPaddingTop,
             }}
           >
-            {header({...inFlowChromeProps, scrolled: false})}
+            {header({ ...inFlowChromeProps, scrolled: false })}
           </View>
         ) : null}
       </>
@@ -1118,6 +1146,15 @@ export function Feed<T>({
     if (!footer) return null;
     return <View className="w-full">{footer(chromeProps)}</View>;
   }, [chromeProps, footer]);
+  const anchoredListFooter = useMemo(
+    () => (
+      <>
+        {listFooter}
+        <View pointerEvents="none" style={{ height: windowHeight }} />
+      </>
+    ),
+    [listFooter, windowHeight],
+  );
 
   const listEmpty = useMemo(() => {
     if (loading) {
@@ -1136,7 +1173,7 @@ export function Feed<T>({
     <View
       collapsable={false}
       className="relative flex-1"
-      style={{backgroundColor: theme.colors.base100}}
+      style={{ backgroundColor: theme.colors.base100 }}
     >
       {bottom ? (
         <FlashList
@@ -1161,7 +1198,7 @@ export function Feed<T>({
                     animateAutoScrollToBottom: true,
                   }
                 : undefined
-              : {disabled: true}
+              : { disabled: true }
           }
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.35}
@@ -1186,6 +1223,76 @@ export function Feed<T>({
           }
           scrollEventThrottle={16}
         />
+      ) : usesMotionHeader && anchorItemId !== undefined ? (
+        <HeaderMotion.ScrollManager
+          animatedRef={listRef as never}
+          scrollId={motionScrollId}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          onScroll={handleAnimatedScroll}
+          refreshControl={
+            pullToRefresh && onRefresh ? (
+              <RefreshControl
+                colors={[refreshColor]}
+                progressBackgroundColor={theme.colors.base200}
+                refreshing={refreshing}
+                tintColor={refreshColor}
+                onRefresh={onRefresh}
+              />
+            ) : undefined
+          }
+        >
+          {(scrollableProps, { originalHeaderHeight }) => (
+            <AnimatedLegendList
+              key={`anchored-feed:${anchorRowIndex}:${Math.round(
+                originalHeaderHeight,
+              )}`}
+              refScrollView={scrollableProps.ref as never}
+              className="flex-1"
+              contentContainerClassName={contentContainerClassName}
+              contentContainerStyle={
+                motionHeaderOverlaysContent
+                  ? undefined
+                  : { paddingTop: originalHeaderHeight }
+              }
+              contentInsetAdjustmentBehavior="never"
+              data={virtualRows}
+              estimatedItemSize={180}
+              initialScrollIndex={
+                anchorRowIndex > 0
+                  ? {
+                      index: anchorRowIndex,
+                      viewOffset: originalHeaderHeight,
+                      viewPosition: 0,
+                    }
+                  : undefined
+              }
+              keyExtractor={row => row.key}
+              ListEmptyComponent={listEmpty}
+              ListFooterComponent={anchoredListFooter}
+              ListHeaderComponent={listHeader}
+              maintainVisibleContentPosition={false}
+              alwaysRender={
+                anchorRowIndex >= 0
+                  ? {
+                      indices: Array.from(
+                        { length: anchorRowIndex + 1 },
+                        (_, index) => index,
+                      ),
+                    }
+                  : undefined
+              }
+              renderItem={renderAnchoredRow}
+              recycleItems={false}
+              onContentSizeChange={handleContentSizeChange}
+              onLayout={scrollableProps.onLayout}
+              onLoad={onReady}
+              onScroll={scrollableProps.onScroll as never}
+              refreshControl={scrollableProps.refreshControl as never}
+              scrollEventThrottle={16}
+            />
+          )}
+        </HeaderMotion.ScrollManager>
       ) : usesMotionHeader ? (
         <HeaderMotion.ScrollView
           animatedRef={listRef as never}
@@ -1198,7 +1305,7 @@ export function Feed<T>({
           scrollId={motionScrollId}
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
-              ? {minIndexForVisible: 0}
+              ? { minIndexForVisible: 0 }
               : undefined
           }
           onContentSizeChange={handleContentSizeChange}
@@ -1240,7 +1347,7 @@ export function Feed<T>({
           contentContainerClassName={contentContainerClassName}
           maintainVisibleContentPosition={
             shouldMaintainVisibleContentPosition && !showCustomRefreshIndicator
-              ? {minIndexForVisible: 0}
+              ? { minIndexForVisible: 0 }
               : undefined
           }
           onContentSizeChange={handleContentSizeChange}

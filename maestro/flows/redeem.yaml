@@ -49,17 +49,16 @@ appId: com.nutsrn
           visible: "Claim invite"
           timeout: 60000
       - tapOn: "Claim invite"
-      # Redeem POST + membership index publishes (~2s timeouts each) + kind-0
-      # replica awaiting the community relay's OK (up to 12s): be generous.
+      # Redeem POST + membership indexes + kind-0 replication (up to 60 s): be
+      # generous with a cold membership cache and slow public relays.
       # Success replaces the invite route directly with Community; there is no
       # intermediary success screen or Open community button.
       - extendedWaitUntil:
           visible: ".*(${COMMUNITY_NAME}|Try again).*"
           timeout: 120000
-# Transient failure ("The community relay did not confirm your profile."):
-# the badge-gate membership cache can lag behind the just-granted award, so
-# the kind-0 replica is rejected while the gate is cold. Retry like a user
-# would — up to three attempts total.
+# Retry transient failures like a user would — up to three attempts total. If
+# the server already granted the award, retry resumes indexes/profile without
+# consuming the invite again.
 - runFlow:
     when:
       visible: "Try again"

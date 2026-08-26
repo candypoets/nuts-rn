@@ -7,15 +7,6 @@ reference; `src/lib/orders.ts` there is the canonical derivation.
 
 ## Open app bugs found by device QA
 
-- **Invite success can precede kind-0 replication (reproduced 2026-08-26).**
-  The strict fresh-invite flow claims successfully and the relay contains the
-  server-issued kind-8 membership award, but the app advances to the community
-  while `qa-verify-redeem.mjs` proves the member's kind-0 is absent. Both clean
-  Agent Device runs reproduced it. One observed device warning at the end of
-  the publish window was `native buffer full` for the
-  `invite_profile_<pubkey>` subscription; that is a diagnostic signature, not
-  yet a proven root cause.
-
 ## RN app gaps vs the web spec
 
 - **Coordinated web checkout deployment required.** RN now submits NIP-97
@@ -57,14 +48,14 @@ reference; `src/lib/orders.ts` there is the canonical derivation.
   never freed up. Fixed with a latest createdAt+status per-pubkey ref.
 - `CalendarEventModal` crashed (redbox) when opened by deep link without an
   `address` param (`splitAddress` on undefined). Fixed with a guard.
-- `publishProfileToCommunity` (invites.ts) made a single kind-0 publish
-  attempt with a 12 s timeout — fresh redeems failed with "The community
-  relay did not confirm your profile." whenever the badge gate's membership
-  cache lagged (see infra findings). Fixed: retry on `false` OK every 2.5 s,
-  30 s window.
+- Invite redemption could never finish profile replication because the relay's
+  default membership granted kind-1 write but not kind-0. Fixed 2026-08-26 at
+  the source: the relay bootstrap now grants both capabilities (and migrates
+  old definitions on restart), while RN retries on a dedicated socket until a
+  matching `OK=true`. The strict verifier requires the replicated profile.
 - `RedeemModal` retry burned another invite redemption (cap exhaustion showed
-  as "token redemption limit reached"). Fixed: retry first checks
-  `checkExistingMembership` and short-circuits to done.
+  as "token redemption limit reached"). Fixed: retry checks for the existing
+  award and resumes the post-redemption index work without POSTing again.
 - SignupModal: missing top safe-area inset (header under the status bar on
   edge-to-edge Android — uiautomator DROPS covered nodes, so maestro
   selectors silently failed) and a `popToTop` navigation issue. Fixed earlier
@@ -84,9 +75,9 @@ reference; `src/lib/orders.ts` there is the canonical derivation.
 
 - **Badge-gate membership cache lag (15–45 s).** A just-granted invite award
   is not immediately visible to the strfry-badge gate, so a fresh member's
-  first publishes (e.g. the redeem flow's kind-0 replica) are rejected. The
-  app-side fix above papers over it; the durable fix belongs in the gate
-  (react to award events) or the redeem flow (grant → wait-for-gate).
+  first authorized publish (including invite profile replication) can be
+  rejected. RN retries the profile for 60 s; eliminating the lag itself belongs
+  in the gate (react to award events) or redemption service.
 - **Gate cache never un-caches revoked members.** Membership revocation is
   not honored until gate restart (pinned in qa-commerce.mjs).
 - ~~**Ephemeral fulfillment history**~~ RESOLVED: NIP-97 kind **37237** is

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,8 +15,8 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import type {NostrManagerLike} from '@candypoets/nipworker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { NostrManagerLike } from '@candypoets/nipworker';
 import { BadgeCheck, ShieldCheck, Ticket, X } from 'lucide-react-native';
 
 import {
@@ -24,9 +30,9 @@ import {
 } from '../nostr/invites';
 import { useAuthStore } from '../stores';
 import { type AppTheme, useAppTheme } from '../theme';
-import {getSharedNostrManager} from '../nostr/manager';
-import {PrivateKeyLogin} from './ProfileModal';
-import {SignupProfileStep, useSignupProfileController} from './SignupModal';
+import { getSharedNostrManager } from '../nostr/manager';
+import { PrivateKeyLogin } from './ProfileModal';
+import { SignupProfileStep, useSignupProfileController } from './SignupModal';
 
 type RedeemModalProps = {
   relay: string;
@@ -51,9 +57,12 @@ export function RedeemModal({ relay, token, onDone }: RedeemModalProps) {
 
   const pubkey = useAuthStore(state => state.pubkey);
   const hasSigner = useAuthStore(state => state.hasSigner);
-  const auth = useMemo(() => ({pubkey}), [pubkey]);
+  const auth = useMemo(() => ({ pubkey }), [pubkey]);
 
-  const relayBaseUrl = useMemo(() => normalizeRelayBaseUrl(relay || ''), [relay]);
+  const relayBaseUrl = useMemo(
+    () => normalizeRelayBaseUrl(relay || ''),
+    [relay],
+  );
   const communityRelayUrl = useMemo(
     () => relayUrlFromBaseUrl(relayBaseUrl),
     [relayBaseUrl],
@@ -142,23 +151,23 @@ export function RedeemModal({ relay, token, onDone }: RedeemModalProps) {
     setState('redeeming');
     setError('');
     try {
+      let membershipAlreadyGranted = false;
       // A previous failed attempt may already have granted membership — the
-      // award is granted before the later stages (indexes, profile replica)
-      // run — so a retry must not burn another invite redemption.
+      // award is granted before indexes/profile replication finish — so
+      // resume that work without burning another redemption.
       if (state === 'error') {
-        const member = await checkExistingMembership(pubkey, communityRelayUrl);
+        membershipAlreadyGranted = await checkExistingMembership(
+          pubkey,
+          communityRelayUrl,
+        );
         if (!mountedRef.current) return;
-        if (member) {
-          setAlreadyMember(true);
-          openCommunity();
-          return;
-        }
       }
       await redeemInvite({
         token,
         relayBaseUrl,
         pubkey,
         profileContent: signupProfileContentRef.current,
+        membershipAlreadyGranted,
         onStage: nextStage => {
           if (mountedRef.current) setStage(nextStage);
         },
@@ -171,14 +180,27 @@ export function RedeemModal({ relay, token, onDone }: RedeemModalProps) {
       setError(err instanceof Error ? err.message : 'Could not redeem invite.');
       setState('error');
     }
-  }, [pubkey, linkValid, state, token, relayBaseUrl, communityRelayUrl, openCommunity]);
+  }, [
+    pubkey,
+    linkValid,
+    state,
+    token,
+    relayBaseUrl,
+    communityRelayUrl,
+    openCommunity,
+  ]);
 
   const loggedIn = Boolean(pubkey && hasSigner);
   const canClaim =
-    linkValid && loggedIn && membershipChecked && !alreadyMember && !checkingMembership;
+    linkValid &&
+    loggedIn &&
+    membershipChecked &&
+    !alreadyMember &&
+    !checkingMembership;
 
   useEffect(() => {
-    if (!linkValid || !loggedIn || !membershipChecked || checkingMembership) return;
+    if (!linkValid || !loggedIn || !membershipChecked || checkingMembership)
+      return;
     if (alreadyMember) {
       joinAfterAuthRef.current = false;
       openCommunity();
@@ -306,7 +328,11 @@ function InviteLandingView({
             style={styles.closeButton}
             onPress={onClose}
           >
-            <X size={21} color={theme.colors.primaryContent} strokeWidth={2.4} />
+            <X
+              size={21}
+              color={theme.colors.primaryContent}
+              strokeWidth={2.4}
+            />
           </Pressable>
 
           <View style={styles.communityImageFrame}>
@@ -332,7 +358,11 @@ function InviteLandingView({
             <Text style={styles.communityName} numberOfLines={1}>
               {displayName}
             </Text>
-            <BadgeCheck size={20} color={theme.colors.primary} strokeWidth={2.4} />
+            <BadgeCheck
+              size={20}
+              color={theme.colors.primary}
+              strokeWidth={2.4}
+            />
           </View>
         </View>
 
@@ -359,7 +389,9 @@ function InviteLandingView({
               style={styles.primaryButton}
               onPress={onCreateProfile}
             >
-              <Text style={styles.primaryButtonText}>Create profile &amp; join</Text>
+              <Text style={styles.primaryButtonText}>
+                Create profile &amp; join
+              </Text>
             </Pressable>
             <Pressable
               accessibilityLabel="Use an existing account"

@@ -24,18 +24,31 @@ try {
 	if (!user?.nsec) throw new Error('keys file has no users[0].nsec');
 
 	const relayPort = new URL(community.proxy_url).port;
-	runAgentDeviceFlow({
-		flow: 'maestro/flows/redeem-fresh.yaml',
-		scenario: 'invite-redeem',
-		values: {
-			TOKEN: community.token,
-			COMMUNITY_NAME: community.name,
-			RELAY_PORT: relayPort,
-			NSEC: user.nsec
-		}
-	});
+	let deviceFailure;
+	try {
+		runAgentDeviceFlow({
+			flow: 'maestro/flows/redeem-fresh.yaml',
+			scenario: 'invite-redeem',
+			values: {
+				TOKEN: community.token,
+				COMMUNITY_NAME: community.name,
+				RELAY_PORT: relayPort,
+				NSEC: user.nsec
+			}
+		});
+	} catch (error) {
+		deviceFailure = error;
+		console.error('INVITE UI FAIL; running protocol verifier before teardown');
+	}
 
-	execFileSync(process.execPath, ['.qa/qa-verify-redeem.mjs'], { stdio: 'inherit' });
+	let protocolFailure;
+	try {
+		execFileSync(process.execPath, ['.qa/qa-verify-redeem.mjs'], { stdio: 'inherit' });
+	} catch (error) {
+		protocolFailure = error;
+	}
+	if (deviceFailure) throw deviceFailure;
+	if (protocolFailure) throw protocolFailure;
 	console.log('INVITE E2E PASS');
 } catch (error) {
 	failure = error;

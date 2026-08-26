@@ -1,19 +1,19 @@
 import React from 'react';
-import ReactTestRenderer, {act} from 'react-test-renderer';
-import {router} from 'expo-router';
+import ReactTestRenderer, { act } from 'react-test-renderer';
+import { router } from 'expo-router';
 
-import {RedeemModal} from '../src/modals/RedeemModal';
+import { RedeemModal } from '../src/modals/RedeemModal';
 
 const mockCheckExistingMembership = jest.fn();
 const mockRedeemInvite = jest.fn();
-let mockAuth: {pubkey: string | null; hasSigner: boolean} = {
+let mockAuth: { pubkey: string | null; hasSigner: boolean } = {
   pubkey: 'member-pubkey',
   hasSigner: true,
 };
 
 jest.mock('expo-image', () => {
   const ReactModule = require('react');
-  const {View: MockView} = require('react-native');
+  const { View: MockView } = require('react-native');
   return {
     Image: (props: Record<string, unknown>) =>
       ReactModule.createElement(MockView, props),
@@ -25,7 +25,10 @@ jest.mock('../src/nostr/invites', () => ({
     mockCheckExistingMembership(...args),
   communityNameFromRelay: () => 'Fallback community',
   fetchCommunityInfo: () =>
-    Promise.resolve({name: 'The Office', image: 'https://example.test/icon.png'}),
+    Promise.resolve({
+      name: 'The Office',
+      image: 'https://example.test/icon.png',
+    }),
   normalizeRelayBaseUrl: (value: string) => value,
   redeemInvite: (...args: unknown[]) => mockRedeemInvite(...args),
   relayUrlFromBaseUrl: () => 'wss://office.example',
@@ -49,25 +52,25 @@ jest.mock('../src/theme', () => ({
       primaryContent: '#b8c0c0',
       error: '#ef4444',
     },
-    button: {primary: {text: '#071c17'}},
+    button: { primary: { text: '#071c17' } },
   }),
 }));
 
 jest.mock('../src/modals/ProfileModal', () => {
   const ReactModule = require('react');
-  const {View: MockView} = require('react-native');
+  const { View: MockView } = require('react-native');
   return {
     PrivateKeyLogin: () =>
-      ReactModule.createElement(MockView, {testID: 'invite-login'}),
+      ReactModule.createElement(MockView, { testID: 'invite-login' }),
   };
 });
 
 jest.mock('../src/modals/SignupModal', () => {
   const ReactModule = require('react');
-  const {View: MockView} = require('react-native');
+  const { View: MockView } = require('react-native');
   return {
     SignupProfileStep: () =>
-      ReactModule.createElement(MockView, {testID: 'invite-signup'}),
+      ReactModule.createElement(MockView, { testID: 'invite-signup' }),
     useSignupProfileController: () => ({
       avatar: null,
       bio: '',
@@ -100,16 +103,22 @@ async function flushEffects() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockAuth = {pubkey: 'member-pubkey', hasSigner: true};
+  mockAuth = { pubkey: 'member-pubkey', hasSigner: true };
   mockCheckExistingMembership.mockResolvedValue(false);
-  mockRedeemInvite.mockResolvedValue({communityRelayUrl: 'wss://office.example'});
+  mockRedeemInvite.mockResolvedValue({
+    communityRelayUrl: 'wss://office.example',
+  });
 });
 
 test('replaces the invite modal with Community immediately after redemption', async () => {
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <RedeemModal relay="https://office.example" token="invite-token" onDone={jest.fn()} />,
+      <RedeemModal
+        relay="https://office.example"
+        token="invite-token"
+        onDone={jest.fn()}
+      />,
     );
   });
   await flushEffects();
@@ -143,23 +152,66 @@ test('sends an existing member directly to Community', async () => {
 
   act(() => {
     ReactTestRenderer.create(
-      <RedeemModal relay="https://office.example" token="invite-token" onDone={jest.fn()} />,
+      <RedeemModal
+        relay="https://office.example"
+        token="invite-token"
+        onDone={jest.fn()}
+      />,
     );
   });
   await flushEffects();
 
   expect(mockRedeemInvite).not.toHaveBeenCalled();
   expect(router.replace).toHaveBeenCalledWith(
-    expect.objectContaining({pathname: '/Community'}),
+    expect.objectContaining({ pathname: '/Community' }),
+  );
+});
+
+test('resumes post-redemption work after the award was granted', async () => {
+  mockRedeemInvite
+    .mockRejectedValueOnce(new Error('Could not save membership indexes.'))
+    .mockResolvedValueOnce({ communityRelayUrl: 'wss://office.example' });
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <RedeemModal
+        relay="https://office.example"
+        token="invite-token"
+        onDone={jest.fn()}
+      />,
+    );
+  });
+  await flushEffects();
+
+  await act(async () => {
+    await buttonWithLabel(renderer!, 'Claim invite').props.onPress();
+  });
+  expect(buttonWithLabel(renderer!, 'Retry invitation')).toBeDefined();
+
+  mockCheckExistingMembership.mockResolvedValue(true);
+  await act(async () => {
+    await buttonWithLabel(renderer!, 'Retry invitation').props.onPress();
+  });
+
+  expect(mockRedeemInvite).toHaveBeenLastCalledWith(
+    expect.objectContaining({ membershipAlreadyGranted: true }),
+  );
+  expect(router.replace).toHaveBeenCalledWith(
+    expect.objectContaining({ pathname: '/Community' }),
   );
 });
 
 test('opens profile creation inside the invite route for a new user', async () => {
-  mockAuth = {pubkey: null, hasSigner: false};
+  mockAuth = { pubkey: null, hasSigner: false };
   let renderer: ReactTestRenderer.ReactTestRenderer;
   act(() => {
     renderer = ReactTestRenderer.create(
-      <RedeemModal relay="https://office.example" token="invite-token" onDone={jest.fn()} />,
+      <RedeemModal
+        relay="https://office.example"
+        token="invite-token"
+        onDone={jest.fn()}
+      />,
     );
   });
   await flushEffects();
@@ -171,6 +223,6 @@ test('opens profile creation inside the invite route for a new user', async () =
   expect(createProfile).toBeDefined();
   act(() => createProfile!.props.onPress());
 
-  expect(renderer!.root.findByProps({testID: 'invite-signup'})).toBeTruthy();
+  expect(renderer!.root.findByProps({ testID: 'invite-signup' })).toBeTruthy();
   expect(router.push).not.toHaveBeenCalled();
 });

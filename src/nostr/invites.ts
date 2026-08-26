@@ -3,17 +3,19 @@ import type {
   RequestObject,
   WorkerMessage,
 } from '@candypoets/nipworker';
+import { usePublish as publishToNostr } from '@candypoets/nipworker/hooks';
 import {
-  usePublish as publishToNostr,
-} from '@candypoets/nipworker/hooks';
-import { asKind0, asParsedEvent, isConnectionStatus } from '@candypoets/nipworker/utils';
+  asKind0,
+  asParsedEvent,
+  isConnectionStatus,
+} from '@candypoets/nipworker/utils';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
-import type { EventTemplate } from 'nostr-tools';
+import type { Event, EventTemplate } from 'nostr-tools';
 import { normalizeURL } from 'nostr-tools/utils';
 
 import { INDEXER_RELAYS, useNostrStore, type RelayMarker } from '../stores';
-import {subscribeUntilEose} from './subscribeUntilEose';
+import { subscribeUntilEose } from './subscribeUntilEose';
 import { base64UrlEncode, canonicalAuthEvent, signEvent } from './upload';
 
 /**
@@ -130,20 +132,24 @@ function fetchExistingEvent<T>(
     };
 
     const timeout = setTimeout(finish, timeoutMs);
-    unsubscribe = subscribeUntilEose(subId, requests, (message: WorkerMessage) => {
-      if (statusText(message) === 'eose') {
-        finish();
-        return;
-      }
-      const event = asParsedEvent(message);
-      if (!event) return;
-      const value = select(event);
-      if (value === null) return;
-      const createdAt = event.createdAt() || 0;
-      if (!latest || createdAt > latest.createdAt) {
-        latest = { value, createdAt };
-      }
-    });
+    unsubscribe = subscribeUntilEose(
+      subId,
+      requests,
+      (message: WorkerMessage) => {
+        if (statusText(message) === 'eose') {
+          finish();
+          return;
+        }
+        const event = asParsedEvent(message);
+        if (!event) return;
+        const value = select(event);
+        if (value === null) return;
+        const createdAt = event.createdAt() || 0;
+        if (!latest || createdAt > latest.createdAt) {
+          latest = { value, createdAt };
+        }
+      },
+    );
   });
 }
 
@@ -172,8 +178,8 @@ function relayUrlsFromTags(tags: string[][]) {
 
 /**
  * Copies a kind-0 profile into fresh JSON content for replication onto the
- * community relay (ported from nuts-cash src/lib/profileReplication.ts). Runs
- * inside the subscription callback — the FlatBuffer does not escape it.
+ * community relay. Runs inside the subscription callback so no zero-copy
+ * FlatBuffer escapes it.
  */
 function profileContentFromKind0(event: ParsedEvent): string {
   const profile = asKind0(event);
@@ -240,7 +246,9 @@ export async function checkExistingMembership(
     event => {
       if (event.kind() !== 8) return null;
       const tags = parsedEventTags(event);
-      return tags.some(tag => tag[0] === 'p' && tag[1] === pubkey) ? true : null;
+      return tags.some(tag => tag[0] === 'p' && tag[1] === pubkey)
+        ? true
+        : null;
     },
   );
   return Boolean(award);
@@ -271,64 +279,87 @@ function publishEvent(event: EventTemplate, id: string, relays: string[]) {
   });
 }
 
-/** Publishes kind 0 to the community relay, awaiting its explicit OK. */
-function publishProfileToCommunity(
+function wait(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+/** Publishes one signed event and resolves only from its matching relay OK. */
+function publishSignedEventToRelay(
+  event: Event,
+  communityRelayUrl: string,
+  timeoutMs: number,
+) {
+  return new Promise<boolean>(resolve => {
+    const socket = new WebSocket(communityRelayUrl);
+    let settled = false;
+    const finish = (accepted: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try {
+        socket.close();
+      } catch {
+        // The timeout/error path can race the native socket opening.
+      }
+      resolve(accepted);
+    };
+    const timeout = setTimeout(() => finish(false), timeoutMs);
+    socket.onopen = () => {
+      socket.send(JSON.stringify(['EVENT', canonicalAuthEvent(event)]));
+    };
+    socket.onmessage = message => {
+      if (typeof message.data !== 'string') return;
+      try {
+        const response = JSON.parse(message.data);
+        if (
+          Array.isArray(response) &&
+          response[0] === 'OK' &&
+          response[1] === event.id
+        ) {
+          finish(response[2] === true);
+        }
+      } catch {
+        // Ignore unrelated/malformed relay messages while awaiting our OK.
+      }
+    };
+    socket.onerror = () => finish(false);
+    socket.onclose = () => finish(false);
+  });
+}
+
+/** Publishes kind 0 and waits for durable acceptance by the community relay. */
+async function publishProfileToCommunity(
   pubkey: string,
   profileEvent: EventTemplate,
   communityRelayUrl: string,
 ) {
-  return new Promise<void>((resolve, reject) => {
-    const targetRelay = normalizeURL(communityRelayUrl);
-    let settled = false;
-    let unsubscribe: (() => void) | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      if (retryTimer) clearTimeout(retryTimer);
-      unsubscribe?.();
-      if (error) reject(error);
-      else resolve();
-    };
-    // The badge gate's membership cache can lag behind the just-granted
-    // invite award, so a rejected OK is not final — republish until the
-    // relay confirms or the window closes (a single 12s attempt failed
-    // fresh redeems while the gate was cold).
-    const timeout = setTimeout(
-      () => finish(new Error('The community relay did not confirm your profile.')),
-      30000,
+  // A just-granted award may take time to enter the gate's membership cache.
+  // A dedicated socket avoids nipworker's unrelated transport cooldown, and
+  // raw OK=true is the completion boundary rather than optimistic local cache.
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    const signedProfile = await signEvent({
+      ...profileEvent,
+      content: profileEvent.content || '{}',
+      created_at: now(),
+    });
+    const accepted = await publishSignedEventToRelay(
+      signedProfile,
+      communityRelayUrl,
+      Math.min(3000, Math.max(1, deadline - Date.now())),
     );
-    const attempt = () => {
-      if (settled) return;
-      unsubscribe?.();
-      unsubscribe = publishToNostr(
-        `invite_profile_${pubkey}`,
-        { ...profileEvent, created_at: now() },
-        (message: WorkerMessage) => {
-          const status = isConnectionStatus(message);
-          const relayUrl = status?.relayUrl();
-          if (!status || !relayUrl || normalizeURL(relayUrl) !== targetRelay) return;
-          const value = status.status()?.toString().toLowerCase();
-          if (value === 'true' || value === 'ok') {
-            finish();
-            return;
-          }
-          if (value?.startsWith('false') && !settled && !retryTimer) {
-            retryTimer = setTimeout(() => {
-              retryTimer = undefined;
-              attempt();
-            }, 2500);
-          }
-        },
-        { trackStatus: true, defaultRelays: [communityRelayUrl] },
-      );
-    };
-    attempt();
-  });
+    if (accepted && signedProfile.pubkey === pubkey) return;
+    if (Date.now() < deadline) {
+      await wait(Math.min(1000, deadline - Date.now()));
+    }
+  }
+  throw new Error('The community relay did not confirm your profile.');
 }
 
-function relaySetAddress(pubkey: string, role: (typeof RELAY_FEED_ROLES)[number]) {
+function relaySetAddress(
+  pubkey: string,
+  role: (typeof RELAY_FEED_ROLES)[number],
+) {
   return `30002:${pubkey}:nuts-relays-${role}`;
 }
 
@@ -365,7 +396,10 @@ function buildRelayListTagsWithReadRelay(
   const relayModes = new Map<string, { read: boolean; write: boolean }>();
   const addRelay = (url: string, read = true, write = true) => {
     const normalized = normalizeURL(url);
-    const existing = relayModes.get(normalized) || { read: false, write: false };
+    const existing = relayModes.get(normalized) || {
+      read: false,
+      write: false,
+    };
     relayModes.set(normalized, {
       read: existing.read || read,
       write: existing.write || write,
@@ -397,6 +431,7 @@ export async function redeemInvite({
   relayBaseUrl,
   pubkey,
   profileContent,
+  membershipAlreadyGranted = false,
   onStage,
 }: {
   token: string;
@@ -404,6 +439,8 @@ export async function redeemInvite({
   pubkey: string;
   /** Fresh signup metadata to use until the new kind-0 reaches an indexer. */
   profileContent?: string;
+  /** Resume post-redemption work without consuming the one-use invite again. */
+  membershipAlreadyGranted?: boolean;
   onStage?: (stage: RedeemStage) => void;
 }): Promise<{ communityRelayUrl: string }> {
   const communityRelayUrl = relayUrlFromBaseUrl(relayBaseUrl);
@@ -413,16 +450,20 @@ export async function redeemInvite({
   }
 
   onStage?.('request');
-  const body = JSON.stringify({ token, pubkey });
-  const authorization = await makeInviteAuthorization(redeemEndpoint, body);
-  const response = await fetch(redeemEndpoint, {
-    method: 'POST',
-    headers: { authorization, 'content-type': 'application/json' },
-    body,
-  });
-  const data = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || 'Could not redeem invite.');
+  if (!membershipAlreadyGranted) {
+    const body = JSON.stringify({ token, pubkey });
+    const authorization = await makeInviteAuthorization(redeemEndpoint, body);
+    const response = await fetch(redeemEndpoint, {
+      method: 'POST',
+      headers: { authorization, 'content-type': 'application/json' },
+      body,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => undefined);
+      throw new Error(
+        data?.error || data?.message || 'Could not redeem invite.',
+      );
+    }
   }
 
   onStage?.('indexes');
@@ -499,10 +540,7 @@ export async function redeemInvite({
   const publishRelays = Array.from(
     new Set([...INDEXER_RELAYS, communityRelayUrl]),
   );
-  const relayFeedTags = mergeRelayFeedIndexTags(
-    relayFeed?.value ?? [],
-    pubkey,
-  );
+  const relayFeedTags = mergeRelayFeedIndexTags(relayFeed?.value ?? [], pubkey);
   const memberRelaySetTags = buildMemberRelaySetTags(
     memberRelaySet?.value ?? [],
     communityRelayUrl,
@@ -514,28 +552,32 @@ export async function redeemInvite({
 
   await publishEvent(
     { kind: 10012, tags: relayFeedTags, content: '', created_at: timestamp },
-    `invite_relay_feed_${pubkey}`,
+    `invite_relay_feed_${fetchKey}`,
     publishRelays,
   );
   await publishEvent(
-    { kind: 30002, tags: memberRelaySetTags, content: '', created_at: timestamp },
-    `invite_member_relay_set_${pubkey}`,
+    {
+      kind: 30002,
+      tags: memberRelaySetTags,
+      content: '',
+      created_at: timestamp,
+    },
+    `invite_member_relay_set_${fetchKey}`,
     publishRelays,
   );
   await publishEvent(
     { kind: 10002, tags: relayListTags, content: '', created_at: timestamp },
-    `invite_relay_list_${pubkey}`,
+    `invite_relay_list_${fetchKey}`,
     publishRelays,
   );
 
   onStage?.('profile');
-  const communityProfileContent = existingProfile?.value || profileContent || '{}';
   await publishProfileToCommunity(
     pubkey,
     {
       kind: 0,
       tags: [],
-      content: communityProfileContent,
+      content: existingProfile?.value || profileContent || '{}',
       created_at: timestamp,
     },
     communityRelayUrl,

@@ -35,6 +35,7 @@ appId: com.nutsrn
     notVisible: "Claim invite"
     timeout: 60000
 - assertNotVisible: ".*You're invited to.*"
+- assertNotVisible: "Render Error"
 - extendedWaitUntil:
     visible: ".*${COMMUNITY_NAME}.*"
     timeout: 60000

@@ -7,7 +7,7 @@ UI with Agent Device, verify protocol state from Node, tear down.
 What it covers: a logged-in user opens an invite deep link → RedeemModal →
 "Claim invite" → success → community screen. Then a Node verifier proves the
 membership actually landed on the community relay (kind-8 badge award for the
-user's pubkey + the app's kind-0 replica).
+user's pubkey + the app's kind-0 replica + the root-authored membership definition).
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ ANDROID_SERIAL=emulator-5554 npm run qa:invite
 - `qa-redeem-proxy.mjs` — dev port-split shim (below).
 - `qa-verify-redeem.mjs` — queries the community relay for the kind-8 award
   (authored by the badge_issuer service key), the redeemer's kind-0 replica,
-  and the 30009 members definition.
+  and the 30009 members definition with kind-0 and kind-1 capabilities.
 - `qa-teardown.mjs` — deletes the relay + `strfry-badge-data-<id>` volume
   (the coordinator does not remove it), stops the proxy, removes the state
   file. `--sweep` removes all `rnqa-*` relays and orphan volumes.
@@ -260,9 +260,9 @@ Flow authoring rules learned the hard way:
 - Chrome checkout chain: first run shows "Use without an account" then a
   notification prompt ("No thanks"), then the success page — handle both as
   one-time `when:` branches (Chrome state persists across flows).
-- Redeem flow: fresh claim can hit the badge-gate membership-cache lag
-  (15–45 s) on the kind-0 replica confirm; the app now retries publishes for
-  30 s, and the flow has a 3-attempt flat Try-again ladder on top.
+- Redeem flow keeps a 3-attempt flat Try-again ladder for transient failures.
+  A retry that finds the award already exists resumes index/profile work
+  without consuming the one-use invite again.
 - Reruns against the same scenario take the "already a member" path (the
   flows handle it); a full fresh-claim rerun needs a re-provision.
 
@@ -286,8 +286,9 @@ SPEC-GAPS.md for the app gaps and infra quirks all three layers pinned.
 
 - The Agent Device flow takes the token via `-e TOKEN=...`; everything else in the
   deep link is fixed (`relay=http%3A%2F%2F10.0.2.2%3A7820`).
-- Redeem publishes several events with ~2 s timeouts each plus a 12 s relay
-  confirmation for the kind-0 replica — the success assertion allows 120 s.
+- Redeem publishes several membership-index events with ~2 s timeouts each,
+  then allows up to 60 s for the gate to accept the kind-0 replica. The success
+  assertion allows 120 s.
 - Redeem also publishes membership indexes to public INDEXER_RELAYS; the
   emulator needs internet.
 - Compatibility-flow gotchas (covered-node taps, hideKeyboard dismissing modals,

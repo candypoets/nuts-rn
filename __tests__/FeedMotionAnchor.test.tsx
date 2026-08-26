@@ -2,7 +2,7 @@ import React from 'react';
 import ReactTestRenderer, {act} from 'react-test-renderer';
 import {ScrollView, Text} from 'react-native';
 import HeaderMotion from 'react-native-header-motion';
-import {Feed} from '../src/components/Feed';
+import {Feed, type FeedScrollAdjust} from '../src/components/Feed';
 
 type Item = {id: string};
 
@@ -61,7 +61,12 @@ describe('Feed unwrappedMotionContent', () => {
     );
     renderer.root.findByType(HeaderMotion.ScrollManager);
     const scrollView = renderer.root.findByType(ScrollView);
-    expect(scrollView.props.contentContainerStyle).toEqual({paddingTop: 0});
+    // Array form: header offset first, then the caller's contentContainerStyle
+    // (undefined when not provided, e.g. the thread's bottom padding).
+    expect(scrollView.props.contentContainerStyle).toEqual([
+      {paddingTop: 0},
+      undefined,
+    ]);
 
     // No single padded wrapper child: rows become direct scroll children so
     // the platform anchor helper can see them.
@@ -119,5 +124,47 @@ describe('Feed unwrappedMotionContent', () => {
       renderer.root.findByType(ScrollView).props
         .maintainVisibleContentPosition,
     ).toEqual({ minIndexForVisible: 2 });
+  });
+
+  test('scrollAdjustRef scrollBy shifts the offset and accumulates same-frame deltas', () => {
+    // The animated ref lands on the ScrollView instance; shadow its scrollTo
+    // with a spy after mount.
+    const adjustRef = React.createRef<FeedScrollAdjust>();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = ReactTestRenderer.create(
+        <Feed<Item>
+          items={[]}
+          renderItem={() => null}
+          motionHeader={() => <Text testID="motion-header">Post</Text>}
+          empty={<Text>empty</Text>}
+          unwrappedMotionContent
+          scrollAdjustRef={adjustRef}
+        />,
+      );
+    });
+    jest.useFakeTimers();
+    const scrollView = renderer!.root.findByType(ScrollView);
+    const scrollTo = jest.fn();
+    (scrollView.instance as unknown as { scrollTo: jest.Mock }).scrollTo =
+      scrollTo;
+
+    expect(adjustRef.current).not.toBeNull();
+    act(() => {
+      adjustRef.current!.scrollBy(490);
+    });
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 490, animated: false });
+
+    // A second delta in the same frame must build on the pending offset: the
+    // shared value only catches up once the native scroll event lands.
+    act(() => {
+      adjustRef.current!.scrollBy(-170);
+    });
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 320, animated: false });
+
+    // Flush the pending-offset reset frame before teardown.
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
   });
 });

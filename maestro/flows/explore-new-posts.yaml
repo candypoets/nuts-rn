@@ -13,16 +13,15 @@ appId: com.nutsrn
 #   - internet (kind 10002 publish + fetch via public bootstrap relays)
 #
 # Run (NSEC from the qa-feed-relay output):
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
-#     -e NSEC=nsec1... -e RELAY_PORT=7799 maestro/flows/explore-new-posts.yaml
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/explore-new-posts.yaml \
+#     -e NSEC=nsec1... -e RELAY_PORT=7799
 #
-# No env defaults declared here on purpose: in maestro 2.7 a flow's own env
-# block beats CLI -e, which silently breaks parameterization.
+# No env defaults are declared here; the fixture values come from the caller.
 - runFlow: launch.yaml
 # Log in with the QA identity (same nsec pattern as redeem.yaml).
 - tapOn: "Home"
 - assertVisible: "Your wallet, passes, and tickets"
-- tapOn: "Sign in"
+- openLink: "nutsrn:///Login"
 - assertVisible: "Welcome back"
 - tapOn: "Paste key or connection link"
 - inputText: "${NSEC}"
@@ -32,7 +31,7 @@ appId: com.nutsrn
 # Anchor to the input field: "Sign in" also exists on the covered Home stub.
 - tapOn:
     text: "Sign in"
-    below: "Paste key or connection link"
+    index: 1
 # Success: the modal closes itself once the auth event lands.
 - extendedWaitUntil:
     notVisible: "Welcome back"

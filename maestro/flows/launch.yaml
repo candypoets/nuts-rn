@@ -39,3 +39,14 @@ appId: com.nutsrn
 - extendedWaitUntil:
     visible: "Switch to all"
     timeout: 180000
+# The launcher tools sheet can finish opening after the earlier optional Close
+# tap. Covered app nodes remain in the hierarchy, so dismiss it by its unique
+# Reload action before a scenario tries to tap the app underneath.
+- runFlow:
+    when:
+      visible: "Reload"
+    commands:
+      - pressKey: Back
+      - extendedWaitUntil:
+          notVisible: "Reload"
+          timeout: 10000

@@ -1,7 +1,7 @@
 // Shared helpers for the nuts-rn .qa harness: keys, NIP-98, coordinator API,
 // community state file, relay pool, and the redeem proxy lifecycle.
 // Adapted from nuts-cash/.qa/qa-lib.mjs (browser/dev-server helpers dropped —
-// the app under test runs on the Android emulator, driven by Maestro).
+// the app under test runs on the Android emulator, driven by Agent Device).
 import { spawn } from 'child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';

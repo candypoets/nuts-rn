@@ -1,4 +1,4 @@
-// QA feed relay: a throwaway in-memory NIP-01 relay for Explore-feed Maestro
+// QA feed relay: a throwaway in-memory NIP-01 relay for the Explore device flow
 // tests (explore-new-posts.yaml).
 //
 // What it does:

@@ -136,7 +136,28 @@ export type FeedProps<T> = {
   onChromeVisibilityChange?: (visible: boolean) => void;
   onViewportStateChange?: (state: { start: number; down: boolean }) => void;
   contentContainerClassName?: string;
+  /**
+   * Extra style merged into the scroll content container on the motion-header
+   * paths. Thread screens use it for a viewport-height bottom padding: the
+   * platform maintainVisibleContentPosition can only compensate content added
+   * above the anchor by scrolling, which requires content taller than the
+   * viewport — short threads have no scroll range without it.
+   */
+  contentContainerStyle?: ViewStyle;
+  /**
+   * Exposes an imperative scrollBy used to compensate content inserted or
+   * grown above the anchor row from JS. Thread screens use it on iOS, where
+   * maintainVisibleContentPosition does not compensate ancestor
+   * prepends/resolves (Android keeps the native mechanism). Motion-header
+   * path only; deltas issued within the same frame accumulate.
+   */
+  scrollAdjustRef?: Ref<FeedScrollAdjust>;
   removeClippedSubviews?: boolean;
+};
+
+export type FeedScrollAdjust = {
+  /** Shifts the scroll offset by deltaY without animation. */
+  scrollBy: (deltaY: number) => void;
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
@@ -543,6 +564,8 @@ export function Feed<T>({
   onChromeVisibilityChange,
   onViewportStateChange,
   contentContainerClassName = 'pb-28',
+  contentContainerStyle,
+  scrollAdjustRef,
   removeClippedSubviews = false,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
@@ -651,6 +674,47 @@ export function Feed<T>({
       }
     },
     [bottom, listRef],
+  );
+
+  // JS-side anchor compensation (iOS; see scrollAdjustRef). scrollY only
+  // reflects a programmatic scrollTo once the native scroll event lands a
+  // frame later, so deltas issued in the same frame must accumulate on the
+  // pending offset instead of re-reading the shared value.
+  const pendingScrollAdjustRef = useRef<number | null>(null);
+  const pendingScrollAdjustFrameRef = useRef<ReturnType<
+    typeof requestAnimationFrame
+  > | null>(null);
+
+  useImperativeHandle(
+    scrollAdjustRef,
+    () => ({
+      scrollBy: (deltaY: number) => {
+        if (!deltaY) return;
+        const nextY = Math.max(
+          0,
+          (pendingScrollAdjustRef.current ?? scrollY.get()) + deltaY,
+        );
+        pendingScrollAdjustRef.current = nextY;
+        listRef.current?.scrollTo({ y: nextY, animated: false });
+        if (pendingScrollAdjustFrameRef.current) {
+          cancelAnimationFrame(pendingScrollAdjustFrameRef.current);
+        }
+        pendingScrollAdjustFrameRef.current = requestAnimationFrame(() => {
+          pendingScrollAdjustRef.current = null;
+          pendingScrollAdjustFrameRef.current = null;
+        });
+      },
+    }),
+    [listRef, scrollY],
+  );
+
+  useEffect(
+    () => () => {
+      if (pendingScrollAdjustFrameRef.current) {
+        cancelAnimationFrame(pendingScrollAdjustFrameRef.current);
+      }
+    },
+    [],
   );
 
   const chromeProps = useMemo(
@@ -1293,11 +1357,12 @@ export function Feed<T>({
               className="flex-1"
               contentInsetAdjustmentBehavior="never"
               contentContainerClassName={contentContainerClassName}
-              contentContainerStyle={
+              contentContainerStyle={[
                 motionHeaderOverlaysContent
                   ? undefined
-                  : { paddingTop: originalHeaderHeight }
-              }
+                  : { paddingTop: originalHeaderHeight },
+                contentContainerStyle,
+              ]}
               maintainVisibleContentPosition={
                 shouldMaintainVisibleContentPosition &&
                 !showCustomRefreshIndicator &&

@@ -82,7 +82,7 @@ RSVP area when a matching award exists.
 
 Copy: existing app voice ("You are going" register). No i18n (project norm).
 
-## Maestro scenario (extends `qa-verify-event.mjs`)
+## Agent Device scenario (extends `qa-verify-event.mjs`)
 
 New `entitlement` scenario, runnable after store-beer/gym-pass on the same
 provisioned state:

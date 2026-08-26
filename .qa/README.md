@@ -2,7 +2,7 @@
 
 Repeatable end-to-end test of the app's invite-redeem entry point, modeled on
 the nuts-cash `.qa` style: provision real infrastructure, drive the real app
-UI with Maestro, verify protocol state from Node, tear down.
+UI with Agent Device, verify protocol state from Node, tear down.
 
 What it covers: a logged-in user opens an invite deep link → RedeemModal →
 "Claim invite" → success → community screen. Then a Node verifier proves the
@@ -17,26 +17,17 @@ user's pubkey + the app's kind-0 replica).
   plain `adb`
 - Metro on port 8084 + `adb reverse tcp:8084 tcp:8084`
 - Admin/test keys at /root/code/strfry-badge-node/test/env/keys.json
-- Maestro CLI at ~/.maestro/bin/maestro
+- npm dependencies installed (the repository pins `agent-device`)
 
 ## The loop
 
 ```sh
-# 1. Provision a community + mint an invite (prints the claim URL and the
-#    exact maestro command; state goes to /tmp/qa-rn-community.json)
-node .qa/qa-bootstrap.mjs
+# One command provisions a fresh community, runs the YAML through Agent
+# Device's compatibility engine, verifies relay state, and tears down.
+# ANDROID_SERIAL is mandatory so the run cannot take another emulator.
+ANDROID_SERIAL=emulator-5554 npm run qa:invite
 
-# 2. Drive the app (only ONE emulator — wait until no other maestro run is
-#    active; use the bracket pattern, a plain "maestro test" matches your own
-#    shell and never exits: `while pgrep -f "AppK[t] test" >/dev/null; do sleep 10; done`)
-MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
-  -e TOKEN=<token from bootstrap> maestro/flows/redeem.yaml
-
-# 3. Protocol-truth check against the community relay (exits non-zero on failure)
-node .qa/qa-verify-redeem.mjs
-
-# 4. Clean up (relay container, docker volume, proxy, state file)
-node .qa/qa-teardown.mjs
+# Artifacts: /tmp/nuts-rn-agent-device-artifacts/invite-redeem
 # crash recovery: node .qa/qa-teardown.mjs --sweep
 ```
 
@@ -56,8 +47,13 @@ node .qa/qa-teardown.mjs
 - `qa-teardown.mjs` — deletes the relay + `strfry-badge-data-<id>` volume
   (the coordinator does not remove it), stops the proxy, removes the state
   file. `--sweep` removes all `rnqa-*` relays and orphan volumes.
-- `../maestro/flows/redeem.yaml` — login as `keys.users[0]` (nsec) →
-  `openLink:` the invite → claim → success → community screen.
+- `agent-device-runner.mjs` — pins the local CLI to `ANDROID_SERIAL`, runs the
+  Maestro-compatible YAML, and isolates artifacts by scenario.
+- `../maestro/flows/redeem-fresh.yaml` — strict one-shot login as
+  `keys.users[0]` (nsec) → `openLink:` the invite → require Claim invite →
+  claim → require the invitation to disappear → community screen.
+- `../maestro/flows/redeem.yaml` — reusable commerce variant that also allows
+  an existing member to enter the community on scenario reruns.
 
 ## The redeem proxy (dev port split)
 
@@ -205,7 +201,7 @@ history from storage.
   `node .qa/qa-refresh-invites.mjs` (mints new tokens against the SAME
   communities; no re-provision needed).
 
-### Maestro commerce flows (Layer 2)
+### Agent Device commerce flows (Layer 2)
 
 `qa-verify-event.mjs` drives the purchase/capacity flows through the real app
 UI and proves the protocol state from Node:
@@ -214,7 +210,7 @@ UI and proves the protocol state from Node:
 # prerequisites: scenario provisioned (above) + Metro running with
 #   EXPO_PUBLIC_NUTS_API_URL=http://10.0.2.2:7821 npx expo start --dev-client --port 8084
 # (NO CI=1 — the dev launcher auto-discovers Metro and the flows depend on it)
-node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|entitlement|all]
+ANDROID_SERIAL=emulator-5554 node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|entitlement|all]
 ```
 
 - `entitlement` (member-side entitlement screens, docs/entitlements.md):
@@ -256,11 +252,10 @@ node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|entitlement|all]
 
 Flow authoring rules learned the hard way:
 
-- **A subflow's own `env:` block beats BOTH CLI `-e` and `runFlow` env**
-  (maestro 2.7) — `redeem.yaml` declares no env defaults; callers pass
+- `redeem.yaml` declares no environment defaults; callers pass
   TOKEN/RELAY_PORT/NSEC/COMMUNITY_NAME explicitly. Standalone runs need all
-  four `-e` flags.
-- Maestro text regexes must match the WHOLE element text — substring asserts
+  four `-e` values.
+- Compatibility text regexes must match the WHOLE element text — substring asserts
   need `.*….*`.
 - Chrome checkout chain: first run shows "Use without an account" then a
   notification prompt ("No thanks"), then the success page — handle both as
@@ -289,11 +284,11 @@ SPEC-GAPS.md for the app gaps and infra quirks all three layers pinned.
   starts with `qa-` on this shared coordinator (it ate a `qa-rn-*` community
   mid-run once). Do not rename back to a `qa-*` prefix.
 
-- The Maestro flow takes the token via `-e TOKEN=...`; everything else in the
+- The Agent Device flow takes the token via `-e TOKEN=...`; everything else in the
   deep link is fixed (`relay=http%3A%2F%2F10.0.2.2%3A7820`).
 - Redeem publishes several events with ~2 s timeouts each plus a 12 s relay
   confirmation for the kind-0 replica — the success assertion allows 120 s.
 - Redeem also publishes membership indexes to public INDEXER_RELAYS; the
   emulator needs internet.
-- Maestro gotchas (covered-node taps, hideKeyboard dismissing modals,
+- Compatibility-flow gotchas (covered-node taps, hideKeyboard dismissing modals,
   whole-element text matching) are documented in ../AGENTS.md.

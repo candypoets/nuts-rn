@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Signup protocol-truth verifier: the Maestro flow proves the wizard renders
+// Signup protocol-truth verifier: the Agent Device flow proves the wizard renders
 // and completes; this script proves the events it publishes were actually
 // accepted by at least one relay.
 //

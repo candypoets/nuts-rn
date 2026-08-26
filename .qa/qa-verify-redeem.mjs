@@ -1,4 +1,4 @@
-// Protocol-truth verifier for the invite-redeem e2e: the Maestro flow proves
+// Protocol-truth verifier for the invite-redeem e2e: the Agent Device flow proves
 // the app UI completes; this script proves the membership actually landed on
 // the community relay.
 //
@@ -11,7 +11,7 @@
 //   3. 30009:<community-root>:members definition (the invite service publishes it at
 //      startup; it is what makes the award render as membership)
 //
-// Usage: node .qa/qa-verify-redeem.mjs   (after the maestro redeem flow)
+// Usage: node .qa/qa-verify-redeem.mjs   (after the Agent Device redeem flow)
 // Exit code is non-zero on any failure.
 import {
 	assert,
@@ -30,7 +30,7 @@ if (!community?.relay_url) {
 }
 const keys = loadKeys();
 const user = keys.users?.[0];
-if (!user?.pub) throw new Error('keys file has no users[] (the maestro flow logs in as users[0])');
+if (!user?.pub) throw new Error('keys file has no users[] (the device flow logs in as users[0])');
 
 const RELAY = community.relay_url;
 const pool = makePool();

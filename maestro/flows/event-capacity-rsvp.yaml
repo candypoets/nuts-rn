@@ -14,8 +14,8 @@ env:
 # Run (EVENT_URL = pre-encoded deep link built by the wrapper from
 # /tmp/qa-rn-commerce.json, e.g.
 #   nutsrn:///CalendarEvent?relay=ws%3A%2F%2F10.0.2.2%3A7822&address=31923%3A...):
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
-#     -e EVENT_URL="<url>" maestro/flows/event-capacity-rsvp.yaml
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/event-capacity-rsvp.yaml \
+#     -e EVENT_URL="<url>"
 - launchApp:
     appId: com.nutsrn
     stopApp: false

@@ -8,7 +8,7 @@ appId: com.nutsrn
 - runFlow: launch.yaml
 - tapOn: "Home"
 - assertVisible: "Your wallet, passes, and tickets"
-- tapOn: "Sign in"
+- openLink: "nutsrn:///Login"
 - assertVisible: "Welcome back"
 - tapOn: "Paste key or connection link"
 # Valid but unanswered pubkey (fresh keypair, no signer behind it).
@@ -19,10 +19,10 @@ appId: com.nutsrn
 - tapOn: "Choose how you want to sign in."
 - tapOn:
     text: "Sign in"
-    below: "Paste key or connection link"
+    index: 1
 # nipworker reports "NIP-46 bunker connect failed: nip46 timeout waiting for
 # response" after ~20s; the app must show it instead of hanging silently.
-# Maestro text selectors match the WHOLE element text — use .* around the
+# Compatibility text selectors match the WHOLE element text — use .* around the
 # substring or the assert fails even when the error is on screen.
 - extendedWaitUntil:
     visible: ".*connect to your signing app.*"

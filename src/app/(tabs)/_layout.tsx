@@ -159,6 +159,7 @@ export default function MainTabsLayout() {
       >
         <NativeTabs.Trigger
           disableAutomaticContentInsets
+          disableScrollToTop
           listeners={tabPressListeners('home')}
           name="HomeTab"
         >
@@ -170,6 +171,7 @@ export default function MainTabsLayout() {
         </NativeTabs.Trigger>
         <NativeTabs.Trigger
           disableAutomaticContentInsets
+          disableScrollToTop
           listeners={tabPressListeners('explore')}
           name="index"
         >
@@ -184,6 +186,7 @@ export default function MainTabsLayout() {
         </NativeTabs.Trigger>
         <NativeTabs.Trigger
           disableAutomaticContentInsets
+          disableScrollToTop
           listeners={tabPressListeners('chat')}
           name="ChatTab"
         >

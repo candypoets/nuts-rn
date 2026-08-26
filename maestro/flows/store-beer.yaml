@@ -16,9 +16,8 @@ env:
 #   - Metro on :8084 started with EXPO_PUBLIC_NUTS_API_URL=http://10.0.2.2:7821
 #
 # Run (values from /tmp/qa-rn-commerce.json):
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
-#     -e TOKEN=<bar-invite> -e RELAY_PORT=7820 -e COMMUNITY_NAME="QA RN Bar <runid>" \
-#     maestro/flows/store-beer.yaml
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/store-beer.yaml \
+#     -e TOKEN=<bar-invite> -e RELAY_PORT=7820 -e COMMUNITY_NAME="QA RN Bar <runid>"
 #
 # Protocol-level proof afterwards: the shim logs the checkout and the
 # badge_issuer-signed kind 8 award is visible on the bar relay

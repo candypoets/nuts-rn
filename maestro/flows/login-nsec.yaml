@@ -1,0 +1,24 @@
+appId: com.nutsrn
+---
+# Shared fresh nsec login. NSEC is supplied by the caller.
+- runFlow: launch.yaml
+- tapOn: "Home"
+- assertVisible: "Your wallet, passes, and tickets"
+# Expo's floating dev-client Tools button overlaps the header Sign in button
+# on Android. Open the public route so the same modal is reachable in QA.
+- openLink: "nutsrn:///Login"
+- assertVisible: "Welcome back"
+- tapOn: "Paste key or connection link"
+- inputText: "${NSEC}"
+# Dismiss the keyboard by tapping inert text inside the modal (hideKeyboard
+# can send a Back press that dismisses the whole login modal).
+- tapOn: "Choose how you want to sign in."
+# The modal submit is the second matching Sign in node while the covered Home
+# header remains in the accessibility tree.
+- tapOn:
+    text: "Sign in"
+    index: 1
+- extendedWaitUntil:
+    notVisible: "Welcome back"
+    timeout: 60000
+- assertNotVisible: "Your wallet, passes, and tickets"

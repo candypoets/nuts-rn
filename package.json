@@ -21,7 +21,10 @@
     "test": "jest",
     "devtools": "node scripts/open-rn-devtools.mjs",
     "postinstall": "patch-package",
-    "doctor": "npx react-doctor@latest"
+    "doctor": "npx react-doctor@latest",
+    "qa:device": "node .qa/run-device-flow.mjs",
+    "qa:invite": "node .qa/qa-invite.mjs",
+    "qa:runner:test": "node --test .qa/agent-device-runner.test.mjs"
   },
   "dependencies": {
     "@candypoets/nipworker": "0.99.14",
@@ -89,6 +92,7 @@
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
+    "agent-device": "0.20.10",
     "babel-preset-expo": "~57.0.0",
     "bplist-creator": "^0.1.1",
     "bplist-parser": "^0.3.2",

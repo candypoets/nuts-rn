@@ -1,0 +1,386 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="430" height="932" viewBox="0 0 430 932" role="img" aria-labelledby="title desc">
+  <title id="title">Nuts Explore Media tab — three-column grid concept, refined</title>
+  <desc id="desc">A high-fidelity dark-theme phone mockup with fifteen square, sharp-cornered media tiles arranged exactly three per row, compact creator attribution, video badges, composer control, and native tab bar.</desc>
+  <defs>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101722"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="sunset" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffbe72"/>
+      <stop offset="0.48" stop-color="#d76566"/>
+      <stop offset="1" stop-color="#45365f"/>
+    </linearGradient>
+    <linearGradient id="mountainSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#77b9d3"/>
+      <stop offset="1" stop-color="#dde9e7"/>
+    </linearGradient>
+    <linearGradient id="concert" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#28114b"/>
+      <stop offset="0.55" stop-color="#a22d7d"/>
+      <stop offset="1" stop-color="#151b38"/>
+    </linearGradient>
+    <linearGradient id="street" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ddd1b8"/>
+      <stop offset="1" stop-color="#657179"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#84cad0"/>
+      <stop offset="0.55" stop-color="#b8ddd5"/>
+      <stop offset="0.56" stop-color="#2b8697"/>
+      <stop offset="1" stop-color="#155567"/>
+    </linearGradient>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#192548"/>
+      <stop offset="1" stop-color="#634e78"/>
+    </linearGradient>
+    <linearGradient id="tileScrim" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#07090c" stop-opacity="0"/>
+      <stop offset="0.58" stop-color="#07090c" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#07090c" stop-opacity="0.78"/>
+    </linearGradient>
+    <linearGradient id="navFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101722" stop-opacity="0"/>
+      <stop offset="0.25" stop-color="#101722" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#101722"/>
+    </linearGradient>
+    <filter id="phoneShadow" x="-30%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#020617" flood-opacity="0.42"/>
+    </filter>
+    <clipPath id="screenClip">
+      <rect x="18" y="18" width="394" height="896" rx="34"/>
+    </clipPath>
+  </defs>
+
+  <!-- Device and screen -->
+  <rect width="430" height="932" fill="#e8edf0"/>
+  <rect x="10" y="8" width="410" height="916" rx="48" fill="#080b0f" filter="url(#phoneShadow)"/>
+  <g>
+    <rect x="18" y="18" width="394" height="896" fill="url(#screen)"/>
+
+    <!-- System bar -->
+    <text x="42" y="43" fill="#f8fafc" font-family="Inter, Roboto, Arial, sans-serif" font-size="12" font-weight="650">9:41</text>
+    <rect x="194" y="26" width="42" height="13" rx="7" fill="#05070a"/>
+    <g fill="none" stroke="#f8fafc" stroke-width="1.5" stroke-linecap="round">
+      <path d="M365 38h2M361 35h6M358 32h12"/>
+      <rect x="375" y="29" width="19" height="10" rx="2"/>
+      <path d="M395 32.5v3"/>
+    </g>
+    <rect x="377.5" y="31.5" width="12" height="5" rx="1" fill="#f8fafc"/>
+
+    <!-- Explore app bar -->
+    <g font-family="Inter, Roboto, Arial, sans-serif">
+      <text x="31" y="82" fill="#f8fafc" font-size="25" font-weight="700" letter-spacing="-0.5">All</text>
+      <path d="M68 71.5l5 5 5-5" fill="none" stroke="#d3dce7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g fill="#1f2937" stroke="#334155" stroke-width="1">
+      <circle cx="315" cy="72" r="18"/>
+      <circle cx="357" cy="72" r="18"/>
+      <circle cx="399" cy="72" r="18"/>
+    </g>
+    <g fill="none" stroke="#d3dce7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="312" cy="69" r="5.5"/>
+      <path d="M316 73l4 4"/>
+      <path d="M352 73.5 L352 68.5 C352 61.8 362 61.8 362 68.5 L362 73.5 L364 75.5 L350 75.5 Z M355 78 L359 78"/>
+    </g>
+    <circle cx="399" cy="72" r="14" fill="#d8a55b" stroke="none"/>
+    <path d="M390 78c2-7 5-11 9-12 4 1 7 5 9 12z" fill="#4a2d25"/>
+    <circle cx="399" cy="67" r="5" fill="#f0cbb2"/>
+
+    <!-- Relay selector -->
+    <g transform="translate(31 101)">
+      <circle cx="5" cy="5" r="4" fill="#1fb092"/>
+      <text x="15" y="9" fill="#aab7c7" font-family="Inter, Roboto, Arial, sans-serif" font-size="12" font-weight="550">nostr.wine</text>
+      <rect x="88" y="-3" width="29" height="17" rx="8.5" fill="#253141"/>
+      <text x="96" y="9" fill="#d3dce7" font-family="Inter, Roboto, Arial, sans-serif" font-size="10" font-weight="650">+2</text>
+    </g>
+
+    <!-- Kind tabs -->
+    <g font-family="Inter, Roboto, Arial, sans-serif" font-size="15.5">
+      <text x="42" y="154" fill="#7f8b9a">Notes</text>
+      <text x="133" y="154" fill="#f8fafc" font-weight="650">Media</text>
+      <text x="222" y="154" fill="#7f8b9a">Articles</text>
+      <text x="322" y="154" fill="#7f8b9a">Events</text>
+    </g>
+    <rect x="116" y="171" width="72" height="2" fill="#1fb092"/>
+    <rect x="18" y="173" width="394" height="1" fill="#2a3442"/>
+
+    <!-- Row 1, tile 1: cafe -->
+    <g transform="translate(19 175)">
+      <rect width="130" height="130" fill="#69473d"/>
+      <rect width="130" height="68" fill="url(#sunset)"/>
+      <circle cx="100" cy="26" r="17" fill="#ffd89b" opacity="0.78"/>
+      <rect y="69" width="130" height="61" fill="#3b2724"/>
+      <path d="M0 70h130v8H0z" fill="#b57a55"/>
+      <path d="M48 55h27l-3 45H51z" fill="#e7c9a8" opacity="0.95"/>
+      <path d="M51 68h21l-1 27H53z" fill="#a95834"/>
+      <path d="M76 61c15 1 15 21 0 22" fill="none" stroke="#f1dcc5" stroke-width="4"/>
+      <path d="M55 54c2-7 4-11 8-15M64 54c-1-7 0-11 4-16" stroke="#f7e7d4" stroke-width="2" opacity="0.65"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#efb59d" stroke="#fff" stroke-width="1"/>
+      <path d="M7 119c1-5 3-7 5-7 3 0 5 2 6 7z" fill="#51362e"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">mara.cafe</text>
+    </g>
+
+    <!-- Row 1, tile 2: alpine lake -->
+    <g transform="translate(150 175)">
+      <rect width="130" height="130" fill="url(#mountainSky)"/>
+      <circle cx="23" cy="25" r="11" fill="#fff6c8" opacity="0.85"/>
+      <path d="M-8 80L35 31 61 69 85 39 139 87v43H-8z" fill="#627b78"/>
+      <path d="M35 31l-9 28 12-8 11 9zM85 39L68 68l17-9 17 13z" fill="#f3f7f5"/>
+      <path d="M0 82c25-7 41-3 64 2 23 5 42 2 66-5v51H0z" fill="#2c7681"/>
+      <path d="M15 100c27-6 53-5 92 0M4 112c36-4 72-3 119 1" stroke="#83c5c8" stroke-width="2" opacity="0.65"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#9f7aea" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">alpinealex</text>
+    </g>
+
+    <!-- Row 1, tile 3: concert video -->
+    <g transform="translate(281 175)">
+      <rect width="130" height="130" fill="url(#concert)"/>
+      <path d="M18 0l31 100M107 0L81 100" stroke="#ff7ac8" stroke-width="11" opacity="0.22"/>
+      <circle cx="28" cy="28" r="4" fill="#fff" opacity="0.85"/>
+      <circle cx="98" cy="17" r="5" fill="#8be9ff" opacity="0.9"/>
+      <circle cx="65" cy="58" r="14" fill="#21172a"/>
+      <path d="M45 126c2-37 10-55 20-55s19 18 21 55z" fill="#17131d"/>
+      <path d="M73 59l27-17" stroke="#17131d" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="103" cy="40" r="4" fill="#0e0d14"/>
+      <g transform="translate(101 11)">
+        <circle cx="10" cy="10" r="10" fill="#05070a" opacity="0.66"/>
+        <path d="M8 6l7 4-7 4z" fill="#fff"/>
+      </g>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#e65f9e" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">livewire</text>
+    </g>
+
+    <!-- Row 2, tile 1: dog -->
+    <g transform="translate(19 306)">
+      <rect width="130" height="130" fill="#799a5b"/>
+      <circle cx="19" cy="20" r="18" fill="#a9bf79" opacity="0.7"/>
+      <circle cx="109" cy="43" r="26" fill="#577c45" opacity="0.6"/>
+      <ellipse cx="66" cy="77" rx="31" ry="34" fill="#bd7c43"/>
+      <path d="M40 55L28 31l29 17M89 54l15-25-32 17" fill="#7a4529"/>
+      <ellipse cx="55" cy="69" rx="4" ry="5" fill="#191919"/>
+      <ellipse cx="78" cy="69" rx="4" ry="5" fill="#191919"/>
+      <ellipse cx="67" cy="82" rx="7" ry="5" fill="#2a1a16"/>
+      <path d="M61 89q6 7 13 0" fill="none" stroke="#2a1a16" stroke-width="2"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#ffd166" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">pawsdaily</text>
+    </g>
+
+    <!-- Row 2, tile 2: cyclist -->
+    <g transform="translate(150 306)">
+      <rect width="130" height="130" fill="url(#street)"/>
+      <path d="M0 0h37v87H0zM93 0h37v87H93z" fill="#6f655d"/>
+      <g fill="#e6cda5" opacity="0.75"><rect x="7" y="13" width="17" height="22"/><rect x="100" y="10" width="20" height="31"/></g>
+      <path d="M43 130l15-78h14l18 78z" fill="#4b5357"/>
+      <path d="M66 52v78" stroke="#e7d8bd" stroke-width="2" stroke-dasharray="9 7"/>
+      <g fill="none" stroke="#17212b" stroke-width="3">
+        <circle cx="48" cy="91" r="15"/><circle cx="82" cy="91" r="15"/>
+        <path d="M48 91l15-24 19 24H48l12-20 18 0"/>
+      </g>
+      <circle cx="66" cy="53" r="7" fill="#d9a27a"/>
+      <path d="M58 59h18l-3 23H61z" fill="#d74e3f"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#4fd1c5" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">velo.lux</text>
+    </g>
+
+    <!-- Row 2, tile 3: records -->
+    <g transform="translate(281 306)">
+      <rect width="130" height="130" fill="#ca9c68"/>
+      <path d="M0 0h130v16H0z" fill="#7d5237"/>
+      <g transform="rotate(-7 65 65)">
+        <rect x="24" y="21" width="83" height="93" fill="#eadab9"/>
+        <circle cx="65" cy="67" r="36" fill="#191919"/>
+        <circle cx="65" cy="67" r="25" fill="none" stroke="#3d3d3d" stroke-width="1"/>
+        <circle cx="65" cy="67" r="14" fill="#ef5b5b"/>
+        <circle cx="65" cy="67" r="3" fill="#f8e7c5"/>
+      </g>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#ef5b5b" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">needle.drop</text>
+    </g>
+
+    <!-- Row 3, tile 1: table -->
+    <g transform="translate(19 437)">
+      <rect width="130" height="130" fill="#91715a"/>
+      <path d="M0 0h130v130H0z" fill="#805e47"/>
+      <path d="M0 17h130M0 55h130M0 96h130M36 0v130M92 0v130" stroke="#a98366" stroke-width="2"/>
+      <circle cx="39" cy="47" r="25" fill="#e8ded0"/>
+      <circle cx="39" cy="47" r="16" fill="#cf5c45"/>
+      <g fill="#f7c259"><circle cx="34" cy="42" r="5"/><circle cx="46" cy="50" r="5"/><circle cx="31" cy="55" r="4"/></g>
+      <circle cx="96" cy="75" r="23" fill="#e7d6bf"/>
+      <path d="M80 73c10-16 24-16 33 0-9 14-23 17-33 0z" fill="#5e9d62"/>
+      <rect x="70" y="17" width="14" height="37" rx="4" fill="#c6e1df" opacity="0.9"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#68d391" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">eat.local</text>
+    </g>
+
+    <!-- Row 3, tile 2: coast -->
+    <g transform="translate(150 437)">
+      <rect width="130" height="130" fill="url(#sea)"/>
+      <path d="M0 82l28-29 27 20 24-31 51 42v46H0z" fill="#355f55"/>
+      <path d="M0 84c31 11 55 7 72 0s33-9 58 0v46H0z" fill="#27778a"/>
+      <path d="M7 98c29 7 51 5 75-1 15-4 29-3 42 1M4 112c24 3 45 2 69-3" fill="none" stroke="#a9e1dc" stroke-width="2" opacity="0.55"/>
+      <path d="M91 68l8 18H83z" fill="#f8f5ea"/>
+      <path d="M91 68v19" stroke="#4c4237" stroke-width="2"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#63b3ed" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">northshore</text>
+    </g>
+
+    <!-- Row 3, tile 3: basketball video -->
+    <g transform="translate(281 437)">
+      <rect width="130" height="130" fill="#bd563a"/>
+      <rect width="130" height="81" fill="#e7a35e"/>
+      <path d="M0 81h130v49H0z" fill="#8d352a"/>
+      <path d="M15 0v81M44 0v81M84 0v81M115 0v81" stroke="#f4c987" stroke-width="2" opacity="0.5"/>
+      <path d="M92 20v45" stroke="#f3f4f6" stroke-width="3"/>
+      <rect x="70" y="20" width="43" height="31" fill="none" stroke="#f3f4f6" stroke-width="3"/>
+      <ellipse cx="91" cy="53" rx="13" ry="4" fill="none" stroke="#d33c24" stroke-width="3"/>
+      <circle cx="56" cy="45" r="10" fill="#d77932" stroke="#4e241b" stroke-width="2"/>
+      <path d="M58 57c11 4 17 15 20 31H40c2-16 7-27 18-31z" fill="#202c45"/>
+      <path d="M58 56l24-17" stroke="#7c4b33" stroke-width="6" stroke-linecap="round"/>
+      <g transform="translate(101 11)">
+        <circle cx="10" cy="10" r="10" fill="#05070a" opacity="0.66"/>
+        <path d="M8 6l7 4-7 4z" fill="#fff"/>
+      </g>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#ed8936" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">court.side</text>
+    </g>
+
+    <!-- Row 4, tile 1: pottery -->
+    <g transform="translate(19 568)">
+      <rect width="130" height="130" fill="#b88769"/>
+      <rect y="77" width="130" height="53" fill="#6f4d3b"/>
+      <ellipse cx="65" cy="83" rx="48" ry="13" fill="#977057"/>
+      <path d="M42 37c0 12 4 31 10 43 5 11 21 11 26 0 6-12 10-31 10-43z" fill="#d9aa7b"/>
+      <ellipse cx="65" cy="37" rx="23" ry="8" fill="#e5bd93"/>
+      <ellipse cx="65" cy="39" rx="15" ry="4" fill="#815942"/>
+      <path d="M28 42c17 9 22 18 21 31M102 41C86 49 80 59 81 72" fill="none" stroke="#d8b49e" stroke-width="7" stroke-linecap="round"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#d69e72" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">slow.studio</text>
+    </g>
+
+    <!-- Row 4, tile 2: pastry -->
+    <g transform="translate(150 568)">
+      <rect width="130" height="130" fill="#d8c5aa"/>
+      <circle cx="65" cy="62" r="48" fill="#efe7d9"/>
+      <path d="M35 72c0-27 13-43 31-43 20 0 32 15 32 43z" fill="#c77a3f"/>
+      <path d="M41 69c8-23 41-26 51 0z" fill="#e8ae68"/>
+      <path d="M48 42c7 4 11 4 18 0M66 35c7 4 12 4 19 0M76 48c7 4 11 4 18 0" fill="none" stroke="#f7dca9" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="89" cy="86" r="8" fill="#9c4c42"/>
+      <path d="M89 78l4-6" stroke="#497c45" stroke-width="3"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#f6ad55" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">crumbclub</text>
+    </g>
+
+    <!-- Row 4, tile 3: friends video -->
+    <g transform="translate(281 568)">
+      <rect width="130" height="130" fill="#47705f"/>
+      <rect y="76" width="130" height="54" fill="#31251f"/>
+      <circle cx="28" cy="47" r="14" fill="#d4a27f"/>
+      <circle cx="65" cy="40" r="14" fill="#8a5639"/>
+      <circle cx="101" cy="48" r="14" fill="#e3b38c"/>
+      <path d="M10 92c2-24 8-34 18-34s17 10 20 34M46 91c2-27 9-38 19-38s18 11 20 38M83 92c2-24 8-33 18-33s17 9 20 33" fill="#c05e47"/>
+      <path d="M0 76h130" stroke="#d6a86d" stroke-width="4"/>
+      <g transform="translate(101 11)">
+        <circle cx="10" cy="10" r="10" fill="#05070a" opacity="0.66"/>
+        <path d="M8 6l7 4-7 4z" fill="#fff"/>
+      </g>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#ed64a6" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">table.talk</text>
+    </g>
+
+    <!-- Row 5, tile 1: city -->
+    <g transform="translate(19 699)">
+      <rect width="130" height="130" fill="url(#night)"/>
+      <circle cx="105" cy="22" r="11" fill="#f6e7ad"/>
+      <path d="M0 54h25v76H0zM26 29h28v101H26zM55 63h21v67H55zM77 40h32v90H77zM110 68h20v62h-20z" fill="#161c2c"/>
+      <g fill="#f5c96a"><rect x="34" y="42" width="5" height="8"/><rect x="44" y="56" width="5" height="8"/><rect x="85" y="52" width="6" height="8"/><rect x="96" y="70" width="6" height="8"/><rect x="11" y="72" width="5" height="8"/></g>
+      <path d="M0 105h130" stroke="#9b7fc2" stroke-width="2"/>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">after.dark</text>
+    </g>
+
+    <!-- Row 5, tile 2: flowers -->
+    <g transform="translate(150 699)">
+      <rect width="130" height="130" fill="#2f694f"/>
+      <g stroke="#79a967" stroke-width="3"><path d="M65 130L46 32M65 130L82 27M65 130L98 50M65 130L30 61M65 130L62 45"/></g>
+      <g fill="#f7d569"><circle cx="46" cy="30" r="13"/><circle cx="83" cy="27" r="14"/><circle cx="99" cy="49" r="12"/></g>
+      <g fill="#f4a6b7"><circle cx="29" cy="61" r="14"/><circle cx="62" cy="43" r="11"/></g>
+      <g fill="#744c2e"><circle cx="46" cy="30" r="4"/><circle cx="83" cy="27" r="4"/><circle cx="99" cy="49" r="4"/><circle cx="29" cy="61" r="4"/><circle cx="62" cy="43" r="4"/></g>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#f687b3" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">wild.stems</text>
+    </g>
+
+    <!-- Row 5, tile 3: DJ -->
+    <g transform="translate(281 699)">
+      <rect width="130" height="130" fill="#151421"/>
+      <circle cx="32" cy="20" r="24" fill="#2db4b0" opacity="0.35"/>
+      <circle cx="105" cy="37" r="28" fill="#d94d8f" opacity="0.32"/>
+      <rect x="0" y="72" width="130" height="58" fill="#292439"/>
+      <circle cx="38" cy="90" r="24" fill="#0b0b0e" stroke="#595269" stroke-width="3"/>
+      <circle cx="38" cy="90" r="7" fill="#d94d8f"/>
+      <circle cx="94" cy="90" r="24" fill="#0b0b0e" stroke="#595269" stroke-width="3"/>
+      <circle cx="94" cy="90" r="7" fill="#2db4b0"/>
+      <path d="M56 39c7-11 16-11 23 0l-6 35H61z" fill="#141015"/>
+      <circle cx="68" cy="31" r="11" fill="#7b4b36"/>
+      <path d="M55 29c2-15 25-16 27 0" fill="none" stroke="#0c0c10" stroke-width="5"/>
+      <g transform="translate(101 11)">
+        <circle cx="10" cy="10" r="10" fill="#05070a" opacity="0.66"/>
+        <path d="M8 6l7 4-7 4z" fill="#fff"/>
+      </g>
+      <rect y="102" width="106" height="28" fill="url(#tileScrim)"/>
+      <circle cx="11" cy="119" r="7" fill="#38b2ac" stroke="#fff" stroke-width="1"/>
+      <text x="22" y="122.5" fill="#fff" font-family="Inter, Roboto, Arial, sans-serif" font-size="10.5" font-weight="650">low.freq</text>
+    </g>
+
+    <!-- 1dp separators: independent of theme, still square-cornered -->
+    <g fill="#101722" opacity="0.9">
+      <rect x="149" y="175" width="1" height="655"/>
+      <rect x="280" y="175" width="1" height="655"/>
+      <rect x="19" y="305" width="392" height="1"/>
+      <rect x="19" y="436" width="392" height="1"/>
+      <rect x="19" y="567" width="392" height="1"/>
+      <rect x="19" y="698" width="392" height="1"/>
+    </g>
+
+    <!-- Bottom navigation, intentionally native and floating over scrolled content -->
+    <rect x="18" y="795" width="394" height="119" fill="url(#navFade)"/>
+    <path d="M18 843h394" stroke="#2a3442" stroke-width="1"/>
+    <g font-family="Inter, Roboto, Arial, sans-serif" font-size="11" text-anchor="middle">
+      <g transform="translate(87 858)" fill="none" stroke="#9aa9ba" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M-8 1l8-7 8 7v10H3V5h-6v6h-5z"/>
+      </g>
+      <text x="87" y="890" fill="#9aa9ba">Home</text>
+      <g transform="translate(215 858)" fill="none" stroke="#1fb092" stroke-width="2" stroke-linejoin="round">
+        <path d="M-10-7h15v12h-15zM-5-2h15v12h-15z"/>
+      </g>
+      <text x="215" y="890" fill="#1fb092" font-weight="650">Feed</text>
+      <g transform="translate(343 858)" fill="none" stroke="#9aa9ba" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M-10 -6 L4 -6 C6.2 -6 8 -4.2 8 -2 L8 3 C8 5.2 6.2 7 4 7 L-2 7 L-7 11 L-6 7 L-10 7 C-12.2 7 -14 5.2 -14 3 L-14 -2 C-14 -4.2 -12.2 -6 -10 -6 Z"/>
+      </g>
+      <text x="343" y="890" fill="#9aa9ba">Chats</text>
+    </g>
+    <!-- Explore's real sticky composer control; bottom padding lets the last row scroll clear -->
+    <g>
+      <circle cx="365" cy="805" r="31" fill="#020617" opacity="0.26"/>
+      <circle cx="365" cy="801" r="29" fill="#137f70" stroke="#8ff7df" stroke-width="1"/>
+      <circle cx="365" cy="801" r="23" fill="#1fb092" opacity="0.42"/>
+      <path d="M365 789 L365 813 M353 801 L377 801" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+    </g>
+    <rect x="155" y="903" width="120" height="4" rx="2" fill="#d8dee8"/>
+  </g>
+  <rect x="18" y="18" width="394" height="896" rx="34" fill="none" stroke="#1c2430" stroke-width="1"/>
+</svg>

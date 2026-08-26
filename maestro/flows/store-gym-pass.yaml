@@ -10,10 +10,9 @@ env:
 #
 # Run (values from /tmp/qa-rn-commerce.json; NSEC = keys.users[1] so the gym
 # membership is fresh for this user):
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/store-gym-pass.yaml \
 #     -e TOKEN=<gym-invite> -e RELAY_PORT=7822 -e NSEC=<users[1] nsec> \
-#     -e COMMUNITY_NAME="QA RN Gym <runid>" \
-#     maestro/flows/store-gym-pass.yaml
+#     -e COMMUNITY_NAME="QA RN Gym <runid>"
 #
 # The pass decrement itself (10 → 0 over check-ins) is a staff-side flow and is
 # covered by the web harness in nuts-cash/.qa (Layer 3); the RN-side

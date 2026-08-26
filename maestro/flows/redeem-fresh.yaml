@@ -1,0 +1,40 @@
+appId: com.nutsrn
+---
+# Strict fresh-invite flow used by `npm run qa:invite`. Unlike the reusable
+# commerce flow, this must observe and activate Claim invite; the community
+# name alone is not proof because it is also rendered on the invitation.
+- runFlow:
+    file: login-nsec.yaml
+    env:
+      NSEC: ${NSEC}
+- openLink: "nutsrn://redeem?relay=http%3A%2F%2F10.0.2.2%3A${RELAY_PORT}&token=${TOKEN}"
+- extendedWaitUntil:
+    visible: "Claim invite"
+    timeout: 60000
+- tapOn: "Claim invite"
+- extendedWaitUntil:
+    visible: ".*(${COMMUNITY_NAME}|Try again).*"
+    timeout: 120000
+- runFlow:
+    when:
+      visible: "Try again"
+    commands:
+      - tapOn: "Try again"
+      - extendedWaitUntil:
+          visible: ".*(${COMMUNITY_NAME}|Try again).*"
+          timeout: 120000
+- runFlow:
+    when:
+      visible: "Try again"
+    commands:
+      - tapOn: "Try again"
+      - extendedWaitUntil:
+          visible: ".*${COMMUNITY_NAME}.*"
+          timeout: 120000
+- extendedWaitUntil:
+    notVisible: "Claim invite"
+    timeout: 60000
+- assertNotVisible: ".*You're invited to.*"
+- extendedWaitUntil:
+    visible: ".*${COMMUNITY_NAME}.*"
+    timeout: 60000

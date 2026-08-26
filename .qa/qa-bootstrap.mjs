@@ -16,7 +16,7 @@
 //      derives both the redeem endpoint and the community ws relay from the
 //      invite link's relay= param, so in dev both must be reachable through
 //      one origin
-//   5. Write the state file and print the claim URL + the maestro command
+//   5. Write the state file and print the claim URL + Agent Device command
 //
 // Requires the local coordinator in DEV_DIRECT_PORTS mode (see .qa/README.md).
 // Tear down afterwards with: node .qa/qa-teardown.mjs
@@ -130,7 +130,10 @@ console.log('');
 console.log('claim URL:', claimUrl);
 console.log('');
 console.log('next:');
-console.log(`  MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test -e TOKEN=${invite.token} maestro/flows/redeem.yaml`);
+console.log(
+	`  ANDROID_SERIAL=<serial> npm run qa:device -- maestro/flows/redeem-fresh.yaml -e TOKEN=${invite.token}` +
+		` -e COMMUNITY_NAME="${communityName}" -e RELAY_PORT=7820 -e NSEC=<users[0].nsec>`
+);
 console.log('  node .qa/qa-verify-redeem.mjs');
 console.log('BOOTSTRAP PASS');
 process.exit(0);

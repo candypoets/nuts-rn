@@ -1,8 +1,8 @@
 # Agent Notes
 
-## On-Device Testing with Maestro
+## On-Device Testing with Agent Device
 
-Maestro flows live in `maestro/flows/`. `launch.yaml` is the shared setup subflow (launch dev-client, connect to Metro, dismiss dev menu); scenario flows start with `- runFlow: launch.yaml`.
+Maestro-compatible YAML flows live in `maestro/flows/`, but they are executed only through the repository-pinned Agent Device runner. `launch.yaml` is the shared setup subflow (launch dev-client, connect to Metro, dismiss dev menu); scenario flows start with `- runFlow: launch.yaml`. Always set `ANDROID_SERIAL` so a run cannot take over another agent's emulator.
 
 Host setup (Linux, headless):
 
@@ -16,14 +16,14 @@ Host setup (Linux, headless):
 npx expo start --dev-client --port 8084
 adb reverse tcp:8084 tcp:8084
 # run flows
-MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/smoke.yaml
+ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/smoke.yaml
 ```
 
 Notes:
 
-- Screenshots come back black on the `test` AVD — but that is an `aosp_atd` image trait (it composites nothing for its virtual display), NOT a SwiftShader limitation. For pixel-true screenshots use the `google` AVD (`system-images/android-34/google_apis/x86_64`, works headless and windowed under Xvfb `DISPLAY=:99`); `adb exec-out screencap -p` and Maestro `takeScreenshot` both return real pixels there. The uiautomator hierarchy Maestro uses for text assertions works fine on either, so assert on text, not pixels.
+- Screenshots come back black on the `test` AVD — but that is an `aosp_atd` image trait (it composites nothing for its virtual display), NOT a SwiftShader limitation. For pixel-true screenshots use the `google` AVD (`system-images/android-34/google_apis/x86_64`, works headless and windowed under Xvfb `DISPLAY=:99`); `adb exec-out screencap -p` and compatibility-flow `takeScreenshot` both return real pixels there. The uiautomator hierarchy used for text assertions works fine on either, so assert on text, not pixels.
 - Emulator crash recovery (2026-07-29): after a qemu crash, the next launch can hang at "detected a hanging thread 'QEMU2 main loop'" with no adb device — the emulator is stuck on an invisible crash-consent dialog. Fix: `pkill -9 -f '[q]emu-system'`, `rm -rf /tmp/android-root/emu-crash-*.db` (it is a directory), remove `~/.android/avd/<avd>.avd/multiinstance.lock`, relaunch. Also: `-gpu host` cannot work headless (RenderLib needs a display), and `pkill -f <pattern>` self-matches the wrapping bash's own cmdline — always write the pattern as `[q]emu-system` / `[m]aestro test`.
-- Android edge-to-edge hides full-screen content under the status bar on the Pixel/google image (unlike the atd image). RN screens that skip `useSafeAreaInsets().top` render their header under the status bar — visibly broken, and uiautomator DROPS those covered nodes, so Maestro selectors for them fail mysteriously (first caught on SignupModal, fixed with a top inset at the wizard root).
+- Android edge-to-edge hides full-screen content under the status bar on the Pixel/google image (unlike the atd image). RN screens that skip `useSafeAreaInsets().top` render their header under the status bar — visibly broken, and uiautomator DROPS those covered nodes, so compatibility selectors for them fail mysteriously (first caught on SignupModal, fixed with a top inset at the wizard root).
 - The dev launcher auto-discovers Metro only when Metro runs WITHOUT `CI=1` — and that discovery layout (a "New development server" row under Development Build) enters the a11y tree LATE (>20 s after pixels show it). `launch.yaml` handles both layouts: it taps the server row when it appears, then still falls back to typing `exp://localhost:8084` into the URL field (matched with the regex `(exp|http)://` because the placeholder flips between builds) and tapping Connect, then dismisses the dev menu with Continue/Close (both optional — the menu only appears on cold loads).
 - `clearState: true` in the setup subflow wipes the dev-client's remembered server; after the first manual connect it also appears under RECENTLY OPENED.
 
@@ -33,8 +33,8 @@ Tests the "N more posts" hold-then-merge behavior: `.qa/qa-feed-relay.mjs` is a 
 
 ```sh
 node .qa/qa-feed-relay.mjs --port 7877   # 7777/7799 are taken on this host
-MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test --device emulator-5556 \
-  -e NSEC=nsec1... -e RELAY_PORT=7877 maestro/flows/explore-new-posts.yaml
+ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/explore-new-posts.yaml \
+  -e NSEC=nsec1... -e RELAY_PORT=7877
 ```
 
 Why it works without touching the relay picker UI: the guest feed never subscribes in contacts mode (blocked on kind3), so `relaySubs['feedExplore']` is NOT frozen at launch; after login the flow waits for the header relay chip to become `10.0.2.2:${RELAY_PORT}` (proof the 10002 resolved; the relay serves NIP-11 with NO `name`, so UIs fall back to the URL label), and only then taps "Switch to all" — the first Explore subscription goes straight to the QA relay.
@@ -44,6 +44,27 @@ Gotchas learned:
 - The flow used to REDBOX at feed mount with `ObjectAlreadyConsumedException: Map already consumed` (RN 0.86.0, `unstable_VirtualColumn` rows emitting `VirtualViewModeChangeEvent`). Root cause is TWO upstream bugs colliding: RN's `VirtualViewModeChangeEvent.getEventData()` caches its rect `ReadableMap`s as fields and JNI `putMap` CONSUMES them (single-shot `getEventData()`; every other RN event builds fresh maps), and reanimated's `NodesManager.onEventDispatch` UI-thread path calls `event.dispatchModern(mCustomEventHandler)` — i.e. reads the payload of EVERY dispatched event — even though its C++ side discards events with no waiting worklet handler (`ReanimatedModuleProxy.cpp` gates on `isAnyHandlerWaitingForEvent`; the off-UI-thread path in the same function checks it too, the UI path doesn't). Fix: `patches/react-native-reanimated+4.5.0.patch` gates `handleEvent` on `isAnyHandlerWaitingForEvent` (semantics-preserving — C++ discards those events anyway). Both upstreams are unfixed as of 2026-08-05 (RN main + 0.86.2 AAR bytecode identical; reanimated main/4.5.3 identical): re-check on upgrades and drop the patch when either lands. Android-only; the emulator reproduces it, a phone build predating `unstable_VirtualColumn` (or iOS) never sees it. `explore-scope.yaml` now asserts the "All" chip and `assertNotVisible .*Map already consumed.*` so the crash can't pass silently again.
 - `pkill -f` self-match bites twice over when the same command line also starts the process being killed (the literal name appears later in the cmdline): run the `pkill -f '[q]a-feed-relay'` in its OWN Bash call, separate from the launch command.
 - Ports on this host: 7777 = nuts-cash vite, 7798 = coordinator, 7799/7820-7822 = QA harness — qa-feed-relay defaults to 7777, pass `--port 7877`.
+
+### Thread-focus anchoring QA (qa-thread-relay.mjs + agent-device probe, 2026-08-25)
+
+Verifies the reply-thread screen keeps the FOCUSED note pinned while ancestor rows stream in above it. This uses the imperative Agent Device API because the assertion is pixel-stable Y over time, which a compatibility flow cannot sample. `.qa/qa-thread-relay.mjs` is an in-memory NIP-01 relay serving chain R←A←B←F plus two replies: ancestors are WITHHELD from tag queries (the app's reply-tree `#e`-of-root prefetch must not cache them early) and served ~5 s apart on their by-id REQs; F/replies are instant-ish (reply delay is realism only now). `.qa/qa-thread-probe.mjs --runid <id>` polls `agent-device snapshot --json` (~120 ms) and logs screen rects of every node mentioning the runid.
+
+```sh
+node .qa/qa-thread-relay.mjs --port 7877 --delay-ms 5000 --reply-delay-ms 2500   # prints QA_THREAD_NEVENT / RUNID
+node .qa/qa-thread-probe.mjs --duration-ms 100000 --runid <RUNID> &             # background probe
+agent-device open com.nutsrn --platform android --metro-port 8084 --foreground  # warm, logged-in app
+agent-device open "nutsrn:///Kind1Thread?nevent=<NEVENT>" --platform android
+```
+
+Pass criteria: the FOCUSED row's y stays constant through every ancestor prepend/resolve (broken: y climbs in ~490 px steps). Drive/scroll checks with `agent-device gesture pan x y dx dy ms` — its `swipe` subcommand takes a DIRECTION, not coordinates.
+
+Gotchas learned:
+
+- RN debug-build crash, unfixed on main (checked 2026-08-25): `VirtualViewContainerState.remove()` asserts membership, but a VirtualView attached+detached without an intervening rect report (created and removed in the same mount window, or only ever laid out at an empty rect) was never added — `recycleView()` then crashes (`Attempting to remove non-existent VirtualView: <nativeId>`). The thread's ephemeral "No replies" status row hit it whenever replies arrived ~160 ms after the row was born. App-side fix in Kind1Sub: the status row stays mounted permanently (zero-height `none` variant + stable key `status`), so no thread row is ever removed mid-session. Kotlin `assert` only fires on debuggable apps, so release builds are unaffected — but it blocks all emulator measurement.
+- `maintainVisibleContentPosition` compensates content added above the anchor by increasing scrollY — when the thread's content is SHORTER than the viewport, scrollY is clamped to 0 and compensation is physically impossible, so ancestors visibly push the focused row down. Kind1Sub therefore passes Feed `contentContainerStyle={{ paddingBottom: windowHeight }}`: a viewport-height bottom space guarantees scroll range. This, not prop wiring, was the reason the anchor "never worked".
+- Feed prop wiring recap (all three needed): `unwrappedMotionContent` (rows as direct children of the native content view — the anchor helper can't see into HeaderMotion's wrapper), `maintainVisibleContentMinIndex={ancestorRows.length}` (anchor = focused row, not an ancestor skeleton whose resolve-growth would go uncompensated), and the bottom padding above. MVCP activation is also gated on `motionAnchorReady` (2 rAF after first content size) so the motion header's initial paddingTop application isn't compensated as a prepend — a ~small skeleton prepend can still slip in before the latch and costs a one-time nudge of skeleton height.
+- iOS (2026-08-26): native MVCP never compensated the ancestor prepend/resolve on the thread (padding present, focused row still drifted; Android verified working with the same wiring). Root cause not isolated — the 0.86.0 `RCTScrollViewComponentView` prepare/adjust path reads correct and upstream 0.87's #57294 only adds abort conditions, so it needs an on-device diagnostic build to pin down. Instead iOS compensates from JS (`JS_ANCHOR_COMPENSATION` in Kind1Sub): native MVCP is disabled via `disableMaintainVisibleContentPosition`, each ancestor row's `onLayout` reports its height, and Kind1Sub calls Feed's `scrollAdjustRef.scrollBy(delta)` — prepend = full height, resolve = delta, same-frame deltas accumulate on a pending offset since `scrollY` only catches up when the native scroll event lands a frame later. Trade-off vs native: compensation lands ~1 frame after the mount paints. If MVCP is ever re-verified on iOS (e.g. after an RN upgrade), drop the iOS branch and let the native path run both platforms.
+
 
 ### NIP-46 login flows (login-nip46.yaml, login-nip46-qr.yaml)
 
@@ -59,7 +80,7 @@ node /root/code/nipworker/tests/e2e-browser/mock-signer-relay.mjs --port 7746
 ```sh
 rm -f /tmp/nostrconnect-url.txt && adb logcat -c
 adb logcat | grep -m1 -o --line-buffered "nostrconnect://[^' ]*" > /tmp/nostrconnect-url.txt &
-MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test maestro/flows/login-nip46-qr.yaml
+ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/login-nip46-qr.yaml
 ```
 
 - `login-nip46-authurl.yaml` (auth challenge): signer challenges `connect` with `{result:"auth_url", error:URL}` and answers after approval. Start the signer with `MOCK_AUTH_URL=https://fake-signer.test/approve`, and arm a delayed approver so the modal's approve UI can be asserted before login completes:
@@ -70,7 +91,7 @@ tail -F -n0 <signer-log> | grep -m1 'auth challenge sent' && sleep 20 && touch /
 
 Gotcha: the emulator's stub browser opens the approval URL in its own task — `pressKey: Back` lands on the launcher, not the app. Return with `launchApp: {appId: com.nutsrn, stopApp: false}`.
 
-- `login-nip46-timeout.yaml` (negative path): bunker connect to a valid-but-unanswered pubkey → 20 s nip46 timeout → the error text must appear in the modal. Uses a freshly generated valid pubkey; do **not** use an invalid x-only key (e.g. `bb`*32) — the Rust encryption path dies silently on it (no error, no timeout, crypto worker unresponsive). Signer errors surface via `auth` dispatch `error` → `authStore.authError` → the modal's error text (the authStore null-pubkey branch also handles failure events — it must not unconditionally wipe `authError`). Maestro text selectors match the **whole** element text — substring asserts need `.*….*`.
+- `login-nip46-timeout.yaml` (negative path): bunker connect to a valid-but-unanswered pubkey → 20 s nip46 timeout → the error text must appear in the modal. Uses a freshly generated valid pubkey; do **not** use an invalid x-only key (e.g. `bb`*32) — the Rust encryption path dies silently on it (no error, no timeout, crypto worker unresponsive). Signer errors surface via `auth` dispatch `error` → `authStore.authError` → the modal's error text (the authStore null-pubkey branch also handles failure events — it must not unconditionally wipe `authError`). Compatibility text selectors match the **whole** element text — substring asserts need `.*….*`.
 
 ### nipworker 0.97.8 NIP-46 support (2026-07-28)
 
@@ -148,9 +169,9 @@ event ID. Valid signers are anchor admins, `badge_issuer`, or holders of a valid
 role award granting `["permission","37237","write"]`. Only a latest status of
 `fulfilled` consumes a use.
 
-### Invite-redeem e2e (redeem.yaml + .qa/, 2026-07-29)
+### Invite-redeem e2e (redeem-fresh.yaml + .qa/, 2026-08-26)
 
-`maestro/flows/redeem.yaml` + the `.qa/` Node scripts are a full invite-redeem harness (see `.qa/README.md`): `node .qa/qa-bootstrap.mjs` provisions a real strfry-badge community via the coordinator and mints an invite, the flow logs in as keys.users[0] (nsec), `openLink:`s `nutsrn://redeem?…&token=${TOKEN}` (pass `-e TOKEN=…`), claims, and lands on the community screen; `node .qa/qa-verify-redeem.mjs` proves the kind-8 award + kind-0 replica on the relay; `node .qa/qa-teardown.mjs` cleans up.
+`ANDROID_SERIAL=<serial> npm run qa:invite` is the full invite-redeem harness (see `.qa/README.md`): it provisions a real strfry-badge community, runs the strict `maestro/flows/redeem-fresh.yaml` through the pinned Agent Device compatibility engine, proves the kind-8 award + kind-0 replica on the relay, and always performs scoped teardown. The reusable `redeem.yaml` remains for commerce scenarios that may already have redeemed their fixture invite.
 
 Gotchas learned the hard way:
 
@@ -160,12 +181,13 @@ Gotchas learned the hard way:
 - The coordinator reports `running` before the container's write gate serves; bootstrap retries the admin kind-0 publish until it round-trips.
 - The invite has `max_redemptions: 1` and `checkExistingMembership` short-circuits the modal to "already a member" once the award exists — a flow rerun against the same community can never pass; always re-bootstrap.
 - Badge-gate membership-cache lag (15-45 s) bites fresh redeems: the kind-0 replica confirm fails on the first attempt while the gate warms. App-side, `publishProfileToCommunity` retries `false` OKs every 2.5 s for 30 s, and `RedeemModal` retries check existing membership first (they used to burn another redemption and surface "token redemption limit reached").
+- Strict Agent Device invite runs on 2026-08-26 reproduced a protocol failure twice: the UI advanced and the server-side kind-8 award existed, but the member kind-0 was absent. One run logged `native buffer full` for `invite_profile_<pubkey>` at the end of the publish window. Treat UI success alone as insufficient; `qa:invite` intentionally fails unless the protocol verifier passes.
 
 ### Commerce e2e (store-beer / gym-pass / capacity, 2026-07-30)
 
 `node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|all]` drives the purchase + capacity flows through the real UI (full details in `.qa/README.md`, gaps pinned in `.qa/SPEC-GAPS.md`): provision with `node .qa/qa-scenario-commerce.mjs` (two communities + proxies 7820/7822 + checkout shim 7821), run Metro with `EXPO_PUBLIC_NUTS_API_URL=http://10.0.2.2:7821` and NO `CI=1` (the flows rely on the launcher's Metro auto-discovery layout; `CI=1` Metro also serves stale bundles). Buying is Stripe-bypassed: the app checks out against the shim, which performs the REAL payment `/redeem` (kind-8 award) signed by the payment-service key (`NUTS_PAYMENT_SERVICE_SECRET_KEY` in `/root/code/nuts-cash/.env`).
 
-- Maestro 2.7 env precedence: a subflow's own `env:` block beats BOTH CLI `-e` and `runFlow` env. `redeem.yaml` declares no env block for exactly this reason — pass TOKEN/RELAY_PORT/NSEC/COMMUNITY_NAME from the caller.
+- Flow parameters: `redeem.yaml` declares no `env:` defaults; pass TOKEN/RELAY_PORT/NSEC/COMMUNITY_NAME from the Agent Device caller.
 - Kind 31925 (RSVP) is addressable, so test RSVPs accumulate across runs; `qa-verify-event.mjs capacity()` retracts stale RSVPs before re-seeding or the "2 going" assert fails on reruns.
 - Chrome checkout chain on first run: "Use without an account" → notification prompt ("No thanks") → success page; handle as one-time `when:` branches.
 - If a flow dies on its landing assert with a screenshot showing a STALE screen from the previous flow (e.g. Chrome still on the shim success page), check for a native crash first: `adb logcat -d | grep -A15 'F DEBUG'`. Observed once: SIGSEGV in `mqt_v_js` / `MountingCoordinator::pullTransaction` (Fabric) right after bundle mount — the app dies and Android returns to the previous foreground app. Retry the run; if it recurs, it's a real stability bug, not a flow issue.
@@ -180,7 +202,7 @@ Member-side entitlement surfaces (spec `docs/entitlements.md`): `src/app/Award.t
 - QA hook: dev builds log every signed QR payload as `[award-qr] <payload>`; `qa-verify-event.mjs` greps logcat and verifies the 27236 derivation-side (`verifyEntitlementPresentation` in `.qa/qa-derive.mjs`).
 - `node .qa/qa-verify-event.mjs entitlement` (3 phases: pass 10→9 decrement, beer order → "Served", event ticket). Idempotent — each phase seeds a fresh issuer-signed purchase award before driving the UI. **ENTITLEMENT PASS 2026-07-30** (all phases green on 37237).
 - Order/check-in statuses are NIP-97 kind **37237** only. `useAwards` resolves the root-signed anchor and accepts statuses from anchor admins, `badge_issuer`, or holders of a valid `37237`-write role award. Kind 27236 presentation events remain ephemeral by design.
-- `entitlement-ticket.yaml` takes EVENT_URL via CLI env and (like `redeem.yaml`) declares no `env:` block — a subflow's own env beats CLI `-e` in maestro 2.7.
+- `entitlement-ticket.yaml` takes EVENT_URL via CLI env and (like `redeem.yaml`) declares no `env:` defaults.
 - The community header's store entry is labeled **Menu** for hospitality communities and Store otherwise (`CommunitySub.tsx` reads the root-signed kind-31727 anchor's optional `type` display extension) — flows tap `^(Store|Menu)$`.
 - Dev builds without Firebase credentials must NOT `console.error` the push-token failure: the RN LogBox banner never dismisses and its invisible container swallows taps on bottom-bar buttons (blocked "Your ticket" in phase 3; `isMissingFirebaseConfig` in `usePushNotifications.ts` downgrades it to `console.log`). Rule of thumb: expected environment gaps → `console.log`, real failures → `console.error`.
 - Phase-3 seeding fetches the 31923 by `#d`+author, NEVER by the state file's id — kind 31923 is addressable and a previous run's `entrance_badge` update replaced it (stale id = fetch timeout). Same class of bug as the RSVP retraction rule.
@@ -189,9 +211,9 @@ Member-side entitlement surfaces (spec `docs/entitlements.md`): `src/app/Award.t
 
 `AndroidManifest.xml` declares `<queries>` intents for the `nostrsigner` and `nostrconnect` schemes, so `Linking.canOpenURL('nostrconnect://')` answers "is a signer installed that can complete the NIP-46 handoff" — scheme-based, so it finds any NIP-55/46 signer (Amber, Aegis, Primal, …), and multiple installed signers degrade to the Android app chooser. iOS always returns false — NIP-46 is the aligned path there. The login QR panel shows **Open in signing app** when true, handing the `nostrconnect://` URL to the signer via intent. Amber caveats on this AVD: approval dialog only for new connections; crashes at launch on `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` once its service is enabled (`pm clear` + re-onboard resets).
 
-Maestro gotchas hit while writing these:
+Compatibility-flow gotchas hit while writing these:
 
-- `tapOn: "Sign in"` inside the login modal can match the *covered* Home-stub button behind the modal (the hierarchy includes covered nodes). Anchor with `below:` to the modal's input field.
+- `tapOn: "Sign in"` inside the login modal can match the *covered* Home-stub button behind the modal (the hierarchy includes covered nodes). Agent Device's compatibility engine does not support `below:`, so the shared nsec flow opens `/Login` directly and selects the second matching button with `index: 1`.
 - `hideKeyboard` sends a Back press when the IME never opened, which dismisses the whole login modal. Dismiss the keyboard by tapping inert text inside the modal's ScrollView instead.
 - Metro started with `CI=1` does not reliably pick up file changes — a freshly launched app can get a stale bundle. Restart Metro after editing app code before running flows.
 - NIP-46 failures used to be invisible in logcat: nipworker core logs via `tracing` but older Android native-ffi builds installed no tracing subscriber, and the JS side swallowed `SetSignerResponse.error`. Current diagnostic builds use logcat tag `nipworker`.

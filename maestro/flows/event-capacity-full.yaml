@@ -10,10 +10,9 @@ env:
 #
 # Requires the same setup as store-gym-pass.yaml (no checkout shim needed).
 # Run (values from /tmp/qa-rn-commerce.json; NSEC = keys.users[2]):
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/event-capacity-full.yaml \
 #     -e TOKEN=<gym-invite> -e RELAY_PORT=7822 -e NSEC=<users[2] nsec> \
-#     -e COMMUNITY_NAME="QA RN Gym <runid>" \
-#     maestro/flows/event-capacity-full.yaml
+#     -e COMMUNITY_NAME="QA RN Gym <runid>"
 #
 # Afterwards .qa/qa-verify-event.mjs cancels one of the seeded RSVPs and runs
 # event-capacity-rsvp.yaml (phase B).

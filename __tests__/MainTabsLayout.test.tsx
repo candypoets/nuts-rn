@@ -75,6 +75,10 @@ test('renders all three routes through the native tab host', () => {
   expect(
     mockTriggerProps.every(props => props.disableAutomaticContentInsets),
   ).toBe(true);
+  // Each feed owns its scroll-to-top request so retained pager pages and the
+  // shared motion header stay synchronized. The native first-descendant
+  // special effect must not race that explicit target.
+  expect(mockTriggerProps.every(props => props.disableScrollToTop)).toBe(true);
 });
 
 test('selecting Explore again requests scroll-to-top', () => {

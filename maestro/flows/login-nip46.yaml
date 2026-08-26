@@ -12,7 +12,7 @@ appId: com.nutsrn
 # Home tab shows a sign-in stub when logged out.
 - tapOn: "Home"
 - assertVisible: "Your wallet, passes, and tickets"
-- tapOn: "Sign in"
+- openLink: "nutsrn:///Login"
 # Login modal.
 - assertVisible: "Welcome back"
 - assertVisible: "Use a signing app"
@@ -27,7 +27,7 @@ appId: com.nutsrn
 # anchor to the input field so the modal's submit button is tapped.
 - tapOn:
     text: "Sign in"
-    below: "Paste key or connection link"
+    index: 1
 # Success: the modal closes itself once the auth event lands.
 - extendedWaitUntil:
     notVisible: "Welcome back"

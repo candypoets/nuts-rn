@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Maestro orchestrator for the commerce UI flows + their protocol-level proof.
+// Agent Device orchestrator for the commerce UI flows + their protocol-level proof.
 //
 // Runs the three commerce scenarios end-to-end against a provisioned commerce
 // state (node .qa/qa-scenario-commerce.mjs first — it starts the community
@@ -17,9 +17,10 @@
 //                → kind 31925 verified on the gym relay.
 //
 // Usage: node .qa/qa-verify-event.mjs [store-beer|gym-pass|capacity|all]
-// Exit code is non-zero on any failure (maestro step or protocol assertion).
+// Exit code is non-zero on any failure (device step or protocol assertion).
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
+import { runAgentDeviceFlow } from './agent-device-runner.mjs';
 import {
 	assert,
 	getRelay,
@@ -39,7 +40,6 @@ import {
 } from './qa-commerce.mjs';
 import { remainingAwardUses, verifyEntitlementPresentation } from './qa-derive.mjs';
 
-const MAESTRO = `${process.env.HOME}/.maestro/bin/maestro`;
 const state = readCommerceState();
 const bar = state?.communities?.hospitality;
 const gym = state?.communities?.sports;
@@ -54,18 +54,8 @@ const pool = makePool();
 
 // --- helpers ---------------------------------------------------------------
 
-function runMaestro(flow, env) {
-	const args = ['test'];
-	for (const [key, value] of Object.entries(env)) {
-		args.push('-e', `${key}=${value}`);
-	}
-	args.push(flow);
-	console.log(`\n>>> maestro ${flow}`);
-	execFileSync(MAESTRO, args, {
-		env: { ...process.env, MAESTRO_CLI_NO_ANALYTICS: '1' },
-		stdio: 'inherit'
-	});
-	console.log(`>>> ${flow} PASSED`);
+function runDeviceFlow(flow, values) {
+	runAgentDeviceFlow({ flow, values });
 }
 
 function shimLogOffset() {
@@ -166,7 +156,7 @@ async function verifyPurchase({ community, itemD, purchaseType, buyerPub }) {
 async function storeBeer() {
 	const buyer = users[0];
 	const offset = shimLogOffset();
-	runMaestro('maestro/flows/store-beer.yaml', {
+	runDeviceFlow('maestro/flows/store-beer.yaml', {
 		TOKEN: bar.token,
 		RELAY_PORT: '7820',
 		NSEC: buyer.nsec,
@@ -189,7 +179,7 @@ async function storeBeer() {
 async function gymPass() {
 	const buyer = users[1];
 	const offset = shimLogOffset();
-	runMaestro('maestro/flows/store-gym-pass.yaml', {
+	runDeviceFlow('maestro/flows/store-gym-pass.yaml', {
 		TOKEN: gym.token,
 		RELAY_PORT: '7822',
 		NSEC: buyer.nsec,
@@ -248,7 +238,7 @@ async function capacity() {
 	await sleep(1100);
 
 	// Phase A: the app user (fresh login) sees the event Full and cannot RSVP.
-	runMaestro('maestro/flows/event-capacity-full.yaml', {
+	runDeviceFlow('maestro/flows/event-capacity-full.yaml', {
 		TOKEN: gym.token,
 		RELAY_PORT: '7822',
 		NSEC: appUser.nsec,
@@ -266,7 +256,7 @@ async function capacity() {
 	const eventUrl =
 		`nutsrn:///CalendarEvent?relay=${encodeURIComponent('ws://10.0.2.2:7822')}` +
 		`&address=${encodeURIComponent(event.address)}`;
-	runMaestro('maestro/flows/event-capacity-rsvp.yaml', { EVENT_URL: eventUrl });
+	runDeviceFlow('maestro/flows/event-capacity-rsvp.yaml', { EVENT_URL: eventUrl });
 
 	// Protocol proof: the app user's accepted RSVP is on the gym relay.
 	const appRsvp = await fetchEvent(
@@ -358,7 +348,7 @@ async function entitlement() {
 	await redeemInvite(gym, gym.token, passHolder.pub, issuer);
 	const passAward = await seedPurchaseAward(gym, passAddress, passHolder.pub, 'fresh pass award');
 	execFileSync('adb', ['logcat', '-c']);
-	runMaestro('maestro/flows/entitlement-pass.yaml', {
+	runDeviceFlow('maestro/flows/entitlement-pass.yaml', {
 		TOKEN: gym.token,
 		RELAY_PORT: '7822',
 		NSEC: passHolder.nsec,
@@ -380,7 +370,7 @@ async function entitlement() {
 		keys.admin.priv
 	);
 	await publishUntilAccepted(gym.relay_url, checkIn, 'staff check-in (37237 fulfilled)');
-	runMaestro('maestro/flows/entitlement-pass-decrement.yaml', {});
+	runDeviceFlow('maestro/flows/entitlement-pass-decrement.yaml', {});
 	console.log('ok - Award screen ticked 10 → 9 from the staff check-in');
 
 	// Phase 2: beer order — "Waiting for staff" → fulfilled → "Served".
@@ -390,7 +380,7 @@ async function entitlement() {
 	const orderRef = beerAward.tags.find((t) => t[0] === 'i')?.[1]?.replace(/^payment-redemption:/, '');
 	assert(orderRef, 'beer award carries a payment-redemption reference');
 	execFileSync('adb', ['logcat', '-c']);
-	runMaestro('maestro/flows/entitlement-order.yaml', {
+	runDeviceFlow('maestro/flows/entitlement-order.yaml', {
 		TOKEN: bar.token,
 		RELAY_PORT: '7820',
 		NSEC: buyer.nsec,
@@ -410,7 +400,7 @@ async function entitlement() {
 		keys.admin.priv
 	);
 	await publishUntilAccepted(bar.relay_url, served, 'staff served (37237 fulfilled)');
-	runMaestro('maestro/flows/entitlement-order-served.yaml', {});
+	runDeviceFlow('maestro/flows/entitlement-order-served.yaml', {});
 	console.log('ok - Award screen flipped to "Served"');
 
 	// Phase 3: event ticket — entrance_badge on the 31923 + ticket award →
@@ -463,7 +453,7 @@ async function entitlement() {
 	const eventUrl =
 		`nutsrn:///CalendarEvent?relay=${encodeURIComponent('ws://10.0.2.2:7822')}` +
 		`&address=${encodeURIComponent(event.address)}`;
-	runMaestro('maestro/flows/entitlement-ticket.yaml', {
+	runDeviceFlow('maestro/flows/entitlement-ticket.yaml', {
 		TOKEN: gym.token,
 		RELAY_PORT: '7822',
 		NSEC: ticketHolder.nsec,

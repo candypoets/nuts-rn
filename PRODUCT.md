@@ -46,7 +46,7 @@ hold, not a row in the gym's database."
   the spec reference; `src/lib/orders.ts` there is the canonical
   remaining-uses/status derivation, `src/lib/presentation.ts` the canonical
   entitlement-QR format (`nuts:present:` + signed kind 27236).
-- QA harness: `.qa/` Node scripts + Maestro flows (`.qa/README.md`,
+- QA harness: `.qa/` Node scripts + Agent Device compatibility flows (`.qa/README.md`,
   `.qa/SPEC-GAPS.md`); single Android emulator, headless.
 
 ## Capabilities and Constraints

@@ -12,7 +12,7 @@ appId: com.nutsrn
 - runFlow: launch.yaml
 - tapOn: "Home"
 - assertVisible: "Your wallet, passes, and tickets"
-- tapOn: "Sign in"
+- openLink: "nutsrn:///Login"
 - assertVisible: "Welcome back"
 - tapOn: "Paste key or connection link"
 - inputText: "bunker://6a04ab98d9e4774ad806e302dddeb63bea16b5cb5f223ee77478e861bb583eb3?relay=ws%3A%2F%2F10.0.2.2%3A7746"
@@ -20,7 +20,7 @@ appId: com.nutsrn
 - tapOn: "Choose how you want to sign in."
 - tapOn:
     text: "Sign in"
-    below: "Paste key or connection link"
+    index: 1
 # The auth challenge surfaces as an approve prompt in the login modal.
 - assertVisible: "Your signing app asks you to approve this request."
 - assertVisible: "Open approval page"

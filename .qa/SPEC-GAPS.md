@@ -1,9 +1,20 @@
 # SPEC-GAPS — RN app vs web spec, and infrastructure findings
 
 Findings from building the commerce QA harness (Layers 1–3: protocol seeding,
-Maestro purchase/capacity flows, Playwright staff flows). Date: 2026-07-30.
+Agent Device purchase/capacity flows, Playwright staff flows). Date: 2026-07-30.
 The web app (`/root/code/nuts-cash`, esp. the admin dashboard) is the spec
 reference; `src/lib/orders.ts` there is the canonical derivation.
+
+## Open app bugs found by device QA
+
+- **Invite success can precede kind-0 replication (reproduced 2026-08-26).**
+  The strict fresh-invite flow claims successfully and the relay contains the
+  server-issued kind-8 membership award, but the app advances to the community
+  while `qa-verify-redeem.mjs` proves the member's kind-0 is absent. Both clean
+  Agent Device runs reproduced it. One observed device warning at the end of
+  the publish window was `native buffer full` for the
+  `invite_profile_<pubkey>` subscription; that is a diagnostic signature, not
+  yet a proven root cause.
 
 ## RN app gaps vs the web spec
 

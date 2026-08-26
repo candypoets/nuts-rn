@@ -9,16 +9,14 @@ appId: com.nutsrn
 #   - Metro on :8084 with adb reverse tcp:8084 (maestro/flows/launch.yaml)
 #
 # Run (token/name from qa-bootstrap output / /tmp/qa-rn-community.json; the
-# last three flags have these usual values):
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+# last three values have these usual values):
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/redeem.yaml \
 #     -e TOKEN=<token> -e COMMUNITY_NAME="QA RN Cafe <runid>" \
 #     -e RELAY_PORT=7820 \
-#     -e NSEC=nsec1h69a2vcpnyqe6c7rntwfvmwr42l6s344fk98mtxtgyz8qf3n985srsh0pe \
-#     maestro/flows/redeem.yaml
+#     -e NSEC=nsec1h69a2vcpnyqe6c7rntwfvmwr42l6s344fk98mtxtgyz8qf3n985srsh0pe
 # (NSEC = keys.users[0] from /root/code/strfry-badge-node/test/env/keys.json.)
-# NOTE: no env defaults are declared here on purpose — in maestro a flow's own
-# env block beats BOTH CLI -e and runFlow env params, which silently broke
-# parameterization. Every variable must come from the caller.
+# NOTE: no env defaults are declared here. Every variable must come from the
+# caller so standalone and nested runs exercise the same fixture.
 #
 # Re-runnable against the same community: the modal's "already a member"
 # short-circuit replaces the invite directly with the community screen.
@@ -29,28 +27,10 @@ appId: com.nutsrn
 # invite as a fresh member.
 #
 # Protocol-level proof afterwards: node .qa/qa-verify-redeem.mjs
-- runFlow: launch.yaml
-# Home tab shows a sign-in stub when logged out.
-- tapOn: "Home"
-- assertVisible: "Your wallet, passes, and tickets"
-- tapOn: "Sign in"
-# Login modal (same pattern as login-nip46.yaml, but a plain nsec).
-- assertVisible: "Welcome back"
-- tapOn: "Paste key or connection link"
-- inputText: "${NSEC}"
-# Dismiss the keyboard by tapping inert text inside the modal (hideKeyboard
-# can send a Back press that dismisses the whole modal).
-- tapOn: "Choose how you want to sign in."
-# "Sign in" also exists on the covered Home stub underneath the modal;
-# anchor to the input field so the modal's submit button is tapped.
-- tapOn:
-    text: "Sign in"
-    below: "Paste key or connection link"
-# Success: the modal closes itself once the auth event lands.
-- extendedWaitUntil:
-    notVisible: "Welcome back"
-    timeout: 60000
-- assertNotVisible: "Your wallet, passes, and tickets"
+- runFlow:
+    file: login-nsec.yaml
+    env:
+      NSEC: ${NSEC}
 # Open the invite deep link in the already-running app (no cold-start issue).
 # relay= is the redeem proxy (10.0.2.2 = emulator host loopback); the app
 # derives both the redeem endpoint and the community ws relay from it.

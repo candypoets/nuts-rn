@@ -3,10 +3,9 @@ appId: com.nutsrn
 # DEV ONLY — visual iteration for the entitlement screens (not part of the
 # suite). Logs in as the gym member (already-member redeem path), then walks:
 # Store Yours strip → Award screen → present mode → Passes list.
-#   MAESTRO_CLI_NO_ANALYTICS=1 ~/.maestro/bin/maestro test \
+#   ANDROID_SERIAL=emulator-5554 npm run qa:device -- maestro/flows/dev-entitlement-visual.yaml \
 #     -e TOKEN=<gym-invite> -e RELAY_PORT=7822 -e NSEC=<users[1] nsec> \
-#     -e COMMUNITY_NAME="QA RN Gym <runid>" \
-#     maestro/flows/dev-entitlement-visual.yaml
+#     -e COMMUNITY_NAME="QA RN Gym <runid>"
 - runFlow:
     file: redeem.yaml
     env:

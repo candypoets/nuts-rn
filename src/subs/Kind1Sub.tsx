@@ -6,13 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  Platform,
-  Pressable,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import type {
   ParsedEvent,
   RequestObject,
@@ -37,7 +31,7 @@ import {
 import { ChevronLeft } from 'lucide-react-native';
 import { decode, type EventPointer } from 'nostr-tools/nip19';
 
-import { Feed, type FeedScrollAdjust } from '../components/Feed';
+import { Feed } from '../components/Feed';
 import { Note } from '../components/notes/Note';
 import { RelaysList as NoteRelaysList } from '../components/notes/RelaysList';
 import { DEFAULT_FEED_RELAYS } from '../nostr/relays';
@@ -62,12 +56,6 @@ const KIND1_DEBUG = false;
 const KIND1_TRACE = false;
 const KIND1_REACTIVITY_DEBUG = false;
 const KIND1_RENDER_HEADER_NOTE = true;
-// iOS: the platform maintainVisibleContentPosition does not compensate the
-// ancestor prepends/resolves on this screen (verified working on Android
-// only), so the focused row is kept in place from JS: ancestor rows are
-// measured and the scroll offset is shifted by the same delta they add above
-// the anchor. Native MVCP is disabled there so the two never double-apply.
-const JS_ANCHOR_COMPENSATION = Platform.OS === 'ios';
 
 function shouldLogReactivityCount(count: number) {
   return count <= 10 || count % 25 === 0;
@@ -367,9 +355,6 @@ export function Kind1Sub({
   const [headerItem, setHeaderItem] = useState<ParsedEvent | null>(null);
   const [authorReadRelays, setAuthorReadRelays] = useState<string[]>([]);
   const [ancestorRows, setAncestorRows] = useState<AncestorRow[]>([]);
-  const { height: windowHeight } = useWindowDimensions();
-  const scrollAdjustRef = useRef<FeedScrollAdjust | null>(null);
-  const ancestorHeightsRef = useRef(new Map<string, number>());
   const [items, setItems] = useState<ParsedEvent[]>([]);
   const [allReplies, setAllReplies] = useState<ParsedEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -748,13 +733,7 @@ export function Kind1Sub({
 
     // Let the focused row mount as the ScrollView's first visible child, then
     // prepend its parent as an independent VirtualColumn row. The ScrollView's
-    // maintainVisibleContentPosition keeps the focused row in place. Two things
-    // make that work on this screen: Feed's unwrappedMotionContent exposes the
-    // rows as direct children of the native content view (the anchor helper
-    // cannot see inside HeaderMotion's content wrapper), and
-    // maintainVisibleContentMinIndex pins the anchor to the focused row —
-    // otherwise the anchor lands on the topmost ancestor skeleton, whose
-    // growth when its note resolves would go uncompensated.
+    // maintainVisibleContentPosition keeps the focused row in place.
     const frame = requestAnimationFrame(() => {
       setAncestorRows(current =>
         current.some(row => row.id === parentId)
@@ -1187,26 +1166,6 @@ export function Kind1Sub({
     [displayedRelays, headerItem, onClose],
   );
 
-  // JS anchor compensation (iOS): see JS_ANCHOR_COMPENSATION. Heights are
-  // keyed per ancestor row so the same thread can rebuild without stale
-  // measurements.
-  useEffect(() => {
-    ancestorHeightsRef.current.clear();
-  }, [rootId]);
-
-  const handleAncestorLayout = useCallback((key: string, height: number) => {
-    const heights = ancestorHeightsRef.current;
-    const previous = heights.get(key);
-    if (previous === height) return;
-    heights.set(key, height);
-    // First layout is the prepend itself: the new row pushed everything below
-    // it down by its full height. Later changes are the row's growth when its
-    // note resolves (or its deferred re-layout after a hidden VirtualView).
-    scrollAdjustRef.current?.scrollBy(
-      previous === undefined ? height : height - previous,
-    );
-  }, []);
-
   const handleAncestorResolved = useCallback(
     (event: ParsedEvent) => {
       const eventId = event.id();
@@ -1286,18 +1245,7 @@ export function Kind1Sub({
 
       if (item.type === 'ancestor') {
         return (
-          <View
-            className="px-1"
-            onLayout={
-              JS_ANCHOR_COMPENSATION
-                ? event =>
-                    handleAncestorLayout(
-                      `ancestor:${item.id}`,
-                      event.nativeEvent.layout.height,
-                    )
-                : undefined
-            }
-          >
+          <View className="px-1">
             <Note
               note={item.event}
               noteId={item.event ? undefined : item.id}
@@ -1365,7 +1313,6 @@ export function Kind1Sub({
     },
     [
       displayedRelays,
-      handleAncestorLayout,
       handleAncestorResolved,
       headerAuthorPubkey,
       rootId,
@@ -1395,12 +1342,6 @@ export function Kind1Sub({
       renderItem={renderItem}
       motionHeader={motionHeader}
       headerSafeArea
-      unwrappedMotionContent
-      maintainVisibleContentMinIndex={ancestorRows.length}
-      // iOS compensates prepended/resolved ancestors from JS instead (see
-      // JS_ANCHOR_COMPENSATION); native MVCP stays Android-only here.
-      disableMaintainVisibleContentPosition={JS_ANCHOR_COMPENSATION}
-      scrollAdjustRef={scrollAdjustRef}
       visible={visible}
       loading={loading && !refreshing}
       pullToRefresh
@@ -1409,10 +1350,6 @@ export function Kind1Sub({
       onNearBottom={handleNearBottom}
       removeClippedSubviews={false}
       contentContainerClassName="pb-28"
-      // Viewport-height bottom space: maintainVisibleContentPosition keeps the
-      // focused row pinned by increasing scrollY as ancestors grow above it,
-      // which is only possible when the content is taller than the viewport.
-      contentContainerStyle={{ paddingBottom: windowHeight }}
     />
   );
 }

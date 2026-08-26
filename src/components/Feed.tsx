@@ -107,26 +107,6 @@ export type FeedProps<T> = {
   bottom?: boolean;
   bottomAutoScroll?: boolean | 'initial';
   disableMaintainVisibleContentPosition?: boolean;
-  /**
-   * Motion-header path only: renders rows as direct children of the native
-   * scroll view instead of inside HeaderMotion's content wrapper view. The
-   * platform maintainVisibleContentPosition anchors on the first visible
-   * DIRECT child of the scroll content view; inside the wrapper it can never
-   * see the rows, so prepended content (e.g. thread ancestors) pushes the
-   * viewport. Only use with a motion header whose total height is fixed after
-   * mount — a header-height change would be compensated like prepended
-   * content.
-   */
-  unwrappedMotionContent?: boolean;
-  /**
-   * Motion-header path only: forwarded as maintainVisibleContentPosition's
-   * minIndexForVisible. Thread screens pass the ancestor-row count so the
-   * anchor stays pinned to the focused row. With the default 0 the anchor
-   * sticks to the topmost partially visible row — an ancestor skeleton —
-   * and that row's height growth when its note resolves is never
-   * compensated (the helper only tracks the anchor's top edge).
-   */
-  maintainVisibleContentMinIndex?: number;
   stickyFooterVisible?: boolean;
   nearBottomThreshold?: number;
   numColumns?: number;
@@ -136,28 +116,7 @@ export type FeedProps<T> = {
   onChromeVisibilityChange?: (visible: boolean) => void;
   onViewportStateChange?: (state: { start: number; down: boolean }) => void;
   contentContainerClassName?: string;
-  /**
-   * Extra style merged into the scroll content container on the motion-header
-   * paths. Thread screens use it for a viewport-height bottom padding: the
-   * platform maintainVisibleContentPosition can only compensate content added
-   * above the anchor by scrolling, which requires content taller than the
-   * viewport — short threads have no scroll range without it.
-   */
-  contentContainerStyle?: ViewStyle;
-  /**
-   * Exposes an imperative scrollBy used to compensate content inserted or
-   * grown above the anchor row from JS. Thread screens use it on iOS, where
-   * maintainVisibleContentPosition does not compensate ancestor
-   * prepends/resolves (Android keeps the native mechanism). Motion-header
-   * path only; deltas issued within the same frame accumulate.
-   */
-  scrollAdjustRef?: Ref<FeedScrollAdjust>;
   removeClippedSubviews?: boolean;
-};
-
-export type FeedScrollAdjust = {
-  /** Shifts the scroll offset by deltaY without animation. */
-  scrollBy: (deltaY: number) => void;
 };
 
 const NEAR_BOTTOM_THRESHOLD = 10;
@@ -553,8 +512,6 @@ export function Feed<T>({
   bottom = false,
   bottomAutoScroll = true,
   disableMaintainVisibleContentPosition = false,
-  unwrappedMotionContent = false,
-  maintainVisibleContentMinIndex = 0,
   stickyFooterVisible = false,
   nearBottomThreshold = NEAR_BOTTOM_THRESHOLD,
   numColumns = 1,
@@ -564,21 +521,16 @@ export function Feed<T>({
   onChromeVisibilityChange,
   onViewportStateChange,
   contentContainerClassName = 'pb-28',
-  contentContainerStyle,
-  scrollAdjustRef,
   removeClippedSubviews = false,
 }: FeedProps<T>) {
   const [start, setStart] = useState(0);
   const [down, setDown] = useState(true);
   const [nearTop, setNearTop] = useState(true);
-  const [motionAnchorReady, setMotionAnchorReady] = useState(false);
   const listRef = useAnimatedRef<ScrollView>();
   const bottomListRef = useRef<FlashListRef<T>>(null);
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const lastOffsetRef = useRef(0);
-  const anchorReadyFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  const anchorReadyScheduledRef = useRef(false);
   const scrollViewportHeightRef = useRef(0);
   const scrollContentHeightRef = useRef(0);
   const nearBottomTriggeredRef = useRef(false);
@@ -674,47 +626,6 @@ export function Feed<T>({
       }
     },
     [bottom, listRef],
-  );
-
-  // JS-side anchor compensation (iOS; see scrollAdjustRef). scrollY only
-  // reflects a programmatic scrollTo once the native scroll event lands a
-  // frame later, so deltas issued in the same frame must accumulate on the
-  // pending offset instead of re-reading the shared value.
-  const pendingScrollAdjustRef = useRef<number | null>(null);
-  const pendingScrollAdjustFrameRef = useRef<ReturnType<
-    typeof requestAnimationFrame
-  > | null>(null);
-
-  useImperativeHandle(
-    scrollAdjustRef,
-    () => ({
-      scrollBy: (deltaY: number) => {
-        if (!deltaY) return;
-        const nextY = Math.max(
-          0,
-          (pendingScrollAdjustRef.current ?? scrollY.get()) + deltaY,
-        );
-        pendingScrollAdjustRef.current = nextY;
-        listRef.current?.scrollTo({ y: nextY, animated: false });
-        if (pendingScrollAdjustFrameRef.current) {
-          cancelAnimationFrame(pendingScrollAdjustFrameRef.current);
-        }
-        pendingScrollAdjustFrameRef.current = requestAnimationFrame(() => {
-          pendingScrollAdjustRef.current = null;
-          pendingScrollAdjustFrameRef.current = null;
-        });
-      },
-    }),
-    [listRef, scrollY],
-  );
-
-  useEffect(
-    () => () => {
-      if (pendingScrollAdjustFrameRef.current) {
-        cancelAnimationFrame(pendingScrollAdjustFrameRef.current);
-      }
-    },
-    [],
   );
 
   const chromeProps = useMemo(
@@ -1088,37 +999,10 @@ export function Feed<T>({
     ],
   );
 
-  // The motion header offset starts at paddingTop: 0 and is applied once the
-  // header measures itself, one or two frames after the first content layout.
-  // Latch maintainVisibleContentPosition on only after that has landed so the
-  // initial offset application is not compensated as if content had been
-  // prepended above the anchor row.
-  const scheduleMotionAnchorReady = useCallback(() => {
-    if (anchorReadyScheduledRef.current) return;
-    anchorReadyScheduledRef.current = true;
-    anchorReadyFrameRef.current = requestAnimationFrame(() => {
-      anchorReadyFrameRef.current = requestAnimationFrame(() => {
-        anchorReadyFrameRef.current = null;
-        setMotionAnchorReady(true);
-      });
-    });
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (anchorReadyFrameRef.current) {
-        cancelAnimationFrame(anchorReadyFrameRef.current);
-        anchorReadyFrameRef.current = null;
-      }
-    },
-    [],
-  );
-
   const handleContentSizeChange = useCallback(
     (_width: number, height: number) => {
       if (!bottom) {
         animatedContentHeight.set(height);
-        if (unwrappedMotionContent) scheduleMotionAnchorReady();
         return;
       }
 
@@ -1140,8 +1024,6 @@ export function Feed<T>({
       bottom,
       maybeTriggerNearBottom,
       nearBottomThreshold,
-      scheduleMotionAnchorReady,
-      unwrappedMotionContent,
     ],
   );
 
@@ -1328,69 +1210,6 @@ export function Feed<T>({
           }
           scrollEventThrottle={16}
         />
-      ) : usesMotionHeader && unwrappedMotionContent ? (
-        <HeaderMotion.ScrollManager
-          scrollId={motionScrollId}
-          animatedRef={listRef as never}
-          onScroll={handleAnimatedScroll}
-          refreshControl={
-            pullToRefresh && onRefresh ? (
-              <RefreshControl
-                colors={[refreshColor]}
-                progressBackgroundColor={theme.colors.base200}
-                refreshing={refreshing}
-                tintColor={refreshColor}
-                onRefresh={onRefresh}
-              />
-            ) : undefined
-          }
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-        >
-          {(scrollableProps, { originalHeaderHeight }) => (
-            <Animated.ScrollView
-              {...(scrollableProps as unknown as Pick<
-                React.ComponentProps<typeof Animated.ScrollView>,
-                'onLayout' | 'onScroll' | 'refreshControl' | 'ref'
-              >)}
-              alwaysBounceVertical
-              className="flex-1"
-              contentInsetAdjustmentBehavior="never"
-              contentContainerClassName={contentContainerClassName}
-              contentContainerStyle={[
-                motionHeaderOverlaysContent
-                  ? undefined
-                  : { paddingTop: originalHeaderHeight },
-                contentContainerStyle,
-              ]}
-              maintainVisibleContentPosition={
-                shouldMaintainVisibleContentPosition &&
-                !showCustomRefreshIndicator &&
-                motionAnchorReady
-                  ? { minIndexForVisible: maintainVisibleContentMinIndex }
-                  : undefined
-              }
-              onContentSizeChange={handleContentSizeChange}
-              scrollEventThrottle={16}
-            >
-              {listHeader}
-              {items.length === 0 ? (
-                listEmpty
-              ) : (
-                <VirtualColumn
-                  items={virtualRowsCollection}
-                  itemToKey={row => row.key}
-                  onItemModeChange={handleVirtualRowModeChange}
-                  removeClippedSubviews={removeClippedSubviews}
-                  testID={`feed-virtual-column:${numColumns}`}
-                >
-                  {renderVirtualRowContent}
-                </VirtualColumn>
-              )}
-              {listFooter}
-            </Animated.ScrollView>
-          )}
-        </HeaderMotion.ScrollManager>
       ) : usesMotionHeader ? (
         <HeaderMotion.ScrollView
           animatedRef={listRef as never}

@@ -32,17 +32,12 @@ const mockCreatePaginatedSubscription = jest.fn<
 >();
 const mockSetRelayStatus = jest.fn();
 const mockSetSubRelays = jest.fn();
-const mockScrollBy = jest.fn();
 
 jest.mock('../src/components/Feed', () => {
   const ReactModule = require('react');
   return {
     Feed: (props: Record<string, unknown>) => {
       mockLatestFeedProps = props;
-      const adjustRef = props.scrollAdjustRef as
-        | { current: { scrollBy: jest.Mock } | null }
-        | undefined;
-      if (adjustRef) adjustRef.current = { scrollBy: mockScrollBy };
       return ReactModule.createElement('FeedMock');
     },
   };
@@ -122,7 +117,6 @@ describe('Kind1 thread pull to refresh', () => {
     }));
     mockSetRelayStatus.mockReset();
     mockSetSubRelays.mockReset();
-    mockScrollBy.mockReset();
     mockRawSubscribe.mockReset();
     mockRawSubscribe.mockImplementation(() => jest.fn());
   });
@@ -335,91 +329,6 @@ describe('Kind1 thread pull to refresh', () => {
       }),
       expect.objectContaining({ item: focused, type: 'focused' }),
     ]);
-
-    act(() => {
-      rowRenderer!.unmount();
-      renderer!.unmount();
-    });
-  });
-
-  // Platform.OS defaults to ios under this preset, so the JS anchor
-  // compensation path (JS_ANCHOR_COMPENSATION in Kind1Sub) is the active one.
-  it('shifts the scroll offset by ancestor layout deltas through scrollAdjustRef', () => {
-    const focusedId = 'ef'.repeat(32);
-    const parentId = 'ba'.repeat(32);
-    const nevent = neventEncode({ id: focusedId });
-    const kind1Event = (id: string, parent?: string) => ({
-      createdAt: () => 789,
-      id: () => id,
-      kind: () => 1,
-      kind1View: {
-        eventRefs: () => null,
-        eventRefsLength: () => 0,
-        reply: () =>
-          parent
-            ? {
-                author: () => undefined,
-                id: () => parent,
-              }
-            : null,
-      },
-      pubkey: () => '90'.repeat(32),
-    });
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-
-    act(() => {
-      renderer = ReactTestRenderer.create(
-        <Kind1Sub nevent={nevent} visible onClose={() => {}} />,
-      );
-    });
-    const headerCall = mockSubscribeUntilEose.mock.calls.find(([subId]) =>
-      subId.startsWith(`kind1_${focusedId}_`),
-    );
-    act(() => {
-      headerCall![2]({ parsed: kind1Event(focusedId, parentId) });
-    });
-    act(() => {
-      jest.advanceTimersByTime(20);
-    });
-
-    // iOS relies on the JS compensation; native MVCP stays off.
-    expect(getFeedProps()).toMatchObject({
-      disableMaintainVisibleContentPosition: true,
-    });
-    expect(getFeedProps().scrollAdjustRef).toBeTruthy();
-
-    const rows = getFeedProps().items as Array<Record<string, unknown>>;
-    expect(rows[0]).toMatchObject({ id: parentId, type: 'ancestor' });
-    const renderItem = getFeedProps().renderItem as (info: {
-      index: number;
-      item: Record<string, unknown>;
-      visible: boolean;
-    }) => React.ReactElement;
-
-    let rowRenderer: ReactTestRenderer.ReactTestRenderer;
-    act(() => {
-      rowRenderer = ReactTestRenderer.create(
-        renderItem({ index: 0, item: rows[0], visible: true }),
-      );
-    });
-
-    const fireLayout = (height: number) => {
-      act(() => {
-        rowRenderer!.root.props.onLayout({
-          nativeEvent: { layout: { height } },
-        });
-      });
-    };
-
-    // First layout is the prepend: the anchor moves by the full row height.
-    fireLayout(490);
-    expect(mockScrollBy).toHaveBeenLastCalledWith(490);
-    // Resolve growth only shifts by the delta.
-    fireLayout(320);
-    expect(mockScrollBy).toHaveBeenLastCalledWith(-170);
-    // No height change, no compensation.
-    fireLayout(320);
-    expect(mockScrollBy).toHaveBeenCalledTimes(2);
 
     act(() => {
       rowRenderer!.unmount();
